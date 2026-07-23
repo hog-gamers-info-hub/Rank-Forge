@@ -192,17 +192,20 @@ Google ML Kit is the approved MVP OCR technology.
 It will be used for:
 
 * On-device text recognition
-* Player-name extraction
-* Kill-value extraction
-* Roster screenshot processing
-* Scoreboard screenshot processing
+* OCR processing for supported genuine Free Fire MAX scoreboard screenshots
+* Player-name extraction from supported scoreboard screenshots
+* Kill-value extraction from supported scoreboard screenshots
 
 ### Restrictions
 
+* Tournament roster management is manual in the MVP.
+* Teams and players must be entered through structured application input.
+* ML Kit OCR applies only to genuine Free Fire MAX scoreboard screenshots.
+* Roster-screenshot OCR and roster-image import are outside MVP scope unless separately approved and assigned to a roadmap version.
 * ML Kit output must never be treated as automatically correct.
 * Original OCR values must be preserved.
 * Low-confidence results must require review.
-* OCR extraction must remain separate from team matching and scoring.
+* Scoreboard OCR, roster management, team matching, and scoring must remain separate responsibilities.
 * Unsupported screenshot layouts must be flagged instead of silently processed.
 
 ---
@@ -360,16 +363,24 @@ The emulator may support development but must not be the only release-testing en
 
 When project information conflicts, follow this order:
 
-1. Latest explicitly approved user decision
-2. Active project workflow phase and version
-3. Approved repository documentation
-4. GitHub `main`
-5. Supabase production schema and migrations
-6. Existing application implementation
-7. External platform configuration
-8. Earlier discussions or assumptions
+1. Current explicit user instructions and approved user decisions govern project intent, scope approvals, corrections, and exceptions.
+2. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, version sequencing, dependencies, and implementation order.
+3. The roadmap remains read-only and unchanged throughout Phase 0 gap closure.
+4. Approved canonical product documents govern requirements within their respective domains.
+5. `AGENTS.md` and approved `docs/ai` documents govern ChatGPT and Codex execution behavior, approval gates, implementation restrictions, testing expectations, and repository workflow.
+6. `AGENTS.md` and approved `docs/ai` documents must not override approved product scope or roadmap sequencing.
+7. Verified repository implementation and deployed configuration represent actual current state, but do not automatically redefine approved requirements or future scope.
+8. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
 
-Any material conflict must be investigated and documented before implementation continues.
+### Material-Conflict Rule
+
+When a material conflict exists:
+
+1. Stop the dependent task.
+2. Identify the conflicting statements and their governing purposes.
+3. Do not resolve the conflict through assumptions, inference, or implementation.
+4. Require an explicit user decision.
+5. Update the appropriate canonical authority before continuing.
 
 ---
 
