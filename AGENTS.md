@@ -213,13 +213,19 @@ Do not claim completion when required verification failed, was skipped, or could
 
 When instructions conflict, follow this order:
 
-1. Current explicitly approved implementation task
-2. Latest approved user decision
-3. This `AGENTS.md` file
-4. Active project workflow phase and version
-5. Approved documentation under `docs/`
-6. GitHub `main`
-7. Existing implementation patterns
-8. Earlier discussions or assumptions
+1. Current explicit user instructions and approved user decisions govern project intent, product scope, corrections, and approved exceptions.
+2. The current explicitly approved implementation task governs Codex's immediate execution scope, including the exact task boundaries and allowed files.
+3. An implementation task must not override approved product scope, canonical requirements, or roadmap sequencing.
+4. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, version sequencing, dependencies, and implementation order.
+5. Approved canonical product documents govern requirements within their respective domains.
+6. `AGENTS.md` and approved documents under `docs/ai/` govern Codex execution behavior, safety restrictions, verification, Git workflow, and completion reporting.
+7. Verified repository implementation and deployed configuration represent actual current state but do not automatically redefine approved requirements or future scope.
+8. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
 
-Report any material conflict before proceeding.
+When a material conflict exists:
+
+1. Stop the dependent work.
+2. Identify the conflicting statements and their governing purposes.
+3. Avoid resolving the conflict through assumptions, inference, speculative implementation, or unrelated changes.
+4. Report the conflict and require an explicit user decision.
+5. Continue only after the appropriate canonical authority has been corrected or the conflict has been explicitly dispositioned.
