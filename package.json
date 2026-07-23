@@ -1,0 +1,19 @@
+{
+  "name": "rank-forge-tooling",
+  "version": "1.0.0",
+  "scripts": {
+    "supabase": "supabase"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hog-gamers-info-hub/Rank-Forge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hog-gamers-info-hub/Rank-Forge/issues"
+  },
+  "homepage": "https://github.com/hog-gamers-info-hub/Rank-Forge#readme",
+  "devDependencies": {
+    "supabase": "2.109.1"
+  },
+  "private": true
+}

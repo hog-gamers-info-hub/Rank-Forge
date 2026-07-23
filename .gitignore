@@ -47,3 +47,7 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+
+# Node.js tooling
+node_modules/
+npm-debug.log*
