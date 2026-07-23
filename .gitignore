@@ -1,0 +1,49 @@
+﻿# Android Studio
+.idea/
+*.iml
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Gradle and Android build output
+.gradle/
+build/
+**/build/
+*.apk
+*.aab
+*.apks
+
+# Kotlin and Java
+*.class
+hs_err_pid*
+replay_pid*
+
+# VS Code
+.vscode/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+google-services.json
+service-account*.json
+credentials*.json
+
+# Supabase local files
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/functions/.env
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
