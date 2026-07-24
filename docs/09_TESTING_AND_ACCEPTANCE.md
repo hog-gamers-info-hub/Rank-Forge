@@ -50,7 +50,7 @@ Synthetic roster fixture requirements:
 * No duplicate player names within the same team
 * OCR-challenging names for normalization and matching tests
 
-Current repository evidence includes the synthetic roster fixture at [test-data/rosters/teams.csv](/C:/Projects/Rank-Forge/test-data/rosters/teams.csv).
+Current repository evidence includes the synthetic roster fixture at [test-data/rosters/teams.csv](test-data/rosters/teams.csv).
 
 Genuine screenshot test data requirements:
 

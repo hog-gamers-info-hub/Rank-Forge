@@ -153,7 +153,7 @@ Approved scoring and standings data rules are:
 * Tie-break information must remain reproducible from finalized match history.
 * Cached or materialized standings must be safely rebuildable.
 
-This document does not redefine scoring values. Detailed scoring behavior remains governed by [docs/01_PRODUCT_REQUIREMENTS.md](C:/Projects/Rank-Forge/docs/01_PRODUCT_REQUIREMENTS.md) and the future canonical scoring document [docs/05_SCORING_AND_PROCESSING_RULES.md](C:/Projects/Rank-Forge/docs/05_SCORING_AND_PROCESSING_RULES.md).
+This document does not redefine scoring values. Detailed scoring behavior remains governed by [docs/01_PRODUCT_REQUIREMENTS.md](docs/01_PRODUCT_REQUIREMENTS.md) and the future canonical scoring document [docs/05_SCORING_AND_PROCESSING_RULES.md](docs/05_SCORING_AND_PROCESSING_RULES.md).
 
 ## 8. Screenshot and OCR Data
 

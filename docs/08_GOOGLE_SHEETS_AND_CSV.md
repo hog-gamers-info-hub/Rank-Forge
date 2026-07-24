@@ -12,7 +12,7 @@ CSV export is an approved MVP output.
 
 Google Sheets export is an approved MVP output through a secure backend flow.
 
-Exports do not define official scoring. Scoring is governed by [docs/05_SCORING_AND_PROCESSING_RULES.md](/C:/Projects/Rank-Forge/docs/05_SCORING_AND_PROCESSING_RULES.md).
+Exports do not define official scoring. Scoring is governed by [docs/05_SCORING_AND_PROCESSING_RULES.md](docs/05_SCORING_AND_PROCESSING_RULES.md).
 
 Exports do not define database truth. Supabase is the permanent backend authority.
 
