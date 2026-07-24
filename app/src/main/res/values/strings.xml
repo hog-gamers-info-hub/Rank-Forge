@@ -4,4 +4,8 @@
     <string name="foundation_title">Rank-Forge</string>
     <string name="foundation_description">Android application foundation</string>
     <string name="foundation_version">Version 0.1.0</string>
+    <string name="open_tournament_creation">Open tournament creation placeholder</string>
+    <string name="tournament_creation_placeholder_title">Tournament creation placeholder</string>
+    <string name="tournament_creation_placeholder_description">Tournament creation will be implemented in a later version.</string>
+    <string name="back_action">Back</string>
 </resources>
