@@ -82,20 +82,20 @@ The approved technology direction is:
 
 Canonical project documents:
 
-* [Project Overview](/C:/Projects/Rank-Forge/docs/00_PROJECT_OVERVIEW.md)
-* [Product Requirements](/C:/Projects/Rank-Forge/docs/01_PRODUCT_REQUIREMENTS.md)
-* [System Architecture](/C:/Projects/Rank-Forge/docs/02_SYSTEM_ARCHITECTURE.md)
-* [Database Design](/C:/Projects/Rank-Forge/docs/03_DATABASE_DESIGN.md)
-* [OCR and Team Matching](/C:/Projects/Rank-Forge/docs/04_OCR_AND_TEAM_MATCHING.md)
-* [Scoring and Processing Rules](/C:/Projects/Rank-Forge/docs/05_SCORING_AND_PROCESSING_RULES.md)
-* [Android Application](/C:/Projects/Rank-Forge/docs/06_ANDROID_APP.md)
-* [Supabase Backend](/C:/Projects/Rank-Forge/docs/07_SUPABASE_BACKEND.md)
-* [Google Sheets and CSV Export](/C:/Projects/Rank-Forge/docs/08_GOOGLE_SHEETS_AND_CSV.md)
-* [Testing and Acceptance](/C:/Projects/Rank-Forge/docs/09_TESTING_AND_ACCEPTANCE.md)
-* [Workflow and Platform Roles](/C:/Projects/Rank-Forge/docs/10_WORKFLOW_AND_PLATFORM_ROLES.md)
-* [Security and Privacy](/C:/Projects/Rank-Forge/docs/11_SECURITY_AND_PRIVACY.md)
-* [Phase and Version Roadmap](/C:/Projects/Rank-Forge/docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md)
-* [AI Governance Documents](/C:/Projects/Rank-Forge/docs/ai)
+* [Project Overview](docs/00_PROJECT_OVERVIEW.md)
+* [Product Requirements](docs/01_PRODUCT_REQUIREMENTS.md)
+* [System Architecture](docs/02_SYSTEM_ARCHITECTURE.md)
+* [Database Design](docs/03_DATABASE_DESIGN.md)
+* [OCR and Team Matching](docs/04_OCR_AND_TEAM_MATCHING.md)
+* [Scoring and Processing Rules](docs/05_SCORING_AND_PROCESSING_RULES.md)
+* [Android Application](docs/06_ANDROID_APP.md)
+* [Supabase Backend](docs/07_SUPABASE_BACKEND.md)
+* [Google Sheets and CSV Export](docs/08_GOOGLE_SHEETS_AND_CSV.md)
+* [Testing and Acceptance](docs/09_TESTING_AND_ACCEPTANCE.md)
+* [Workflow and Platform Roles](docs/10_WORKFLOW_AND_PLATFORM_ROLES.md)
+* [Security and Privacy](docs/11_SECURITY_AND_PRIVACY.md)
+* [Phase and Version Roadmap](docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md)
+* [AI Governance Documents](docs/ai/)
 
 ## Roadmap
 
@@ -167,6 +167,6 @@ Canonical requirements are in `docs/`.
 
 Workflow and agent behavior are governed by `AGENTS.md` and `docs/ai/`.
 
-Phase sequencing is governed by [docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md](/C:/Projects/Rank-Forge/docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md).
+Phase sequencing is governed by [docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md](docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md).
 
 If information conflicts, use the approved source-of-truth precedence documented in the canonical workflow files.
