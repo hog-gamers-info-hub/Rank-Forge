@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.ui.theme
+package com.hoggamers.rankforge.presentation.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme

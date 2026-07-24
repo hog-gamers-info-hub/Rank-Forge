@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge
+package com.hoggamers.rankforge.presentation
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,7 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.hoggamers.rankforge.ui.theme.RankForgeTheme
+import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
 @Composable
 fun RankForgeApp() {

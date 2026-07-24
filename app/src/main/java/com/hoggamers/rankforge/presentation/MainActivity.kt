@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge
+package com.hoggamers.rankforge.presentation
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
