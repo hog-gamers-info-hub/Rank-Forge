@@ -72,7 +72,7 @@ This overview does not define detailed schemas, APIs, packages, permissions, or 
 
 ## 7. Current Repository Status
 
-The current tracked repository state verifies Phase 0 foundation work rather than application implementation.
+The current tracked repository state verifies Phase 0 foundation work and the v0.1.0 Android foundation implementation.
 
 Verified repository facts:
 
@@ -89,8 +89,8 @@ Verified repository facts:
 
 Functionality not yet verified as implemented in the tracked repository:
 
-* No tracked Android Gradle project or Kotlin application source has been verified.
-* No tracked application screens, Android UI workflows, or Compose implementation have been verified.
+* The tracked v0.1.0 Android Gradle project, Kotlin application source, and minimal Compose foundation screen have been verified.
+* No tracked Android UI workflows beyond the v0.1.0 foundation screen have been verified.
 * No tracked Room persistence implementation has been verified.
 * No tracked Supabase migration set, Edge Function implementation, or backend synchronization logic has been verified.
 * No tracked ML Kit OCR implementation, scoreboard parser, deterministic scoring implementation, or team-matching implementation has been verified.
@@ -98,11 +98,11 @@ Functionality not yet verified as implemented in the tracked repository:
 
 ## 8. Roadmap Position
 
-Rank-Forge is currently in Phase 0, which covers project foundation and governance.
+Rank-Forge is now in Phase 1, which covers the Android foundation.
 
-Android implementation begins only with Phase 1. Phase boundaries, version sequencing, dependencies, and implementation order are controlled by `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md`.
+Android implementation began with v0.1.0. Phase boundaries, version sequencing, dependencies, and implementation order are controlled by `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md`.
 
-This task does not change the roadmap. The roadmap remains the authority for when approved capabilities move from planned scope into implementation. Phase 1 still requires explicit user approval even after Phase 0 blocker corrections.
+This task does not change the roadmap. The roadmap remains the authority for when approved capabilities move from planned scope into implementation. Later Phase 1 versions remain separately scoped.
 
 ## 9. Documentation Map
 
@@ -136,10 +136,10 @@ The current canonical documentation areas are:
 Current limitations and pending matters include:
 
 * Planned: tournament-processing, OCR, synchronization, and export capabilities are approved product scope but are not yet verified as implemented in the tracked repository.
-* Not yet implemented: Android application code, application screens, persistence logic, OCR processing, team matching, synchronization, and export flows are not currently verified in tracked source files.
+* The v0.1.0 Android application foundation is implemented; persistence logic, OCR processing, team matching, synchronization, and export flows are not currently verified in tracked source files.
 * Documentation completion is not implementation completion: the populated canonical documents define approved direction, but tracked application and backend implementation still remains unverified.
 * Planned: real Free Fire MAX screenshots for OCR acceptance are not yet available in the repository, and OCR acceptance testing remains deferred.
-* Requires a fresh audit: Phase 0 closure still requires a fresh closure audit after blocker corrections.
-* Requires explicit approval: Phase 1 Android implementation still requires explicit user approval.
+* Phase 0 is closed at the documentation and governance level with documented deferrals.
+* Later Phase 1 versions require their own explicitly approved implementation tasks.
 * Requires an explicit decision: any capability outside the approved roadmap order, including roster-screenshot OCR or roster-image import, requires separate approval and scheduling.
 * Requires an explicit decision: production backup commands and production restoration execution remain to be validated before the first production deployment.

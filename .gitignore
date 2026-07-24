@@ -8,6 +8,7 @@ captures/
 
 # Gradle and Android build output
 .gradle/
+.kotlin/
 build/
 **/build/
 *.apk

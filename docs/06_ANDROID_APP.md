@@ -4,7 +4,7 @@
 
 This document defines the authoritative Rank-Forge MVP Android client requirements, architecture boundaries, navigation responsibilities, screen workflows, UI states, offline behavior, security controls, accessibility requirements, and Android verification expectations.
 
-It is documentation only. It does not create an Android project, Gradle files, Kotlin code, Compose screens, resources, dependencies, tests, manifests, or configuration.
+It defines the approved Android direction and boundaries; the v0.1.0 Android foundation is now implemented in the repository.
 
 This document follows the approved authority hierarchy. Product documents define what the Android application must support, architecture documents define boundaries, and the roadmap governs when Android capabilities are implemented.
 
@@ -14,16 +14,14 @@ Rank-Forge is planned as a native Android application for tournament organizers 
 
 Approved scope and status boundaries:
 
-* Android implementation begins only in Phase 1.
-* The current repository must not be described as containing an Android application unless tracked Android files are verified.
-* This document defines approved Android behavior and implementation boundaries, not completed functionality.
+* Android implementation began in Phase 1 with v0.1.0.
+* The v0.1.0 Android foundation is verified in tracked Android files.
+* This document defines approved Android behavior and implementation boundaries beyond the verified v0.1.0 foundation.
 * Public spectator, player-login, payment, subscription, advertising, and unrelated user experiences are outside approved MVP scope.
 
 Current verified repository status:
 
-* No tracked Android Gradle project has been verified.
-* No tracked Kotlin Android source files have been verified.
-* No tracked Compose screens, manifests, or Android resources have been verified.
+* The v0.1.0 Android Gradle project, Kotlin Android source, minimal Compose screen, manifest, and Android resources have been verified.
 
 ## 3. Approved Android Technology Stack
 
@@ -504,7 +502,7 @@ gradlew.bat lint
 gradlew.bat assembleDebug
 ```
 
-This document does not claim that these commands currently run successfully because no Android project has been verified in the repository.
+The v0.1.0 `test`, `lint`, and `assembleDebug` tasks have been verified successfully. Broader checks remain roadmap-controlled.
 
 ## 21. Android Constraints and Exclusions
 

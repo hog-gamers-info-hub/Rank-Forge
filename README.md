@@ -6,20 +6,20 @@ Rank-Forge is a planned native Android application for Free Fire MAX tournament 
 
 Its approved MVP direction is to support tournament management, roster management, match-result processing, deterministic scoring and standings, scoreboard screenshot OCR assistance, manual correction, offline recovery, backend synchronization, and finalized-result export.
 
-The project is currently in its documentation and governance foundation phase unless tracked implementation files prove otherwise.
+The project is in the Phase 1 Android foundation phase, with the v0.1.0 foundation now tracked in the repository.
 
 ## Current Repository Status
 
-This repository currently contains canonical project documentation plus workflow and governance material.
+This repository contains canonical project documentation, workflow and governance material, and the v0.1.0 Android foundation.
 
 README is a high-level entry point. Canonical details live under `docs/`.
 
-Android implementation begins according to the approved roadmap.
+Android implementation has begun with v0.1.0 according to the approved roadmap.
 
 Current tracked repository facts:
 
-* No tracked Android Gradle project or Kotlin application source has been verified.
-* No tracked Compose screens, Room schema implementation, or Android workflow implementation has been verified.
+* The tracked v0.1.0 Android Gradle project and Kotlin application source provide the initial Compose foundation screen.
+* No tracked Room schema implementation or Android workflow implementation has been verified.
 * Supabase scaffolding is present, including `supabase/config.toml` and placeholder directories, but no tracked migration set, Edge Function implementation, or backend synchronization implementation has been verified.
 * No tracked ML Kit OCR pipeline, scoreboard parser, team-matching implementation, CSV export implementation, Google Sheets export implementation, or test suite implementation has been verified.
 
@@ -151,7 +151,7 @@ Genuine screenshot OCR acceptance is deferred until approved real screenshots an
 
 Critical and high-severity defects block release.
 
-This README does not claim that tests currently pass.
+The v0.1.0 Gradle test, lint, and debug build checks have passed; broader test coverage remains deferred to later roadmap versions.
 
 ## Contribution and Changelog Status
 

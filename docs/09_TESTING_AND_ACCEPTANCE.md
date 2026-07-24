@@ -28,8 +28,8 @@ The approved testing principles are:
 
 Current verified status is limited to repository evidence:
 
-* Phase 0 documentation and governance are being aligned.
-* Android implementation has not started in any tracked Android project files because no tracked Android project has been verified in the repository.
+* Phase 0 documentation and governance remain preserved, and the v0.1.0 Android foundation is now tracked.
+* The v0.1.0 `test`, `lint`, and `assembleDebug` checks have passed; broader Android, integration, device, and feature tests remain roadmap-controlled.
 * Production Room schema has not been verified in tracked repository files.
 * Production Supabase schema has not been verified in tracked repository files.
 * OCR implementation has not been verified in tracked repository files.
