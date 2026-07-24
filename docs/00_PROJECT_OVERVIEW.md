@@ -76,11 +76,12 @@ The current tracked repository state verifies Phase 0 foundation work rather tha
 
 Verified repository facts:
 
-* Governance, workflow, testing, and release documentation are present under `docs/` and `docs/ai/`.
+* Canonical Phase 0 product and governance documents from `docs/00_PROJECT_OVERVIEW.md` through `docs/11_SECURITY_AND_PRIVACY.md` are populated in the repository.
+* Approved AI governance documents under `docs/ai/00_AI_WORKFLOW.md` through `docs/ai/07_PROMPT_AND_APPROVAL_PROCESS.md` are populated or otherwise present as approved governance artifacts.
+* `README.md` is populated as the high-level repository entry point.
 * The approved phase-and-version roadmap is present at `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md`.
-* Testing and acceptance planning is present in `docs/09_TESTING_AND_ACCEPTANCE.md`.
-* Release, backup, and rollback planning is present in `docs/12_RELEASE_AND_OPERATIONS.md`.
-* AI-assisted development governance files are present under `docs/ai/`.
+* `CHANGELOG.md` and `CONTRIBUTING.md` remain intentionally deferred until their required content is clearly defined.
+* Phase 0 closure still requires a fresh closure audit after blocker corrections.
 * Supabase repository scaffolding is present, including `supabase/config.toml` and placeholder directories for migrations, functions, and tests.
 * Synthetic roster fixture data is present at `test-data/rosters/teams.csv`.
 * Repository tooling includes `package.json` with a Supabase CLI development dependency and script entry.
@@ -92,10 +93,8 @@ Functionality not yet verified as implemented in the tracked repository:
 * No tracked application screens, Android UI workflows, or Compose implementation have been verified.
 * No tracked Room persistence implementation has been verified.
 * No tracked Supabase migration set, Edge Function implementation, or backend synchronization logic has been verified.
-* No tracked ML Kit OCR pipeline, scoreboard parser, or team-matching implementation has been verified.
+* No tracked ML Kit OCR implementation, scoreboard parser, deterministic scoring implementation, or team-matching implementation has been verified.
 * No tracked CSV or Google Sheets export implementation has been verified.
-
-Several canonical product-area documents currently remain unpopulated in the repository and should be treated as pending documentation population or approval rather than complete implementation guidance.
 
 ## 8. Roadmap Position
 
@@ -103,34 +102,34 @@ Rank-Forge is currently in Phase 0, which covers project foundation and governan
 
 Android implementation begins only with Phase 1. Phase boundaries, version sequencing, dependencies, and implementation order are controlled by `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md`.
 
-This task does not change the roadmap. The roadmap remains the authority for when approved capabilities move from planned scope into implementation.
+This task does not change the roadmap. The roadmap remains the authority for when approved capabilities move from planned scope into implementation. Phase 1 still requires explicit user approval even after Phase 0 blocker corrections.
 
 ## 9. Documentation Map
 
 The current canonical documentation areas are:
 
 * Product overview and requirements: `docs/00_PROJECT_OVERVIEW.md` and `docs/01_PRODUCT_REQUIREMENTS.md`
-  Status: this overview is being populated now; detailed requirements remain pending documentation population or approval.
+  Status: populated as the high-level overview and canonical product requirements baseline.
 * Architecture and database: `docs/02_SYSTEM_ARCHITECTURE.md` and `docs/03_DATABASE_DESIGN.md`
-  Status: planned as canonical areas; detailed content is not yet populated in the tracked repository.
+  Status: populated as canonical architecture and database-planning documents.
 * OCR and scoring: `docs/04_OCR_AND_TEAM_MATCHING.md` and `docs/05_SCORING_AND_PROCESSING_RULES.md`
-  Status: planned as canonical areas; detailed content is not yet populated in the tracked repository.
+  Status: populated as canonical OCR, matching, scoring, and processing-rule documents.
 * Android and Supabase: `docs/06_ANDROID_APP.md` and `docs/07_SUPABASE_BACKEND.md`
-  Status: planned as canonical areas; detailed content is not yet populated in the tracked repository.
+  Status: populated as canonical Android and Supabase planning documents.
 * Export: `docs/08_GOOGLE_SHEETS_AND_CSV.md`
-  Status: planned as a canonical area; detailed content is not yet populated in the tracked repository.
+  Status: populated as the canonical finalized-result export document.
 * Testing: `docs/09_TESTING_AND_ACCEPTANCE.md`
   Status: populated and approved for current testing and acceptance planning.
 * Workflow and platform roles: `docs/10_WORKFLOW_AND_PLATFORM_ROLES.md`
   Status: populated and approved for governance, authority, and platform responsibilities.
 * Security and privacy: `docs/11_SECURITY_AND_PRIVACY.md`
-  Status: canonical area present, but detailed content is not yet populated in the tracked repository.
-* Release and operations: `docs/12_RELEASE_AND_OPERATIONS.md`
-  Status: populated for release, backup, rollback, and operational controls.
+  Status: populated and approved for canonical security and privacy requirements.
 * AI-assisted development governance: `docs/ai/`
-  Status: core ChatGPT and Codex role documents are populated; some supporting AI governance files remain pending detailed population.
+  Status: approved AI governance documents are populated or otherwise present after the recent blocker-resolution tasks.
 * Phase-and-version roadmap: `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md`
   Status: populated and authoritative for sequencing and implementation order.
+* Deferred repository process documents: `CHANGELOG.md` and `CONTRIBUTING.md`
+  Status: intentionally deferred until their required content is clearly defined.
 
 ## 10. Current Limitations and Pending Decisions
 
@@ -138,7 +137,9 @@ Current limitations and pending matters include:
 
 * Planned: tournament-processing, OCR, synchronization, and export capabilities are approved product scope but are not yet verified as implemented in the tracked repository.
 * Not yet implemented: Android application code, application screens, persistence logic, OCR processing, team matching, synchronization, and export flows are not currently verified in tracked source files.
-* Pending documentation approval: several canonical product documents under `docs/` remain unpopulated and should not be treated as complete specifications.
+* Documentation completion is not implementation completion: the populated canonical documents define approved direction, but tracked application and backend implementation still remains unverified.
 * Planned: real Free Fire MAX screenshots for OCR acceptance are not yet available in the repository, and OCR acceptance testing remains deferred.
+* Requires a fresh audit: Phase 0 closure still requires a fresh closure audit after blocker corrections.
+* Requires explicit approval: Phase 1 Android implementation still requires explicit user approval.
 * Requires an explicit decision: any capability outside the approved roadmap order, including roster-screenshot OCR or roster-image import, requires separate approval and scheduling.
 * Requires an explicit decision: production backup commands and production restoration execution remain to be validated before the first production deployment.
