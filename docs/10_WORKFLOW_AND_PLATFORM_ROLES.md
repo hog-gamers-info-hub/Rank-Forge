@@ -364,23 +364,25 @@ The emulator may support development but must not be the only release-testing en
 When project information conflicts, follow this order:
 
 1. Current explicit user instructions and approved user decisions govern project intent, scope approvals, corrections, and exceptions.
-2. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, version sequencing, dependencies, and implementation order.
-3. The roadmap remains read-only and unchanged throughout Phase 0 gap closure.
+2. The current explicitly approved implementation task governs immediate execution boundaries, including file scope, constraints, and required verification.
+3. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, version sequencing, dependencies, and implementation order.
 4. Approved canonical product documents govern requirements within their respective domains.
-5. `AGENTS.md` and approved `docs/ai` documents govern ChatGPT and Codex execution behavior, approval gates, implementation restrictions, testing expectations, and repository workflow.
-6. `AGENTS.md` and approved `docs/ai` documents must not override approved product scope or roadmap sequencing.
-7. Verified repository implementation and deployed configuration represent actual current state, but do not automatically redefine approved requirements or future scope.
-8. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
+5. `AGENTS.md` and approved `docs/ai` workflow documents govern ChatGPT and Codex execution behavior, approval gates, implementation restrictions, testing expectations, and repository workflow.
+6. Verified repository implementation and deployed configuration represent actual current state, but do not automatically redefine approved requirements or future scope.
+7. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
+
+The immediate approved implementation task controls immediate file scope, execution boundaries, constraints, and verification only. It cannot rewrite product scope, roadmap sequencing, canonical requirements, security rules, or this governance hierarchy.
 
 ### Material-Conflict Rule
 
-When a material conflict exists:
+If a material conflict appears between sources:
 
-1. Stop the dependent task.
-2. Identify the conflicting statements and their governing purposes.
-3. Do not resolve the conflict through assumptions, inference, or implementation.
-4. Require an explicit user decision.
-5. Update the appropriate canonical authority before continuing.
+1. Stop the dependent work.
+2. Identify the conflicting sources.
+3. Do not resolve the conflict by assumption, inference, or convenience.
+4. Require an explicit user decision or approved documentation correction before continuing.
+
+The immediate approved implementation task controls execution boundaries only; it cannot rewrite product scope, roadmap sequencing, canonical requirements, or governance rules.
 
 ---
 

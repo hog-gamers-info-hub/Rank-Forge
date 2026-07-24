@@ -134,18 +134,20 @@ ChatGPT must:
 When information conflicts, follow this order:
 
 1. Current explicit user instructions and approved user decisions govern project intent, product scope, corrections, and approved exceptions.
-2. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, sequencing, dependencies, and implementation order.
-3. The roadmap must not be changed during Phase 0 gap closure.
+2. The current explicitly approved implementation task governs immediate execution boundaries, including task scope, file restrictions, constraints, and required verification.
+3. `docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md` governs phase boundaries, sequencing, dependencies, and implementation order.
 4. Approved canonical product documents govern requirements within their respective domains.
 5. `AGENTS.md` and approved documents under `docs/ai/` govern ChatGPT and Codex execution behavior, safety, approval gates, verification, Git workflow, and reporting.
-6. AI governance documents must not override approved product scope or roadmap sequencing.
-7. Verified repository implementation and deployed configuration represent actual current state but do not automatically redefine approved requirements or future scope.
-8. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
+6. Verified repository implementation and deployed configuration represent actual current state but do not automatically redefine approved requirements or future scope.
+7. Earlier discussions, drafts, assumptions, and inferred requirements rank last.
 
-When a material conflict exists:
+The immediate approved implementation task controls immediate execution boundaries only. It cannot rewrite product scope, roadmap sequencing, canonical requirements, or governance rules. ChatGPT must use that task layer to plan bounded work, review evidence against the approved task, detect conflicts early, and refuse to advance dependent work while a material source conflict remains unresolved.
 
-1. Stop the dependent task.
-2. Identify the conflicting statements and their governing purposes.
-3. Avoid resolving the conflict through assumptions, inference, or speculative instructions.
-4. Obtain an explicit user decision.
-5. Update the appropriate canonical authority before continuing dependent work.
+If a material conflict appears between sources:
+
+1. Stop the dependent work.
+2. Identify the conflicting sources.
+3. Do not resolve the conflict by assumption, inference, or convenience.
+4. Require an explicit user decision or approved documentation correction before continuing.
+
+The immediate approved implementation task controls execution boundaries only; it cannot rewrite product scope, roadmap sequencing, canonical requirements, or governance rules.
