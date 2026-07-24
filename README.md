@@ -1,119 +1,172 @@
-# Rank-Forge Repository Instructions
+# Rank-Forge
 
-## Role
+## Overview
 
-Codex is the implementation agent for Rank-Forge.
+Rank-Forge is a planned native Android application for Free Fire MAX tournament organizers and authorized operators.
 
-Implement only explicitly approved tasks. Do not add features, refactor unrelated code or continue to another task automatically.
+Its approved MVP direction is to support tournament management, roster management, match-result processing, deterministic scoring and standings, scoreboard screenshot OCR assistance, manual correction, offline recovery, backend synchronization, and finalized-result export.
 
-## Before Editing
+The project is currently in its documentation and governance foundation phase unless tracked implementation files prove otherwise.
 
-Always:
+## Current Repository Status
 
-1. Read this file.
-2. Read the relevant files under `docs/`.
-3. Inspect existing code and tests.
-4. Run `git status`.
-5. Confirm the requested files and behavior actually exist.
-6. Preserve unrelated user changes.
+This repository currently contains canonical project documentation plus workflow and governance material.
 
-## Architecture
+README is a high-level entry point. Canonical details live under `docs/`.
 
-Use the approved stack:
+Android implementation begins according to the approved roadmap.
+
+Current tracked repository facts:
+
+* No tracked Android Gradle project or Kotlin application source has been verified.
+* No tracked Compose screens, Room schema implementation, or Android workflow implementation has been verified.
+* Supabase scaffolding is present, including `supabase/config.toml` and placeholder directories, but no tracked migration set, Edge Function implementation, or backend synchronization implementation has been verified.
+* No tracked ML Kit OCR pipeline, scoreboard parser, team-matching implementation, CSV export implementation, Google Sheets export implementation, or test suite implementation has been verified.
+
+## Approved MVP Scope
+
+The approved MVP scope includes:
+
+* Native Android client
+* Tournament creation and management
+* Exactly 12 fixed team slots per tournament
+* Manual structured team and player roster entry
+* Four to six players per team
+* Maximum 10 matches per tournament
+* Manual match result entry
+* Scoreboard screenshot intake for genuine supported Free Fire MAX scoreboards
+* On-device Google ML Kit OCR for scoreboard text extraction when implemented
+* Team matching against manually maintained rosters
+* Operator review, correction, and confirmation
+* Deterministic scoring and standings
+* Room-backed local persistence and app-restart recovery when implemented
+* Supabase authentication, backend authority, synchronization, RLS, and storage when implemented
+* CSV and Google Sheets export for finalized results when implemented
+
+## Explicit MVP Exclusions
+
+The approved MVP excludes:
+
+* Roster-screenshot OCR
+* Roster-image import
+* Automatic roster extraction
+* Public spectator access
+* Player-login accounts
+* Team-owner accounts
+* Payments or subscriptions
+* Advertising or monetization features
+* Unapproved collaboration or organization features
+* Export of draft, invalid, unresolved, or unconfirmed results
+* Google Sheets as a source of truth
+
+## Technology Direction
+
+The approved technology direction is:
 
 * Kotlin
-* Jetpack Compose and Material 3
-* MVVM with layered architecture
-* Coroutines and `StateFlow`
-* Supabase as the primary source of truth
-* Room for approved offline and synchronization behavior
-* Google ML Kit for MVP OCR
-* Google Sheets and CSV outputs
+* Native Android
+* Jetpack Compose
+* Material 3
+* MVVM layered architecture
+* Navigation Compose
+* Hilt according to roadmap sequencing
+* Kotlin Coroutines and `StateFlow`
+* Room
+* Supabase
+* Google ML Kit bundled Latin Text Recognition v2
+* Android Photo Picker
+* CSV export
+* Secure Google Sheets export through Supabase backend flow
 
-Keep UI, domain and data logic separated.
+## Documentation Map
 
-Do not place scoring, OCR matching or database logic inside composables.
+Canonical project documents:
 
-## Scope Rules
+* [Project Overview](/C:/Projects/Rank-Forge/docs/00_PROJECT_OVERVIEW.md)
+* [Product Requirements](/C:/Projects/Rank-Forge/docs/01_PRODUCT_REQUIREMENTS.md)
+* [System Architecture](/C:/Projects/Rank-Forge/docs/02_SYSTEM_ARCHITECTURE.md)
+* [Database Design](/C:/Projects/Rank-Forge/docs/03_DATABASE_DESIGN.md)
+* [OCR and Team Matching](/C:/Projects/Rank-Forge/docs/04_OCR_AND_TEAM_MATCHING.md)
+* [Scoring and Processing Rules](/C:/Projects/Rank-Forge/docs/05_SCORING_AND_PROCESSING_RULES.md)
+* [Android Application](/C:/Projects/Rank-Forge/docs/06_ANDROID_APP.md)
+* [Supabase Backend](/C:/Projects/Rank-Forge/docs/07_SUPABASE_BACKEND.md)
+* [Google Sheets and CSV Export](/C:/Projects/Rank-Forge/docs/08_GOOGLE_SHEETS_AND_CSV.md)
+* [Testing and Acceptance](/C:/Projects/Rank-Forge/docs/09_TESTING_AND_ACCEPTANCE.md)
+* [Workflow and Platform Roles](/C:/Projects/Rank-Forge/docs/10_WORKFLOW_AND_PLATFORM_ROLES.md)
+* [Security and Privacy](/C:/Projects/Rank-Forge/docs/11_SECURITY_AND_PRIVACY.md)
+* [Phase and Version Roadmap](/C:/Projects/Rank-Forge/docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md)
+* [AI Governance Documents](/C:/Projects/Rank-Forge/docs/ai)
 
-* Modify only files required by the approved task.
-* Minimize changes to working code.
-* Do not perform unrelated refactoring.
-* Do not rename existing public APIs, database objects or files without approval.
-* Do not introduce new dependencies unless required and approved.
-* Do not remove working behavior unless explicitly requested.
-* Stop and report blockers instead of making speculative changes.
+## Roadmap
 
-## Security
+The approved roadmap is summarized at a high level as:
 
-* Never expose secrets, API keys, service-role credentials or private tokens.
-* Never commit local environment files.
-* Do not add unnecessary Android permissions.
-* Use RLS on every exposed Supabase table.
-* Use ownership-based authorization.
-* Do not use authentication-only policies as authorization.
-* Do not use destructive SQL without explicit approval, backup and rollback instructions.
-* Do not edit already-applied production migrations.
+* Phase 0: Documentation and governance foundation
+* Phase 1: Android foundation
+* Phase 2: Tournament and roster foundation
+* Phase 3: Manual match processing
+* Phase 4: Scoring and standings
+* Phase 5: Room and offline recovery
+* Phase 6: Supabase authentication, backend, and synchronization
+* Phase 7: Screenshot intake and storage
+* Phase 8: OCR extraction and parsing
+* Phase 9: Team matching, review, correction, and finalization
+* Phase 10: CSV and Google Sheets export
+* Phase 11: Full workflow integration
+* Phase 12: QA, security, and regression validation
+* Phase 13: Controlled beta
+* Phase 14: Production release
 
-## Database Changes
+## Development Workflow
 
-* Use versioned Supabase migrations.
-* Inspect existing migrations before creating new objects.
-* Add database and RLS tests.
-* Preserve existing data.
-* Use a new corrective migration for rollback.
-* Never rewrite migration history.
+Development workflow is governed by the approved project instructions:
 
-## OCR and Scoring
+* GitHub is the source of truth.
+* Work is performed one approved task at a time.
+* Codex implements only explicitly approved tasks.
+* ChatGPT assists with planning, review, documentation, and prompt preparation.
+* Files outside the approved task scope must not be modified.
+* Branch creation is not part of the current Phase 0 manual-save workflow unless explicitly approved.
+* Implementation must follow `AGENTS.md` and `docs/ai/`.
 
-* Preserve original OCR values.
-* Store corrections separately.
-* Keep OCR, matching and scoring as separate components.
-* Scoring must remain deterministic.
-* Enforce unique teams and positions within each match.
-* Do not silently confirm uncertain OCR or team matches.
-* Use the approved confidence thresholds and manual-review flow.
+## Security and Privacy Notes
 
-## Verification
+Key approved security and privacy boundaries are:
 
-Run all checks relevant to the task.
+* Android must not contain Supabase service-role keys or Google privileged credentials.
+* Supabase RLS must be ownership-based.
+* Authentication alone is not sufficient authorization.
+* Private screenshots must not be committed publicly.
+* Secrets and local environment files must not be committed.
+* Only finalized results may be exported.
+* Destructive operations require explicit approval, backup, and rollback planning.
 
-Standard Android checks:
+## Testing and Acceptance
 
-```bash
-gradlew.bat test
-gradlew.bat lint
-gradlew.bat assembleDebug
-```
+Release requires passing the relevant unit, integration, UI, Room, Supabase, OCR, export, security, recovery, and device tests when those implementations exist.
 
-Also run relevant:
+Fake screenshots are not OCR acceptance evidence.
 
-* Compose UI tests
-* Room tests
-* Supabase database and RLS tests
-* OCR fixture tests
-* Export tests
-* `git diff --check`
+Genuine screenshot OCR acceptance is deferred until approved real screenshots and manually verified ground truth exist.
 
-Do not remove or weaken tests to make the build pass.
+Critical and high-severity defects block release.
 
-## Git
+This README does not claim that tests currently pass.
 
-* Do not commit, push, merge, rebase or open a pull request unless explicitly instructed.
-* Never force-push without explicit approval.
-* Keep changes focused.
-* Review the final diff.
-* Do not include secrets, private screenshots or generated build output.
+## Contribution and Changelog Status
 
-## Completion Report
+`CONTRIBUTING.md` and `CHANGELOG.md` are intentionally deferred until their required content is clearly defined.
 
-Report:
+They are not populated by this task.
 
-* Files added, modified and deleted
-* What was implemented
-* What was intentionally unchanged
-* Commands and tests executed
-* Verification results
-* Known limitations or blockers
+## Source of Truth
 
-Do not claim completion when required verification failed or was not performed.
+README is a high-level entry point only.
+
+Canonical requirements are in `docs/`.
+
+Workflow and agent behavior are governed by `AGENTS.md` and `docs/ai/`.
+
+Phase sequencing is governed by [docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md](/C:/Projects/Rank-Forge/docs/project-workflow/00_PHASE_AND_VERSION_ROADMAP.md).
+
+If information conflicts, use the approved source-of-truth precedence documented in the canonical workflow files.
