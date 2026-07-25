@@ -4,7 +4,9 @@ import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -154,6 +156,82 @@ class InMemoryTournamentRepositoryTest {
         )
 
         assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+    }
+
+    @Test
+    fun rosterSupportsZeroThroughSixPlayers() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        repository.saveRoster(
+            tournamentId = "stable-id",
+            slotNumber = 1,
+            players = (1..6).map { playerNumber ->
+                RosterPlayer.create("stable-id", 1, "Player $playerNumber")
+            },
+        )
+        assertEquals(6, repository.observeRosterByTournamentAndSlot("stable-id", 1).first().size)
+
+        repository.saveRoster("stable-id", 1, emptyList())
+        assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
+    }
+
+    @Test
+    fun rosterRejectsSeventhPlayerWithoutSavingIt() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+        val players = (1..7).map { playerNumber ->
+            RosterPlayer.create("stable-id", 1, "Player $playerNumber")
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                repository.saveRoster("stable-id", 1, players)
+            }
+        }
+        assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
+    }
+
+    @Test
+    fun rostersAreIsolatedByTournamentAndSlot() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "first"))
+        repository.create(tournament(id = "second"))
+
+        repository.saveRoster(
+            tournamentId = "first",
+            slotNumber = 2,
+            players = listOf(RosterPlayer.create("first", 2, "Alpha")),
+        )
+
+        assertEquals(
+            listOf("Alpha"),
+            repository.observeRosterByTournamentAndSlot("first", 2).first().map { it.displayName },
+        )
+        assertEquals(
+            emptyList<String>(),
+            repository.observeRosterByTournamentAndSlot("first", 1).first().map { it.displayName },
+        )
+        assertEquals(
+            emptyList<String>(),
+            repository.observeRosterByTournamentAndSlot("second", 2).first().map { it.displayName },
+        )
+    }
+
+    @Test
+    fun rosterRejectsPlayersFromAnotherSlot() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                repository.saveRoster(
+                    tournamentId = "stable-id",
+                    slotNumber = 1,
+                    players = listOf(RosterPlayer.create("stable-id", 2, "Wrong slot")),
+                )
+            }
+        }
     }
 
     private fun tournament(id: String) = Tournament(

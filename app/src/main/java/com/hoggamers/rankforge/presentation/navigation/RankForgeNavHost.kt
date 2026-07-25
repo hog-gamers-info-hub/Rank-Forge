@@ -10,6 +10,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.hoggamers.rankforge.presentation.screen.TeamEntryRoute
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
+import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
@@ -25,6 +27,7 @@ fun RankForgeNavHost(
     listViewModel: TournamentListViewModel? = null,
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
+    rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
 ) {
     NavHost(
         navController = navController,
@@ -89,17 +92,49 @@ fun RankForgeNavHost(
         composable<TeamEntryDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<TeamEntryDestination>()
             val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val onEditRoster: (Int) -> Unit = { slotNumber ->
+                navController.navigate(
+                    RosterEntryDestination(
+                        tournamentId = destination.tournamentId,
+                        slotNumber = slotNumber,
+                    ),
+                )
+            }
             val teamEntryViewModel = teamEntryViewModelFactory?.invoke(destination.tournamentId)
             if (teamEntryViewModel == null) {
                 TeamEntryRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
+                    onEditRoster = onEditRoster,
                 )
             } else {
                 TeamEntryRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
+                    onEditRoster = onEditRoster,
                     viewModel = teamEntryViewModel,
+                )
+            }
+        }
+        composable<RosterEntryDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<RosterEntryDestination>()
+            val onBackToTeamEntry: () -> Unit = { navController.popBackStack() }
+            val rosterEntryViewModel = rosterEntryViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.slotNumber,
+            )
+            if (rosterEntryViewModel == null) {
+                RosterEntryRoute(
+                    tournamentId = destination.tournamentId,
+                    slotNumber = destination.slotNumber,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                )
+            } else {
+                RosterEntryRoute(
+                    tournamentId = destination.tournamentId,
+                    slotNumber = destination.slotNumber,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                    viewModel = rosterEntryViewModel,
                 )
             }
         }

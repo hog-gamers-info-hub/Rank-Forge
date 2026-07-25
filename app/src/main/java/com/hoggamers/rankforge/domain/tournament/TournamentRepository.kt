@@ -15,4 +15,15 @@ interface TournamentRepository {
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
     )
+
+    fun observeRosterByTournamentAndSlot(
+        tournamentId: String,
+        slotNumber: Int,
+    ): Flow<List<RosterPlayer>>
+
+    suspend fun saveRoster(
+        tournamentId: String,
+        slotNumber: Int,
+        players: List<RosterPlayer>,
+    )
 }

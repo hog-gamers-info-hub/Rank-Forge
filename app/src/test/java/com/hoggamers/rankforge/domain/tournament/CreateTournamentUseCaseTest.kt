@@ -158,5 +158,16 @@ class CreateTournamentUseCaseTest {
                 }
             }
         }
+
+        override fun observeRosterByTournamentAndSlot(
+            tournamentId: String,
+            slotNumber: Int,
+        ): Flow<List<RosterPlayer>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
+        override suspend fun saveRoster(
+            tournamentId: String,
+            slotNumber: Int,
+            players: List<RosterPlayer>,
+        ) = Unit
     }
 }

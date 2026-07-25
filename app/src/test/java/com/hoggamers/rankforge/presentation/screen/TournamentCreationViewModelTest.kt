@@ -194,5 +194,17 @@ class TournamentCreationViewModelTest {
             tournamentId: String,
             teamNamesBySlotNumber: Map<Int, String>,
         ) = Unit
+
+        override fun observeRosterByTournamentAndSlot(
+            tournamentId: String,
+            slotNumber: Int,
+        ): Flow<List<com.hoggamers.rankforge.domain.tournament.RosterPlayer>> =
+            kotlinx.coroutines.flow.flowOf(emptyList())
+
+        override suspend fun saveRoster(
+            tournamentId: String,
+            slotNumber: Int,
+            players: List<com.hoggamers.rankforge.domain.tournament.RosterPlayer>,
+        ) = Unit
     }
 }
