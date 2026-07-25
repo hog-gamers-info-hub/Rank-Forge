@@ -21,6 +21,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
@@ -179,7 +180,10 @@ class RankForgeNavigationTest {
             creationViewModel = createCreationViewModel(repository),
             listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository)),
             detailsViewModel = { tournamentId ->
-                TournamentDetailsViewModel(GetTournamentByIdUseCase(repository)).also {
+                TournamentDetailsViewModel(
+                    getTournamentById = GetTournamentByIdUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                ).also {
                     it.load(tournamentId)
                 }
             },

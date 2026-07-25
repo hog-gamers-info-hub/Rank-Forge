@@ -8,4 +8,6 @@ interface TournamentRepository {
     fun observeAll(): Flow<List<Tournament>>
 
     fun observeById(tournamentId: String): Flow<Tournament?>
+
+    fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
 }

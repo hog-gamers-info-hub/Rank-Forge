@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
@@ -108,6 +109,37 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun detailsScreenShowsAllTwelveEmptySlotsWithoutRosterControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(),
+                    ),
+                    onBackToList = {},
+                )
+            }
+        }
+
+        (1..12).forEach { slotNumber ->
+            composeTestRule
+                .onNodeWithTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slotNumber)
+                .performScrollTo()
+                .assertIsDisplayed()
+            composeTestRule
+                .onNodeWithText("Slot $slotNumber")
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+        composeTestRule.onAllNodesWithText(context.getString(R.string.empty_team_slot_subtitle)).assertCountEquals(12)
+        composeTestRule.onAllNodesWithText("Team name").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Player").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Edit").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Delete").assertCountEquals(0)
+    }
+
+    @Test
     fun detailsNotFoundStateRendersSafeMessageAndAction() {
         var backCount = 0
         composeTestRule.setContent {
@@ -140,5 +172,6 @@ class TournamentListAndDetailsScreenTest {
         organizerName = "Alex",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        slots = (1..12).map { TeamSlotUiState(slotNumber = it) },
     )
 }

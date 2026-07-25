@@ -46,5 +46,14 @@ class ObserveTournamentsUseCaseTest {
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            state.map { tournaments ->
+                if (tournaments.any { it.id == tournamentId }) {
+                    TeamSlot.fixedSlotsForTournament(tournamentId)
+                } else {
+                    emptyList()
+                }
+            }
     }
 }
