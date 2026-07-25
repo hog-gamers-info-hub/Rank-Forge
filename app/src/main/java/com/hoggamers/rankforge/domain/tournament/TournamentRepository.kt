@@ -10,4 +10,9 @@ interface TournamentRepository {
     fun observeById(tournamentId: String): Flow<Tournament?>
 
     fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
+
+    suspend fun saveTeamNames(
+        tournamentId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+    )
 }

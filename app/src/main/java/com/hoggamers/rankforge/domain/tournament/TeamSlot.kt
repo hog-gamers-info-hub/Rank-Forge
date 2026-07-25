@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.domain.tournament
 data class TeamSlot(
     val tournamentId: String,
     val slotNumber: Int,
+    val teamName: String = "",
 ) {
     init {
         require(tournamentId.isNotBlank()) { "Tournament id is required." }
@@ -17,10 +18,12 @@ data class TeamSlot(
         fun create(
             tournamentId: String,
             slotNumber: Int,
+            teamName: String = "",
         ): TeamSlot =
             TeamSlot(
                 tournamentId = tournamentId,
                 slotNumber = slotNumber,
+                teamName = teamName,
             )
 
         fun fixedSlotsForTournament(tournamentId: String): List<TeamSlot> =

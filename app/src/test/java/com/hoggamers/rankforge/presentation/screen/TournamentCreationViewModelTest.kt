@@ -189,5 +189,10 @@ class TournamentCreationViewModelTest {
                     emptyList()
                 }
             }
+
+        override suspend fun saveTeamNames(
+            tournamentId: String,
+            teamNamesBySlotNumber: Map<Int, String>,
+        ) = Unit
     }
 }

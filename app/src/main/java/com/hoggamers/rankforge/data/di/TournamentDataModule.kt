@@ -12,6 +12,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 
 @Module
@@ -55,4 +56,10 @@ object TournamentDataProvidersModule {
     fun provideObserveTournamentSlotsUseCase(
         repository: TournamentRepository,
     ): ObserveTournamentSlotsUseCase = ObserveTournamentSlotsUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideSaveTeamSlotNamesUseCase(
+        repository: TournamentRepository,
+    ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository)
 }

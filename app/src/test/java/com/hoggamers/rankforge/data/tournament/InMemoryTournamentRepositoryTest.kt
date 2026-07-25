@@ -99,6 +99,63 @@ class InMemoryTournamentRepositoryTest {
         assertEquals(emptyList<TeamSlot>(), repository.observeSlotsByTournamentId("missing").first())
     }
 
+    @Test
+    fun savingTeamNameUpdatesOnlyTheRequestedSlot() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        repository.saveTeamNames(
+            tournamentId = "stable-id",
+            teamNamesBySlotNumber = mapOf(2 to "Bravo"),
+        )
+
+        val slots = repository.observeSlotsByTournamentId("stable-id").first()
+        assertEquals("", slots.first { it.slotNumber == 1 }.teamName)
+        assertEquals("Bravo", slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("", slots.first { it.slotNumber == 3 }.teamName)
+    }
+
+    @Test
+    fun savingAllTeamNamesPreservesSlotIdentityAndOrder() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        repository.saveTeamNames(
+            tournamentId = "stable-id",
+            teamNamesBySlotNumber = (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+
+        val slots = repository.observeSlotsByTournamentId("stable-id").first()
+        assertEquals((1..12).toList(), slots.map { it.slotNumber })
+        assertEquals((1..12).map { slotNumber -> "Team $slotNumber" }, slots.map { it.teamName })
+    }
+
+    @Test
+    fun savingEmptyTeamNameRemainsAllowedDraftValue() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        repository.saveTeamNames(
+            tournamentId = "stable-id",
+            teamNamesBySlotNumber = mapOf(1 to ""),
+        )
+
+        assertEquals("", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+    }
+
+    @Test
+    fun savingTeamNameTrimsWhitespace() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        repository.saveTeamNames(
+            tournamentId = "stable-id",
+            teamNamesBySlotNumber = mapOf(1 to "  Alpha  "),
+        )
+
+        assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+    }
+
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Spring Cup",
