@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 class TeamEntryViewModel @Inject constructor(
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
+    private val validateTournamentRoster: ValidateTournamentRosterUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TeamEntryUiState())
     val uiState: StateFlow<TeamEntryUiState> = _uiState.asStateFlow()
@@ -54,12 +56,13 @@ class TeamEntryViewModel @Inject constructor(
         _uiState.update { current ->
             current.copy(
                 slots = current.slots.map { slot ->
-                    if (slot.slotNumber == slotNumber) {
-                        slot.copy(teamName = teamName)
+                if (slot.slotNumber == slotNumber) {
+                    slot.copy(teamName = teamName)
                     } else {
                         slot
                     }
                 },
+                validationIssues = emptyList(),
             )
         }
     }
@@ -67,19 +70,42 @@ class TeamEntryViewModel @Inject constructor(
     fun saveTeamNames() {
         val tournamentId = loadedTournamentId ?: return
         val slotsToSave = uiState.value.slots
+        val teamNamesBySlotNumber = slotsToSave.associate { slot ->
+            slot.slotNumber to slot.teamName
+        }
+        _uiState.update { it.copy(isSaving = true, hasSaveError = false) }
         viewModelScope.launch {
-            saveTeamSlotNames(
-                tournamentId = tournamentId,
-                teamNamesBySlotNumber = slotsToSave.associate { slot ->
-                    slot.slotNumber to slot.teamName
-                },
-            )
-            _uiState.update { current ->
-                current.copy(
-                    slots = current.slots.map { slot ->
-                        slot.copy(teamName = slot.teamName.trim())
-                    },
+            runCatching {
+                val validation = validateTournamentRoster(
+                    tournamentId = tournamentId,
+                    teamNamesBySlotNumber = teamNamesBySlotNumber,
                 )
+                if (validation.hasBlockingIssues) {
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            validationIssues = validation.toUiState(),
+                        )
+                    }
+                } else {
+                    saveTeamSlotNames(
+                        tournamentId = tournamentId,
+                        teamNamesBySlotNumber = teamNamesBySlotNumber,
+                    )
+                    _uiState.update { current ->
+                        current.copy(
+                            isSaving = false,
+                            validationIssues = validation.toUiState(),
+                            slots = current.slots.map { slot ->
+                                slot.copy(teamName = slot.teamName.trim())
+                            },
+                        )
+                    }
+                }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(isSaving = false, hasSaveError = true)
+                }
             }
         }
     }

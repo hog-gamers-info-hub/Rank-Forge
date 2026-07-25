@@ -11,12 +11,15 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -105,9 +108,27 @@ class TeamEntryViewModelTest {
         assertTrue(viewModel.uiState.value.isNotFound)
     }
 
+    @Test
+    fun duplicateTeamNamesBlockSavingButMissingNamesAndCountsDoNot() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged(1, " Alpha ")
+        viewModel.onTeamNameChanged(2, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.validationIssues.none { it.isBlocking })
+        assertEquals("", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+        assertEquals("", repository.observeSlotsByTournamentId("stable-id").first()[1].teamName)
+    }
+
     private fun viewModel() = TeamEntryViewModel(
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+        validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
     )
 
     private fun tournament() = Tournament(

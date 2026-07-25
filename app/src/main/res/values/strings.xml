@@ -42,6 +42,8 @@
     <string name="team_entry_loading">Loading team slots</string>
     <string name="team_name_slot_label">Slot %1$d team name</string>
     <string name="save_team_names_action">Save team names</string>
+    <string name="saving_team_names_action">Saving team namesâ€¦</string>
+    <string name="team_names_save_error">Team names could not be saved. Try again.</string>
     <string name="back_to_tournament_details_action">Back to tournament details</string>
     <string name="edit_roster_action">Edit Roster for Slot %1$d</string>
     <string name="roster_entry_title">Slot %1$d roster</string>
@@ -57,4 +59,9 @@
     <string name="roster_saving_action">Saving rosterâ€¦</string>
     <string name="roster_save_error">Roster could not be saved. Try again.</string>
     <string name="back_to_team_entry_action">Back to team entry</string>
+    <string name="roster_validation_issues_title">Roster validation issues</string>
+    <string name="validation_missing_team_name">Slot %1$d is missing a team name.</string>
+    <string name="validation_duplicate_team_name">Slot %1$d duplicates Slot %2$d team name: %3$s.</string>
+    <string name="validation_invalid_player_count">Slot %1$d has %2$d players; expected 4â€“6.</string>
+    <string name="validation_duplicate_player_name">Slot %1$d player %2$d duplicates player %3$d: %4$s.</string>
 </resources>

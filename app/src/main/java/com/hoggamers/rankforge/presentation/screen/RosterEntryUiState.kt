@@ -11,6 +11,7 @@ data class RosterEntryUiState(
     val players: List<RosterPlayerUiState> = emptyList(),
     val isSaving: Boolean = false,
     val hasSaveError: Boolean = false,
+    val validationIssues: List<RosterValidationIssueUiState> = emptyList(),
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

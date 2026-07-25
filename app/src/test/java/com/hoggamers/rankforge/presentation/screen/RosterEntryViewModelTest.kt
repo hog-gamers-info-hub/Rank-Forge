@@ -19,6 +19,7 @@ import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -109,10 +110,28 @@ class RosterEntryViewModelTest {
         assertEquals(0, otherSlotViewModel.uiState.value.playerCount)
     }
 
+    @Test
+    fun duplicatePlayersBlockSavingButIncompleteCountDoesNot() = runTest {
+        repository.create(tournament("stable-id"))
+        val viewModel = viewModel()
+        viewModel.load("stable-id", 1)
+        advanceUntilIdle()
+        viewModel.addPlayer()
+        viewModel.addPlayer()
+        viewModel.onPlayerNameChanged(0, " Alpha ")
+        viewModel.onPlayerNameChanged(1, "Alpha")
+        viewModel.saveRoster()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.validationIssues.any { it.isBlocking })
+        assertEquals(0, repository.observeRosterByTournamentAndSlot("stable-id", 1).first().size)
+    }
+
     private fun viewModel() = RosterEntryViewModel(
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRosterPlayers = ObserveRosterPlayersUseCase(repository),
         saveRoster = SaveRosterUseCase(repository),
+        rosterValidator = RosterValidator(),
     )
 
     private fun tournament(id: String) = Tournament(

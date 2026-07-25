@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.RosterValidationPlayer
+import com.hoggamers.rankforge.domain.tournament.RosterValidationTeam
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -21,6 +24,7 @@ class RosterEntryViewModel @Inject constructor(
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val observeRosterPlayers: ObserveRosterPlayersUseCase,
     private val saveRoster: SaveRosterUseCase,
+    private val rosterValidator: RosterValidator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RosterEntryUiState())
     val uiState: StateFlow<RosterEntryUiState> = _uiState.asStateFlow()
@@ -94,6 +98,7 @@ class RosterEntryViewModel @Inject constructor(
                         player
                     }
                 },
+                validationIssues = emptyList(),
             )
         }
     }
@@ -135,11 +140,28 @@ class RosterEntryViewModel @Inject constructor(
         _uiState.update { it.copy(isSaving = true, hasSaveError = false) }
         viewModelScope.launch {
             runCatching {
-                saveRoster(
-                    tournamentId = tournamentId,
-                    slotNumber = slotNumber,
-                    players = players,
+                val validation = rosterValidator.validate(
+                    listOf(
+                        RosterValidationTeam(
+                            slotNumber = slotNumber,
+                            teamName = uiState.value.teamName,
+                            players = uiState.value.players.mapIndexed { index, player ->
+                                RosterValidationPlayer(
+                                    playerIndex = index,
+                                    displayName = player.displayName,
+                                )
+                            },
+                        ),
+                    ),
                 )
+                _uiState.update { it.copy(validationIssues = validation.toUiState()) }
+                if (!validation.hasBlockingIssues) {
+                    saveRoster(
+                        tournamentId = tournamentId,
+                        slotNumber = slotNumber,
+                        players = players,
+                    )
+                }
             }.onSuccess {
                 _uiState.update { it.copy(isSaving = false) }
             }.onFailure {

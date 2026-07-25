@@ -111,6 +111,36 @@ class RosterEntryScreenTest {
             .assertTextContains(context.getString(R.string.roster_player_count, 6))
     }
 
+    @Test
+    fun validationIssuesAreDisplayedWithLocalizedText() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RosterEntryScreen(
+                    uiState = stateWithPlayers(2).copy(
+                        validationIssues = listOf(
+                            RosterValidationIssueUiState.DuplicatePlayerName(
+                                slotNumber = 2,
+                                playerIndex = 1,
+                                firstPlayerIndex = 0,
+                                normalizedName = "Alpha",
+                            ),
+                        ),
+                    ),
+                    onPlayerNameChanged = { _, _ -> },
+                    onAddPlayer = {},
+                    onRemovePlayer = {},
+                    onSave = {},
+                    onBackToTeamEntry = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(ROSTER_VALIDATION_ISSUES_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.validation_duplicate_player_name, 2, 2, 1, "Alpha"),
+        ).assertIsDisplayed()
+    }
+
     private fun stateWithPlayers(count: Int) = RosterEntryUiState(
         isLoading = false,
         isAvailable = true,
