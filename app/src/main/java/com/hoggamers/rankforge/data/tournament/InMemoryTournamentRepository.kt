@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -55,6 +56,8 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             require(slotNumber in TeamSlot.SLOT_NUMBERS) { "Team slot number must be between 1 and 12." }
         }
         if (tournaments.value.none { it.id == tournamentId }) return
+
+        invalidateConfirmation(tournamentId)
 
         slotsByTournamentId.update { current ->
             val currentSlots = current[tournamentId]
@@ -106,8 +109,39 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         }
         if (tournaments.value.none { it.id == tournamentId }) return
 
+        invalidateConfirmation(tournamentId)
+
         rostersByTournamentAndSlot.update { current ->
             current + (RosterKey(tournamentId, slotNumber) to players.toList())
+        }
+    }
+
+    override suspend fun confirmTournament(tournamentId: String): Boolean {
+        if (tournaments.value.none { it.id == tournamentId }) return false
+
+        var didConfirm = false
+        tournaments.update { current ->
+            current.map { tournament ->
+                if (tournament.id == tournamentId && tournament.status == TournamentStatus.DRAFT) {
+                    didConfirm = true
+                    tournament.copy(status = TournamentStatus.CONFIRMED)
+                } else {
+                    tournament
+                }
+            }
+        }
+        return didConfirm
+    }
+
+    private fun invalidateConfirmation(tournamentId: String) {
+        tournaments.update { current ->
+            current.map { tournament ->
+                if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
+                    tournament.copy(status = TournamentStatus.DRAFT)
+                } else {
+                    tournament
+                }
+            }
         }
     }
 

@@ -234,6 +234,27 @@ class InMemoryTournamentRepositoryTest {
         }
     }
 
+    @Test
+    fun confirmationIsIdempotentAndEditsInvalidateIt() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+
+        assertEquals(true, repository.confirmTournament("stable-id"))
+        assertEquals(TournamentStatus.CONFIRMED, repository.observeById("stable-id").first()?.status)
+        assertEquals(false, repository.confirmTournament("stable-id"))
+
+        repository.saveTeamNames("stable-id", mapOf(1 to "Alpha"))
+        assertEquals(TournamentStatus.DRAFT, repository.observeById("stable-id").first()?.status)
+
+        repository.confirmTournament("stable-id")
+        repository.saveRoster(
+            tournamentId = "stable-id",
+            slotNumber = 1,
+            players = listOf(RosterPlayer.create("stable-id", 1, "Player")),
+        )
+        assertEquals(TournamentStatus.DRAFT, repository.observeById("stable-id").first()?.status)
+    }
+
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Spring Cup",

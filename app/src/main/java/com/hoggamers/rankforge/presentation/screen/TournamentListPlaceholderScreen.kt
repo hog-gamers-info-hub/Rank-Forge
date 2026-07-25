@@ -133,7 +133,18 @@ private fun TournamentListItemCard(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Text(text = stringResource(R.string.tournament_date_value, tournament.date.format(listDateFormatter)))
             Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
-            Text(text = stringResource(R.string.tournament_status_value, stringResource(R.string.tournament_status_draft)))
+            Text(
+                text = stringResource(
+                    R.string.tournament_status_value,
+                    stringResource(
+                        if (tournament.status == com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED) {
+                            R.string.tournament_status_confirmed
+                        } else {
+                            R.string.tournament_status_draft
+                        },
+                    ),
+                ),
+            )
         }
     }
 }

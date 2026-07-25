@@ -106,5 +106,7 @@ class TournamentListViewModelTest {
             slotNumber: Int,
             players: List<com.hoggamers.rankforge.domain.tournament.RosterPlayer>,
         ) = Unit
+
+        override suspend fun confirmTournament(tournamentId: String): Boolean = false
     }
 }

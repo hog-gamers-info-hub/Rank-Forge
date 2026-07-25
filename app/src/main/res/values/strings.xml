@@ -34,6 +34,7 @@
     <string name="organizer_contact_number_value">Contact: %1$s</string>
     <string name="tournament_status_value">Status: %1$s</string>
     <string name="tournament_status_draft">DRAFT</string>
+    <string name="tournament_status_confirmed">Confirmed</string>
     <string name="team_slots_section_title">Team slots</string>
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>
@@ -59,6 +60,16 @@
     <string name="roster_saving_action">Saving rosterâ€¦</string>
     <string name="roster_save_error">Roster could not be saved. Try again.</string>
     <string name="back_to_team_entry_action">Back to team entry</string>
+    <string name="review_roster_action">Review roster</string>
+    <string name="roster_review_title">Roster review</string>
+    <string name="roster_review_loading">Loading roster review</string>
+    <string name="roster_review_draft_status">Status: DRAFT</string>
+    <string name="roster_review_confirmed_status">Status: Confirmed</string>
+    <string name="roster_review_player_value">Player %1$d: %2$s</string>
+    <string name="edit_team_action">Edit team Slot %1$d</string>
+    <string name="confirm_roster_action">Confirm roster</string>
+    <string name="confirming_roster_action">Confirming rosterâ€¦</string>
+    <string name="roster_confirmation_error">Roster could not be confirmed. Try again.</string>
     <string name="roster_validation_issues_title">Roster validation issues</string>
     <string name="validation_missing_team_name">Slot %1$d is missing a team name.</string>
     <string name="validation_duplicate_team_name">Slot %1$d duplicates Slot %2$d team name: %3$s.</string>

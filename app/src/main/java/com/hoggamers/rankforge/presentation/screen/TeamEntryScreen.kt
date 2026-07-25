@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -13,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -32,6 +35,8 @@ fun TeamEntryRoute(
     tournamentId: String,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit = {},
+    onReviewRoster: () -> Unit = {},
+    focusSlotNumber: Int? = null,
     viewModel: TeamEntryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -45,6 +50,8 @@ fun TeamEntryRoute(
         onSave = viewModel::saveTeamNames,
         onBackToDetails = onBackToDetails,
         onEditRoster = onEditRoster,
+        onReviewRoster = onReviewRoster,
+        focusSlotNumber = focusSlotNumber,
     )
 }
 
@@ -55,6 +62,8 @@ fun TeamEntryScreen(
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit = {},
+    onReviewRoster: () -> Unit = {},
+    focusSlotNumber: Int? = null,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -69,6 +78,8 @@ fun TeamEntryScreen(
             onSave = onSave,
             onBackToDetails = onBackToDetails,
             onEditRoster = onEditRoster,
+            onReviewRoster = onReviewRoster,
+            focusSlotNumber = focusSlotNumber,
             isSaving = uiState.isSaving,
             hasSaveError = uiState.hasSaveError,
             validationIssues = uiState.validationIssues,
@@ -83,6 +94,8 @@ private fun TeamEntryContent(
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit,
+    onReviewRoster: () -> Unit,
+    focusSlotNumber: Int?,
     isSaving: Boolean,
     hasSaveError: Boolean,
     validationIssues: List<RosterValidationIssueUiState>,
@@ -94,6 +107,12 @@ private fun TeamEntryContent(
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
+        val focusRequester = remember { BringIntoViewRequester() }
+        LaunchedEffect(focusSlotNumber) {
+            if (focusSlotNumber != null) {
+                focusRequester.bringIntoView()
+            }
+        }
         Text(
             text = stringResource(R.string.team_entry_title),
             style = MaterialTheme.typography.headlineMedium,
@@ -104,6 +123,7 @@ private fun TeamEntryContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         }
         slots.forEach { slot ->
+            val isFocusedSlot = slot.slotNumber == focusSlotNumber
             OutlinedTextField(
                 value = slot.teamName,
                 onValueChange = { teamName -> onTeamNameChanged(slot.slotNumber, teamName) },
@@ -112,6 +132,13 @@ private fun TeamEntryContent(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(
+                        if (isFocusedSlot) {
+                            Modifier.bringIntoViewRequester(focusRequester)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
                 singleLine = true,
             )
@@ -125,6 +152,13 @@ private fun TeamEntryContent(
                 Text(text = stringResource(R.string.edit_roster_action, slot.slotNumber))
             }
         }
+        Button(
+            onClick = onReviewRoster,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(text = stringResource(R.string.review_roster_action))
+        }
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Button(
             onClick = onSave,
             enabled = !isSaving,

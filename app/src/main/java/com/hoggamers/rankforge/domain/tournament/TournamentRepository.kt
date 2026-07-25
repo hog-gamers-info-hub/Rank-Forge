@@ -26,4 +26,6 @@ interface TournamentRepository {
         slotNumber: Int,
         players: List<RosterPlayer>,
     )
+
+    suspend fun confirmTournament(tournamentId: String): Boolean
 }
