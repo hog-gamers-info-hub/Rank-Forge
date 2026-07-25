@@ -28,4 +28,10 @@ interface TournamentRepository {
     )
 
     suspend fun confirmTournament(tournamentId: String): Boolean
+
+    fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
+
+    suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
+        error("Match creation is not supported by this repository.")
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 class TournamentDetailsViewModel @Inject constructor(
     private val getTournamentById: GetTournamentByIdUseCase,
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
+    private val observeMatches: ObserveMatchesUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
@@ -33,13 +35,14 @@ class TournamentDetailsViewModel @Inject constructor(
             combine(
                 getTournamentById(tournamentId),
                 observeTournamentSlots(tournamentId),
-            ) { tournament, slots ->
+                observeMatches(tournamentId),
+            ) { tournament, slots, matches ->
                 if (tournament == null) {
                     TournamentDetailsUiState(isLoading = false)
                 } else {
                     TournamentDetailsUiState(
                         isLoading = false,
-                        tournament = tournament.toDetailsItemUiState(slots),
+                        tournament = tournament.toDetailsItemUiState(slots, matches),
                     )
                 }
             }.collect { uiState ->

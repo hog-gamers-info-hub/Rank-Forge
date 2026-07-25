@@ -15,15 +15,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
@@ -43,7 +46,10 @@ import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
 @RunWith(AndroidJUnit4::class)
@@ -229,6 +235,36 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_not_found_title)).assertIsDisplayed()
     }
 
+    @Test
+    fun confirmedTournamentDetailsNavigatesToMatchCreation() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.match_number_label)).assertIsDisplayed()
+    }
+
     private fun pressBackOnMainThread() {
         composeTestRule.runOnIdle {
             composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -239,12 +275,14 @@ class RankForgeNavigationTest {
     private fun createNavigationViewModels(): NavigationViewModels {
         val repository = InMemoryTournamentRepository()
         return NavigationViewModels(
+            repository = repository,
             creationViewModel = createCreationViewModel(repository),
             listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository)),
             detailsViewModel = { tournamentId ->
                 TournamentDetailsViewModel(
                     getTournamentById = GetTournamentByIdUseCase(repository),
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeMatches = ObserveMatchesUseCase(repository),
                 ).also {
                     it.load(tournamentId)
                 }
@@ -283,8 +321,22 @@ class RankForgeNavigationTest {
                     it.load(tournamentId)
                 }
             },
+            matchCreationViewModel = { tournamentId ->
+                MatchCreationViewModel(CreateMatchUseCase(repository)).also {
+                    it.load(tournamentId)
+                }
+            },
         )
     }
+
+    private fun confirmedTournament() = com.hoggamers.rankforge.domain.tournament.Tournament(
+        id = "confirmed-id",
+        name = "Confirmed Cup",
+        date = LocalDate.of(2026, 7, 24),
+        organizerName = "Alex",
+        organizerContactNumber = "123",
+        status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED,
+    )
 
     private fun createCreationViewModel(repository: InMemoryTournamentRepository): TournamentCreationViewModel {
         val today = LocalDate.of(2026, 7, 24)
@@ -305,11 +357,13 @@ class RankForgeNavigationTest {
     }
 
     private data class NavigationViewModels(
+        val repository: InMemoryTournamentRepository,
         val creationViewModel: TournamentCreationViewModel,
         val listViewModel: TournamentListViewModel,
         val detailsViewModel: (String) -> TournamentDetailsViewModel,
         val teamEntryViewModel: (String) -> TeamEntryViewModel,
         val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
         val rosterReviewViewModel: (String) -> RosterReviewViewModel,
+        val matchCreationViewModel: (String) -> MatchCreationViewModel,
     )
 }
