@@ -17,6 +17,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -41,7 +43,7 @@ class TournamentDetailsViewModelTest {
     fun foundTournamentRendersDetailsState() = runTest {
         val tournament = tournament(id = "stable-id")
         repository.create(tournament)
-        val viewModel = TournamentDetailsViewModel(GetTournamentByIdUseCase(repository))
+        val viewModel = detailsViewModel()
 
         viewModel.load("stable-id")
         advanceUntilIdle()
@@ -51,14 +53,30 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun foundTournamentExposesTwelveSlots() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals((1..12).toList(), viewModel.uiState.value.tournament?.slots?.map { it.slotNumber })
+    }
+
+    @Test
     fun unknownTournamentRendersNotFoundState() = runTest {
-        val viewModel = TournamentDetailsViewModel(GetTournamentByIdUseCase(repository))
+        val viewModel = detailsViewModel()
 
         viewModel.load("missing")
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isNotFound)
     }
+
+    private fun detailsViewModel() = TournamentDetailsViewModel(
+        getTournamentById = GetTournamentByIdUseCase(repository),
+        observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+    )
 
     private fun tournament(id: String) = Tournament(
         id = id,
@@ -80,5 +98,14 @@ class TournamentDetailsViewModelTest {
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            state.map { tournaments ->
+                if (tournaments.any { it.id == tournamentId }) {
+                    TeamSlot.fixedSlotsForTournament(tournamentId)
+                } else {
+                    emptyList()
+                }
+            }
     }
 }

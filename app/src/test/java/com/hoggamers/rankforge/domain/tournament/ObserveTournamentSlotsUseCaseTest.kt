@@ -9,25 +9,16 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class GetTournamentByIdUseCaseTest {
+class ObserveTournamentSlotsUseCaseTest {
     @Test
-    fun getByIdReturnsMatchingTournament() = runTest {
+    fun returnsSlotsByTournamentIdInFixedOrder() = runTest {
         val repository = TestTournamentRepository()
-        val tournament = tournament(id = "stable-id")
-        repository.create(tournament)
+        repository.create(tournament(id = "stable-id"))
 
-        val result = GetTournamentByIdUseCase(repository)("stable-id").first()
+        val result = ObserveTournamentSlotsUseCase(repository)("stable-id").first()
 
-        assertEquals(tournament, result)
-    }
-
-    @Test
-    fun getByIdReturnsNullForUnknownTournament() = runTest {
-        val repository = TestTournamentRepository()
-
-        val result = GetTournamentByIdUseCase(repository)("missing").first()
-
-        assertEquals(null, result)
+        assertEquals((1..12).toList(), result.map { it.slotNumber })
+        assertEquals(List(12) { "stable-id" }, result.map { it.tournamentId })
     }
 
     private fun tournament(id: String) = Tournament(

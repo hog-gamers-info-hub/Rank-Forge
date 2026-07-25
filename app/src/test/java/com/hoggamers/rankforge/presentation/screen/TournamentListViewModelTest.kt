@@ -80,5 +80,14 @@ class TournamentListViewModelTest {
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<com.hoggamers.rankforge.domain.tournament.TeamSlot>> =
+            state.map { tournaments ->
+                if (tournaments.any { it.id == tournamentId }) {
+                    com.hoggamers.rankforge.domain.tournament.TeamSlot.fixedSlotsForTournament(tournamentId)
+                } else {
+                    emptyList()
+                }
+            }
     }
 }

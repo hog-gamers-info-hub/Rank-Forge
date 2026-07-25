@@ -34,4 +34,7 @@
     <string name="organizer_contact_number_value">Contact: %1$s</string>
     <string name="tournament_status_value">Status: %1$s</string>
     <string name="tournament_status_draft">DRAFT</string>
+    <string name="team_slots_section_title">Team slots</string>
+    <string name="team_slot_label">Slot %1$d</string>
+    <string name="empty_team_slot_subtitle">Empty team slot</string>
 </resources>

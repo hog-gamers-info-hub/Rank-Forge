@@ -92,6 +92,14 @@ class CreateTournamentUseCaseTest {
         assertEquals(1, repository.records.size)
     }
 
+    @Test
+    fun validInputCreatesExactlyTwelveSlots() = runTest {
+        val result = useCase(validInput())
+        val created = result.createdTournament()
+
+        assertEquals((1..12).toList(), repository.slotsByTournamentId.getValue(created.id).map { it.slotNumber })
+    }
+
     private fun validInput() = CreateTournamentInput(
         name = "Summer Cup",
         date = today,
@@ -113,10 +121,12 @@ class CreateTournamentUseCaseTest {
 
     private class RecordingTournamentRepository : TournamentRepository {
         val records = mutableListOf<Tournament>()
+        val slotsByTournamentId = mutableMapOf<String, List<TeamSlot>>()
         private val state = MutableStateFlow<List<Tournament>>(emptyList())
 
         override suspend fun create(tournament: Tournament) {
             records += tournament
+            slotsByTournamentId[tournament.id] = TeamSlot.fixedSlotsForTournament(tournament.id)
             state.value = records.toList()
         }
 
@@ -124,5 +134,14 @@ class CreateTournamentUseCaseTest {
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            state.map { tournaments ->
+                if (tournaments.any { it.id == tournamentId }) {
+                    slotsByTournamentId[tournamentId] ?: TeamSlot.fixedSlotsForTournament(tournamentId)
+                } else {
+                    emptyList()
+                }
+            }
     }
 }

@@ -1,9 +1,12 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +29,8 @@ private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Lo
 
 const val TOURNAMENT_DETAILS_SCREEN_TEST_TAG = "tournament_details_screen"
 const val TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG = "tournament_details_not_found"
+const val TOURNAMENT_SLOT_LIST_TEST_TAG = "tournament_slot_list"
+const val TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX = "tournament_slot_item_"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -69,7 +74,9 @@ private fun TournamentDetailsContent(
     onBackToList: () -> Unit,
 ) {
     RankForgeScreenContainer(
-        modifier = Modifier.testTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG),
+        modifier = Modifier
+            .testTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
@@ -88,11 +95,40 @@ private fun TournamentDetailsContent(
         Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
         Text(text = stringResource(R.string.tournament_status_value, stringResource(R.string.tournament_status_draft)))
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        TeamSlotList(slots = tournament.slots)
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = onBackToList,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(R.string.back_to_tournament_list_action))
+        }
+    }
+}
+
+@Composable
+private fun TeamSlotList(slots: List<TeamSlotUiState>) {
+    Column(
+        modifier = Modifier.testTag(TOURNAMENT_SLOT_LIST_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.team_slots_section_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        slots.forEach { slot ->
+            Column(
+                modifier = Modifier.testTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slot.slotNumber),
+            ) {
+                Text(
+                    text = stringResource(R.string.team_slot_label, slot.slotNumber),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.empty_team_slot_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
