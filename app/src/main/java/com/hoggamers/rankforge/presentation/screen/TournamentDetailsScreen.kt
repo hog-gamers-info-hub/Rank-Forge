@@ -24,6 +24,8 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
 private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 
@@ -37,6 +39,7 @@ fun TournamentDetailsRoute(
     tournamentId: String,
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
+    onCreateMatch: (String) -> Unit = {},
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -48,6 +51,7 @@ fun TournamentDetailsRoute(
         uiState = uiState,
         onBackToList = onBackToList,
         onEnterTeams = onEnterTeams,
+        onCreateMatch = onCreateMatch,
     )
 }
 
@@ -56,6 +60,7 @@ fun TournamentDetailsScreen(
     uiState: TournamentDetailsUiState,
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
+    onCreateMatch: (String) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -68,6 +73,7 @@ fun TournamentDetailsScreen(
             tournament = uiState.tournament,
             onBackToList = onBackToList,
             onEnterTeams = onEnterTeams,
+            onCreateMatch = onCreateMatch,
         )
     }
 }
@@ -77,6 +83,7 @@ private fun TournamentDetailsContent(
     tournament: TournamentDetailsItemUiState,
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
+    onCreateMatch: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -120,11 +127,67 @@ private fun TournamentDetailsContent(
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         TeamSlotList(slots = tournament.slots)
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        MatchList(
+            tournament = tournament,
+            onCreateMatch = onCreateMatch,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = onBackToList,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(R.string.back_to_tournament_list_action))
+        }
+    }
+}
+
+@Composable
+private fun MatchList(
+    tournament: TournamentDetailsItemUiState,
+    onCreateMatch: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.matches_section_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (tournament.status != TournamentStatus.CONFIRMED) {
+            Text(text = stringResource(R.string.matches_require_confirmed_roster_message))
+        } else if (tournament.matches.size >= com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
+            Text(text = stringResource(R.string.match_limit_reached_message))
+        } else {
+            Button(
+                onClick = { onCreateMatch(tournament.id) },
+                modifier = Modifier.fillMaxWidth().testTag(CREATE_MATCH_ACTION_TEST_TAG),
+            ) {
+                Text(text = stringResource(R.string.create_match_action))
+            }
+        }
+        if (tournament.matches.isEmpty()) {
+            Text(text = stringResource(R.string.no_matches_message))
+        } else {
+            tournament.matches.forEach { match ->
+                Column(
+                    modifier = Modifier.testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
+                ) {
+                    Text(text = stringResource(R.string.match_number_value, match.matchNumber))
+                    Text(text = stringResource(R.string.match_date_value, match.date.format(detailsDateFormatter)))
+                    Text(text = stringResource(R.string.match_map_value, match.mapName))
+                    Text(
+                        text = stringResource(
+                            R.string.match_status_value,
+                            if (match.status == MatchStatus.DRAFT) {
+                                stringResource(R.string.match_status_draft)
+                            } else {
+                                stringResource(R.string.match_status_draft)
+                            },
+                        ),
+                    )
+                }
+            }
         }
     }
 }
@@ -180,3 +243,7 @@ private fun TournamentDetailsNotFoundState(
         }
     }
 }
+
+const val TOURNAMENT_MATCH_LIST_TEST_TAG = "tournament_match_list"
+const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
+const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"

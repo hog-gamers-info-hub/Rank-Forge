@@ -75,4 +75,24 @@
     <string name="validation_duplicate_team_name">Slot %1$d duplicates Slot %2$d team name: %3$s.</string>
     <string name="validation_invalid_player_count">Slot %1$d has %2$d players; expected 4â€“6.</string>
     <string name="validation_duplicate_player_name">Slot %1$d player %2$d duplicates player %3$d: %4$s.</string>
+    <string name="match_creation_title">Create match</string>
+    <string name="match_number_label">Match number</string>
+    <string name="match_date_label">Match date</string>
+    <string name="match_map_label">Map</string>
+    <string name="create_match_action">Create match</string>
+    <string name="match_creation_error">Match could not be created. Try again.</string>
+    <string name="match_number_invalid_error">Enter a positive whole number.</string>
+    <string name="duplicate_match_number_error">That match number already exists in this tournament.</string>
+    <string name="match_tournament_not_confirmed_error">Confirm the tournament roster before creating a match.</string>
+    <string name="match_limit_reached_error">This tournament already has the maximum of 10 matches.</string>
+    <string name="match_tournament_not_found_error">This tournament is no longer available.</string>
+    <string name="matches_section_title">Matches</string>
+    <string name="matches_require_confirmed_roster_message">Confirm the tournament roster before creating matches.</string>
+    <string name="match_limit_reached_message">Maximum of 10 matches reached.</string>
+    <string name="no_matches_message">No matches have been created yet.</string>
+    <string name="match_number_value">Match %1$d</string>
+    <string name="match_date_value">Date: %1$s</string>
+    <string name="match_map_value">Map: %1$s</string>
+    <string name="match_status_value">Status: %1$s</string>
+    <string name="match_status_draft">DRAFT</string>
 </resources>

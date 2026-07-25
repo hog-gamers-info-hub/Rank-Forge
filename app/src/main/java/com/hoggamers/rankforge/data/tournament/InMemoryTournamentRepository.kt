@@ -7,6 +7,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
@@ -18,6 +22,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val tournaments = MutableStateFlow<List<Tournament>>(emptyList())
     private val slotsByTournamentId = MutableStateFlow<Map<String, List<TeamSlot>>>(emptyMap())
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
+    private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
 
     override suspend fun create(tournament: Tournament) {
         tournaments.update { current ->
@@ -131,6 +136,39 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             }
         }
         return didConfirm
+    }
+
+    override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
+        combine(tournaments, matchesByTournamentId) { currentTournaments, currentMatches ->
+            if (currentTournaments.none { it.id == tournamentId }) {
+                emptyList()
+            } else {
+                currentMatches[tournamentId].orEmpty()
+            }
+        }
+
+    override suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult {
+        val tournament = tournaments.value.firstOrNull { it.id == match.tournamentId }
+            ?: return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_FOUND)
+        if (tournament.status != TournamentStatus.CONFIRMED) {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_CONFIRMED)
+        }
+
+        val currentMatches = matchesByTournamentId.value[match.tournamentId].orEmpty()
+        if (currentMatches.any { it.id == match.id }) {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.DUPLICATE_ID)
+        }
+        if (currentMatches.any { it.matchNumber == match.matchNumber }) {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.DUPLICATE_MATCH_NUMBER)
+        }
+        if (currentMatches.size >= MAX_MATCHES_PER_TOURNAMENT) {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)
+        }
+
+        matchesByTournamentId.update { current ->
+            current + (match.tournamentId to (current[match.tournamentId].orEmpty() + match))
+        }
+        return CreateMatchRepositoryResult.Created
     }
 
     private fun invalidateConfirmation(tournamentId: String) {

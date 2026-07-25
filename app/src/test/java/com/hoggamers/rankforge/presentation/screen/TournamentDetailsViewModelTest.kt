@@ -18,6 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
@@ -88,6 +89,7 @@ class TournamentDetailsViewModelTest {
     private fun detailsViewModel() = TournamentDetailsViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+        observeMatches = ObserveMatchesUseCase(repository),
     )
 
     private fun tournament(id: String) = Tournament(
