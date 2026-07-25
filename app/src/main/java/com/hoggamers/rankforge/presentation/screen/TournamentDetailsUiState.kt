@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import java.time.LocalDate
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -37,6 +38,12 @@ data class MatchUiState(
     val date: LocalDate,
     val mapName: String,
     val status: com.hoggamers.rankforge.domain.tournament.MatchStatus,
+    val placements: List<MatchPlacementDisplayUiState> = emptyList(),
+)
+
+data class MatchPlacementDisplayUiState(
+    val teamSlotNumber: Int,
+    val position: Int,
 )
 
 fun Tournament.toDetailsItemUiState(
@@ -62,9 +69,17 @@ fun Tournament.toDetailsItemUiState(
             date = match.date,
             mapName = match.mapName,
             status = match.status,
+            placements = match.placements.toUiState(),
         )
     },
 )
+
+private fun List<MatchPlacement>.toUiState(): List<MatchPlacementDisplayUiState> = map { placement ->
+    MatchPlacementDisplayUiState(
+        teamSlotNumber = placement.teamSlotNumber,
+        position = placement.position,
+    )
+}
 
 fun TournamentDetailsItemUiState.canCreateMatch(): Boolean =
     status == TournamentStatus.CONFIRMED && matches.size < MAX_MATCHES_PER_TOURNAMENT

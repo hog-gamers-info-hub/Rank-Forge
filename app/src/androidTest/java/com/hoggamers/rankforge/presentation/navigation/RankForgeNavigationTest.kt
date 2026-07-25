@@ -23,6 +23,8 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
+import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -47,10 +49,15 @@ import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
+import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -265,6 +272,50 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithText(context.getString(R.string.match_number_label)).assertIsDisplayed()
     }
 
+    @Test
+    fun draftMatchDetailsNavigatesToPlacementEntry() {
+        val viewModels = createNavigationViewModels()
+        val matchId = runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            (
+                CreateMatchUseCase(viewModels.repository)(
+                    CreateMatchInput(
+                        tournamentId = "confirmed-id",
+                        matchNumber = "1",
+                        date = LocalDate.of(2026, 7, 24),
+                        mapName = "Bermuda",
+                    ),
+                ) as CreateMatchResult.Created
+            ).match.id
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        assert(matchId.isNotBlank())
+    }
+
     private fun pressBackOnMainThread() {
         composeTestRule.runOnIdle {
             composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -326,6 +377,15 @@ class RankForgeNavigationTest {
                     it.load(tournamentId)
                 }
             },
+            matchPlacementViewModel = { tournamentId, matchId ->
+                MatchPlacementViewModel(
+                    observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
+                ).also {
+                    it.load(tournamentId, matchId)
+                }
+            },
         )
     }
 
@@ -365,5 +425,6 @@ class RankForgeNavigationTest {
         val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
         val rosterReviewViewModel: (String) -> RosterReviewViewModel,
         val matchCreationViewModel: (String) -> MatchCreationViewModel,
+        val matchPlacementViewModel: (String, String) -> MatchPlacementViewModel,
     )
 }

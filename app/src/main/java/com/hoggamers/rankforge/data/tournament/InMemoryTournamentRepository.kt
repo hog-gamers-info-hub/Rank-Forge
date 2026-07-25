@@ -10,12 +10,16 @@ import kotlinx.coroutines.flow.update
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
+import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -147,6 +151,11 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             }
         }
 
+    override fun observeMatchById(matchId: String): Flow<Match?> =
+        matchesByTournamentId.map { currentMatches ->
+            currentMatches.values.asSequence().flatten().firstOrNull { it.id == matchId }
+        }
+
     override suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult {
         val tournament = tournaments.value.firstOrNull { it.id == match.tournamentId }
             ?: return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_FOUND)
@@ -171,6 +180,40 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         return CreateMatchRepositoryResult.Created
     }
 
+    override suspend fun saveDraftMatchPlacements(
+        matchId: String,
+        placements: List<MatchPlacement>,
+    ): SaveMatchPlacementsRepositoryResult {
+        val match = matchesByTournamentId.value.values
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.DRAFT) {
+            return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.MATCH_NOT_DRAFT)
+        }
+        if (placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS }) {
+            return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.INVALID_TEAM_SLOT)
+        }
+        if (placements.any { it.position !in TeamSlot.SLOT_NUMBERS }) {
+            return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.INVALID_POSITION)
+        }
+        if (placements.map { it.teamSlotNumber }.distinct().size != placements.size) {
+            return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.DUPLICATE_TEAM_SLOT)
+        }
+        if (placements.map { it.position }.distinct().size != placements.size) {
+            return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.DUPLICATE_POSITION)
+        }
+
+        matchesByTournamentId.update { current ->
+            current.mapValues { (_, matches) ->
+                matches.map { existing ->
+                    if (existing.id == matchId) existing.copy(placements = placements.toList()) else existing
+                }
+            }
+        }
+        return SaveMatchPlacementsRepositoryResult.Saved
+    }
+
     private fun invalidateConfirmation(tournamentId: String) {
         tournaments.update { current ->
             current.map { tournament ->
@@ -187,4 +230,5 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         val tournamentId: String,
         val slotNumber: Int,
     )
+
 }

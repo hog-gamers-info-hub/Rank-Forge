@@ -23,6 +23,8 @@ import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCreationRoute
 import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchPlacementRoute
+import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
 
 @Composable
 fun RankForgeNavHost(
@@ -34,6 +36,7 @@ fun RankForgeNavHost(
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
     rosterReviewViewModelFactory: ((String) -> RosterReviewViewModel)? = null,
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
+    matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
 ) {
     NavHost(
         navController = navController,
@@ -82,6 +85,9 @@ fun RankForgeNavHost(
             val onCreateMatch: (String) -> Unit = { tournamentId ->
                 navController.navigate(MatchCreationDestination(tournamentId))
             }
+            val onEnterMatchPlacements: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchPlacementDestination(tournamentId, matchId))
+            }
             val detailsViewModel = detailsViewModelFactory?.invoke(destination.tournamentId)
             if (detailsViewModel == null) {
                 TournamentDetailsRoute(
@@ -89,6 +95,7 @@ fun RankForgeNavHost(
                     onBackToList = onBackToList,
                     onEnterTeams = onEnterTeams,
                     onCreateMatch = onCreateMatch,
+                    onEnterMatchPlacements = onEnterMatchPlacements,
                 )
             } else {
                 TournamentDetailsRoute(
@@ -96,6 +103,7 @@ fun RankForgeNavHost(
                     onBackToList = onBackToList,
                     onEnterTeams = onEnterTeams,
                     onCreateMatch = onCreateMatch,
+                    onEnterMatchPlacements = onEnterMatchPlacements,
                     viewModel = detailsViewModel,
                 )
             }
@@ -207,6 +215,28 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
                     viewModel = matchCreationViewModel,
+                )
+            }
+        }
+        composable<MatchPlacementDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<MatchPlacementDestination>()
+            val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val placementViewModel = matchPlacementViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+            )
+            if (placementViewModel == null) {
+                MatchPlacementRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    onBackToDetails = onBackToDetails,
+                )
+            } else {
+                MatchPlacementRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    onBackToDetails = onBackToDetails,
+                    viewModel = placementViewModel,
                 )
             }
         }

@@ -32,6 +32,15 @@ interface TournamentRepository {
     fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
         kotlinx.coroutines.flow.flowOf(emptyList())
 
+    fun observeMatchById(matchId: String): Flow<Match?> =
+        kotlinx.coroutines.flow.flowOf(null)
+
     suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
         error("Match creation is not supported by this repository.")
+
+    suspend fun saveDraftMatchPlacements(
+        matchId: String,
+        placements: List<MatchPlacement>,
+    ): SaveMatchPlacementsRepositoryResult =
+        error("Match placement updates are not supported by this repository.")
 }
