@@ -7,12 +7,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.hoggamers.rankforge.presentation.screen.TournamentCreationPlaceholderScreen
+import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentListPlaceholderScreen
+import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 
 @Composable
 fun RankForgeNavHost(
     navController: NavHostController = rememberNavController(),
+    creationViewModel: TournamentCreationViewModel? = null,
 ) {
     NavHost(
         navController = navController,
@@ -27,11 +29,15 @@ fun RankForgeNavHost(
             )
         }
         composable<TournamentCreationDestination> {
-            TournamentCreationPlaceholderScreen(
-                onBack = {
-                    navController.popBackStack()
-                },
-            )
+            val onBack: () -> Unit = { navController.popBackStack() }
+            if (creationViewModel == null) {
+                TournamentCreationRoute(onBack = onBack)
+            } else {
+                TournamentCreationRoute(
+                    onBack = onBack,
+                    viewModel = creationViewModel,
+                )
+            }
         }
     }
 }

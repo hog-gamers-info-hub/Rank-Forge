@@ -4,8 +4,22 @@
     <string name="foundation_title">Rank-Forge</string>
     <string name="foundation_description">Android application foundation</string>
     <string name="foundation_version">Version 0.1.0</string>
-    <string name="open_tournament_creation">Open tournament creation placeholder</string>
-    <string name="tournament_creation_placeholder_title">Tournament creation placeholder</string>
-    <string name="tournament_creation_placeholder_description">Tournament creation will be implemented in a later version.</string>
+    <string name="open_tournament_creation">Create tournament</string>
+    <string name="tournament_creation_title">Create tournament</string>
+    <string name="tournament_name_label">Tournament Name</string>
+    <string name="tournament_date_label">Tournament Date</string>
+    <string name="organizer_name_label">Organizer Name</string>
+    <string name="organizer_contact_number_label">Organizer Contact Number</string>
+    <string name="select_date_action">Select date</string>
+    <string name="create_tournament_action">Create tournament</string>
+    <string name="tournament_creation_submitting">Creating tournament…</string>
+    <string name="required_field_error">This field is required.</string>
+    <string name="past_date_error">Choose today or a future date.</string>
+    <string name="unsupported_status_error">This tournament status is not supported.</string>
+    <string name="tournament_creation_error">Tournament could not be created. Try again.</string>
+    <string name="discard_tournament_changes_title">Discard changes?</string>
+    <string name="discard_tournament_changes_message">Your tournament details have not been created.</string>
+    <string name="keep_editing_action">Keep Editing</string>
+    <string name="discard_changes_action">Discard Changes</string>
     <string name="back_action">Back</string>
 </resources>
