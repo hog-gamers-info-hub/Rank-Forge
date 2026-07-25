@@ -98,7 +98,18 @@ private fun TournamentDetailsContent(
         Text(text = stringResource(R.string.tournament_date_value, tournament.date.format(detailsDateFormatter)))
         Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
         Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
-        Text(text = stringResource(R.string.tournament_status_value, stringResource(R.string.tournament_status_draft)))
+        Text(
+            text = stringResource(
+                R.string.tournament_status_value,
+                stringResource(
+                    if (tournament.status == com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED) {
+                        R.string.tournament_status_confirmed
+                    } else {
+                        R.string.tournament_status_draft
+                    },
+                ),
+            ),
+        )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = { onEnterTeams(tournament.id) },

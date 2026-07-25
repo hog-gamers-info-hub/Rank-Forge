@@ -34,4 +34,27 @@ class RankForgeDestinationSerializationTest {
 
         assertEquals(destination, decoded)
     }
+
+    @Test
+    fun rosterReviewDestinationSurvivesSerializationRoundTrip() {
+        val destination = RosterReviewDestination(tournamentId = "stable-id")
+
+        val encoded = json.encodeToString(destination)
+        val decoded = json.decodeFromString<RosterReviewDestination>(encoded)
+
+        assertEquals(destination, decoded)
+    }
+
+    @Test
+    fun focusedTeamEntryDestinationSurvivesSerializationRoundTrip() {
+        val destination = TeamEntryDestination(
+            tournamentId = "stable-id",
+            focusSlotNumber = 7,
+        )
+
+        val encoded = json.encodeToString(destination)
+        val decoded = json.decodeFromString<TeamEntryDestination>(encoded)
+
+        assertEquals(destination, decoded)
+    }
 }

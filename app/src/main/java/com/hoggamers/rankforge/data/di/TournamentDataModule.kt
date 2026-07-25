@@ -13,6 +13,7 @@ import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
+import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
@@ -89,4 +90,11 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         validator: RosterValidator,
     ): ValidateTournamentRosterUseCase = ValidateTournamentRosterUseCase(repository, validator)
+
+    @Provides
+    @Singleton
+    fun provideConfirmTournamentRosterUseCase(
+        repository: TournamentRepository,
+        validateTournamentRoster: ValidateTournamentRosterUseCase,
+    ): ConfirmTournamentRosterUseCase = ConfirmTournamentRosterUseCase(repository, validateTournamentRoster)
 }

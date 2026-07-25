@@ -16,10 +16,16 @@ data class TournamentDetailsDestination(
 @Serializable
 data class TeamEntryDestination(
     val tournamentId: String,
+    val focusSlotNumber: Int? = null,
 )
 
 @Serializable
 data class RosterEntryDestination(
     val tournamentId: String,
     val slotNumber: Int,
+)
+
+@Serializable
+data class RosterReviewDestination(
+    val tournamentId: String,
 )

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -20,6 +21,7 @@ import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
@@ -33,6 +35,8 @@ import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
@@ -61,6 +65,7 @@ class RankForgeNavigationTest {
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                 )
             }
         }
@@ -90,6 +95,7 @@ class RankForgeNavigationTest {
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                 )
             }
         }
@@ -174,6 +180,7 @@ class RankForgeNavigationTest {
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                 )
             }
         }
@@ -189,6 +196,7 @@ class RankForgeNavigationTest {
         composeTestRule
             .onNodeWithTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + 1)
             .performClick()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(ROSTER_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
 
         pressBackOnMainThread()
@@ -260,6 +268,21 @@ class RankForgeNavigationTest {
                     it.load(tournamentId, slotNumber)
                 }
             },
+            rosterReviewViewModel = { tournamentId ->
+                val validator = RosterValidator()
+                RosterReviewViewModel(
+                    getTournamentById = GetTournamentByIdUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRosterPlayers = ObserveRosterPlayersUseCase(repository),
+                    validateTournamentRoster = ValidateTournamentRosterUseCase(repository, validator),
+                    confirmTournamentRoster = ConfirmTournamentRosterUseCase(
+                        repository = repository,
+                        validateTournamentRoster = ValidateTournamentRosterUseCase(repository, validator),
+                    ),
+                ).also {
+                    it.load(tournamentId)
+                }
+            },
         )
     }
 
@@ -287,5 +310,6 @@ class RankForgeNavigationTest {
         val detailsViewModel: (String) -> TournamentDetailsViewModel,
         val teamEntryViewModel: (String) -> TeamEntryViewModel,
         val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
+        val rosterReviewViewModel: (String) -> RosterReviewViewModel,
     )
 }

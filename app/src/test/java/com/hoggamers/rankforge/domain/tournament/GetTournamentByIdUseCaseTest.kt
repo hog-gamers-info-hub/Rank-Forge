@@ -75,5 +75,7 @@ class GetTournamentByIdUseCaseTest {
             slotNumber: Int,
             players: List<RosterPlayer>,
         ) = Unit
+
+        override suspend fun confirmTournament(tournamentId: String): Boolean = false
     }
 }

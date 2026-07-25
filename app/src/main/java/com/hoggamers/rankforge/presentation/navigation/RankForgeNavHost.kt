@@ -12,6 +12,8 @@ import com.hoggamers.rankforge.presentation.screen.TeamEntryRoute
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterReviewRoute
+import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
@@ -28,6 +30,7 @@ fun RankForgeNavHost(
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
+    rosterReviewViewModelFactory: ((String) -> RosterReviewViewModel)? = null,
 ) {
     NavHost(
         navController = navController,
@@ -100,18 +103,25 @@ fun RankForgeNavHost(
                     ),
                 )
             }
+            val onReviewRoster: () -> Unit = {
+                navController.navigate(RosterReviewDestination(destination.tournamentId))
+            }
             val teamEntryViewModel = teamEntryViewModelFactory?.invoke(destination.tournamentId)
             if (teamEntryViewModel == null) {
                 TeamEntryRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
                     onEditRoster = onEditRoster,
+                    onReviewRoster = onReviewRoster,
+                    focusSlotNumber = destination.focusSlotNumber,
                 )
             } else {
                 TeamEntryRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
                     onEditRoster = onEditRoster,
+                    onReviewRoster = onReviewRoster,
+                    focusSlotNumber = destination.focusSlotNumber,
                     viewModel = teamEntryViewModel,
                 )
             }
@@ -135,6 +145,43 @@ fun RankForgeNavHost(
                     slotNumber = destination.slotNumber,
                     onBackToTeamEntry = onBackToTeamEntry,
                     viewModel = rosterEntryViewModel,
+                )
+            }
+        }
+        composable<RosterReviewDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<RosterReviewDestination>()
+            val onEditTeam: (Int) -> Unit = { slotNumber ->
+                navController.navigate(
+                    TeamEntryDestination(
+                        tournamentId = destination.tournamentId,
+                        focusSlotNumber = slotNumber,
+                    ),
+                )
+            }
+            val onEditRoster: (Int) -> Unit = { slotNumber ->
+                navController.navigate(
+                    RosterEntryDestination(
+                        tournamentId = destination.tournamentId,
+                        slotNumber = slotNumber,
+                    ),
+                )
+            }
+            val onBackToTeamEntry: () -> Unit = { navController.popBackStack() }
+            val reviewViewModel = rosterReviewViewModelFactory?.invoke(destination.tournamentId)
+            if (reviewViewModel == null) {
+                RosterReviewRoute(
+                    tournamentId = destination.tournamentId,
+                    onEditTeam = onEditTeam,
+                    onEditRoster = onEditRoster,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                )
+            } else {
+                RosterReviewRoute(
+                    tournamentId = destination.tournamentId,
+                    onEditTeam = onEditTeam,
+                    onEditRoster = onEditRoster,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                    viewModel = reviewViewModel,
                 )
             }
         }
