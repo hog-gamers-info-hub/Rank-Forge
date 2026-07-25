@@ -36,6 +36,7 @@ const val TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX = "tournament_slot_item_"
 fun TournamentDetailsRoute(
     tournamentId: String,
     onBackToList: () -> Unit,
+    onEnterTeams: (String) -> Unit,
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -46,6 +47,7 @@ fun TournamentDetailsRoute(
     TournamentDetailsScreen(
         uiState = uiState,
         onBackToList = onBackToList,
+        onEnterTeams = onEnterTeams,
     )
 }
 
@@ -53,6 +55,7 @@ fun TournamentDetailsRoute(
 fun TournamentDetailsScreen(
     uiState: TournamentDetailsUiState,
     onBackToList: () -> Unit,
+    onEnterTeams: (String) -> Unit,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -64,6 +67,7 @@ fun TournamentDetailsScreen(
         uiState.tournament != null -> TournamentDetailsContent(
             tournament = uiState.tournament,
             onBackToList = onBackToList,
+            onEnterTeams = onEnterTeams,
         )
     }
 }
@@ -72,6 +76,7 @@ fun TournamentDetailsScreen(
 private fun TournamentDetailsContent(
     tournament: TournamentDetailsItemUiState,
     onBackToList: () -> Unit,
+    onEnterTeams: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -94,6 +99,13 @@ private fun TournamentDetailsContent(
         Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
         Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
         Text(text = stringResource(R.string.tournament_status_value, stringResource(R.string.tournament_status_draft)))
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        Button(
+            onClick = { onEnterTeams(tournament.id) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(text = stringResource(R.string.enter_teams_action))
+        }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         TeamSlotList(slots = tournament.slots)
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
@@ -125,7 +137,9 @@ private fun TeamSlotList(slots: List<TeamSlotUiState>) {
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = stringResource(R.string.empty_team_slot_subtitle),
+                    text = slot.teamName.ifBlank {
+                        stringResource(R.string.empty_team_slot_subtitle)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

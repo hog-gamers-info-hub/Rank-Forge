@@ -96,6 +96,7 @@ class TournamentListAndDetailsScreenTest {
                         tournament = tournamentDetailsItem(),
                     ),
                     onBackToList = {},
+                    onEnterTeams = {},
                 )
             }
         }
@@ -118,6 +119,7 @@ class TournamentListAndDetailsScreenTest {
                         tournament = tournamentDetailsItem(),
                     ),
                     onBackToList = {},
+                    onEnterTeams = {},
                 )
             }
         }
@@ -140,6 +142,30 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun detailsScreenShowsSavedTeamNameInSlotDisplayAndEntryAction() {
+        var entryTournamentId: String? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            slots = listOf(TeamSlotUiState(slotNumber = 1, teamName = "Alpha")) +
+                                (2..12).map { TeamSlotUiState(slotNumber = it, teamName = "") },
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = { entryTournamentId = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Alpha").assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
+        composeTestRule.runOnIdle { assertEquals("stable-id", entryTournamentId) }
+    }
+
+    @Test
     fun detailsNotFoundStateRendersSafeMessageAndAction() {
         var backCount = 0
         composeTestRule.setContent {
@@ -147,6 +173,7 @@ class TournamentListAndDetailsScreenTest {
                 TournamentDetailsScreen(
                     uiState = TournamentDetailsUiState(isLoading = false),
                     onBackToList = { backCount++ },
+                    onEnterTeams = {},
                 )
             }
         }
@@ -165,13 +192,15 @@ class TournamentListAndDetailsScreenTest {
         status = TournamentStatus.DRAFT,
     )
 
-    private fun tournamentDetailsItem() = TournamentDetailsItemUiState(
+    private fun tournamentDetailsItem(
+        slots: List<TeamSlotUiState> = (1..12).map { TeamSlotUiState(slotNumber = it, teamName = "") },
+    ) = TournamentDetailsItemUiState(
         id = "stable-id",
         name = "Summer Cup",
         date = LocalDate.of(2026, 7, 24),
         organizerName = "Alex",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
-        slots = (1..12).map { TeamSlotUiState(slotNumber = it) },
+        slots = slots,
     )
 }

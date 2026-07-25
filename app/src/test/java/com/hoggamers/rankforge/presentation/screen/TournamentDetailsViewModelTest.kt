@@ -64,6 +64,18 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun foundTournamentExposesSavedTeamNames() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", mapOf(1 to "Alpha"))
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals("Alpha", viewModel.uiState.value.tournament?.slots?.first { it.slotNumber == 1 }?.teamName)
+    }
+
+    @Test
     fun unknownTournamentRendersNotFoundState() = runTest {
         val viewModel = detailsViewModel()
 
@@ -102,10 +114,25 @@ class TournamentDetailsViewModelTest {
         override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
             state.map { tournaments ->
                 if (tournaments.any { it.id == tournamentId }) {
-                    TeamSlot.fixedSlotsForTournament(tournamentId)
+                    slotsByTournamentId[tournamentId] ?: TeamSlot.fixedSlotsForTournament(tournamentId)
                 } else {
                     emptyList()
                 }
             }
+
+        private val slotsByTournamentId = mutableMapOf<String, List<TeamSlot>>()
+
+        override suspend fun saveTeamNames(
+            tournamentId: String,
+            teamNamesBySlotNumber: Map<Int, String>,
+        ) {
+            slotsByTournamentId[tournamentId] = TeamSlot.fixedSlotsForTournament(tournamentId).map { slot ->
+                if (teamNamesBySlotNumber.containsKey(slot.slotNumber)) {
+                    slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber).trim())
+                } else {
+                    slot
+                }
+            }
+        }
     }
 }

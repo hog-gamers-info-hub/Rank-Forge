@@ -37,4 +37,10 @@
     <string name="team_slots_section_title">Team slots</string>
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>
+    <string name="enter_teams_action">Enter Teams</string>
+    <string name="team_entry_title">Enter teams</string>
+    <string name="team_entry_loading">Loading team slots</string>
+    <string name="team_name_slot_label">Slot %1$d team name</string>
+    <string name="save_team_names_action">Save team names</string>
+    <string name="back_to_tournament_details_action">Back to tournament details</string>
 </resources>

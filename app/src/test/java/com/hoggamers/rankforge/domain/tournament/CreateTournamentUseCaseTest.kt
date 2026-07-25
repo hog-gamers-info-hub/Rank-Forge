@@ -143,5 +143,20 @@ class CreateTournamentUseCaseTest {
                     emptyList()
                 }
             }
+
+        override suspend fun saveTeamNames(
+            tournamentId: String,
+            teamNamesBySlotNumber: Map<Int, String>,
+        ) {
+            slotsByTournamentId[tournamentId] = (
+                slotsByTournamentId[tournamentId] ?: TeamSlot.fixedSlotsForTournament(tournamentId)
+                ).map { slot ->
+                if (teamNamesBySlotNumber.containsKey(slot.slotNumber)) {
+                    slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber).trim())
+                } else {
+                    slot
+                }
+            }
+        }
     }
 }

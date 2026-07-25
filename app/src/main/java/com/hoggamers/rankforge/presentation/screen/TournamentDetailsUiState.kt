@@ -25,6 +25,7 @@ data class TournamentDetailsItemUiState(
 
 data class TeamSlotUiState(
     val slotNumber: Int,
+    val teamName: String,
 )
 
 fun Tournament.toDetailsItemUiState(slots: List<TeamSlot>): TournamentDetailsItemUiState = TournamentDetailsItemUiState(
@@ -34,5 +35,10 @@ fun Tournament.toDetailsItemUiState(slots: List<TeamSlot>): TournamentDetailsIte
     organizerName = organizerName,
     organizerContactNumber = organizerContactNumber,
     status = status,
-    slots = slots.map { TeamSlotUiState(slotNumber = it.slotNumber) },
+    slots = slots.map {
+        TeamSlotUiState(
+            slotNumber = it.slotNumber,
+            teamName = it.teamName,
+        )
+    },
 )

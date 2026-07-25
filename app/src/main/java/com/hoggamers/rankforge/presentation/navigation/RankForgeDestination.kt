@@ -12,3 +12,8 @@ data object TournamentCreationDestination
 data class TournamentDetailsDestination(
     val tournamentId: String,
 )
+
+@Serializable
+data class TeamEntryDestination(
+    val tournamentId: String,
+)

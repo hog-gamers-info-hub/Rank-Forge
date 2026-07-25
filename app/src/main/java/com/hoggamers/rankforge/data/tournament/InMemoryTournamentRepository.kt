@@ -44,4 +44,29 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
                     ?: TeamSlot.fixedSlotsForTournament(tournamentId)
             }
         }
+
+    override suspend fun saveTeamNames(
+        tournamentId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+    ) {
+        teamNamesBySlotNumber.keys.forEach { slotNumber ->
+            require(slotNumber in TeamSlot.SLOT_NUMBERS) { "Team slot number must be between 1 and 12." }
+        }
+        if (tournaments.value.none { it.id == tournamentId }) return
+
+        slotsByTournamentId.update { current ->
+            val currentSlots = current[tournamentId]
+                ?.takeIf { slots -> slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList() }
+                ?: TeamSlot.fixedSlotsForTournament(tournamentId)
+            current + (
+                tournamentId to currentSlots.map { slot ->
+                    if (teamNamesBySlotNumber.containsKey(slot.slotNumber)) {
+                        slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber).trim())
+                    } else {
+                        slot
+                    }
+                }
+                )
+        }
+    }
 }
