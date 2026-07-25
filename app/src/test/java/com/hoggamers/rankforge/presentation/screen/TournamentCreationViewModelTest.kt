@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -176,5 +177,8 @@ class TournamentCreationViewModelTest {
         }
 
         override fun observeAll(): Flow<List<Tournament>> = state
+
+        override fun observeById(tournamentId: String): Flow<Tournament?> =
+            state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
     }
 }

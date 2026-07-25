@@ -5,6 +5,8 @@
     <string name="foundation_description">Android application foundation</string>
     <string name="foundation_version">Version 0.1.0</string>
     <string name="open_tournament_creation">Create tournament</string>
+    <string name="tournament_list_title">Tournaments</string>
+    <string name="tournament_list_empty_message">No tournaments have been created yet.</string>
     <string name="tournament_creation_title">Create tournament</string>
     <string name="tournament_name_label">Tournament Name</string>
     <string name="tournament_date_label">Tournament Date</string>
@@ -22,4 +24,14 @@
     <string name="keep_editing_action">Keep Editing</string>
     <string name="discard_changes_action">Discard Changes</string>
     <string name="back_action">Back</string>
+    <string name="tournament_details_title">Tournament details</string>
+    <string name="tournament_details_loading">Loading tournament</string>
+    <string name="tournament_not_found_title">Tournament not found</string>
+    <string name="tournament_not_found_message">This tournament is no longer available in the current app session.</string>
+    <string name="back_to_tournament_list_action">Back to tournament list</string>
+    <string name="tournament_date_value">Date: %1$s</string>
+    <string name="organizer_name_value">Organizer: %1$s</string>
+    <string name="organizer_contact_number_value">Contact: %1$s</string>
+    <string name="tournament_status_value">Status: %1$s</string>
+    <string name="tournament_status_draft">DRAFT</string>
 </resources>

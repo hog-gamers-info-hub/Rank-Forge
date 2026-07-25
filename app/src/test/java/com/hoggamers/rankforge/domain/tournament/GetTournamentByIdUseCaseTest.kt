@@ -1,0 +1,54 @@
+package com.hoggamers.rankforge.domain.tournament
+
+import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class GetTournamentByIdUseCaseTest {
+    @Test
+    fun getByIdReturnsMatchingTournament() = runTest {
+        val repository = TestTournamentRepository()
+        val tournament = tournament(id = "stable-id")
+        repository.create(tournament)
+
+        val result = GetTournamentByIdUseCase(repository)("stable-id").first()
+
+        assertEquals(tournament, result)
+    }
+
+    @Test
+    fun getByIdReturnsNullForUnknownTournament() = runTest {
+        val repository = TestTournamentRepository()
+
+        val result = GetTournamentByIdUseCase(repository)("missing").first()
+
+        assertEquals(null, result)
+    }
+
+    private fun tournament(id: String) = Tournament(
+        id = id,
+        name = "Summer Cup",
+        date = LocalDate.of(2026, 7, 24),
+        organizerName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.DRAFT,
+    )
+
+    private class TestTournamentRepository : TournamentRepository {
+        private val state = MutableStateFlow<List<Tournament>>(emptyList())
+
+        override suspend fun create(tournament: Tournament) {
+            state.value = state.value + tournament
+        }
+
+        override fun observeAll(): Flow<List<Tournament>> = state
+
+        override fun observeById(tournamentId: String): Flow<Tournament?> =
+            state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+    }
+}

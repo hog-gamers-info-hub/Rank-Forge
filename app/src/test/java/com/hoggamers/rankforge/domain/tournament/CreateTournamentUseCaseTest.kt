@@ -6,6 +6,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,5 +121,8 @@ class CreateTournamentUseCaseTest {
         }
 
         override fun observeAll(): Flow<List<Tournament>> = state
+
+        override fun observeById(tournamentId: String): Flow<Tournament?> =
+            state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
     }
 }
