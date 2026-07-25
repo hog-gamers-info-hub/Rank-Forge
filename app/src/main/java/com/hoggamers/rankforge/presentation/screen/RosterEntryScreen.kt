@@ -127,6 +127,10 @@ private fun RosterEntryContent(
                 modifier = Modifier.testTag("roster_maximum_message"),
             )
         }
+        RosterValidationIssues(issues = uiState.validationIssues)
+        if (uiState.validationIssues.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        }
         if (uiState.players.isEmpty()) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             Text(text = stringResource(R.string.roster_empty_message))

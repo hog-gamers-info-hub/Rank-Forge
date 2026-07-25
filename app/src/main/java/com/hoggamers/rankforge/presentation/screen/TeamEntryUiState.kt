@@ -5,6 +5,9 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 data class TeamEntryUiState(
     val isLoading: Boolean = true,
     val slots: List<TeamEntrySlotUiState> = emptyList(),
+    val isSaving: Boolean = false,
+    val hasSaveError: Boolean = false,
+    val validationIssues: List<RosterValidationIssueUiState> = emptyList(),
 ) {
     val isNotFound: Boolean
         get() = !isLoading && slots.isEmpty()

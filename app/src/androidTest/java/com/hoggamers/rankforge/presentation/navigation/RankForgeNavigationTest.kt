@@ -26,6 +26,8 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
@@ -243,6 +245,7 @@ class RankForgeNavigationTest {
                 TeamEntryViewModel(
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+                    validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
                 ).also {
                     it.load(tournamentId)
                 }
@@ -252,6 +255,7 @@ class RankForgeNavigationTest {
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     observeRosterPlayers = ObserveRosterPlayersUseCase(repository),
                     saveRoster = SaveRosterUseCase(repository),
+                    rosterValidator = RosterValidator(),
                 ).also {
                     it.load(tournamentId, slotNumber)
                 }

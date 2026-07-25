@@ -69,6 +69,9 @@ fun TeamEntryScreen(
             onSave = onSave,
             onBackToDetails = onBackToDetails,
             onEditRoster = onEditRoster,
+            isSaving = uiState.isSaving,
+            hasSaveError = uiState.hasSaveError,
+            validationIssues = uiState.validationIssues,
         )
     }
 }
@@ -80,6 +83,9 @@ private fun TeamEntryContent(
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit,
+    isSaving: Boolean,
+    hasSaveError: Boolean,
+    validationIssues: List<RosterValidationIssueUiState>,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -93,6 +99,10 @@ private fun TeamEntryContent(
             style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        RosterValidationIssues(issues = validationIssues)
+        if (validationIssues.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        }
         slots.forEach { slot ->
             OutlinedTextField(
                 value = slot.teamName,
@@ -117,9 +127,25 @@ private fun TeamEntryContent(
         }
         Button(
             onClick = onSave,
+            enabled = !isSaving,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(text = stringResource(R.string.save_team_names_action))
+            Text(
+                text = stringResource(
+                    if (isSaving) {
+                        R.string.saving_team_names_action
+                    } else {
+                        R.string.save_team_names_action
+                    },
+                ),
+            )
+        }
+        if (hasSaveError) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Text(
+                text = stringResource(R.string.team_names_save_error),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Button(
