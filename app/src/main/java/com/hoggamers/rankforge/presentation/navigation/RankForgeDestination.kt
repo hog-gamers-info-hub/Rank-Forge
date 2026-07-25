@@ -34,3 +34,9 @@ data class RosterReviewDestination(
 data class MatchCreationDestination(
     val tournamentId: String,
 )
+
+@Serializable
+data class MatchPlacementDestination(
+    val tournamentId: String,
+    val matchId: String,
+)

@@ -8,9 +8,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
+import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -56,6 +59,33 @@ class MatchRepositoryTest {
             CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED),
             result,
         )
+    }
+
+    @Test
+    fun repositoryUpdatesDraftPlacementsAndRejectsDuplicatePositions() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament("first"))
+        repository.createDraftMatch(match("first", id = "match-first"))
+
+        assertEquals(
+            SaveMatchPlacementsRepositoryResult.Saved,
+            repository.saveDraftMatchPlacements(
+                matchId = "match-first",
+                placements = listOf(MatchPlacement(teamSlotNumber = 1, position = 1)),
+            ),
+        )
+        assertEquals(
+            listOf(MatchPlacement(1, 1)),
+            repository.observeMatchById("match-first").first()?.placements,
+        )
+        assertEquals(
+            SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.DUPLICATE_POSITION),
+            repository.saveDraftMatchPlacements(
+                matchId = "match-first",
+                placements = listOf(MatchPlacement(1, 1), MatchPlacement(2, 1)),
+            ),
+        )
+        assertEquals(listOf(MatchPlacement(1, 1)), repository.observeMatchById("match-first").first()?.placements)
     }
 
     private fun match(tournamentId: String, id: String, number: Int = 1) = Match(

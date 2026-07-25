@@ -11,6 +11,12 @@ data class Match(
     val date: LocalDate,
     val mapName: String,
     val status: MatchStatus,
+    val placements: List<MatchPlacement> = emptyList(),
+)
+
+data class MatchPlacement(
+    val teamSlotNumber: Int,
+    val position: Int,
 )
 
 enum class MatchStatus {

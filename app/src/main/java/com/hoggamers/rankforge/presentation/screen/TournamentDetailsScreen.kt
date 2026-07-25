@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +41,7 @@ fun TournamentDetailsRoute(
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
+    onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -52,6 +54,7 @@ fun TournamentDetailsRoute(
         onBackToList = onBackToList,
         onEnterTeams = onEnterTeams,
         onCreateMatch = onCreateMatch,
+        onEnterMatchPlacements = onEnterMatchPlacements,
     )
 }
 
@@ -61,6 +64,7 @@ fun TournamentDetailsScreen(
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
+    onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -74,6 +78,7 @@ fun TournamentDetailsScreen(
             onBackToList = onBackToList,
             onEnterTeams = onEnterTeams,
             onCreateMatch = onCreateMatch,
+            onEnterMatchPlacements = onEnterMatchPlacements,
         )
     }
 }
@@ -84,6 +89,7 @@ private fun TournamentDetailsContent(
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit,
+    onEnterMatchPlacements: (String, String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -130,6 +136,7 @@ private fun TournamentDetailsContent(
         MatchList(
             tournament = tournament,
             onCreateMatch = onCreateMatch,
+            onEnterMatchPlacements = onEnterMatchPlacements,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
@@ -145,6 +152,7 @@ private fun TournamentDetailsContent(
 private fun MatchList(
     tournament: TournamentDetailsItemUiState,
     onCreateMatch: (String) -> Unit,
+    onEnterMatchPlacements: (String, String) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
@@ -186,6 +194,25 @@ private fun MatchList(
                             },
                         ),
                     )
+                    if (match.placements.isEmpty()) {
+                        Text(text = stringResource(R.string.no_match_placements_message))
+                    } else {
+                        match.placements.forEach { placement ->
+                            Text(
+                                text = stringResource(
+                                    R.string.match_placement_value,
+                                    placement.teamSlotNumber,
+                                    placement.position,
+                                ),
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { onEnterMatchPlacements(tournament.id, match.id) },
+                        modifier = Modifier.testTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                    ) {
+                        Text(text = stringResource(R.string.enter_match_placements_action))
+                    }
                 }
             }
         }
@@ -247,3 +274,4 @@ private fun TournamentDetailsNotFoundState(
 const val TOURNAMENT_MATCH_LIST_TEST_TAG = "tournament_match_list"
 const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
 const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"
+const val MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX = "match_placement_action_"

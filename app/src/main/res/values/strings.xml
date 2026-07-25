@@ -95,4 +95,20 @@
     <string name="match_map_value">Map: %1$s</string>
     <string name="match_status_value">Status: %1$s</string>
     <string name="match_status_draft">DRAFT</string>
+    <string name="enter_match_placements_action">Enter or edit placements</string>
+    <string name="no_match_placements_message">No placements entered yet.</string>
+    <string name="match_placement_value">Slot %1$d placement: %2$d</string>
+    <string name="match_placement_loading">Loading match placements</string>
+    <string name="match_placement_title">Match %1$d placements</string>
+    <string name="match_placement_instructions">Enter a unique position from 1 to 12 for each team. Leave a row blank for an unassigned draft placement.</string>
+    <string name="match_placement_team_label">Slot %1$d: %2$s</string>
+    <string name="match_placement_field_label">Placement</string>
+    <string name="save_match_placements_action">Save placements</string>
+    <string name="match_placement_invalid_error">Enter a position from 1 to 12.</string>
+    <string name="match_placement_duplicate_error">That position is already assigned to another team.</string>
+    <string name="match_placement_match_not_found_error">This match is no longer available.</string>
+    <string name="match_placement_not_draft_error">Only draft matches can be edited.</string>
+    <string name="match_placement_invalid_data_error">Placement data could not be saved.</string>
+    <string name="match_placement_not_found_title">Match not found</string>
+    <string name="match_placement_not_found_message">This match is no longer available in the current app session.</string>
 </resources>
