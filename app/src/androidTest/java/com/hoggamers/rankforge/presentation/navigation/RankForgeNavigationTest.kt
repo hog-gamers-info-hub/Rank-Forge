@@ -23,9 +23,14 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
@@ -53,6 +58,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
         }
@@ -81,6 +87,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
         }
@@ -106,6 +113,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
         }
@@ -135,6 +143,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
         }
@@ -162,6 +171,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
         }
@@ -174,6 +184,13 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
         composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
 
+        composeTestRule
+            .onNodeWithTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + 1)
+            .performClick()
+        composeTestRule.onNodeWithTag(ROSTER_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        pressBackOnMainThread()
+        composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
         pressBackOnMainThread()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
     }
@@ -190,6 +207,7 @@ class RankForgeNavigationTest {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -229,6 +247,15 @@ class RankForgeNavigationTest {
                     it.load(tournamentId)
                 }
             },
+            rosterEntryViewModel = { tournamentId, slotNumber ->
+                RosterEntryViewModel(
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRosterPlayers = ObserveRosterPlayersUseCase(repository),
+                    saveRoster = SaveRosterUseCase(repository),
+                ).also {
+                    it.load(tournamentId, slotNumber)
+                }
+            },
         )
     }
 
@@ -255,5 +282,6 @@ class RankForgeNavigationTest {
         val listViewModel: TournamentListViewModel,
         val detailsViewModel: (String) -> TournamentDetailsViewModel,
         val teamEntryViewModel: (String) -> TeamEntryViewModel,
+        val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
     )
 }

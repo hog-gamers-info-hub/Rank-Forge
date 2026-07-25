@@ -64,5 +64,16 @@ class GetTournamentByIdUseCaseTest {
             tournamentId: String,
             teamNamesBySlotNumber: Map<Int, String>,
         ) = Unit
+
+        override fun observeRosterByTournamentAndSlot(
+            tournamentId: String,
+            slotNumber: Int,
+        ): Flow<List<RosterPlayer>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
+        override suspend fun saveRoster(
+            tournamentId: String,
+            slotNumber: Int,
+            players: List<RosterPlayer>,
+        ) = Unit
     }
 }

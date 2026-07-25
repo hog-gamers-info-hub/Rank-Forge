@@ -25,11 +25,13 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
 const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
+const val TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX = "team_entry_roster_button_"
 
 @Composable
 fun TeamEntryRoute(
     tournamentId: String,
     onBackToDetails: () -> Unit,
+    onEditRoster: (Int) -> Unit = {},
     viewModel: TeamEntryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -42,6 +44,7 @@ fun TeamEntryRoute(
         onTeamNameChanged = viewModel::onTeamNameChanged,
         onSave = viewModel::saveTeamNames,
         onBackToDetails = onBackToDetails,
+        onEditRoster = onEditRoster,
     )
 }
 
@@ -51,6 +54,7 @@ fun TeamEntryScreen(
     onTeamNameChanged: (Int, String) -> Unit,
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
+    onEditRoster: (Int) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -64,6 +68,7 @@ fun TeamEntryScreen(
             onTeamNameChanged = onTeamNameChanged,
             onSave = onSave,
             onBackToDetails = onBackToDetails,
+            onEditRoster = onEditRoster,
         )
     }
 }
@@ -74,6 +79,7 @@ private fun TeamEntryContent(
     onTeamNameChanged: (Int, String) -> Unit,
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
+    onEditRoster: (Int) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -100,6 +106,14 @@ private fun TeamEntryContent(
                 singleLine = true,
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Button(
+                onClick = { onEditRoster(slot.slotNumber) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber),
+            ) {
+                Text(text = stringResource(R.string.edit_roster_action, slot.slotNumber))
+            }
         }
         Button(
             onClick = onSave,
