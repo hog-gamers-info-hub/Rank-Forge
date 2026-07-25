@@ -9,6 +9,8 @@ import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 
 @Module
@@ -34,4 +36,16 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         clock: Clock,
     ): CreateTournamentUseCase = CreateTournamentUseCase(repository, clock)
+
+    @Provides
+    @Singleton
+    fun provideObserveTournamentsUseCase(
+        repository: TournamentRepository,
+    ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideGetTournamentByIdUseCase(
+        repository: TournamentRepository,
+    ): GetTournamentByIdUseCase = GetTournamentByIdUseCase(repository)
 }

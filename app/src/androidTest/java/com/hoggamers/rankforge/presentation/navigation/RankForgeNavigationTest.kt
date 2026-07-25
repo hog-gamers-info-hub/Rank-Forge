@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.Clock
@@ -19,6 +20,13 @@ import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
+import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -33,14 +41,18 @@ class RankForgeNavigationTest {
 
     @Test
     fun navigationMovesForwardAndBackThroughVisibleDestinations() {
-        val creationViewModel = createCreationViewModel()
+        val viewModels = createNavigationViewModels()
         composeTestRule.setContent {
             RankForgeTheme {
-                RankForgeNavHost(creationViewModel = creationViewModel)
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                )
             }
         }
 
-        val listTitle = context.getString(R.string.foundation_title)
+        val listTitle = context.getString(R.string.tournament_list_title)
         val openAction = context.getString(R.string.open_tournament_creation)
 
         composeTestRule.onNodeWithText(listTitle).assertIsDisplayed()
@@ -56,42 +68,102 @@ class RankForgeNavigationTest {
 
     @Test
     fun dirtyBackShowsConfirmationBeforeReturningToList() {
-        val creationViewModel = createCreationViewModel()
+        val viewModels = createNavigationViewModels()
         composeTestRule.setContent {
             RankForgeTheme {
-                RankForgeNavHost(creationViewModel = creationViewModel)
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                )
             }
         }
 
         composeTestRule.onNodeWithText(context.getString(R.string.open_tournament_creation)).performClick()
-        composeTestRule.runOnIdle { creationViewModel.onTournamentNameChanged("Draft") }
+        composeTestRule.runOnIdle { viewModels.creationViewModel.onTournamentNameChanged("Draft") }
         composeTestRule.waitForIdle()
         pressBackOnMainThread()
 
         composeTestRule.onNodeWithText(context.getString(R.string.keep_editing_action)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.discard_changes_action)).performClick()
-        composeTestRule.onNodeWithText(context.getString(R.string.foundation_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
     }
 
     @Test
-    fun successfulCreationReturnsToList() {
-        val creationViewModel = createCreationViewModel()
+    fun successfulCreationReturnsToListAndCreatedTournamentIsVisible() {
+        val viewModels = createNavigationViewModels()
         composeTestRule.setContent {
             RankForgeTheme {
-                RankForgeNavHost(creationViewModel = creationViewModel)
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                )
             }
         }
 
         composeTestRule.onNodeWithText(context.getString(R.string.open_tournament_creation)).performClick()
-        creationViewModel.onTournamentNameChanged("Summer Cup")
-        creationViewModel.onTournamentDateChanged(LocalDate.of(2026, 7, 24))
-        creationViewModel.onOrganizerNameChanged("Alex")
-        creationViewModel.onOrganizerContactNumberChanged("123")
-        creationViewModel.submit()
+        viewModels.creationViewModel.onTournamentNameChanged("Summer Cup")
+        viewModels.creationViewModel.onTournamentDateChanged(LocalDate.of(2026, 7, 24))
+        viewModels.creationViewModel.onOrganizerNameChanged("Alex")
+        viewModels.creationViewModel.onOrganizerContactNumberChanged("123")
+        viewModels.creationViewModel.submit()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText(context.getString(R.string.foundation_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Organizer: Alex").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingCreatedTournamentOpensDetailsAndBackReturnsToList() {
+        val viewModels = createNavigationViewModels()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                )
+            }
+        }
+
+        createTournamentFromViewModel(viewModels.creationViewModel)
+        composeTestRule.waitForIdle()
+        val createdTournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + createdTournamentId).performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Contact: 123").assertIsDisplayed()
+
+        pressBackOnMainThread()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+    }
+
+    @Test
+    fun unknownDetailsIdShowsNotFoundStateWithoutCrashing() {
+        val viewModels = createNavigationViewModels()
+        composeTestRule.setContent {
+            val navController = rememberNavController()
+            RankForgeTheme {
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                )
+            }
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                navController.navigate(TournamentDetailsDestination("missing"))
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_not_found_title)).assertIsDisplayed()
     }
 
     private fun pressBackOnMainThread() {
@@ -101,13 +173,40 @@ class RankForgeNavigationTest {
         composeTestRule.waitForIdle()
     }
 
-    private fun createCreationViewModel(): TournamentCreationViewModel {
+    private fun createNavigationViewModels(): NavigationViewModels {
+        val repository = InMemoryTournamentRepository()
+        return NavigationViewModels(
+            creationViewModel = createCreationViewModel(repository),
+            listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository)),
+            detailsViewModel = { tournamentId ->
+                TournamentDetailsViewModel(GetTournamentByIdUseCase(repository)).also {
+                    it.load(tournamentId)
+                }
+            },
+        )
+    }
+
+    private fun createCreationViewModel(repository: InMemoryTournamentRepository): TournamentCreationViewModel {
         val today = LocalDate.of(2026, 7, 24)
         return TournamentCreationViewModel(
             CreateTournamentUseCase(
-                repository = InMemoryTournamentRepository(),
+                repository = repository,
                 clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             ),
         )
     }
+
+    private fun createTournamentFromViewModel(viewModel: TournamentCreationViewModel) {
+        viewModel.onTournamentNameChanged("Summer Cup")
+        viewModel.onTournamentDateChanged(LocalDate.of(2026, 7, 24))
+        viewModel.onOrganizerNameChanged("Alex")
+        viewModel.onOrganizerContactNumberChanged("123")
+        viewModel.submit()
+    }
+
+    private data class NavigationViewModels(
+        val creationViewModel: TournamentCreationViewModel,
+        val listViewModel: TournamentListViewModel,
+        val detailsViewModel: (String) -> TournamentDetailsViewModel,
+    )
 }

@@ -6,4 +6,6 @@ interface TournamentRepository {
     suspend fun create(tournament: Tournament)
 
     fun observeAll(): Flow<List<Tournament>>
+
+    fun observeById(tournamentId: String): Flow<Tournament?>
 }
