@@ -4,6 +4,7 @@ import java.time.LocalDate
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -39,11 +40,17 @@ data class MatchUiState(
     val mapName: String,
     val status: com.hoggamers.rankforge.domain.tournament.MatchStatus,
     val placements: List<MatchPlacementDisplayUiState> = emptyList(),
+    val kills: List<MatchKillDisplayUiState> = emptyList(),
 )
 
 data class MatchPlacementDisplayUiState(
     val teamSlotNumber: Int,
     val position: Int,
+)
+
+data class MatchKillDisplayUiState(
+    val teamSlotNumber: Int,
+    val kills: Int,
 )
 
 fun Tournament.toDetailsItemUiState(
@@ -70,6 +77,7 @@ fun Tournament.toDetailsItemUiState(
             mapName = match.mapName,
             status = match.status,
             placements = match.placements.toUiState(),
+            kills = match.kills.toKillUiState(),
         )
     },
 )
@@ -78,6 +86,13 @@ private fun List<MatchPlacement>.toUiState(): List<MatchPlacementDisplayUiState>
     MatchPlacementDisplayUiState(
         teamSlotNumber = placement.teamSlotNumber,
         position = placement.position,
+    )
+}
+
+private fun List<MatchKill>.toKillUiState(): List<MatchKillDisplayUiState> = map { kill ->
+    MatchKillDisplayUiState(
+        teamSlotNumber = kill.teamSlotNumber,
+        kills = kill.kills,
     )
 }
 

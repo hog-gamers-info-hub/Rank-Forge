@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -50,14 +51,20 @@ import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_KILLS_ACTION_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_FIELD_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SAVE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -316,6 +323,107 @@ class RankForgeNavigationTest {
         assert(matchId.isNotBlank())
     }
 
+    @Test
+    fun draftMatchDetailsNavigatesToKillEntry() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(MATCH_KILL_FIELD_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun draftMatchAllowsEnteringAndDisplayingAllKills() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        (1..12).forEach { slotNumber ->
+            composeTestRule
+                .onNodeWithTag(MATCH_KILL_FIELD_TEST_TAG_PREFIX + slotNumber)
+                .performScrollTo()
+                .performTextInput((slotNumber - 1).toString())
+        }
+        composeTestRule
+            .onNodeWithTag(MATCH_KILL_SAVE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.match_kill_value, 1, 0))
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.match_kill_value, 12, 11))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun pressBackOnMainThread() {
         composeTestRule.runOnIdle {
             composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -386,6 +494,15 @@ class RankForgeNavigationTest {
                     it.load(tournamentId, matchId)
                 }
             },
+            matchKillViewModel = { tournamentId, matchId ->
+                MatchKillViewModel(
+                    observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    saveMatchKills = SaveMatchKillsUseCase(repository),
+                ).also {
+                    it.load(tournamentId, matchId)
+                }
+            },
         )
     }
 
@@ -426,5 +543,6 @@ class RankForgeNavigationTest {
         val rosterReviewViewModel: (String) -> RosterReviewViewModel,
         val matchCreationViewModel: (String) -> MatchCreationViewModel,
         val matchPlacementViewModel: (String, String) -> MatchPlacementViewModel,
+        val matchKillViewModel: (String, String) -> MatchKillViewModel,
     )
 }

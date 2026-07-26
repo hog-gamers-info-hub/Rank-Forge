@@ -12,11 +12,17 @@ data class Match(
     val mapName: String,
     val status: MatchStatus,
     val placements: List<MatchPlacement> = emptyList(),
+    val kills: List<MatchKill> = emptyList(),
 )
 
 data class MatchPlacement(
     val teamSlotNumber: Int,
     val position: Int,
+)
+
+data class MatchKill(
+    val teamSlotNumber: Int,
+    val kills: Int,
 )
 
 enum class MatchStatus {
