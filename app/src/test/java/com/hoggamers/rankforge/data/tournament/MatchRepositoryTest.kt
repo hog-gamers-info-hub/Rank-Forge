@@ -21,6 +21,7 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 
 class MatchRepositoryTest {
     @Test
@@ -139,6 +140,30 @@ class MatchRepositoryTest {
             true,
             MatchResultValidationError.MISSING_KILLS in validation.errorsByTeamSlot.getValue(2),
         )
+    }
+
+    @Test
+    fun draftInputsAreRestoredPerMatchAndResetDoesNotAffectAnotherMatch() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament("first"))
+        repository.createDraftMatch(match("first", id = "match-first", number = 1))
+        repository.createDraftMatch(match("first", id = "match-second", number = 2))
+
+        repository.saveDraftMatchValue("first", "match-first", 1, placementInput = "7", killsInput = "3")
+        repository.saveDraftMatchValue("first", "match-second", 1, placementInput = "1", killsInput = "9")
+
+        assertEquals(
+            MatchDraftFieldValues("7", "3"),
+            repository.observeDraftMatchValues("first", "match-first").first()[1],
+        )
+        repository.clearDraftMatch("first", "match-first")
+
+        assertEquals(emptyMap<Int, MatchDraftFieldValues>(), repository.observeDraftMatchValues("first", "match-first").first())
+        assertEquals(
+            MatchDraftFieldValues("1", "9"),
+            repository.observeDraftMatchValues("first", "match-second").first()[1],
+        )
+        assertTrue(repository.observeMatchById("match-first").first()!!.placements.isEmpty())
     }
 
     private fun match(tournamentId: String, id: String, number: Int = 1) = Match(

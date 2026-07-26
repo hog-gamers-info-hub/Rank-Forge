@@ -23,6 +23,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -30,6 +31,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val slotsByTournamentId = MutableStateFlow<Map<String, List<TeamSlot>>>(emptyMap())
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
     private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
+    private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
 
     override suspend fun create(tournament: Tournament) {
         tournaments.update { current ->
@@ -100,6 +102,21 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             } else {
                 currentRosters[RosterKey(tournamentId, slotNumber)].orEmpty()
             }
+        }
+    }
+
+    override fun observeRosterByTournamentId(
+        tournamentId: String,
+    ): Flow<Map<Int, List<RosterPlayer>>> = combine(
+        tournaments,
+        rostersByTournamentAndSlot,
+    ) { currentTournaments, currentRosters ->
+        if (currentTournaments.none { it.id == tournamentId }) {
+            emptyMap()
+        } else {
+            currentRosters
+                .filterKeys { it.tournamentId == tournamentId }
+                .mapKeys { (key, _) -> key.slotNumber }
         }
     }
 
@@ -248,6 +265,56 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         return SaveMatchKillsRepositoryResult.Saved
     }
 
+    override fun observeDraftMatchValues(
+        tournamentId: String,
+        matchId: String,
+    ): Flow<Map<Int, MatchDraftFieldValues>> = draftValuesByMatch.map { current ->
+        current[DraftKey(tournamentId, matchId)].orEmpty()
+    }
+
+    override suspend fun saveDraftMatchValue(
+        tournamentId: String,
+        matchId: String,
+        teamSlotNumber: Int,
+        placementInput: String?,
+        killsInput: String?,
+    ) {
+        require(teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
+            "Team slot number must be between 1 and 12."
+        }
+        if (matchesByTournamentId.value[tournamentId].orEmpty().none { it.id == matchId }) return
+        draftValuesByMatch.update { current ->
+            val key = DraftKey(tournamentId, matchId)
+            val existing = current[key]?.get(teamSlotNumber) ?: MatchDraftFieldValues()
+            current + (key to (current[key].orEmpty() + (
+                teamSlotNumber to existing.copy(
+                    placementInput = placementInput ?: existing.placementInput,
+                    killsInput = killsInput ?: existing.killsInput,
+                )
+                )))
+        }
+    }
+
+    override suspend fun clearDraftMatch(
+        tournamentId: String,
+        matchId: String,
+    ) {
+        matchesByTournamentId.update { current ->
+            current.mapValues { (_, matches) ->
+                matches.map { existing ->
+                    if (existing.id == matchId && existing.tournamentId == tournamentId) {
+                        existing.copy(placements = emptyList(), kills = emptyList())
+                    } else {
+                        existing
+                    }
+                }
+            }
+        }
+        draftValuesByMatch.update { current ->
+            current - DraftKey(tournamentId, matchId)
+        }
+    }
+
     private fun invalidateConfirmation(tournamentId: String) {
         tournaments.update { current ->
             current.map { tournament ->
@@ -263,6 +330,11 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private data class RosterKey(
         val tournamentId: String,
         val slotNumber: Int,
+    )
+
+    private data class DraftKey(
+        val tournamentId: String,
+        val matchId: String,
     )
 
 }

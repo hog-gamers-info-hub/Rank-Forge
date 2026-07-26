@@ -126,6 +126,12 @@
     <string name="match_kill_invalid_data_error">Kill data could not be saved.</string>
     <string name="match_kill_not_found_title">Match not found</string>
     <string name="match_kill_not_found_message">This match is no longer available in the current app session.</string>
+    <string name="match_player_names_value">Players: %1$s</string>
+    <string name="reset_match_draft_action">Reset match draft</string>
+    <string name="reset_match_draft_title">Reset match draft?</string>
+    <string name="reset_match_draft_message">This clears both placements and kills for this match.</string>
+    <string name="cancel_action">Cancel</string>
+    <string name="confirm_reset_match_draft_action">Reset</string>
     <string name="match_validation_title">Result validation issues</string>
     <string name="match_validation_issue">Slot %1$d: %2$s</string>
     <string name="match_validation_missing_team_result_row">Team result row is missing.</string>

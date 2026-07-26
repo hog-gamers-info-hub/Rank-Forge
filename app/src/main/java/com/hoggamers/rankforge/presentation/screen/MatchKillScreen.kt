@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -36,6 +40,8 @@ const val MATCH_KILL_ROW_TEST_TAG_PREFIX = "match_kill_row_"
 const val MATCH_KILL_FIELD_TEST_TAG_PREFIX = "match_kill_field_"
 const val MATCH_KILL_SAVE_ACTION_TEST_TAG = "match_kill_save_action"
 const val MATCH_KILL_BACK_ACTION_TEST_TAG = "match_kill_back_action"
+const val MATCH_KILL_RESET_ACTION_TEST_TAG = "match_kill_reset_action"
+const val MATCH_KILL_RESET_CONFIRM_ACTION_TEST_TAG = "match_kill_reset_confirm_action"
 
 @Composable
 fun MatchKillRoute(
@@ -60,6 +66,7 @@ fun MatchKillRoute(
         uiState = uiState,
         onKillsChanged = viewModel::onKillsChanged,
         onSave = viewModel::save,
+        onResetDraft = viewModel::resetDraft,
         onBackPressed = viewModel::onBackPressed,
     )
 }
@@ -69,6 +76,7 @@ fun MatchKillScreen(
     uiState: MatchKillUiState,
     onKillsChanged: (Int, String) -> Unit,
     onSave: () -> Unit,
+    onResetDraft: () -> Unit = {},
     onBackPressed: () -> Unit,
 ) {
     when {
@@ -80,6 +88,7 @@ fun MatchKillScreen(
             uiState = uiState,
             onKillsChanged = onKillsChanged,
             onSave = onSave,
+            onResetDraft = onResetDraft,
             onBackPressed = onBackPressed,
         )
     }
@@ -90,8 +99,11 @@ private fun MatchKillContent(
     uiState: MatchKillUiState,
     onKillsChanged: (Int, String) -> Unit,
     onSave: () -> Unit,
+    onResetDraft: () -> Unit,
     onBackPressed: () -> Unit,
 ) {
+    var showResetConfirmation by remember { mutableStateOf(false) }
+
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(MATCH_KILL_SCREEN_TEST_TAG)
@@ -130,6 +142,15 @@ private fun MatchKillContent(
             }
         }
         TextButton(
+            onClick = { showResetConfirmation = true },
+            enabled = !uiState.isSubmitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MATCH_KILL_RESET_ACTION_TEST_TAG),
+        ) {
+            Text(stringResource(R.string.reset_match_draft_action))
+        }
+        TextButton(
             onClick = onBackPressed,
             enabled = !uiState.isSubmitting,
             modifier = Modifier
@@ -138,6 +159,30 @@ private fun MatchKillContent(
         ) {
             Text(stringResource(R.string.back_to_tournament_details_action))
         }
+    }
+
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text(stringResource(R.string.reset_match_draft_title)) },
+            text = { Text(stringResource(R.string.reset_match_draft_message)) },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text(stringResource(R.string.cancel_action))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetConfirmation = false
+                        onResetDraft()
+                    },
+                    modifier = Modifier.testTag(MATCH_KILL_RESET_CONFIRM_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.confirm_reset_match_draft_action))
+                }
+            },
+        )
     }
 }
 
@@ -160,6 +205,15 @@ private fun MatchKillRow(
             ),
             style = MaterialTheme.typography.bodyLarge,
         )
+        if (row.playerNames.isNotEmpty()) {
+            Text(
+                text = stringResource(
+                    R.string.match_player_names_value,
+                    row.playerNames.joinToString(),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         OutlinedTextField(
             value = row.killsInput,
             onValueChange = { value -> onKillsChanged(row.teamSlotNumber, value) },

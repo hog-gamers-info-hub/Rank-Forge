@@ -20,9 +20,14 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.PlacementValidationError
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -59,7 +64,11 @@ class MatchPlacementViewModelTest {
         viewModel = MatchPlacementViewModel(
             observeMatches = ObserveMatchesUseCase(repository),
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
             saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository),
+            clearDraftMatch = ClearDraftMatchUseCase(repository),
         )
     }
 
@@ -118,6 +127,62 @@ class MatchPlacementViewModelTest {
             listOf(MatchPlacement(1, 1), MatchPlacement(2, 2)),
             repository.observeMatchById(matchId).first()?.placements,
         )
+    }
+
+    @Test
+    fun draftInputRestoresWhenTheEntryViewModelIsRecreated() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPlacementChanged(1, "7")
+        advanceUntilIdle()
+
+        val recreated = MatchPlacementViewModel(
+            observeMatches = ObserveMatchesUseCase(repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+            saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository),
+            clearDraftMatch = ClearDraftMatchUseCase(repository),
+        )
+        recreated.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertEquals("7", recreated.uiState.value.rows.first().placementInput)
+        recreated.resetDraft()
+        advanceUntilIdle()
+        assertEquals("", recreated.uiState.value.rows.first().placementInput)
+    }
+
+    @Test
+    fun latestPlacementValueIsPersistedBeforeBackNavigation() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPlacementChanged(1, "1")
+        viewModel.onPlacementChanged(1, "12")
+        viewModel.onBackPressed()
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchDraftFieldValues("12", ""),
+            repository.observeDraftMatchValues("tournament-id", matchId).first()[1],
+        )
+        assertEquals(MatchPlacementNavigation.BACK, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun confirmedRosterPlayerNamesAreLoadedIntoRows() = runTest {
+        repository.saveRoster(
+            tournamentId = "tournament-id",
+            slotNumber = 1,
+            players = listOf(
+                com.hoggamers.rankforge.domain.tournament.RosterPlayer("tournament-id", 1, "Player One"),
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Player One"), viewModel.uiState.value.rows.first().playerNames)
     }
 
     @Test

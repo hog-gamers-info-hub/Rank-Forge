@@ -21,6 +21,10 @@ interface TournamentRepository {
         slotNumber: Int,
     ): Flow<List<RosterPlayer>>
 
+    fun observeRosterByTournamentId(
+        tournamentId: String,
+    ): Flow<Map<Int, List<RosterPlayer>>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+
     suspend fun saveRoster(
         tournamentId: String,
         slotNumber: Int,
@@ -49,4 +53,23 @@ interface TournamentRepository {
         kills: List<MatchKill>,
     ): SaveMatchKillsRepositoryResult =
         error("Match kill updates are not supported by this repository.")
+
+    fun observeDraftMatchValues(
+        tournamentId: String,
+        matchId: String,
+    ): Flow<Map<Int, MatchDraftFieldValues>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+
+    suspend fun saveDraftMatchValue(
+        tournamentId: String,
+        matchId: String,
+        teamSlotNumber: Int,
+        placementInput: String? = null,
+        killsInput: String? = null,
+    ) = Unit
+
+    /** Clears editable result values for one draft match. Finalization can call this later. */
+    suspend fun clearDraftMatch(
+        tournamentId: String,
+        matchId: String,
+    ) = Unit
 }

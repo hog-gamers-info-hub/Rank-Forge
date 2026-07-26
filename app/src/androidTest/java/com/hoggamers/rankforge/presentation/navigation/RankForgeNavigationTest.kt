@@ -66,6 +66,10 @@ import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -538,7 +542,11 @@ class RankForgeNavigationTest {
                 MatchPlacementViewModel(
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRoster = ObserveRosterByTournamentUseCase(repository),
+                    observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
                     saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
+                    saveDraftValue = SaveMatchDraftValueUseCase(repository),
+                    clearDraftMatch = ClearDraftMatchUseCase(repository),
                 ).also {
                     it.load(tournamentId, matchId)
                 }
@@ -547,7 +555,11 @@ class RankForgeNavigationTest {
                 MatchKillViewModel(
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRoster = ObserveRosterByTournamentUseCase(repository),
+                    observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
                     saveMatchKills = SaveMatchKillsUseCase(repository),
+                    saveDraftValue = SaveMatchDraftValueUseCase(repository),
+                    clearDraftMatch = ClearDraftMatchUseCase(repository),
                 ).also {
                     it.load(tournamentId, matchId)
                 }
