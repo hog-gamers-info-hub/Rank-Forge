@@ -57,7 +57,7 @@ object TournamentDataProvidersModule {
         context,
         RankForgeDatabase::class.java,
         "rank_forge.db",
-    ).build()
+    ).addMigrations(RankForgeDatabase.MIGRATION_1_2).build()
 
     @Provides
     @Singleton
