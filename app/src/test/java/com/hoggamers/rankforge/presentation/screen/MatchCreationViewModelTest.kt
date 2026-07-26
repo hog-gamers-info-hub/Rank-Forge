@@ -79,7 +79,8 @@ class MatchCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(MatchCreationNavigation.CREATED, viewModel.uiState.value.navigation)
-        assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().size)
+        val createdMatch = repository.observeMatchesByTournamentId("stable-id").first().single()
+        assertEquals(LocalDate.of(2026, 7, 24), createdMatch.date)
     }
 
     @Test

@@ -48,6 +48,8 @@ private val matchDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Loca
 const val MATCH_CREATION_SCREEN_TEST_TAG = "match_creation_screen"
 const val MATCH_NUMBER_FIELD_TEST_TAG = "match_number_field"
 const val MATCH_DATE_FIELD_TEST_TAG = "match_date_field"
+const val MATCH_DATE_TRAILING_ACTION_TEST_TAG = "match_date_trailing_action"
+const val MATCH_DATE_CONFIRM_ACTION_TEST_TAG = "match_date_confirm_action"
 const val MATCH_MAP_FIELD_TEST_TAG = "match_map_field"
 const val MATCH_CREATE_ACTION_TEST_TAG = "match_create_action"
 const val MATCH_BACK_ACTION_TEST_TAG = "match_back_action"
@@ -90,7 +92,9 @@ fun MatchCreationScreen(
     onBackPressed: () -> Unit,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = (uiState.matchDate ?: LocalDate.now()).toUtcMillis(),
+    )
 
     RankForgeScreenContainer(
         modifier = Modifier
@@ -121,6 +125,14 @@ fun MatchCreationScreen(
             onValueChange = {},
             readOnly = true,
             label = { Text(stringResource(R.string.match_date_label)) },
+            trailingIcon = {
+                TextButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.testTag(MATCH_DATE_TRAILING_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.select_date_action))
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MATCH_DATE_FIELD_TEST_TAG)
@@ -183,6 +195,7 @@ fun MatchCreationScreen(
                         }
                         showDatePicker = false
                     },
+                    modifier = Modifier.testTag(MATCH_DATE_CONFIRM_ACTION_TEST_TAG),
                 ) {
                     Text(stringResource(R.string.select_date_action))
                 }
@@ -197,6 +210,8 @@ fun MatchCreationScreen(
         }
     }
 }
+
+private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
 @Composable
 private fun MatchValidationText(error: MatchValidationError?) {
