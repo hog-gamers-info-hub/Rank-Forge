@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -176,6 +177,43 @@ class RoomTournamentRepositoryTest {
             assertEquals(
                 MatchDraftFieldValues("1", "9"),
                 repository.observeDraftMatchValues("tournament-1", "match-2").first()[1],
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun finalizedMatchResultsAndStatusSurviveDatabaseReopenAndDraftCacheIsCleared() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-finalized-match.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "1", "4")
+            val result = repository.finalizeDraftMatch(
+                matchId = "match-1",
+                placements = (1..12).map { MatchPlacement(it, it) },
+                kills = (1..12).map { MatchKill(it, it - 1) },
+            )
+            assertTrue(result is FinalizeMatchRepositoryResult.Finalized)
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(
+                openDatabase(context, databaseName, databases),
+            )
+            val reopenedMatch = reopenedRepository.observeMatchById("match-1").first { it != null }!!
+
+            assertEquals(MatchStatus.FINALIZED, reopenedMatch.status)
+            assertEquals((1..12).toList(), reopenedMatch.placements.map { it.position })
+            assertEquals((0..11).toList(), reopenedMatch.kills.map { it.kills })
+            assertTrue(
+                reopenedRepository.observeDraftMatchValues("tournament-1", "match-1")
+                    .first()
+                    .isEmpty(),
             )
         } finally {
             databases.forEach { if (it.isOpen) it.close() }

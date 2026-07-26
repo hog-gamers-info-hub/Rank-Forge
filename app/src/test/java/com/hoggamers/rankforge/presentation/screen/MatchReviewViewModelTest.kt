@@ -4,7 +4,9 @@ import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
@@ -16,6 +18,7 @@ import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -124,11 +127,53 @@ class MatchReviewViewModelTest {
         assertEquals(MatchReviewNavigation.DETAILS, viewModel.uiState.value.navigation)
     }
 
+    @Test
+    fun validReviewFinalizesAndBecomesReadOnly() = runTest {
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = (slotNumber - 1).toString(),
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
+        assertFalse(viewModel.uiState.value.isEditable)
+        assertTrue(repository.observeDraftMatchValues("tournament-id", matchId).first().isEmpty())
+        assertEquals(
+            MatchStatus.FINALIZED,
+            repository.observeMatchById(matchId).first()!!.status,
+        )
+    }
+
+    @Test
+    fun invalidReviewDoesNotFinalize() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+        assertTrue(viewModel.uiState.value.isEditable)
+        assertFalse(viewModel.uiState.value.isFinalizing)
+    }
+
     private fun reviewViewModel() = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
         validateMatchResult = ValidateMatchResultUseCase(),
+        finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
     )
 }

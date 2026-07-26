@@ -54,6 +54,13 @@ interface TournamentRepository {
     ): SaveMatchKillsRepositoryResult =
         error("Match kill updates are not supported by this repository.")
 
+    suspend fun finalizeDraftMatch(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): FinalizeMatchRepositoryResult =
+        error("Match finalization is not supported by this repository.")
+
     fun observeDraftMatchValues(
         tournamentId: String,
         matchId: String,
