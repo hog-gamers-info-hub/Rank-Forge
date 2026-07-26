@@ -21,9 +21,14 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.KillValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -59,7 +64,11 @@ class MatchKillViewModelTest {
         viewModel = MatchKillViewModel(
             observeMatches = ObserveMatchesUseCase(repository),
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
             saveMatchKills = SaveMatchKillsUseCase(repository),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository),
+            clearDraftMatch = ClearDraftMatchUseCase(repository),
         )
     }
 
@@ -105,6 +114,47 @@ class MatchKillViewModelTest {
             listOf(MatchKill(1, 0), MatchKill(2, 7)),
             repository.observeMatchById(matchId).first()?.kills,
         )
+    }
+
+    @Test
+    fun draftKillInputRestoresWhenTheEntryViewModelIsRecreated() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onKillsChanged(1, "8")
+        advanceUntilIdle()
+
+        val recreated = MatchKillViewModel(
+            observeMatches = ObserveMatchesUseCase(repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+            saveMatchKills = SaveMatchKillsUseCase(repository),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository),
+            clearDraftMatch = ClearDraftMatchUseCase(repository),
+        )
+        recreated.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertEquals("8", recreated.uiState.value.rows.first().killsInput)
+        recreated.resetDraft()
+        advanceUntilIdle()
+        assertEquals("", recreated.uiState.value.rows.first().killsInput)
+    }
+
+    @Test
+    fun latestKillValueIsPersistedBeforeBackNavigation() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onKillsChanged(1, "1")
+        viewModel.onKillsChanged(1, "12")
+        viewModel.onBackPressed()
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchDraftFieldValues("", "12"),
+            repository.observeDraftMatchValues("tournament-id", matchId).first()[1],
+        )
+        assertEquals(MatchKillNavigation.BACK, viewModel.uiState.value.navigation)
     }
 
     @Test

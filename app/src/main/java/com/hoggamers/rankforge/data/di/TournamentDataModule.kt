@@ -5,14 +5,19 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import android.content.Context
+import androidx.room.Room
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
-import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
@@ -30,13 +35,23 @@ abstract class TournamentDataBindingsModule {
     @Binds
     @Singleton
     abstract fun bindTournamentRepository(
-        repository: InMemoryTournamentRepository,
+        repository: RoomTournamentRepository,
     ): TournamentRepository
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 object TournamentDataProvidersModule {
+    @Provides
+    @Singleton
+    fun provideRankForgeDatabase(
+        @ApplicationContext context: Context,
+    ): RankForgeDatabase = Room.databaseBuilder(
+        context,
+        RankForgeDatabase::class.java,
+        "rank_forge.db",
+    ).build()
+
     @Provides
     @Singleton
     fun provideClock(): Clock = Clock.systemDefaultZone()
@@ -77,6 +92,12 @@ object TournamentDataProvidersModule {
     fun provideObserveRosterPlayersUseCase(
         repository: TournamentRepository,
     ): ObserveRosterPlayersUseCase = ObserveRosterPlayersUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideObserveRosterByTournamentUseCase(
+        repository: TournamentRepository,
+    ): ObserveRosterByTournamentUseCase = ObserveRosterByTournamentUseCase(repository)
 
     @Provides
     @Singleton
@@ -125,4 +146,25 @@ object TournamentDataProvidersModule {
     fun provideSaveMatchKillsUseCase(
         repository: TournamentRepository,
     ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideObserveMatchDraftValuesUseCase(
+        repository: TournamentRepository,
+    ): com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase =
+        com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideSaveMatchDraftValueUseCase(
+        repository: TournamentRepository,
+    ): com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase =
+        com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideClearDraftMatchUseCase(
+        repository: TournamentRepository,
+    ): com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase =
+        com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository)
 }

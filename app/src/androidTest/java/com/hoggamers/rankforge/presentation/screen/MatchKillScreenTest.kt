@@ -89,6 +89,30 @@ class MatchKillScreenTest {
         composeTestRule.runOnIdle { assertEquals(1, saveCount) }
     }
 
+    @Test
+    fun resetActionInvokesCallback() {
+        var resetCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchKillScreen(
+                    uiState = availableState(),
+                    onKillsChanged = { _, _ -> },
+                    onSave = {},
+                    onResetDraft = { resetCount++ },
+                    onBackPressed = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(MATCH_KILL_RESET_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("This clears both placements and kills for this match.").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_KILL_RESET_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { assertEquals(1, resetCount) }
+    }
+
     private fun availableState(
         validationErrors: Map<Int, KillValidationError> = emptyMap(),
     ) = MatchKillUiState(

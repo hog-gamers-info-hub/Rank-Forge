@@ -5,6 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueInput
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchInput
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
@@ -17,17 +23,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @HiltViewModel
 class MatchPlacementViewModel @Inject constructor(
     private val observeMatches: ObserveMatchesUseCase,
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
+    private val observeRoster: ObserveRosterByTournamentUseCase,
+    private val observeDraftValues: ObserveMatchDraftValuesUseCase,
     private val saveMatchPlacements: SaveMatchPlacementsUseCase,
+    private val saveDraftValue: SaveMatchDraftValueUseCase,
+    private val clearDraftMatch: ClearDraftMatchUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchPlacementUiState())
     val uiState: StateFlow<MatchPlacementUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
     private var loadedMatchKey: String? = null
+    private val draftWriteMutex = Mutex()
+    private var draftWriteJob: Job? = null
 
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
@@ -45,7 +59,9 @@ class MatchPlacementViewModel @Inject constructor(
             combine(
                 observeMatches(tournamentId),
                 observeTournamentSlots(tournamentId),
-            ) { matches, slots ->
+                observeRoster(tournamentId),
+                observeDraftValues(tournamentId, matchId),
+            ) { matches, slots, rosters, draftValues ->
                 val match = matches.firstOrNull { it.id == matchId }
                 if (match == null || match.status != MatchStatus.DRAFT) {
                     MatchPlacementUiState(
@@ -66,7 +82,9 @@ class MatchPlacementViewModel @Inject constructor(
                             MatchPlacementRowUiState(
                                 teamSlotNumber = slot.slotNumber,
                                 teamName = slot.teamName,
-                                placementInput = savedPlacements[slot.slotNumber]?.position?.toString().orEmpty(),
+                                placementInput = draftValues[slot.slotNumber]?.placementInput
+                                    ?: savedPlacements[slot.slotNumber]?.position?.toString().orEmpty(),
+                                playerNames = rosters[slot.slotNumber].orEmpty().map { it.displayName },
                             )
                         },
                     )
@@ -93,6 +111,7 @@ class MatchPlacementViewModel @Inject constructor(
     }
 
     fun onPlacementChanged(teamSlotNumber: Int, value: String) {
+        val currentState = _uiState.value
         _uiState.update { state ->
             state.copy(
                 rows = state.rows.map { row ->
@@ -102,6 +121,16 @@ class MatchPlacementViewModel @Inject constructor(
                 globalError = null,
             )
         }
+        val tournamentId = currentState.tournamentId ?: return
+        val matchId = currentState.matchId ?: return
+        enqueueDraftWrite(
+            SaveMatchDraftValueInput(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                teamSlotNumber = teamSlotNumber,
+                placementInput = value,
+            ),
+        )
     }
 
     fun save() {
@@ -110,6 +139,17 @@ class MatchPlacementViewModel @Inject constructor(
         if (!currentState.canSave) return
         _uiState.update { it.copy(isSubmitting = true, globalError = null) }
         viewModelScope.launch {
+            currentState.rows.forEach { row ->
+                enqueueDraftWrite(
+                    SaveMatchDraftValueInput(
+                        tournamentId = currentState.tournamentId ?: return@forEach,
+                        matchId = matchId,
+                        teamSlotNumber = row.teamSlotNumber,
+                        placementInput = row.placementInput,
+                    ),
+                )
+            }
+            draftWriteJob?.join()
             when (
                 val result = saveMatchPlacements(
                     SaveMatchPlacementsInput(
@@ -137,12 +177,43 @@ class MatchPlacementViewModel @Inject constructor(
         }
     }
 
+    fun resetDraft() {
+        val tournamentId = _uiState.value.tournamentId ?: return
+        val matchId = _uiState.value.matchId ?: return
+        _uiState.update { state ->
+            state.copy(
+                rows = state.rows.map { it.copy(placementInput = "") },
+                validationErrors = emptyMap(),
+                globalError = null,
+            )
+        }
+        viewModelScope.launch {
+            draftWriteJob?.join()
+            clearDraftMatch(ClearDraftMatchInput(tournamentId, matchId))
+        }
+    }
+
     fun onBackPressed() {
         if (_uiState.value.isSubmitting) return
-        _uiState.update { it.copy(navigation = MatchPlacementNavigation.BACK) }
+        viewModelScope.launch {
+            draftWriteJob?.join()
+            if (!_uiState.value.isSubmitting) {
+                _uiState.update { it.copy(navigation = MatchPlacementNavigation.BACK) }
+            }
+        }
     }
 
     fun onNavigationHandled() {
         _uiState.update { it.copy(navigation = null) }
+    }
+
+    private fun enqueueDraftWrite(input: SaveMatchDraftValueInput) {
+        val previousWrite = draftWriteJob
+        draftWriteJob = viewModelScope.launch {
+            previousWrite?.join()
+            draftWriteMutex.withLock {
+                saveDraftValue(input)
+            }
+        }
     }
 }
