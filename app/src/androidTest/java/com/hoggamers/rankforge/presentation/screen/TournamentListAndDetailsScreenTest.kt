@@ -110,6 +110,30 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun detailsScreenViewStandingsActionInvokesTournamentCallback() {
+        var openedTournamentId: String? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onOpenStandings = { openedTournamentId = it },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(OPEN_STANDINGS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals("stable-id", openedTournamentId) }
+    }
+
+    @Test
     fun detailsScreenShowsAllTwelveEmptySlotsWithoutRosterControls() {
         composeTestRule.setContent {
             RankForgeTheme {
