@@ -205,7 +205,7 @@ private fun MatchList(
                             if (match.status == MatchStatus.DRAFT) {
                                 stringResource(R.string.match_status_draft)
                             } else {
-                                stringResource(R.string.match_status_draft)
+                                stringResource(R.string.match_status_finalized)
                             },
                         ),
                     )
@@ -257,25 +257,25 @@ private fun MatchList(
                             )
                         }
                     }
-                    TextButton(
-                        onClick = { onEnterMatchPlacements(tournament.id, match.id) },
-                        modifier = Modifier.testTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + match.matchNumber),
-                    ) {
-                        Text(text = stringResource(R.string.enter_match_placements_action))
-                    }
-                    TextButton(
-                        onClick = { onEnterMatchKills(tournament.id, match.id) },
-                        modifier = Modifier.testTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + match.matchNumber),
-                    ) {
-                        Text(text = stringResource(R.string.enter_match_kills_action))
-                    }
                     if (match.status == MatchStatus.DRAFT) {
                         TextButton(
-                            onClick = { onReviewMatch(tournament.id, match.id) },
-                            modifier = Modifier.testTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                            onClick = { onEnterMatchPlacements(tournament.id, match.id) },
+                            modifier = Modifier.testTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + match.matchNumber),
                         ) {
-                            Text(text = stringResource(R.string.review_match_action))
+                            Text(text = stringResource(R.string.enter_match_placements_action))
                         }
+                        TextButton(
+                            onClick = { onEnterMatchKills(tournament.id, match.id) },
+                            modifier = Modifier.testTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                        ) {
+                            Text(text = stringResource(R.string.enter_match_kills_action))
+                        }
+                    }
+                    TextButton(
+                        onClick = { onReviewMatch(tournament.id, match.id) },
+                        modifier = Modifier.testTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                    ) {
+                        Text(text = stringResource(R.string.review_match_action))
                     }
                 }
             }

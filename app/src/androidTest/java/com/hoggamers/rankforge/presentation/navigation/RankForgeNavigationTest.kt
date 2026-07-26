@@ -65,6 +65,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
@@ -77,6 +78,9 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -440,6 +444,62 @@ class RankForgeNavigationTest {
     }
 
     @Test
+    fun finalizedMatchReviewDoesNotOfferPlacementOrKillEditing() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            val match = (
+                CreateMatchUseCase(viewModels.repository)(
+                    CreateMatchInput(
+                        tournamentId = "confirmed-id",
+                        matchNumber = "1",
+                        date = LocalDate.of(2026, 7, 24),
+                        mapName = "Bermuda",
+                    ),
+                ) as CreateMatchResult.Created
+            ).match
+            viewModels.repository.finalizeDraftMatch(
+                matchId = match.id,
+                placements = (1..12).map { MatchPlacement(it, it) },
+                kills = (1..12).map { MatchKill(it, it - 1) },
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+    }
+
+    @Test
     fun draftMatchDetailsSurfacesMissingResultValidation() {
         val viewModels = createNavigationViewModels()
         runBlocking {
@@ -640,6 +700,7 @@ class RankForgeNavigationTest {
                     observeRoster = ObserveRosterByTournamentUseCase(repository),
                     observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
                     validateMatchResult = ValidateMatchResultUseCase(),
+                    finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
                 ).also {
                     it.load(tournamentId, matchId)
                 }

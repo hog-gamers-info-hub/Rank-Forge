@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.data.tournament
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
@@ -213,6 +215,41 @@ class RoomTournamentRepository @Inject constructor(
         if (kills.map { it.teamSlotNumber }.distinct().size != kills.size) return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.DUPLICATE_TEAM_SLOT)
         updateState { current -> current.replaceMatch(match.id) { it.copy(kills = kills.toList()) } }
         return SaveMatchKillsRepositoryResult.Saved
+    }
+
+    override suspend fun finalizeDraftMatch(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): FinalizeMatchRepositoryResult {
+        val match = awaitState().matches.values.flatten().firstOrNull { it.id == matchId }
+            ?: return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.DRAFT) {
+            return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_DRAFT)
+        }
+        if (
+            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
+            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
+            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
+            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
+            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
+            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
+            placements.map { it.position }.distinct().size != placements.size
+        ) {
+            return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+        }
+        val finalizedMatch = match.copy(
+            status = MatchStatus.FINALIZED,
+            placements = placements.toList(),
+            kills = kills.toList(),
+        )
+        updateState { current ->
+            current.copy(
+                matches = current.matches.replaceMatch(match.tournamentId, matchId) { finalizedMatch },
+                draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
+            )
+        }
+        return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
 
     override fun observeDraftMatchValues(

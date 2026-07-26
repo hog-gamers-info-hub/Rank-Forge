@@ -27,5 +27,6 @@ data class MatchKill(
 
 enum class MatchStatus {
     DRAFT,
+    FINALIZED,
 }
 

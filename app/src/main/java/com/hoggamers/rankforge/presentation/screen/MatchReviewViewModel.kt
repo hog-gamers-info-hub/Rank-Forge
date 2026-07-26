@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchInput
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchResult
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
@@ -27,6 +30,7 @@ class MatchReviewViewModel @Inject constructor(
     private val observeRoster: ObserveRosterByTournamentUseCase,
     private val observeDraftValues: ObserveMatchDraftValuesUseCase,
     private val validateMatchResult: ValidateMatchResultUseCase,
+    private val finalizeMatch: FinalizeMatchUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -53,7 +57,7 @@ class MatchReviewViewModel @Inject constructor(
                 observeDraftValues(tournamentId, matchId),
             ) { matches, slots, rosters, draftValues ->
                 val match = matches.firstOrNull { it.id == matchId }
-                if (match == null || match.status != MatchStatus.DRAFT) {
+                if (match == null) {
                     MatchReviewUiState(
                         isLoading = false,
                         isAvailable = false,
@@ -79,7 +83,7 @@ class MatchReviewViewModel @Inject constructor(
                                 ?: killsBySlot[teamSlotNumber]?.kills?.toString().orEmpty(),
                         )
                     }
-                    val validation = if (draftValues.isEmpty()) {
+                    val validation = if (match.status == MatchStatus.FINALIZED || draftValues.isEmpty()) {
                         validateMatchResult(match)
                     } else {
                         validateMatchResult(
@@ -98,6 +102,7 @@ class MatchReviewViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         matchNumber = match.matchNumber,
+                        status = match.status,
                         rows = rows.map { row ->
                             row.copy(validationErrors = validation.errorsByTeamSlot[row.teamSlotNumber].orEmpty())
                         },
@@ -105,19 +110,25 @@ class MatchReviewViewModel @Inject constructor(
                     )
                 }
             }.collect { state ->
-                _uiState.update { current -> state.copy(navigation = current.navigation) }
+                _uiState.update { current ->
+                    state.copy(
+                        navigation = current.navigation,
+                        isFinalizing = current.isFinalizing,
+                        finalizationError = current.finalizationError,
+                    )
+                }
             }
         }
     }
 
     fun openPlacements() {
-        if (_uiState.value.isAvailable) {
+        if (_uiState.value.isEditable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.PLACEMENTS) }
         }
     }
 
     fun openKills() {
-        if (_uiState.value.isAvailable) {
+        if (_uiState.value.isEditable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.KILLS) }
         }
     }
@@ -130,5 +141,44 @@ class MatchReviewViewModel @Inject constructor(
 
     fun onNavigationHandled() {
         _uiState.update { it.copy(navigation = null) }
+    }
+
+    fun finalize() {
+        val current = _uiState.value
+        val matchId = current.matchId ?: return
+        if (!current.isEditable || !current.isValid || current.isFinalizing) return
+        _uiState.update { it.copy(isFinalizing = true, finalizationError = null) }
+        viewModelScope.launch {
+            when (
+                val result = finalizeMatch(
+                    FinalizeMatchInput(
+                        matchId = matchId,
+                        rows = current.rows.map { row ->
+                            MatchResultRowInput(
+                                teamSlotNumber = row.teamSlotNumber,
+                                placement = row.placementInput,
+                                kills = row.killsInput,
+                            )
+                        },
+                    ),
+                )
+            ) {
+                is FinalizeMatchResult.Finalized -> _uiState.update {
+                    it.copy(isFinalizing = false, finalizationError = null)
+                }
+                is FinalizeMatchResult.Invalid -> _uiState.update { state ->
+                    state.copy(
+                        isFinalizing = false,
+                        validationErrors = result.validation.errorsByTeamSlot,
+                        rows = state.rows.map { row ->
+                            row.copy(
+                                validationErrors = result.validation.errorsByTeamSlot[row.teamSlotNumber].orEmpty(),
+                            )
+                        },
+                        finalizationError = result.globalError,
+                    )
+                }
+            }
+        }
     }
 }

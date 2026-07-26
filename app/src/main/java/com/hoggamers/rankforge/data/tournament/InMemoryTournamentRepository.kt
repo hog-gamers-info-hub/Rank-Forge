@@ -24,6 +24,8 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryRe
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -263,6 +265,44 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             }
         }
         return SaveMatchKillsRepositoryResult.Saved
+    }
+
+    override suspend fun finalizeDraftMatch(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): FinalizeMatchRepositoryResult {
+        val match = matchesByTournamentId.value.values
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.DRAFT) {
+            return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_DRAFT)
+        }
+        if (
+            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
+            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
+            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
+            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
+            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
+            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
+            placements.map { it.position }.distinct().size != placements.size
+        ) {
+            return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+        }
+
+        val finalizedMatch = match.copy(
+            status = MatchStatus.FINALIZED,
+            placements = placements.toList(),
+            kills = kills.toList(),
+        )
+        matchesByTournamentId.update { current ->
+            current.mapValues { (_, matches) ->
+                matches.map { existing -> if (existing.id == matchId) finalizedMatch else existing }
+            }
+        }
+        draftValuesByMatch.update { current -> current - DraftKey(match.tournamentId, matchId) }
+        return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
 
     override fun observeDraftMatchValues(

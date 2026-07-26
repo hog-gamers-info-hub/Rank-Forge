@@ -95,6 +95,7 @@
     <string name="match_map_value">Map: %1$s</string>
     <string name="match_status_value">Status: %1$s</string>
     <string name="match_status_draft">DRAFT</string>
+    <string name="match_status_finalized">FINALIZED</string>
     <string name="enter_match_placements_action">Enter or edit placements</string>
     <string name="no_match_placements_message">No placements entered yet.</string>
     <string name="match_placement_value">Slot %1$d placement: %2$d</string>
@@ -157,4 +158,15 @@
     <string name="back_to_match_details_action">Back to match details</string>
     <string name="match_review_not_found_title">Match not found</string>
     <string name="match_review_not_found_message">This draft match is no longer available.</string>
+    <string name="match_review_status_value">Status: %1$s</string>
+    <string name="match_review_finalized_read_only">Finalized matches are read-only.</string>
+    <string name="match_review_finalize_action">Finalize match</string>
+    <string name="match_review_finalizing_action">Finalizing match</string>
+    <string name="match_review_finalize_blocked_message">Resolve all validation issues before finalizing.</string>
+    <string name="match_review_finalize_title">Finalize match?</string>
+    <string name="match_review_finalize_message">This will make the match read-only. You can still review its results.</string>
+    <string name="confirm_finalize_match_action">Finalize</string>
+    <string name="match_review_finalize_match_not_found_error">This match is no longer available.</string>
+    <string name="match_review_finalize_not_draft_error">Only draft matches can be finalized.</string>
+    <string name="match_review_finalize_invalid_data_error">The match results could not be finalized.</string>
 </resources>

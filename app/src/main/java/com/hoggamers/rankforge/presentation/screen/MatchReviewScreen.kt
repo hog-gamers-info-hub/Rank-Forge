@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,6 +16,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -33,6 +37,9 @@ const val MATCH_REVIEW_ISSUES_STATUS_TEST_TAG = "match_review_issues_status"
 const val MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG = "match_review_placements_action"
 const val MATCH_REVIEW_KILLS_ACTION_TEST_TAG = "match_review_kills_action"
 const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
+const val MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG = "match_review_finalize_action"
+const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize_confirm_action"
+const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
 
 @Composable
 fun MatchReviewRoute(
@@ -71,6 +78,7 @@ fun MatchReviewRoute(
         onEnterPlacements = viewModel::openPlacements,
         onEnterKills = viewModel::openKills,
         onBackToDetails = viewModel::onBackToDetails,
+        onFinalize = viewModel::finalize,
     )
 }
 
@@ -80,6 +88,7 @@ fun MatchReviewScreen(
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
     onBackToDetails: () -> Unit,
+    onFinalize: () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -91,6 +100,7 @@ fun MatchReviewScreen(
             onEnterPlacements = onEnterPlacements,
             onEnterKills = onEnterKills,
             onBackToDetails = onBackToDetails,
+            onFinalize = onFinalize,
         )
     }
 }
@@ -101,7 +111,10 @@ private fun MatchReviewContent(
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
     onBackToDetails: () -> Unit,
+    onFinalize: () -> Unit,
 ) {
+    var showFinalizeConfirmation by remember { mutableStateOf(false) }
+
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
@@ -113,6 +126,27 @@ private fun MatchReviewContent(
             text = stringResource(R.string.match_review_title, uiState.matchNumber ?: 0),
             style = MaterialTheme.typography.headlineMedium,
         )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        Text(
+            text = stringResource(
+                R.string.match_review_status_value,
+                stringResource(
+                    if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
+                        R.string.match_status_finalized
+                    } else {
+                        R.string.match_status_draft
+                    },
+                ),
+            ),
+            modifier = if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
+                Modifier.testTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
+            } else {
+                Modifier
+            },
+        )
+        if (!uiState.isEditable) {
+            Text(text = stringResource(R.string.match_review_finalized_read_only))
+        }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         if (uiState.isValid) {
             Text(
@@ -132,21 +166,52 @@ private fun MatchReviewContent(
             MatchReviewRow(row)
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         }
-        Button(
-            onClick = onEnterPlacements,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG),
-        ) {
-            Text(stringResource(R.string.edit_match_placements_action))
+        if (uiState.isEditable) {
+            Button(
+                onClick = onEnterPlacements,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.edit_match_placements_action))
+            }
+            TextButton(
+                onClick = onEnterKills,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.edit_match_kills_action))
+            }
+            Button(
+                onClick = { showFinalizeConfirmation = true },
+                enabled = uiState.isValid && !uiState.isFinalizing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    stringResource(
+                        if (uiState.isFinalizing) {
+                            R.string.match_review_finalizing_action
+                        } else {
+                            R.string.match_review_finalize_action
+                        },
+                    ),
+                )
+            }
+            if (!uiState.isValid) {
+                Text(
+                    text = stringResource(R.string.match_review_finalize_blocked_message),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
-        TextButton(
-            onClick = onEnterKills,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG),
-        ) {
-            Text(stringResource(R.string.edit_match_kills_action))
+        if (uiState.finalizationError != null) {
+            Text(
+                text = stringResource(uiState.finalizationError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         TextButton(
             onClick = onBackToDetails,
@@ -156,6 +221,30 @@ private fun MatchReviewContent(
         ) {
             Text(stringResource(R.string.back_to_match_details_action))
         }
+    }
+
+    if (showFinalizeConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showFinalizeConfirmation = false },
+            title = { Text(stringResource(R.string.match_review_finalize_title)) },
+            text = { Text(stringResource(R.string.match_review_finalize_message)) },
+            dismissButton = {
+                TextButton(onClick = { showFinalizeConfirmation = false }) {
+                    Text(stringResource(R.string.cancel_action))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showFinalizeConfirmation = false
+                        onFinalize()
+                    },
+                    modifier = Modifier.testTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.confirm_finalize_match_action))
+                }
+            },
+        )
     }
 }
 
@@ -240,4 +329,13 @@ private fun MatchResultValidationError.toMessageRes(): Int = when (this) {
     MatchResultValidationError.INVALID_PLACEMENT -> R.string.match_validation_invalid_placement
     MatchResultValidationError.MISSING_KILLS -> R.string.match_validation_missing_kills
     MatchResultValidationError.INVALID_KILLS -> R.string.match_validation_invalid_kills
+}
+
+private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.toMessageRes(): Int = when (this) {
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_FOUND ->
+        R.string.match_review_finalize_match_not_found_error
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_DRAFT ->
+        R.string.match_review_finalize_not_draft_error
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.INVALID_DATA ->
+        R.string.match_review_finalize_invalid_data_error
 }

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -91,6 +92,53 @@ class MatchReviewScreenTest {
             assertEquals(1, killCount)
             assertEquals(1, detailsCount)
         }
+    }
+
+    @Test
+    fun finalizeActionRequiresConfirmation() {
+        var finalizeCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onFinalize = { finalizeCount++ },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("This will make the match read-only. You can still review its results.")
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(0, finalizeCount) }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { assertEquals(1, finalizeCount) }
+    }
+
+    @Test
+    fun finalizedReviewIsReadOnlyAndShowsFinalizedState() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finalized matches are read-only.").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
     }
 
     private fun availableState(
