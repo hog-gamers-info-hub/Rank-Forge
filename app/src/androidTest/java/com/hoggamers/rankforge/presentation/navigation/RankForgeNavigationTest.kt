@@ -620,6 +620,7 @@ class RankForgeNavigationTest {
 
         composeTestRule
             .onNodeWithText(context.getString(R.string.match_kill_value, 1, 0))
+            .performScrollTo()
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithText(context.getString(R.string.match_kill_value, 12, 11))

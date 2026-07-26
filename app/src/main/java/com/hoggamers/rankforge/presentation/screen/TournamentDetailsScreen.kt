@@ -45,6 +45,7 @@ fun TournamentDetailsRoute(
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
+    onOpenStandings: (String) -> Unit = {},
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -60,6 +61,7 @@ fun TournamentDetailsRoute(
         onEnterMatchPlacements = onEnterMatchPlacements,
         onEnterMatchKills = onEnterMatchKills,
         onReviewMatch = onReviewMatch,
+        onOpenStandings = onOpenStandings,
     )
 }
 
@@ -72,6 +74,7 @@ fun TournamentDetailsScreen(
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
+    onOpenStandings: (String) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -88,6 +91,7 @@ fun TournamentDetailsScreen(
             onEnterMatchPlacements = onEnterMatchPlacements,
             onEnterMatchKills = onEnterMatchKills,
             onReviewMatch = onReviewMatch,
+            onOpenStandings = onOpenStandings,
         )
     }
 }
@@ -101,6 +105,7 @@ private fun TournamentDetailsContent(
     onEnterMatchPlacements: (String, String) -> Unit,
     onEnterMatchKills: (String, String) -> Unit,
     onReviewMatch: (String, String) -> Unit,
+    onOpenStandings: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -151,6 +156,15 @@ private fun TournamentDetailsContent(
             onEnterMatchKills = onEnterMatchKills,
             onReviewMatch = onReviewMatch,
         )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        Button(
+            onClick = { onOpenStandings(tournament.id) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(OPEN_STANDINGS_ACTION_TEST_TAG),
+        ) {
+            Text(text = stringResource(R.string.open_standings_action))
+        }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = onBackToList,

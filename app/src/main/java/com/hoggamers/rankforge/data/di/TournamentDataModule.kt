@@ -33,6 +33,8 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.StartMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
+import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
+import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -139,6 +141,15 @@ object TournamentDataProvidersModule {
     fun provideObserveMatchesUseCase(
         repository: TournamentRepository,
     ): ObserveMatchesUseCase = ObserveMatchesUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideCumulativeTournamentStandingsEngine(): CumulativeTournamentStandingsEngine =
+        CumulativeTournamentStandingsEngine()
+
+    @Provides
+    @Singleton
+    fun provideTieBreakRules(): TieBreakRules = TieBreakRules()
 
     @Provides
     @Singleton
