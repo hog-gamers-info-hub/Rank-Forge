@@ -3,10 +3,12 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 
 enum class MatchReviewNavigation {
     PLACEMENTS,
     KILLS,
+    CORRECTION,
     DETAILS,
 }
 
@@ -18,6 +20,7 @@ data class MatchReviewUiState(
     val matchNumber: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
     val rows: List<MatchReviewRowUiState> = emptyList(),
+    val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
     val validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
     val navigation: MatchReviewNavigation? = null,
     val isFinalizing: Boolean = false,

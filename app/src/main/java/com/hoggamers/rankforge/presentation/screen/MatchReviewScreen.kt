@@ -26,6 +26,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -40,6 +42,9 @@ const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
 const val MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG = "match_review_finalize_action"
 const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize_confirm_action"
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
+const val MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG = "match_review_correction_action"
+const val MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG = "match_review_correction_confirm_action"
+const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_history"
 
 @Composable
 fun MatchReviewRoute(
@@ -48,6 +53,7 @@ fun MatchReviewRoute(
     onBackToDetails: () -> Unit,
     onEnterPlacements: (String, String) -> Unit,
     onEnterKills: (String, String) -> Unit,
+    onStartCorrection: (String, String) -> Unit,
     viewModel: MatchReviewViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
@@ -64,6 +70,10 @@ fun MatchReviewRoute(
                 viewModel.onNavigationHandled()
                 onEnterKills(tournamentId, matchId)
             }
+            MatchReviewNavigation.CORRECTION -> {
+                viewModel.onNavigationHandled()
+                onStartCorrection(tournamentId, matchId)
+            }
             MatchReviewNavigation.DETAILS -> {
                 viewModel.onNavigationHandled()
                 onBackToDetails()
@@ -77,6 +87,7 @@ fun MatchReviewRoute(
         uiState = uiState,
         onEnterPlacements = viewModel::openPlacements,
         onEnterKills = viewModel::openKills,
+        onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onFinalize = viewModel::finalize,
     )
@@ -87,6 +98,7 @@ fun MatchReviewScreen(
     uiState: MatchReviewUiState,
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
+    onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit = {},
 ) {
@@ -99,6 +111,7 @@ fun MatchReviewScreen(
             uiState = uiState,
             onEnterPlacements = onEnterPlacements,
             onEnterKills = onEnterKills,
+            onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onFinalize = onFinalize,
         )
@@ -110,10 +123,12 @@ private fun MatchReviewContent(
     uiState: MatchReviewUiState,
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
+    onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
+    var showCorrectionConfirmation by remember { mutableStateOf(false) }
 
     RankForgeScreenContainer(
         modifier = Modifier
@@ -144,7 +159,7 @@ private fun MatchReviewContent(
                 Modifier
             },
         )
-        if (!uiState.isEditable) {
+        if (uiState.status == MatchStatus.FINALIZED) {
             Text(text = stringResource(R.string.match_review_finalized_read_only))
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -164,6 +179,10 @@ private fun MatchReviewContent(
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         uiState.rows.forEach { row ->
             MatchReviewRow(row)
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        }
+        if (uiState.correctionHistory.isNotEmpty()) {
+            MatchCorrectionHistory(uiState.correctionHistory)
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         }
         if (uiState.isEditable) {
@@ -207,6 +226,16 @@ private fun MatchReviewContent(
                 )
             }
         }
+        if (uiState.status == MatchStatus.FINALIZED) {
+            Button(
+                onClick = { showCorrectionConfirmation = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.start_match_correction_action))
+            }
+        }
         if (uiState.finalizationError != null) {
             Text(
                 text = stringResource(uiState.finalizationError.toMessageRes()),
@@ -245,6 +274,68 @@ private fun MatchReviewContent(
                 }
             },
         )
+    }
+    if (showCorrectionConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showCorrectionConfirmation = false },
+            title = { Text(stringResource(R.string.start_match_correction_title)) },
+            text = { Text(stringResource(R.string.start_match_correction_message)) },
+            dismissButton = {
+                TextButton(onClick = { showCorrectionConfirmation = false }) {
+                    Text(stringResource(R.string.cancel_action))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCorrectionConfirmation = false
+                        onStartCorrection()
+                    },
+                    modifier = Modifier.testTag(MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.confirm_start_match_correction_action))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun MatchCorrectionHistory(history: List<MatchCorrectionRecord>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG),
+    ) {
+        Text(
+            text = stringResource(R.string.match_correction_history_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        history.forEachIndexed { index, correction ->
+            Text(stringResource(R.string.match_correction_revision_label, index + 1))
+            val previousPlacements = correction.previousPlacements.associateBy { it.teamSlotNumber }
+            val previousKills = correction.previousKills.associateBy { it.teamSlotNumber }
+            val correctedPlacements = correction.correctedPlacements.associateBy { it.teamSlotNumber }
+            val correctedKills = correction.correctedKills.associateBy { it.teamSlotNumber }
+            com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+                Text(
+                    stringResource(
+                        R.string.match_correction_previous_value,
+                        slotNumber,
+                        previousPlacements[slotNumber]?.position ?: 0,
+                        previousKills[slotNumber]?.kills ?: 0,
+                    ),
+                )
+                Text(
+                    stringResource(
+                        R.string.match_correction_corrected_value,
+                        slotNumber,
+                        correctedPlacements[slotNumber]?.position ?: 0,
+                        correctedKills[slotNumber]?.kills ?: 0,
+                    ),
+                )
+            }
+        }
     }
 }
 

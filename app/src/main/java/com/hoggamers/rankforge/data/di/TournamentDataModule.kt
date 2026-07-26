@@ -30,6 +30,9 @@ import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.StartMatchCorrectionUseCase
+import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -180,4 +183,23 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
     ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult)
+
+    @Provides
+    @Singleton
+    fun provideStartMatchCorrectionUseCase(
+        repository: TournamentRepository,
+    ): StartMatchCorrectionUseCase = StartMatchCorrectionUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideSubmitMatchCorrectionUseCase(
+        repository: TournamentRepository,
+        validateMatchResult: ValidateMatchResultUseCase,
+    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(repository, validateMatchResult)
+
+    @Provides
+    @Singleton
+    fun provideClearMatchCorrectionDraftUseCase(
+        repository: TournamentRepository,
+    ): ClearMatchCorrectionDraftUseCase = ClearMatchCorrectionDraftUseCase(repository)
 }
