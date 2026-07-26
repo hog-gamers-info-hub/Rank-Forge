@@ -17,6 +17,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
@@ -77,6 +80,42 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun foundDraftMatchExposesResultValidationIssues() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.setMatches(
+            "stable-id",
+            listOf(
+                Match(
+                    id = "match-id",
+                    tournamentId = "stable-id",
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                ),
+            ),
+        )
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        val issues = viewModel.uiState.value.tournament?.matches?.single()?.validationIssues.orEmpty()
+        assertTrue(
+            issues.any {
+                it.teamSlotNumber == 1 &&
+                    it.error == MatchResultValidationError.MISSING_PLACEMENT
+            },
+        )
+        assertTrue(
+            issues.any {
+                it.teamSlotNumber == 1 &&
+                    it.error == MatchResultValidationError.MISSING_KILLS
+            },
+        )
+    }
+
+    @Test
     fun unknownTournamentRendersNotFoundState() = runTest {
         val viewModel = detailsViewModel()
 
@@ -103,6 +142,7 @@ class TournamentDetailsViewModelTest {
 
     private class TestTournamentRepository : TournamentRepository {
         private val state = MutableStateFlow<List<Tournament>>(emptyList())
+        private val matchesState = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
 
         override suspend fun create(tournament: Tournament) {
             state.value = state.value + tournament
@@ -112,6 +152,13 @@ class TournamentDetailsViewModelTest {
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
+
+        override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
+            matchesState.map { matches -> matches[tournamentId].orEmpty() }
+
+        fun setMatches(tournamentId: String, matches: List<Match>) {
+            matchesState.value = matchesState.value + (tournamentId to matches)
+        }
 
         override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
             state.map { tournaments ->

@@ -59,6 +59,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_KILLS_ACTION_TEST_TAG_P
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SAVE_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
@@ -362,6 +363,54 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(MATCH_KILL_FIELD_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun draftMatchDetailsSurfacesMissingResultValidation() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(
+                context.getString(
+                    R.string.match_validation_issue,
+                    1,
+                    context.getString(R.string.match_validation_missing_placement),
+                ),
+            )
+            .performScrollTo()
             .assertIsDisplayed()
     }
 

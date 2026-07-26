@@ -166,6 +166,59 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun detailsScreenShowsDraftMatchValidationIssues() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "match-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                                    validationIssues = listOf(
+                                        MatchResultValidationIssueUiState(
+                                            teamSlotNumber = 1,
+                                            error = com.hoggamers.rankforge.domain.tournament.MatchResultValidationError.MISSING_PLACEMENT,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(
+                context.getString(
+                    R.string.match_validation_issue,
+                    1,
+                    context.getString(R.string.match_validation_missing_placement),
+                ),
+            )
+            .assertExists()
+        composeTestRule
+            .onNodeWithTag(
+                MATCH_VALIDATION_ISSUE_TEST_TAG_PREFIX +
+                    "1_" + com.hoggamers.rankforge.domain.tournament.MatchResultValidationError.MISSING_PLACEMENT.name,
+            )
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun detailsNotFoundStateRendersSafeMessageAndAction() {
         var backCount = 0
         composeTestRule.setContent {
@@ -194,6 +247,7 @@ class TournamentListAndDetailsScreenTest {
 
     private fun tournamentDetailsItem(
         slots: List<TeamSlotUiState> = (1..12).map { TeamSlotUiState(slotNumber = it, teamName = "") },
+        matches: List<MatchUiState> = emptyList(),
     ) = TournamentDetailsItemUiState(
         id = "stable-id",
         name = "Summer Cup",
@@ -202,5 +256,6 @@ class TournamentListAndDetailsScreenTest {
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         slots = slots,
+        matches = matches,
     )
 }

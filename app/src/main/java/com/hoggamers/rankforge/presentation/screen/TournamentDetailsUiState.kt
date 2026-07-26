@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -41,6 +43,7 @@ data class MatchUiState(
     val status: com.hoggamers.rankforge.domain.tournament.MatchStatus,
     val placements: List<MatchPlacementDisplayUiState> = emptyList(),
     val kills: List<MatchKillDisplayUiState> = emptyList(),
+    val validationIssues: List<MatchResultValidationIssueUiState> = emptyList(),
 )
 
 data class MatchPlacementDisplayUiState(
@@ -51,6 +54,11 @@ data class MatchPlacementDisplayUiState(
 data class MatchKillDisplayUiState(
     val teamSlotNumber: Int,
     val kills: Int,
+)
+
+data class MatchResultValidationIssueUiState(
+    val teamSlotNumber: Int,
+    val error: MatchResultValidationError,
 )
 
 fun Tournament.toDetailsItemUiState(
@@ -78,6 +86,14 @@ fun Tournament.toDetailsItemUiState(
             status = match.status,
             placements = match.placements.toUiState(),
             kills = match.kills.toKillUiState(),
+            validationIssues = ValidateMatchResultUseCase()(match)
+                .errorsByTeamSlot
+                .toSortedMap()
+                .flatMap { (teamSlotNumber, errors) ->
+                    errors.sortedBy { it.ordinal }.map { error ->
+                        MatchResultValidationIssueUiState(teamSlotNumber, error)
+                    }
+                },
         )
     },
 )
