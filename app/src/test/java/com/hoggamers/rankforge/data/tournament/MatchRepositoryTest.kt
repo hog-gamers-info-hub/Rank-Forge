@@ -9,11 +9,14 @@ import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -86,6 +89,33 @@ class MatchRepositoryTest {
             ),
         )
         assertEquals(listOf(MatchPlacement(1, 1)), repository.observeMatchById("match-first").first()?.placements)
+    }
+
+    @Test
+    fun repositoryUpdatesDraftKillsAndRejectsNegativeValues() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament("first"))
+        repository.createDraftMatch(match("first", id = "match-first"))
+
+        assertEquals(
+            SaveMatchKillsRepositoryResult.Saved,
+            repository.saveDraftMatchKills(
+                matchId = "match-first",
+                kills = listOf(MatchKill(teamSlotNumber = 1, kills = 0)),
+            ),
+        )
+        assertEquals(
+            listOf(MatchKill(1, 0)),
+            repository.observeMatchById("match-first").first()?.kills,
+        )
+        assertEquals(
+            SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.INVALID_KILLS),
+            repository.saveDraftMatchKills(
+                matchId = "match-first",
+                kills = listOf(MatchKill(teamSlotNumber = 2, kills = -1)),
+            ),
+        )
+        assertEquals(listOf(MatchKill(1, 0)), repository.observeMatchById("match-first").first()?.kills)
     }
 
     private fun match(tournamentId: String, id: String, number: Int = 1) = Match(

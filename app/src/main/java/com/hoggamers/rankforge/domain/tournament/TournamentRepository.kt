@@ -43,4 +43,10 @@ interface TournamentRepository {
         placements: List<MatchPlacement>,
     ): SaveMatchPlacementsRepositoryResult =
         error("Match placement updates are not supported by this repository.")
+
+    suspend fun saveDraftMatchKills(
+        matchId: String,
+        kills: List<MatchKill>,
+    ): SaveMatchKillsRepositoryResult =
+        error("Match kill updates are not supported by this repository.")
 }

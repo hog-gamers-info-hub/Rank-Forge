@@ -111,4 +111,19 @@
     <string name="match_placement_invalid_data_error">Placement data could not be saved.</string>
     <string name="match_placement_not_found_title">Match not found</string>
     <string name="match_placement_not_found_message">This match is no longer available in the current app session.</string>
+    <string name="enter_match_kills_action">Enter or edit kills</string>
+    <string name="no_match_kills_message">No kills entered yet.</string>
+    <string name="match_kill_value">Slot %1$d kills: %2$d</string>
+    <string name="match_kill_loading">Loading match kills</string>
+    <string name="match_kill_title">Match %1$d kills</string>
+    <string name="match_kill_instructions">Enter whole-number kills for each team. Leave a row blank while the draft is still being edited.</string>
+    <string name="match_kill_team_label">Slot %1$d: %2$s</string>
+    <string name="match_kill_field_label">Kills</string>
+    <string name="save_match_kills_action">Save kills</string>
+    <string name="match_kill_invalid_error">Enter a whole number of 0 or more.</string>
+    <string name="match_kill_match_not_found_error">This match is no longer available.</string>
+    <string name="match_kill_not_draft_error">Only draft matches can be edited.</string>
+    <string name="match_kill_invalid_data_error">Kill data could not be saved.</string>
+    <string name="match_kill_not_found_title">Match not found</string>
+    <string name="match_kill_not_found_message">This match is no longer available in the current app session.</string>
 </resources>

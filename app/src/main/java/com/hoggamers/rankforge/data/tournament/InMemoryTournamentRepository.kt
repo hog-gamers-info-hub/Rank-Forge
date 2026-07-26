@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -20,6 +21,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -212,6 +215,37 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             }
         }
         return SaveMatchPlacementsRepositoryResult.Saved
+    }
+
+    override suspend fun saveDraftMatchKills(
+        matchId: String,
+        kills: List<MatchKill>,
+    ): SaveMatchKillsRepositoryResult {
+        val match = matchesByTournamentId.value.values
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.DRAFT) {
+            return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.MATCH_NOT_DRAFT)
+        }
+        if (kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS }) {
+            return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.INVALID_TEAM_SLOT)
+        }
+        if (kills.any { it.kills < 0 }) {
+            return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.INVALID_KILLS)
+        }
+        if (kills.map { it.teamSlotNumber }.distinct().size != kills.size) {
+            return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.DUPLICATE_TEAM_SLOT)
+        }
+
+        matchesByTournamentId.update { current ->
+            current.mapValues { (_, matches) ->
+                matches.map { existing ->
+                    if (existing.id == matchId) existing.copy(kills = kills.toList()) else existing
+                }
+            }
+        }
+        return SaveMatchKillsRepositoryResult.Saved
     }
 
     private fun invalidateConfirmation(tournamentId: String) {

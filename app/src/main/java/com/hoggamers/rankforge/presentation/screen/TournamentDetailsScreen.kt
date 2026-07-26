@@ -42,6 +42,7 @@ fun TournamentDetailsRoute(
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
+    onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -55,6 +56,7 @@ fun TournamentDetailsRoute(
         onEnterTeams = onEnterTeams,
         onCreateMatch = onCreateMatch,
         onEnterMatchPlacements = onEnterMatchPlacements,
+        onEnterMatchKills = onEnterMatchKills,
     )
 }
 
@@ -65,6 +67,7 @@ fun TournamentDetailsScreen(
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
+    onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -79,6 +82,7 @@ fun TournamentDetailsScreen(
             onEnterTeams = onEnterTeams,
             onCreateMatch = onCreateMatch,
             onEnterMatchPlacements = onEnterMatchPlacements,
+            onEnterMatchKills = onEnterMatchKills,
         )
     }
 }
@@ -90,6 +94,7 @@ private fun TournamentDetailsContent(
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit,
     onEnterMatchPlacements: (String, String) -> Unit,
+    onEnterMatchKills: (String, String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -137,6 +142,7 @@ private fun TournamentDetailsContent(
             tournament = tournament,
             onCreateMatch = onCreateMatch,
             onEnterMatchPlacements = onEnterMatchPlacements,
+            onEnterMatchKills = onEnterMatchKills,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
@@ -153,6 +159,7 @@ private fun MatchList(
     tournament: TournamentDetailsItemUiState,
     onCreateMatch: (String) -> Unit,
     onEnterMatchPlacements: (String, String) -> Unit,
+    onEnterMatchKills: (String, String) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
@@ -207,11 +214,30 @@ private fun MatchList(
                             )
                         }
                     }
+                    if (match.kills.isEmpty()) {
+                        Text(text = stringResource(R.string.no_match_kills_message))
+                    } else {
+                        match.kills.forEach { kill ->
+                            Text(
+                                text = stringResource(
+                                    R.string.match_kill_value,
+                                    kill.teamSlotNumber,
+                                    kill.kills,
+                                ),
+                            )
+                        }
+                    }
                     TextButton(
                         onClick = { onEnterMatchPlacements(tournament.id, match.id) },
                         modifier = Modifier.testTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + match.matchNumber),
                     ) {
                         Text(text = stringResource(R.string.enter_match_placements_action))
+                    }
+                    TextButton(
+                        onClick = { onEnterMatchKills(tournament.id, match.id) },
+                        modifier = Modifier.testTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                    ) {
+                        Text(text = stringResource(R.string.enter_match_kills_action))
                     }
                 }
             }
@@ -275,3 +301,4 @@ const val TOURNAMENT_MATCH_LIST_TEST_TAG = "tournament_match_list"
 const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
 const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"
 const val MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX = "match_placement_action_"
+const val MATCH_KILLS_ACTION_TEST_TAG_PREFIX = "match_kills_action_"

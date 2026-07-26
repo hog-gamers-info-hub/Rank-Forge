@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
@@ -118,4 +119,10 @@ object TournamentDataProvidersModule {
     fun provideSaveMatchPlacementsUseCase(
         repository: TournamentRepository,
     ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideSaveMatchKillsUseCase(
+        repository: TournamentRepository,
+    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository)
 }
