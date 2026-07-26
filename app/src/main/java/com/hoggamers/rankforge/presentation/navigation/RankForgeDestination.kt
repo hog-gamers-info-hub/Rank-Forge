@@ -46,3 +46,9 @@ data class MatchKillDestination(
     val tournamentId: String,
     val matchId: String,
 )
+
+@Serializable
+data class MatchReviewDestination(
+    val tournamentId: String,
+    val matchId: String,
+)

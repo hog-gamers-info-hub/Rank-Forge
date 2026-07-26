@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -167,4 +168,8 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
     ): com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase =
         com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideValidateMatchResultUseCase(): ValidateMatchResultUseCase = ValidateMatchResultUseCase()
 }

@@ -52,6 +52,7 @@ import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SCREEN_TEST_TAG
@@ -59,6 +60,11 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_KILLS_ACTION_TEST_TAG_P
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SAVE_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_ACTION_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
@@ -70,6 +76,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -371,6 +378,68 @@ class RankForgeNavigationTest {
     }
 
     @Test
+    fun draftMatchReviewNavigatesToPlacementKillsAndDetails() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
+        pressBackOnMainThread()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
+        pressBackOnMainThread()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
     fun draftMatchDetailsSurfacesMissingResultValidation() {
         val viewModels = createNavigationViewModels()
         runBlocking {
@@ -564,6 +633,17 @@ class RankForgeNavigationTest {
                     it.load(tournamentId, matchId)
                 }
             },
+            matchReviewViewModel = { tournamentId, matchId ->
+                MatchReviewViewModel(
+                    observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRoster = ObserveRosterByTournamentUseCase(repository),
+                    observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+                    validateMatchResult = ValidateMatchResultUseCase(),
+                ).also {
+                    it.load(tournamentId, matchId)
+                }
+            },
         )
     }
 
@@ -605,5 +685,6 @@ class RankForgeNavigationTest {
         val matchCreationViewModel: (String) -> MatchCreationViewModel,
         val matchPlacementViewModel: (String, String) -> MatchPlacementViewModel,
         val matchKillViewModel: (String, String) -> MatchKillViewModel,
+        val matchReviewViewModel: (String, String) -> MatchReviewViewModel,
     )
 }
