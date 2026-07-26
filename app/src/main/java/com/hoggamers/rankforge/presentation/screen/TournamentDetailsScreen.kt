@@ -26,6 +26,7 @@ import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
 private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
@@ -227,6 +228,28 @@ private fun MatchList(
                             )
                         }
                     }
+                    if (match.validationIssues.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.match_validation_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.testTag(
+                                MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + match.matchNumber,
+                            ),
+                        )
+                        match.validationIssues.forEach { issue ->
+                            Text(
+                                text = stringResource(
+                                    R.string.match_validation_issue,
+                                    issue.teamSlotNumber,
+                                    stringResource(issue.error.toMessageRes()),
+                                ),
+                                modifier = Modifier.testTag(
+                                    MATCH_VALIDATION_ISSUE_TEST_TAG_PREFIX +
+                                        issue.teamSlotNumber + "_" + issue.error.name,
+                                ),
+                            )
+                        }
+                    }
                     TextButton(
                         onClick = { onEnterMatchPlacements(tournament.id, match.id) },
                         modifier = Modifier.testTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + match.matchNumber),
@@ -302,3 +325,15 @@ const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
 const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"
 const val MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX = "match_placement_action_"
 const val MATCH_KILLS_ACTION_TEST_TAG_PREFIX = "match_kills_action_"
+const val MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX = "match_validation_issues_"
+const val MATCH_VALIDATION_ISSUE_TEST_TAG_PREFIX = "match_validation_issue_"
+
+private fun MatchResultValidationError.toMessageRes(): Int = when (this) {
+    MatchResultValidationError.MISSING_TEAM_RESULT_ROW -> R.string.match_validation_missing_team_result_row
+    MatchResultValidationError.DUPLICATE_TEAM -> R.string.match_validation_duplicate_team
+    MatchResultValidationError.MISSING_PLACEMENT -> R.string.match_validation_missing_placement
+    MatchResultValidationError.DUPLICATE_PLACEMENT -> R.string.match_validation_duplicate_placement
+    MatchResultValidationError.INVALID_PLACEMENT -> R.string.match_validation_invalid_placement
+    MatchResultValidationError.MISSING_KILLS -> R.string.match_validation_missing_kills
+    MatchResultValidationError.INVALID_KILLS -> R.string.match_validation_invalid_kills
+}

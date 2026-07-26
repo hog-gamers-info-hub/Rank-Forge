@@ -126,4 +126,13 @@
     <string name="match_kill_invalid_data_error">Kill data could not be saved.</string>
     <string name="match_kill_not_found_title">Match not found</string>
     <string name="match_kill_not_found_message">This match is no longer available in the current app session.</string>
+    <string name="match_validation_title">Result validation issues</string>
+    <string name="match_validation_issue">Slot %1$d: %2$s</string>
+    <string name="match_validation_missing_team_result_row">Team result row is missing.</string>
+    <string name="match_validation_duplicate_team">Team is duplicated.</string>
+    <string name="match_validation_missing_placement">Placement is missing.</string>
+    <string name="match_validation_duplicate_placement">Placement is duplicated.</string>
+    <string name="match_validation_invalid_placement">Placement is invalid.</string>
+    <string name="match_validation_missing_kills">Kills are missing.</string>
+    <string name="match_validation_invalid_kills">Kills are invalid.</string>
 </resources>

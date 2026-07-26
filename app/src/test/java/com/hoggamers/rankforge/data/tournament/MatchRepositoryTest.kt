@@ -19,6 +19,8 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 
 class MatchRepositoryTest {
     @Test
@@ -116,6 +118,27 @@ class MatchRepositoryTest {
             ),
         )
         assertEquals(listOf(MatchKill(1, 0)), repository.observeMatchById("match-first").first()?.kills)
+    }
+
+    @Test
+    fun repositoryFlowExposesPartialDraftForResultValidation() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament("first"))
+        repository.createDraftMatch(match("first", id = "match-first"))
+        repository.saveDraftMatchPlacements("match-first", listOf(MatchPlacement(1, 1)))
+        repository.saveDraftMatchKills("match-first", listOf(MatchKill(1, 0)))
+
+        val validation = ValidateMatchResultUseCase()(repository.observeMatchById("match-first").first()!!)
+
+        assertEquals(false, validation.isValid)
+        assertEquals(
+            true,
+            MatchResultValidationError.MISSING_PLACEMENT in validation.errorsByTeamSlot.getValue(2),
+        )
+        assertEquals(
+            true,
+            MatchResultValidationError.MISSING_KILLS in validation.errorsByTeamSlot.getValue(2),
+        )
     }
 
     private fun match(tournamentId: String, id: String, number: Int = 1) = Match(
