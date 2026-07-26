@@ -1,0 +1,134 @@
+package com.hoggamers.rankforge.presentation.screen
+
+import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
+import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
+import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MatchReviewViewModelTest {
+    private val dispatcher = StandardTestDispatcher()
+    private lateinit var repository: InMemoryTournamentRepository
+    private lateinit var matchId: String
+
+    @Before
+    fun setUp() = kotlinx.coroutines.runBlocking {
+        Dispatchers.setMain(dispatcher)
+        repository = InMemoryTournamentRepository()
+        repository.create(
+            Tournament(
+                id = "tournament-id",
+                name = "Summer Cup",
+                date = LocalDate.of(2026, 7, 24),
+                organizerName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+            ),
+        )
+        matchId = (CreateMatchUseCase(repository)(
+            CreateMatchInput(
+                tournamentId = "tournament-id",
+                matchNumber = "1",
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+            ),
+        ) as CreateMatchResult.Created).match.id
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun reviewShowsTwelveRowsAndRestoredDraftValues() = runTest {
+        repository.saveRoster(
+            "tournament-id",
+            1,
+            listOf(RosterPlayer("tournament-id", 1, "Player One")),
+        )
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = (slotNumber - 1).toString(),
+            )
+        }
+
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertEquals((1..12).toList(), viewModel.uiState.value.rows.map { it.teamSlotNumber })
+        assertEquals(listOf("Player One"), viewModel.uiState.value.rows.first().playerNames)
+        assertEquals("7", viewModel.uiState.value.rows[6].placementInput)
+        assertEquals("6", viewModel.uiState.value.rows[6].killsInput)
+        assertTrue(viewModel.uiState.value.isValid)
+    }
+
+    @Test
+    fun reviewUsesExistingValidationForIncompleteDraft() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isValid)
+        assertTrue(
+            MatchResultValidationError.MISSING_PLACEMENT in
+                viewModel.uiState.value.rows.first().validationErrors,
+        )
+        assertTrue(
+            MatchResultValidationError.MISSING_KILLS in
+                viewModel.uiState.value.validationErrors.getValue(12),
+        )
+    }
+
+    @Test
+    fun reviewActionsExposePlacementKillAndDetailsNavigation() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.openPlacements()
+        assertEquals(MatchReviewNavigation.PLACEMENTS, viewModel.uiState.value.navigation)
+        viewModel.onNavigationHandled()
+        viewModel.openKills()
+        assertEquals(MatchReviewNavigation.KILLS, viewModel.uiState.value.navigation)
+        viewModel.onNavigationHandled()
+        viewModel.onBackToDetails()
+        assertEquals(MatchReviewNavigation.DETAILS, viewModel.uiState.value.navigation)
+    }
+
+    private fun reviewViewModel() = MatchReviewViewModel(
+        observeMatches = ObserveMatchesUseCase(repository),
+        observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+        observeRoster = ObserveRosterByTournamentUseCase(repository),
+        observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+        validateMatchResult = ValidateMatchResultUseCase(),
+    )
+}

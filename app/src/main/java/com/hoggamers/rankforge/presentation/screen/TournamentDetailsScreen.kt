@@ -44,6 +44,7 @@ fun TournamentDetailsRoute(
     onCreateMatch: (String) -> Unit = {},
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
+    onReviewMatch: (String, String) -> Unit = { _, _ -> },
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -58,6 +59,7 @@ fun TournamentDetailsRoute(
         onCreateMatch = onCreateMatch,
         onEnterMatchPlacements = onEnterMatchPlacements,
         onEnterMatchKills = onEnterMatchKills,
+        onReviewMatch = onReviewMatch,
     )
 }
 
@@ -69,6 +71,7 @@ fun TournamentDetailsScreen(
     onCreateMatch: (String) -> Unit = {},
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
+    onReviewMatch: (String, String) -> Unit = { _, _ -> },
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -84,6 +87,7 @@ fun TournamentDetailsScreen(
             onCreateMatch = onCreateMatch,
             onEnterMatchPlacements = onEnterMatchPlacements,
             onEnterMatchKills = onEnterMatchKills,
+            onReviewMatch = onReviewMatch,
         )
     }
 }
@@ -96,6 +100,7 @@ private fun TournamentDetailsContent(
     onCreateMatch: (String) -> Unit,
     onEnterMatchPlacements: (String, String) -> Unit,
     onEnterMatchKills: (String, String) -> Unit,
+    onReviewMatch: (String, String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -144,6 +149,7 @@ private fun TournamentDetailsContent(
             onCreateMatch = onCreateMatch,
             onEnterMatchPlacements = onEnterMatchPlacements,
             onEnterMatchKills = onEnterMatchKills,
+            onReviewMatch = onReviewMatch,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
@@ -161,6 +167,7 @@ private fun MatchList(
     onCreateMatch: (String) -> Unit,
     onEnterMatchPlacements: (String, String) -> Unit,
     onEnterMatchKills: (String, String) -> Unit,
+    onReviewMatch: (String, String) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
@@ -262,6 +269,14 @@ private fun MatchList(
                     ) {
                         Text(text = stringResource(R.string.enter_match_kills_action))
                     }
+                    if (match.status == MatchStatus.DRAFT) {
+                        TextButton(
+                            onClick = { onReviewMatch(tournament.id, match.id) },
+                            modifier = Modifier.testTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + match.matchNumber),
+                        ) {
+                            Text(text = stringResource(R.string.review_match_action))
+                        }
+                    }
                 }
             }
         }
@@ -325,6 +340,7 @@ const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
 const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"
 const val MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX = "match_placement_action_"
 const val MATCH_KILLS_ACTION_TEST_TAG_PREFIX = "match_kills_action_"
+const val MATCH_REVIEW_ACTION_TEST_TAG_PREFIX = "match_review_action_"
 const val MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX = "match_validation_issues_"
 const val MATCH_VALIDATION_ISSUE_TEST_TAG_PREFIX = "match_validation_issue_"
 

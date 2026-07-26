@@ -141,4 +141,20 @@
     <string name="match_validation_invalid_placement">Placement is invalid.</string>
     <string name="match_validation_missing_kills">Kills are missing.</string>
     <string name="match_validation_invalid_kills">Kills are invalid.</string>
+    <string name="review_match_action">Review match</string>
+    <string name="match_review_title">Review match %1$d</string>
+    <string name="match_review_loading">Loading match review</string>
+    <string name="match_review_valid_status">Result is valid.</string>
+    <string name="match_review_issues_status">Result has issues.</string>
+    <string name="match_review_team_label">Slot %1$d: %2$s</string>
+    <string name="match_review_placement_value">Placement: %1$s</string>
+    <string name="match_review_kills_value">Kills: %1$s</string>
+    <string name="match_review_empty_value">—</string>
+    <string name="match_review_row_valid">No validation issues.</string>
+    <string name="match_review_row_issue">Issue: %1$s</string>
+    <string name="edit_match_placements_action">Edit placements</string>
+    <string name="edit_match_kills_action">Edit kills</string>
+    <string name="back_to_match_details_action">Back to match details</string>
+    <string name="match_review_not_found_title">Match not found</string>
+    <string name="match_review_not_found_message">This draft match is no longer available.</string>
 </resources>
