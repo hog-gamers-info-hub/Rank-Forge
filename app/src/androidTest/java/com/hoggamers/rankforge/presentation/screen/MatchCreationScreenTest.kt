@@ -9,6 +9,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -18,6 +23,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+
+private val matchDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 
 @RunWith(AndroidJUnit4::class)
 class MatchCreationScreenTest {
@@ -42,9 +49,36 @@ class MatchCreationScreenTest {
         composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_NUMBER_FIELD_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_DATE_FIELD_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_DATE_TRAILING_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_MAP_FIELD_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_CREATE_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_BACK_ACTION_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun dateTrailingActionOpensPickerAndConfirmPopulatesDate() {
+        var selectedDate by mutableStateOf<LocalDate?>(null)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchCreationScreen(
+                    uiState = MatchCreationUiState(matchDate = selectedDate),
+                    onMatchNumberChanged = {},
+                    onMatchDateChanged = { selectedDate = it },
+                    onMapNameChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_DATE_TRAILING_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_DATE_CONFIRM_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_DATE_CONFIRM_ACTION_TEST_TAG).performClick()
+
+        val expectedDate = LocalDate.now()
+        composeTestRule.onNodeWithText(expectedDate.format(matchDateFormatter)).assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(expectedDate, selectedDate) }
     }
 
     @Test
