@@ -73,6 +73,7 @@ class MatchReviewViewModel @Inject constructor(
                     val rows = TeamSlot.SLOT_NUMBERS.map { teamSlotNumber ->
                         val slot = slotsByNumber[teamSlotNumber] ?: fallbackSlots.getValue(teamSlotNumber)
                         val draft = draftValues[teamSlotNumber]
+                            .takeIf { match.status == MatchStatus.DRAFT }
                         MatchReviewRowUiState(
                             teamSlotNumber = teamSlotNumber,
                             teamName = slot.teamName,
@@ -103,6 +104,7 @@ class MatchReviewViewModel @Inject constructor(
                         matchId = matchId,
                         matchNumber = match.matchNumber,
                         status = match.status,
+                        correctionHistory = match.correctionHistory,
                         rows = rows.map { row ->
                             row.copy(validationErrors = validation.errorsByTeamSlot[row.teamSlotNumber].orEmpty())
                         },
@@ -130,6 +132,12 @@ class MatchReviewViewModel @Inject constructor(
     fun openKills() {
         if (_uiState.value.isEditable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.KILLS) }
+        }
+    }
+
+    fun openCorrection() {
+        if (_uiState.value.status == MatchStatus.FINALIZED) {
+            _uiState.update { it.copy(navigation = MatchReviewNavigation.CORRECTION) }
         }
     }
 

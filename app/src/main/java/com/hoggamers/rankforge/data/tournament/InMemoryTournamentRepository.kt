@@ -26,6 +26,9 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -305,6 +308,49 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
 
+    override suspend fun submitMatchCorrection(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): SubmitMatchCorrectionRepositoryResult {
+        val match = matchesByTournamentId.value.values
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.FINALIZED) {
+            return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
+        }
+        if (
+            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
+            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
+            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
+            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
+            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
+            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
+            placements.map { it.position }.distinct().size != placements.size
+        ) {
+            return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+        }
+
+        val correctedMatch = match.copy(
+            placements = placements.toList(),
+            kills = kills.toList(),
+            correctionHistory = match.correctionHistory + MatchCorrectionRecord(
+                previousPlacements = match.placements.toList(),
+                previousKills = match.kills.toList(),
+                correctedPlacements = placements.toList(),
+                correctedKills = kills.toList(),
+            ),
+        )
+        matchesByTournamentId.update { current ->
+            current.mapValues { (_, matches) ->
+                matches.map { existing -> if (existing.id == matchId) correctedMatch else existing }
+            }
+        }
+        draftValuesByMatch.update { current -> current - DraftKey(match.tournamentId, matchId) }
+        return SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
+    }
+
     override fun observeDraftMatchValues(
         tournamentId: String,
         matchId: String,
@@ -353,6 +399,10 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         draftValuesByMatch.update { current ->
             current - DraftKey(tournamentId, matchId)
         }
+    }
+
+    override suspend fun clearMatchCorrectionDraft(tournamentId: String, matchId: String) {
+        draftValuesByMatch.update { current -> current - DraftKey(tournamentId, matchId) }
     }
 
     private fun invalidateConfirmation(tournamentId: String) {

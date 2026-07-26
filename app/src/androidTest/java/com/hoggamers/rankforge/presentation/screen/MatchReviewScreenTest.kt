@@ -10,6 +10,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
@@ -133,12 +136,68 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
         composeTestRule.onNodeWithText("Finalized matches are read-only.").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun correctionActionRequiresConfirmation() {
+        var correctionCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onStartCorrection = { correctionCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).performScrollTo().performClick()
+        composeTestRule.onNodeWithText("This opens an editable correction copy. The finalized result stays unchanged until you submit it.")
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(0, correctionCount) }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { assertEquals(1, correctionCount) }
+    }
+
+    @Test
+    fun correctionHistoryShowsPreviousAndCorrectedValues() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        correctionHistory = listOf(
+                            MatchCorrectionRecord(
+                                previousPlacements = listOf(MatchPlacement(1, 7)),
+                                previousKills = listOf(MatchKill(1, 3)),
+                                correctedPlacements = listOf(MatchPlacement(1, 2)),
+                                correctedKills = listOf(MatchKill(1, 8)),
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Previous finalized result — Slot 1: placement 7, kills 3")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Corrected result — Slot 1: placement 2, kills 8")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun availableState(

@@ -53,6 +53,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SCREEN_TEST_TAG
@@ -66,6 +67,10 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTIO
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_DISCARD_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_DISCARD_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CREATION_SCREEN_TEST_TAG
@@ -79,6 +84,8 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 
@@ -408,6 +415,7 @@ class RankForgeNavigationTest {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
         }
@@ -477,6 +485,7 @@ class RankForgeNavigationTest {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
         }
@@ -487,9 +496,21 @@ class RankForgeNavigationTest {
             .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("This opens an editable correction copy. The finalized result stays unchanged until you submit it.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Start correction").performClick()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_DISCARD_ACTION_TEST_TAG).performScrollTo().performClick()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_DISCARD_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
             .performScrollTo()
@@ -705,6 +726,20 @@ class RankForgeNavigationTest {
                     it.load(tournamentId, matchId)
                 }
             },
+            matchCorrectionViewModel = { tournamentId, matchId ->
+                MatchCorrectionViewModel(
+                    observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+                    observeRoster = ObserveRosterByTournamentUseCase(repository),
+                    observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+                    validateMatchResult = ValidateMatchResultUseCase(),
+                    submitCorrection = SubmitMatchCorrectionUseCase(repository, ValidateMatchResultUseCase()),
+                    saveDraftValue = SaveMatchDraftValueUseCase(repository),
+                    clearCorrectionDraft = ClearMatchCorrectionDraftUseCase(repository),
+                ).also {
+                    it.load(tournamentId, matchId)
+                }
+            },
         )
     }
 
@@ -747,5 +782,6 @@ class RankForgeNavigationTest {
         val matchPlacementViewModel: (String, String) -> MatchPlacementViewModel,
         val matchKillViewModel: (String, String) -> MatchKillViewModel,
         val matchReviewViewModel: (String, String) -> MatchReviewViewModel,
+        val matchCorrectionViewModel: (String, String) -> MatchCorrectionViewModel,
     )
 }

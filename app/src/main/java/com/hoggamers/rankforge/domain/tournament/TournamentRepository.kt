@@ -61,6 +61,13 @@ interface TournamentRepository {
     ): FinalizeMatchRepositoryResult =
         error("Match finalization is not supported by this repository.")
 
+    suspend fun submitMatchCorrection(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): SubmitMatchCorrectionRepositoryResult =
+        error("Match correction is not supported by this repository.")
+
     fun observeDraftMatchValues(
         tournamentId: String,
         matchId: String,
@@ -76,6 +83,11 @@ interface TournamentRepository {
 
     /** Clears editable result values for one draft match. Finalization can call this later. */
     suspend fun clearDraftMatch(
+        tournamentId: String,
+        matchId: String,
+    ) = Unit
+
+    suspend fun clearMatchCorrectionDraft(
         tournamentId: String,
         matchId: String,
     ) = Unit

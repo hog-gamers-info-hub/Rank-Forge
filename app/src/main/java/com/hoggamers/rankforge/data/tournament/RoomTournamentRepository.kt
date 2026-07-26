@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.data.local.RankForgeStateEntity
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
@@ -17,6 +19,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
@@ -252,6 +255,46 @@ class RoomTournamentRepository @Inject constructor(
         return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
 
+    override suspend fun submitMatchCorrection(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): SubmitMatchCorrectionRepositoryResult {
+        val match = awaitState().matches.values.flatten().firstOrNull { it.id == matchId }
+            ?: return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+        if (match.status != MatchStatus.FINALIZED) {
+            return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
+        }
+        if (
+            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
+            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
+            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
+            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
+            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
+            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
+            placements.map { it.position }.distinct().size != placements.size
+        ) {
+            return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+        }
+        val correctedMatch = match.copy(
+            placements = placements.toList(),
+            kills = kills.toList(),
+            correctionHistory = match.correctionHistory + MatchCorrectionRecord(
+                previousPlacements = match.placements.toList(),
+                previousKills = match.kills.toList(),
+                correctedPlacements = placements.toList(),
+                correctedKills = kills.toList(),
+            ),
+        )
+        updateState { current ->
+            current.copy(
+                matches = current.matches.replaceMatch(match.tournamentId, matchId) { correctedMatch },
+                draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
+            )
+        }
+        return SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
+    }
+
     override fun observeDraftMatchValues(
         tournamentId: String,
         matchId: String,
@@ -288,6 +331,12 @@ class RoomTournamentRepository @Inject constructor(
                 },
                 draftValues = current.draftValues - DraftKey(tournamentId, matchId),
             )
+        }
+    }
+
+    override suspend fun clearMatchCorrectionDraft(tournamentId: String, matchId: String) {
+        updateState { current ->
+            current.copy(draftValues = current.draftValues - DraftKey(tournamentId, matchId))
         }
     }
 
@@ -336,11 +385,13 @@ private data class PersistedSlot(val tournamentId: String, val slotNumber: Int, 
 @Serializable
 private data class PersistedRoster(val tournamentId: String, val slotNumber: Int, val displayName: String)
 @Serializable
-private data class PersistedMatch(val id: String, val tournamentId: String, val matchNumber: Int, val date: String, val mapName: String, val status: String, val placements: List<PersistedPlacement> = emptyList(), val kills: List<PersistedKill> = emptyList())
+private data class PersistedMatch(val id: String, val tournamentId: String, val matchNumber: Int, val date: String, val mapName: String, val status: String, val placements: List<PersistedPlacement> = emptyList(), val kills: List<PersistedKill> = emptyList(), val correctionHistory: List<PersistedCorrection> = emptyList())
 @Serializable
 private data class PersistedPlacement(val teamSlotNumber: Int, val position: Int)
 @Serializable
 private data class PersistedKill(val teamSlotNumber: Int, val kills: Int)
+@Serializable
+private data class PersistedCorrection(val previousPlacements: List<PersistedPlacement> = emptyList(), val previousKills: List<PersistedKill> = emptyList(), val correctedPlacements: List<PersistedPlacement> = emptyList(), val correctedKills: List<PersistedKill> = emptyList())
 @Serializable
 private data class PersistedDraftMatch(val tournamentId: String, val matchId: String, val values: List<PersistedDraftValue>)
 @Serializable
@@ -350,7 +401,7 @@ private fun RepositoryState.toPersistedState() = PersistedState(
     tournaments = tournaments.map { PersistedTournament(it.id, it.name, it.date.toString(), it.organizerName, it.organizerContactNumber, it.status.name) },
     slots = slots.values.flatten().map { PersistedSlot(it.tournamentId, it.slotNumber, it.teamName) },
     rosters = rosters.map { (key, players) -> players.map { PersistedRoster(key.tournamentId, key.slotNumber, it.displayName) } }.flatten(),
-    matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }) },
+    matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> PersistedCorrection(correction.previousPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { PersistedKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { PersistedKill(it.teamSlotNumber, it.kills) }) }) },
     draftValues = draftValues.map { (key, values) -> PersistedDraftMatch(key.tournamentId, key.matchId, values.map { (slot, value) -> PersistedDraftValue(slot, value.placementInput, value.killsInput) }) },
 )
 
@@ -358,7 +409,7 @@ private fun PersistedState.toRepositoryState() = RepositoryState(
     tournaments = tournaments.map { Tournament(it.id, it.name, LocalDate.parse(it.date), it.organizerName, it.organizerContactNumber, TournamentStatus.valueOf(it.status)) },
     slots = slots.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { TeamSlot(it.tournamentId, it.slotNumber, it.teamName) } },
     rosters = rosters.groupBy { RosterKey(it.tournamentId, it.slotNumber) }.mapValues { (_, values) -> values.map { RosterPlayer(it.tournamentId, it.slotNumber, it.displayName) } },
-    matches = matches.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { match -> Match(match.id, match.tournamentId, match.matchNumber, LocalDate.parse(match.date), match.mapName, MatchStatus.valueOf(match.status), match.placements.map { MatchPlacement(it.teamSlotNumber, it.position) }, match.kills.map { MatchKill(it.teamSlotNumber, it.kills) }) } },
+    matches = matches.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { match -> Match(match.id, match.tournamentId, match.matchNumber, LocalDate.parse(match.date), match.mapName, MatchStatus.valueOf(match.status), match.placements.map { MatchPlacement(it.teamSlotNumber, it.position) }, match.kills.map { MatchKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> MatchCorrectionRecord(correction.previousPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { MatchKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { MatchKill(it.teamSlotNumber, it.kills) }) }) } },
     draftValues = draftValues.associate { draft ->
         DraftKey(draft.tournamentId, draft.matchId) to draft.values.associate { value ->
             value.teamSlotNumber to MatchDraftFieldValues(value.placementInput, value.killsInput)

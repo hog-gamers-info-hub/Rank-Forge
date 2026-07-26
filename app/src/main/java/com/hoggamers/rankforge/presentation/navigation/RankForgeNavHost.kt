@@ -29,6 +29,8 @@ import com.hoggamers.rankforge.presentation.screen.MatchKillRoute
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
+import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 
 @Composable
 fun RankForgeNavHost(
@@ -43,6 +45,7 @@ fun RankForgeNavHost(
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
     matchReviewViewModelFactory: ((String, String) -> MatchReviewViewModel)? = null,
+    matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
 ) {
     NavHost(
         navController = navController,
@@ -287,6 +290,9 @@ fun RankForgeNavHost(
             val onEnterKills: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchKillDestination(tournamentId, matchId))
             }
+            val onStartCorrection: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchCorrectionDestination(tournamentId, matchId))
+            }
             val reviewViewModel = matchReviewViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -298,6 +304,7 @@ fun RankForgeNavHost(
                     onBackToDetails = onBackToDetails,
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
+                    onStartCorrection = onStartCorrection,
                 )
             } else {
                 MatchReviewRoute(
@@ -306,7 +313,30 @@ fun RankForgeNavHost(
                     onBackToDetails = onBackToDetails,
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
+                    onStartCorrection = onStartCorrection,
                     viewModel = reviewViewModel,
+                )
+            }
+        }
+        composable<MatchCorrectionDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<MatchCorrectionDestination>()
+            val onBackToReview: () -> Unit = { navController.popBackStack() }
+            val correctionViewModel = matchCorrectionViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+            )
+            if (correctionViewModel == null) {
+                MatchCorrectionRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    onBackToReview = onBackToReview,
+                )
+            } else {
+                MatchCorrectionRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    onBackToReview = onBackToReview,
+                    viewModel = correctionViewModel,
                 )
             }
         }

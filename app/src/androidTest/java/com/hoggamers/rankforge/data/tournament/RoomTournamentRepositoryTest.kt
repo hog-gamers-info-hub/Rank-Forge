@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -215,6 +216,72 @@ class RoomTournamentRepositoryTest {
                     .first()
                     .isEmpty(),
             )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun correctionPersistsHistoryAndClearsCorrectionCacheAfterDatabaseReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-correction-reopen.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { MatchPlacement(it, it) },
+                (1..12).map { MatchKill(it, it - 1) },
+            )
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "2", "1")
+            val result = repository.submitMatchCorrection(
+                "match-1",
+                (1..12).map { slot -> MatchPlacement(slot, if (slot == 1) 2 else if (slot == 2) 1 else slot) },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 1 else slot - 1) },
+            )
+            assertTrue(result is SubmitMatchCorrectionRepositoryResult.Submitted)
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val reopened = reopenedRepository.observeMatchById("match-1").first { it != null }!!
+
+            assertEquals(MatchStatus.FINALIZED, reopened.status)
+            assertEquals(2, reopened.placements.first { it.teamSlotNumber == 1 }.position)
+            assertEquals(1, reopened.kills.first { it.teamSlotNumber == 1 }.kills)
+            assertEquals(1, reopened.correctionHistory.size)
+            assertEquals(1, reopened.correctionHistory.single().previousPlacements.first().position)
+            assertEquals(2, reopened.correctionHistory.single().correctedPlacements.first().position)
+            assertTrue(reopenedRepository.observeDraftMatchValues("tournament-1", "match-1").first().isEmpty())
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun discardingCorrectionKeepsOriginalFinalizedResultUnchanged() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-correction-discard.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { MatchPlacement(it, it) },
+                (1..12).map { MatchKill(it, it - 1) },
+            )
+            val before = repository.observeMatchById("match-1").first { it != null }!!
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "12", "88")
+
+            repository.clearMatchCorrectionDraft("tournament-1", "match-1")
+
+            assertEquals(before, repository.observeMatchById("match-1").first { it != null })
+            assertTrue(repository.observeDraftMatchValues("tournament-1", "match-1").first().isEmpty())
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)

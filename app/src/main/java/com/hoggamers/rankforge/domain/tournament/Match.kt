@@ -13,6 +13,7 @@ data class Match(
     val status: MatchStatus,
     val placements: List<MatchPlacement> = emptyList(),
     val kills: List<MatchKill> = emptyList(),
+    val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
 )
 
 data class MatchPlacement(
@@ -23,6 +24,13 @@ data class MatchPlacement(
 data class MatchKill(
     val teamSlotNumber: Int,
     val kills: Int,
+)
+
+data class MatchCorrectionRecord(
+    val previousPlacements: List<MatchPlacement>,
+    val previousKills: List<MatchKill>,
+    val correctedPlacements: List<MatchPlacement>,
+    val correctedKills: List<MatchKill>,
 )
 
 enum class MatchStatus {
