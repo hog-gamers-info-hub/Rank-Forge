@@ -70,6 +70,15 @@
     <string name="tournament_status_value">Status: %1$s</string>
     <string name="tournament_status_draft">DRAFT</string>
     <string name="tournament_status_confirmed">Confirmed</string>
+    <string name="upload_tournament_action">Upload tournament and roster</string>
+    <string name="upload_tournament_ready_message">Local tournament and roster are ready to upload.</string>
+    <string name="upload_tournament_loading">Uploading tournament and roster</string>
+    <string name="upload_tournament_success">Tournament and roster uploaded.</string>
+    <string name="upload_tournament_authentication_required">Sign in to upload this local tournament.</string>
+    <string name="upload_tournament_authorization_failure">This account is not authorized to upload this tournament.</string>
+    <string name="upload_tournament_validation_failure">The local tournament data could not be uploaded.</string>
+    <string name="upload_tournament_network_failure">Upload failed because the network is unavailable.</string>
+    <string name="upload_tournament_partial_failure">Upload partially completed. Retry manually to continue.</string>
     <string name="team_slots_section_title">Team slots</string>
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>

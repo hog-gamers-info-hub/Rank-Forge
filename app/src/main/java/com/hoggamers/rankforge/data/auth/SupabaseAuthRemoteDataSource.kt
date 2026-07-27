@@ -7,14 +7,11 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.RefreshFailureCause
 import io.github.jan.supabase.auth.status.SessionStatus
-import io.github.jan.supabase.createSupabaseClient
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,15 +25,9 @@ import kotlinx.coroutines.flow.map
 @Singleton
 class SupabaseAuthRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
+    private val clientProvider: SupabaseClientProvider,
 ) : AuthRemoteDataSource {
-    private val client: SupabaseClient by lazy {
-        createSupabaseClient(
-            supabaseUrl = config.supabaseUrl,
-            supabaseKey = config.publishableKey,
-        ) {
-            install(Auth)
-        }
-    }
+    private val client get() = clientProvider.client
 
     override fun observeAuthState(): Flow<AuthState> {
         if (!config.isConfigured) {

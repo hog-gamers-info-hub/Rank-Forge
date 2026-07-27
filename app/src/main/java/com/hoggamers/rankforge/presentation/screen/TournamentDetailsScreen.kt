@@ -35,6 +35,8 @@ const val TOURNAMENT_DETAILS_SCREEN_TEST_TAG = "tournament_details_screen"
 const val TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG = "tournament_details_not_found"
 const val TOURNAMENT_SLOT_LIST_TEST_TAG = "tournament_slot_list"
 const val TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX = "tournament_slot_item_"
+const val TOURNAMENT_CLOUD_UPLOAD_ACTION_TEST_TAG = "tournament_cloud_upload_action"
+const val TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG = "tournament_cloud_upload_status"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -47,11 +49,18 @@ fun TournamentDetailsRoute(
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
+    uploadViewModel: TournamentCloudUploadViewModel? = null,
 ) {
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uploadUiState = if (uploadViewModel == null) {
+        TournamentCloudUploadUiState.Idle
+    } else {
+        val state by uploadViewModel.uiState.collectAsStateWithLifecycle()
+        state
+    }
 
     TournamentDetailsScreen(
         uiState = uiState,
@@ -62,6 +71,8 @@ fun TournamentDetailsRoute(
         onEnterMatchKills = onEnterMatchKills,
         onReviewMatch = onReviewMatch,
         onOpenStandings = onOpenStandings,
+        uploadUiState = uploadUiState,
+        onUpload = { id -> uploadViewModel?.upload(id) },
     )
 }
 
@@ -75,6 +86,8 @@ fun TournamentDetailsScreen(
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
+    uploadUiState: TournamentCloudUploadUiState = TournamentCloudUploadUiState.Idle,
+    onUpload: (String) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -92,6 +105,8 @@ fun TournamentDetailsScreen(
             onEnterMatchKills = onEnterMatchKills,
             onReviewMatch = onReviewMatch,
             onOpenStandings = onOpenStandings,
+            uploadUiState = uploadUiState,
+            onUpload = onUpload,
         )
     }
 }
@@ -106,6 +121,8 @@ private fun TournamentDetailsContent(
     onEnterMatchKills: (String, String) -> Unit,
     onReviewMatch: (String, String) -> Unit,
     onOpenStandings: (String) -> Unit,
+    uploadUiState: TournamentCloudUploadUiState,
+    onUpload: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -147,6 +164,12 @@ private fun TournamentDetailsContent(
             Text(text = stringResource(R.string.enter_teams_action))
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        TournamentCloudUploadSection(
+            tournamentId = tournament.id,
+            uiState = uploadUiState,
+            onUpload = onUpload,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         TeamSlotList(slots = tournament.slots)
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         MatchList(
@@ -172,6 +195,54 @@ private fun TournamentDetailsContent(
         ) {
             Text(text = stringResource(R.string.back_to_tournament_list_action))
         }
+    }
+}
+
+@Composable
+private fun TournamentCloudUploadSection(
+    tournamentId: String,
+    uiState: TournamentCloudUploadUiState,
+    onUpload: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Button(
+            onClick = { onUpload(tournamentId) },
+            enabled = uiState !is TournamentCloudUploadUiState.Loading,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TOURNAMENT_CLOUD_UPLOAD_ACTION_TEST_TAG),
+        ) {
+            Text(
+                text = stringResource(
+                    if (uiState is TournamentCloudUploadUiState.Loading) {
+                        R.string.upload_tournament_loading
+                    } else {
+                        R.string.upload_tournament_action
+                    },
+                ),
+            )
+        }
+        Text(
+            text = when (uiState) {
+                TournamentCloudUploadUiState.Idle -> stringResource(R.string.upload_tournament_ready_message)
+                TournamentCloudUploadUiState.Loading -> stringResource(R.string.upload_tournament_loading)
+                TournamentCloudUploadUiState.Success -> stringResource(R.string.upload_tournament_success)
+                TournamentCloudUploadUiState.AuthenticationRequired ->
+                    stringResource(R.string.upload_tournament_authentication_required)
+                TournamentCloudUploadUiState.AuthorizationFailure ->
+                    stringResource(R.string.upload_tournament_authorization_failure)
+                TournamentCloudUploadUiState.ValidationFailure ->
+                    stringResource(R.string.upload_tournament_validation_failure)
+                TournamentCloudUploadUiState.NetworkFailure ->
+                    stringResource(R.string.upload_tournament_network_failure)
+                is TournamentCloudUploadUiState.PartialFailure ->
+                    stringResource(R.string.upload_tournament_partial_failure)
+            },
+            modifier = Modifier.testTag(TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG),
+        )
     }
 }
 
