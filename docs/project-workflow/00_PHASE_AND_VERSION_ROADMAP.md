@@ -58,15 +58,24 @@
 
 # Phase 6 — Authentication, Backend, and Cloud Sync
 
-* **v0.6.0 — Supabase Authentication:** Add sign-up, login, logout, session restoration, and authentication errors.
-* **v0.6.1 — Backend Database Schema:** Create version-controlled migrations for tournaments, teams, players, matches, and results.
-* **v0.6.2 — Row Level Security:** Add ownership rules, access policies, grants, and authorization tests.
-* **v0.6.3 — Tournament Cloud Storage:** Synchronize tournament and roster records with Supabase.
-* **v0.6.4 — Match Cloud Storage:** Synchronize draft and finalized match results.
-* **v0.6.5 — Offline Sync Queue:** Queue local changes and retry them when connectivity returns.
-* **v0.6.6 — Idempotency and Duplicate Prevention:** Prevent repeated sync operations from creating duplicate records.
-* **v0.6.7 — Conflict Resolution:** Define safe handling for competing local and server changes.
-* **v0.6.8 — Finalized Data Protection:** Prevent unauthorized or silent overwriting of finalized results.
+* **v0.6.0 — Supabase authentication**
+* **v0.6.0.1 — Session restoration, logout, and authentication errors**
+* **v0.6.1 — Core backend database schema**
+* **v0.6.1.1 — Constraints, indexes, revisions, and schema tests**
+* **v0.6.2 — RLS policies and ownership rules**
+* **v0.6.2.1 — Cross-account authorization and security tests**
+* **v0.6.3 — Tournament and roster cloud upload**
+* **v0.6.3.1 — Tournament and roster cloud restoration**
+* **v0.6.4 — Draft match synchronization**
+* **v0.6.4.1 — Finalized match synchronization**
+* **v0.6.4.2 — Match cloud restoration and verification**
+* **v0.6.5 — Persistent offline sync queue**
+* **v0.6.5.1 — Retry, connectivity, and restart recovery**
+* **v0.6.6 — Idempotency and duplicate prevention**
+* **v0.6.7 — Revision-based conflict detection**
+* **v0.6.7.1 — Conflict resolution workflow**
+* **v0.6.8 — Protected match finalization**
+* **v0.6.8.1 — Protected corrections and audit history**
 
 # Phase 7 — Screenshot Intake and Storage
 
