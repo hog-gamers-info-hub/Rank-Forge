@@ -18,6 +18,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -245,6 +246,12 @@ class RoomTournamentRepositoryTest {
             val repository = RoomTournamentRepository(database)
             val restored = repository.observeMatchById("match-1").first { it != null }!!
             assertEquals(legacyMatch, restored)
+            assertEquals(
+                16,
+                regenerateStandings(repository, "legacy-tournament")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
             assertEquals(1, database.matchDao().observeAll().first().size)
             assertEquals(2, database.matchPlacementDao().observeByMatchId("match-1").first().size)
             assertEquals(2, database.matchKillDao().observeByMatchId("match-1").first().size)
@@ -255,11 +262,117 @@ class RoomTournamentRepositoryTest {
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
             assertEquals(legacyMatch, reopenedRepository.observeMatchById("match-1").first { it != null })
+            assertEquals(
+                16,
+                regenerateStandings(reopenedRepository, "legacy-tournament")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
             assertEquals(1, reopenedDatabase.matchDao().observeAll().first().size)
             assertEquals(2, reopenedDatabase.matchPlacementDao().observeByMatchId("match-1").first().size)
             assertEquals(2, reopenedDatabase.matchKillDao().observeByMatchId("match-1").first().size)
             assertEquals(1, reopenedDatabase.matchCorrectionDao().observeByMatchId("match-1").first().size)
             assertEquals(1, reopenedDatabase.matchDraftValueDao().observeByMatchId("match-1").first().size)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun standingsRegenerateFromNormalizedFinalizedMatchesAcrossReopenAndIgnoreDrafts() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-standings-reopen.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { slot -> MatchPlacement(slot, slot) },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 3 else 0) },
+            )
+            repository.createDraftMatch(draftMatch("tournament-1", "match-2", 2))
+            repository.saveDraftMatchPlacements("match-2", listOf(MatchPlacement(1, 1)))
+            repository.saveDraftMatchKills("match-2", listOf(MatchKill(1, 99)))
+
+            val expected = regenerateStandings(repository, "tournament-1")
+            assertEquals(12, expected.size)
+            assertEquals(15, expected.first { it.teamSlotNumber == 1 }.totalPoints)
+            assertEquals(1, expected.first { it.teamSlotNumber == 1 }.matchesIncluded)
+            assertEquals(0, expected.first { it.teamSlotNumber == 12 }.totalPoints)
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+
+            assertEquals(expected, regenerateStandings(reopenedRepository, "tournament-1"))
+            assertEquals(
+                MatchStatus.DRAFT,
+                reopenedRepository.observeMatchById("match-2").first { it != null }!!.status,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun correctedFinalizedMatchesRegenerateCumulativeStandingsAcrossReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-standings-correction.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { slot -> MatchPlacement(slot, slot) },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 3 else 0) },
+            )
+            repository.createDraftMatch(draftMatch("tournament-1", "match-2", 2))
+            repository.finalizeDraftMatch(
+                "match-2",
+                (1..12).map { slot -> MatchPlacement(slot, slot) },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 4 else 0) },
+            )
+
+            val beforeCorrection = regenerateStandings(repository, "tournament-1")
+            assertEquals(31, beforeCorrection.first { it.teamSlotNumber == 1 }.totalPoints)
+            assertEquals(2, beforeCorrection.first { it.teamSlotNumber == 1 }.matchesIncluded)
+
+            repository.saveDraftMatchValue("tournament-1", "match-2", 1, "2", "9")
+            repository.submitMatchCorrection(
+                "match-2",
+                (1..12).map { slot ->
+                    MatchPlacement(slot, when (slot) {
+                        1 -> 2
+                        2 -> 1
+                        else -> slot
+                    })
+                },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 9 else 0) },
+            )
+
+            val afterCorrection = regenerateStandings(repository, "tournament-1")
+            assertEquals(33, afterCorrection.first { it.teamSlotNumber == 1 }.totalPoints)
+            assertEquals(1, afterCorrection.first { it.teamSlotNumber == 1 }.firstPlaceFinishes)
+            assertEquals(2, afterCorrection.first { it.teamSlotNumber == 1 }.latestMatchPlacement)
+            assertEquals(
+                1,
+                repository.observeMatchById("match-2").first { it != null }!!.correctionHistory.size,
+            )
+            assertTrue(repository.observeDraftMatchValues("tournament-1", "match-2").first().isEmpty())
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+
+            assertEquals(afterCorrection, regenerateStandings(reopenedRepository, "tournament-1"))
+            assertEquals(
+                1,
+                reopenedRepository.observeMatchById("match-2").first { it != null }!!.correctionHistory.size,
+            )
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -916,5 +1029,12 @@ class RoomTournamentRepositoryTest {
         date = LocalDate.of(2026, 7, 24),
         mapName = "Bermuda",
         status = MatchStatus.DRAFT,
+    )
+
+    private suspend fun regenerateStandings(
+        repository: RoomTournamentRepository,
+        tournamentId: String,
+    ) = CumulativeTournamentStandingsEngine()(
+        repository.observeMatchesByTournamentId(tournamentId).first(),
     )
 }
