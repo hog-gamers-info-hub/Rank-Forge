@@ -32,8 +32,12 @@ interface RankForgeStateDao {
         TeamSlotEntity::class,
         RosterPlayerEntity::class,
         MatchEntity::class,
+        MatchPlacementEntity::class,
+        MatchKillEntity::class,
+        MatchDraftValueEntity::class,
+        MatchCorrectionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -42,6 +46,10 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun teamSlotDao(): TeamSlotDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
+    abstract fun matchPlacementDao(): MatchPlacementDao
+    abstract fun matchKillDao(): MatchKillDao
+    abstract fun matchDraftValueDao(): MatchDraftValueDao
+    abstract fun matchCorrectionDao(): MatchCorrectionDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -105,6 +113,63 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id` ON `matches` (`tournament_id`)",
                 )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_placements` (
+                        `match_id` TEXT NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `team_slot_number`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_kills` (
+                        `match_id` TEXT NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        `kills` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `team_slot_number`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_draft_values` (
+                        `match_id` TEXT NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        `placement_input` TEXT NOT NULL,
+                        `kills_input` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`, `team_slot_number`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_corrections` (
+                        `match_id` TEXT NOT NULL,
+                        `correction_index` INTEGER NOT NULL,
+                        `previous_placements` TEXT NOT NULL,
+                        `previous_kills` TEXT NOT NULL,
+                        `corrected_placements` TEXT NOT NULL,
+                        `corrected_kills` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`, `correction_index`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_placements_match_id` ON `match_placements` (`match_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_kills_match_id` ON `match_kills` (`match_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_draft_values_match_id` ON `match_draft_values` (`match_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_corrections_match_id` ON `match_corrections` (`match_id`)")
             }
         }
     }

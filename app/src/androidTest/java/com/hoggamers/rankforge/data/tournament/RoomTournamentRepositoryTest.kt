@@ -5,10 +5,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
+import com.hoggamers.rankforge.data.local.MatchCorrectionEntity
+import com.hoggamers.rankforge.data.local.MatchDraftValueEntity
+import com.hoggamers.rankforge.data.local.MatchEntity
+import com.hoggamers.rankforge.data.local.MatchKillEntity
+import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -214,6 +220,113 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun legacyOnlyMatchesAndResultsAreBackfilledIdempotently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-legacy-matches.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val legacyMatch = finalizedMatch("legacy-tournament", "match-1")
+            database.stateDao().save(
+                RankForgeStateEntity(
+                    payload = legacyPayload(
+                        id = "legacy-tournament",
+                        name = "Legacy Cup",
+                        status = "CONFIRMED",
+                        matches = listOf(legacyMatch),
+                        draftValues = listOf(
+                            Triple("match-1", 1, MatchDraftFieldValues("raw-placement", "raw-kills")),
+                        ),
+                    ),
+                ),
+            )
+
+            val repository = RoomTournamentRepository(database)
+            val restored = repository.observeMatchById("match-1").first { it != null }!!
+            assertEquals(legacyMatch, restored)
+            assertEquals(1, database.matchDao().observeAll().first().size)
+            assertEquals(2, database.matchPlacementDao().observeByMatchId("match-1").first().size)
+            assertEquals(2, database.matchKillDao().observeByMatchId("match-1").first().size)
+            assertEquals(1, database.matchCorrectionDao().observeByMatchId("match-1").first().size)
+            assertEquals(1, database.matchDraftValueDao().observeByMatchId("match-1").first().size)
+
+            database.close()
+            val reopenedDatabase = openDatabase(context, databaseName, databases)
+            val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
+            assertEquals(legacyMatch, reopenedRepository.observeMatchById("match-1").first { it != null })
+            assertEquals(1, reopenedDatabase.matchDao().observeAll().first().size)
+            assertEquals(2, reopenedDatabase.matchPlacementDao().observeByMatchId("match-1").first().size)
+            assertEquals(2, reopenedDatabase.matchKillDao().observeByMatchId("match-1").first().size)
+            assertEquals(1, reopenedDatabase.matchCorrectionDao().observeByMatchId("match-1").first().size)
+            assertEquals(1, reopenedDatabase.matchDraftValueDao().observeByMatchId("match-1").first().size)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun normalizedMatchRecordsAreNotOverwrittenByStaleLegacyJson() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-normalized-match-authority.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val normalizedTournament = tournament("tournament-1", TournamentStatus.CONFIRMED)
+            val normalizedMatch = Match(
+                id = "match-1",
+                tournamentId = normalizedTournament.id,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Normalized Map",
+                status = MatchStatus.DRAFT,
+            )
+            database.tournamentDao().upsert(normalizedTournament.toEntity())
+            database.teamSlotDao().upsertAll(TeamSlotEntity(normalizedTournament.id, 1, "Team One").let { listOf(it) })
+            database.matchDao().upsert(normalizedMatch.toEntity())
+            database.matchPlacementDao().upsertAll(listOf(MatchPlacementEntity("match-1", 1, 9)))
+            database.matchKillDao().upsertAll(listOf(MatchKillEntity("match-1", 1, 8)))
+            database.matchDraftValueDao().upsert(
+                MatchDraftValueEntity("match-1", 1, "normalized-placement", "normalized-kills"),
+            )
+            database.stateDao().save(
+                RankForgeStateEntity(
+                    payload = legacyPayload(
+                        id = normalizedTournament.id,
+                        name = normalizedTournament.name,
+                        status = "CONFIRMED",
+                        matches = listOf(
+                            normalizedMatch.copy(
+                                mapName = "Stale Legacy Map",
+                                placements = listOf(MatchPlacement(1, 1)),
+                                kills = listOf(MatchKill(1, 1)),
+                            ),
+                        ),
+                        draftValues = listOf(
+                            Triple("match-1", 1, MatchDraftFieldValues("stale-placement", "stale-kills")),
+                        ),
+                    ),
+                ),
+            )
+
+            val repository = RoomTournamentRepository(database)
+            val restored = repository.observeMatchById("match-1").first { it != null }!!
+            assertEquals("Normalized Map", restored.mapName)
+            assertEquals(listOf(MatchPlacement(1, 9)), restored.placements)
+            assertEquals(listOf(MatchKill(1, 8)), restored.kills)
+            assertEquals(
+                MatchDraftFieldValues("normalized-placement", "normalized-kills"),
+                repository.observeDraftMatchValues("tournament-1", "match-1").first()[1],
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun normalizedTournamentIsNotOverwrittenByStaleLegacyJson() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-normalized-authority.db"
@@ -381,6 +494,46 @@ class RoomTournamentRepositoryTest {
                     .map { it.displayName },
             )
             assertEquals("CONFIRMED", database.tournamentDao().observeById("tournament-1").first()!!.status)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun finalizeMatchRollsBackMetadataAndAllResultTablesWhenOneWriteFails() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-match-transaction.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            database.openHelper.writableDatabase.execSQL(
+                """
+                CREATE TRIGGER fail_match_kill_insert
+                BEFORE INSERT ON match_kills
+                WHEN NEW.match_id = 'match-1' AND NEW.team_slot_number = 12
+                BEGIN SELECT RAISE(ABORT, 'forced match kill failure'); END
+                """.trimIndent(),
+            )
+
+            var failed = false
+            try {
+                repository.finalizeDraftMatch(
+                    "match-1",
+                    (1..12).map { MatchPlacement(it, it) },
+                    (1..12).map { MatchKill(it, it) },
+                )
+            } catch (_: Exception) {
+                failed = true
+            }
+
+            assertTrue(failed)
+            assertEquals("DRAFT", database.matchDao().observeById("match-1").first()!!.status)
+            assertTrue(database.matchPlacementDao().observeByMatchId("match-1").first().isEmpty())
+            assertTrue(database.matchKillDao().observeByMatchId("match-1").first().isEmpty())
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -676,6 +829,8 @@ class RoomTournamentRepositoryTest {
         status: String,
         slots: List<Pair<Int, String>> = emptyList(),
         rosters: List<Triple<Int, Int, String>> = emptyList(),
+        matches: List<Match> = emptyList(),
+        draftValues: List<Triple<String, Int, MatchDraftFieldValues>> = emptyList(),
     ): String {
         val slotsJson = slots.joinToString(",") { (slotNumber, teamName) ->
             """{"tournamentId":"$id","slotNumber":$slotNumber,"teamName":"$teamName"}"""
@@ -683,7 +838,57 @@ class RoomTournamentRepositoryTest {
         val rostersJson = rosters.joinToString(",") { (slotNumber, _, displayName) ->
             """{"tournamentId":"$id","slotNumber":$slotNumber,"displayName":"$displayName"}"""
         }
-        return """{"tournaments":[{"id":"$id","name":"$name","date":"2026-07-24","organizerName":"Organizer","organizerContactNumber":"123","status":"$status"}],"slots":[$slotsJson],"rosters":[$rostersJson]}"""
+        val matchesJson = matches.joinToString(",") { match ->
+            val placementsJson = match.placements.joinToString(",") {
+                """{"teamSlotNumber":${it.teamSlotNumber},"position":${it.position}}"""
+            }
+            val killsJson = match.kills.joinToString(",") {
+                """{"teamSlotNumber":${it.teamSlotNumber},"kills":${it.kills}}"""
+            }
+            val correctionsJson = match.correctionHistory.joinToString(",") { correction ->
+                val previousPlacements = correction.previousPlacements.joinToString(",") {
+                    """{"teamSlotNumber":${it.teamSlotNumber},"position":${it.position}}"""
+                }
+                val previousKills = correction.previousKills.joinToString(",") {
+                    """{"teamSlotNumber":${it.teamSlotNumber},"kills":${it.kills}}"""
+                }
+                val correctedPlacements = correction.correctedPlacements.joinToString(",") {
+                    """{"teamSlotNumber":${it.teamSlotNumber},"position":${it.position}}"""
+                }
+                val correctedKills = correction.correctedKills.joinToString(",") {
+                    """{"teamSlotNumber":${it.teamSlotNumber},"kills":${it.kills}}"""
+                }
+                """{"previousPlacements":[$previousPlacements],"previousKills":[$previousKills],"correctedPlacements":[$correctedPlacements],"correctedKills":[$correctedKills]}"""
+            }
+            """{"id":"${match.id}","tournamentId":"${match.tournamentId}","matchNumber":${match.matchNumber},"date":"${match.date}","mapName":"${match.mapName}","status":"${match.status}","placements":[$placementsJson],"kills":[$killsJson],"correctionHistory":[$correctionsJson]}"""
+        }
+        val draftValuesJson = draftValues.joinToString(",") { (matchId, slotNumber, values) ->
+            """{"tournamentId":"$id","matchId":"$matchId","values":[{"teamSlotNumber":$slotNumber,"placementInput":"${values.placementInput}","killsInput":"${values.killsInput}"}]}"""
+        }
+        return """{"tournaments":[{"id":"$id","name":"$name","date":"2026-07-24","organizerName":"Organizer","organizerContactNumber":"123","status":"$status"}],"slots":[$slotsJson],"rosters":[$rostersJson],"matches":[$matchesJson],"draftValues":[$draftValuesJson]}"""
+    }
+
+    private fun finalizedMatch(tournamentId: String, matchId: String): Match {
+        val placements = listOf(MatchPlacement(1, 1), MatchPlacement(2, 2))
+        val kills = listOf(MatchKill(1, 4), MatchKill(2, 3))
+        return Match(
+            id = matchId,
+            tournamentId = tournamentId,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 7, 24),
+            mapName = "Bermuda",
+            status = MatchStatus.FINALIZED,
+            placements = placements,
+            kills = kills,
+            correctionHistory = listOf(
+                MatchCorrectionRecord(
+                    previousPlacements = placements,
+                    previousKills = kills,
+                    correctedPlacements = listOf(MatchPlacement(1, 2), MatchPlacement(2, 1)),
+                    correctedKills = listOf(MatchKill(1, 5), MatchKill(2, 3)),
+                ),
+            ),
+        )
     }
 
     private suspend fun seedTournamentAndMatch(

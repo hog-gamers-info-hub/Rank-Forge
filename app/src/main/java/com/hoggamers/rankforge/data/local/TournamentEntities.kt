@@ -75,3 +75,83 @@ data class MatchEntity(
     @ColumnInfo(name = "map_name") val mapName: String,
     val status: String,
 )
+
+@Entity(
+    tableName = "match_placements",
+    primaryKeys = ["match_id", "team_slot_number"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["match_id"])],
+)
+data class MatchPlacementEntity(
+    @ColumnInfo(name = "match_id") val matchId: String,
+    @ColumnInfo(name = "team_slot_number") val teamSlotNumber: Int,
+    val position: Int,
+)
+
+@Entity(
+    tableName = "match_kills",
+    primaryKeys = ["match_id", "team_slot_number"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["match_id"])],
+)
+data class MatchKillEntity(
+    @ColumnInfo(name = "match_id") val matchId: String,
+    @ColumnInfo(name = "team_slot_number") val teamSlotNumber: Int,
+    val kills: Int,
+)
+
+@Entity(
+    tableName = "match_draft_values",
+    primaryKeys = ["match_id", "team_slot_number"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["match_id"])],
+)
+data class MatchDraftValueEntity(
+    @ColumnInfo(name = "match_id") val matchId: String,
+    @ColumnInfo(name = "team_slot_number") val teamSlotNumber: Int,
+    @ColumnInfo(name = "placement_input") val placementInput: String,
+    @ColumnInfo(name = "kills_input") val killsInput: String,
+)
+
+@Entity(
+    tableName = "match_corrections",
+    primaryKeys = ["match_id", "correction_index"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["match_id"])],
+)
+data class MatchCorrectionEntity(
+    @ColumnInfo(name = "match_id") val matchId: String,
+    @ColumnInfo(name = "correction_index") val correctionIndex: Int,
+    @ColumnInfo(name = "previous_placements") val previousPlacements: String,
+    @ColumnInfo(name = "previous_kills") val previousKills: String,
+    @ColumnInfo(name = "corrected_placements") val correctedPlacements: String,
+    @ColumnInfo(name = "corrected_kills") val correctedKills: String,
+)
