@@ -956,6 +956,118 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun coreTournamentWorkflowPersistsUsingOnlyLocalRoomState() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-offline-workflow.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+
+            repository.saveTeamNames(
+                "tournament-1",
+                (1..12).associateWith { slotNumber -> "Offline Team $slotNumber" },
+            )
+            (1..12).forEach { slotNumber ->
+                repository.saveRoster(
+                    "tournament-1",
+                    slotNumber,
+                    (1..4).map { rosterPosition ->
+                        RosterPlayer(
+                            tournamentId = "tournament-1",
+                            slotNumber = slotNumber,
+                            displayName = "Player $slotNumber-$rosterPosition",
+                        )
+                    },
+                )
+            }
+
+            assertTrue(repository.confirmTournament("tournament-1"))
+            assertEquals(
+                TournamentStatus.CONFIRMED,
+                repository.observeById("tournament-1").first { it != null }!!.status,
+            )
+            assertEquals(
+                "Offline Team 12",
+                repository.observeSlotsByTournamentId("tournament-1")
+                    .first { it.size == 12 }
+                    .last()
+                    .teamName,
+            )
+            assertEquals(
+                4,
+                repository.observeRosterByTournamentAndSlot("tournament-1", 1)
+                    .first { it.size == 4 }
+                    .size,
+            )
+
+            repository.createDraftMatch(draftMatch("tournament-1", "match-1", 1))
+            repository.saveDraftMatchPlacements("match-1", listOf(MatchPlacement(1, 7)))
+            repository.saveDraftMatchKills("match-1", listOf(MatchKill(1, 3)))
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "7", "3")
+
+            assertEquals(
+                listOf(MatchPlacement(1, 7)),
+                repository.observeMatchById("match-1").first { it != null }!!.placements,
+            )
+            assertEquals(
+                MatchDraftFieldValues("7", "3"),
+                repository.observeDraftMatchValues("tournament-1", "match-1")
+                    .first { it.isNotEmpty() }[1],
+            )
+
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { slotNumber -> MatchPlacement(slotNumber, slotNumber) },
+                (1..12).map { slotNumber -> MatchKill(slotNumber, if (slotNumber == 1) 3 else 0) },
+            )
+            assertEquals(
+                15,
+                regenerateStandings(repository, "tournament-1")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
+
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "2", "9")
+            repository.submitMatchCorrection(
+                "match-1",
+                (1..12).map { slotNumber ->
+                    MatchPlacement(
+                        slotNumber,
+                        when (slotNumber) {
+                            1 -> 2
+                            2 -> 1
+                            else -> slotNumber
+                        },
+                    )
+                },
+                (1..12).map { slotNumber ->
+                    MatchKill(slotNumber, if (slotNumber == 1) 9 else 0)
+                },
+            )
+
+            val correctedMatch = repository.observeMatchById("match-1").first { it != null }!!
+            assertEquals(1, correctedMatch.correctionHistory.size)
+            assertTrue(
+                repository.observeDraftMatchValues("tournament-1", "match-1")
+                    .first()
+                    .isEmpty(),
+            )
+            assertEquals(
+                18,
+                regenerateStandings(repository, "tournament-1")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun discardingCorrectionKeepsOriginalFinalizedResultUnchanged() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-correction-discard.db"
