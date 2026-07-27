@@ -371,3 +371,17 @@ This readiness statement does not authorize SQL application, production deployme
 ```text
 feature/v0.6.1-core-backend-schema
 ```
+
+## 20. Implementation evidence
+
+Generated migration:
+
+```text
+supabase/migrations/20260727163228_v0_6_1_core_backend_schema.sql
+```
+
+It creates only `public.tournaments`, `public.tournament_team_slots`, `public.players`, `public.matches`, and `public.match_results`. Every table uses `gen_random_uuid()` primary keys and non-null timestamps. The migration enables `pgcrypto`, applies the approved foreign keys and checks, enables RLS on all five tables, and intentionally creates no policies, secondary indexes, triggers, functions, or later-version objects.
+
+## 21. Verification evidence
+
+Supabase CLI `2.109.1` listed local migration `20260727163228` before and after the reset attempt. `supabase db reset` could not run locally because Docker Desktop is unavailable: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` No local reset was claimed as successful and no production database action occurred.
