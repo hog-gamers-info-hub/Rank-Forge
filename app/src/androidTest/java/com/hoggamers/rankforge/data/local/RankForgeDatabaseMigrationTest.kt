@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -217,6 +218,70 @@ class RankForgeDatabaseMigrationTest {
             } finally {
                 database.close()
             }
+        }
+    }
+
+    @Test
+    fun deletingTournamentCascadesAllLocalChildData() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            RankForgeDatabase::class.java,
+        )
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            database.tournamentDao().upsert(
+                TournamentEntity(
+                    id = "tournament-1",
+                    name = "Summer Cup",
+                    date = LocalDate.of(2026, 7, 26).toString(),
+                    organizerName = "Organizer",
+                    organizerContactNumber = "1234567890",
+                    status = "CONFIRMED",
+                ),
+            )
+            database.teamSlotDao().upsertAll(
+                listOf(TeamSlotEntity("tournament-1", 1, "Team One")),
+            )
+            database.rosterPlayerDao().upsertAll(
+                listOf(RosterPlayerEntity("tournament-1", 1, 1, "Player One")),
+            )
+            database.matchDao().upsert(
+                MatchEntity(
+                    id = "match-1",
+                    tournamentId = "tournament-1",
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 26).toString(),
+                    mapName = "Bermuda",
+                    status = "FINALIZED",
+                ),
+            )
+            database.matchPlacementDao().upsertAll(
+                listOf(MatchPlacementEntity("match-1", 1, 1)),
+            )
+            database.matchKillDao().upsertAll(
+                listOf(MatchKillEntity("match-1", 1, 3)),
+            )
+            database.matchDraftValueDao().upsert(
+                MatchDraftValueEntity("match-1", 1, "1", "3"),
+            )
+            database.matchCorrectionDao().upsertAll(
+                listOf(MatchCorrectionEntity("match-1", 0, "[]", "[]", "[]", "[]")),
+            )
+
+            database.tournamentDao().deleteById("tournament-1")
+
+            assertTrue(database.tournamentDao().observeAll().first().isEmpty())
+            assertTrue(database.teamSlotDao().observeByTournamentId("tournament-1").first().isEmpty())
+            assertTrue(database.rosterPlayerDao().observeByTournamentId("tournament-1").first().isEmpty())
+            assertTrue(database.matchDao().observeAll().first().isEmpty())
+            assertTrue(database.matchPlacementDao().observeByMatchId("match-1").first().isEmpty())
+            assertTrue(database.matchKillDao().observeByMatchId("match-1").first().isEmpty())
+            assertTrue(database.matchDraftValueDao().observeByMatchId("match-1").first().isEmpty())
+            assertTrue(database.matchCorrectionDao().observeByMatchId("match-1").first().isEmpty())
+        } finally {
+            database.close()
         }
     }
 
