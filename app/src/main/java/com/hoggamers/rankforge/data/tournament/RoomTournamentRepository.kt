@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.data.tournament
 
+import androidx.room.withTransaction
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
@@ -62,16 +63,47 @@ class RoomTournamentRepository @Inject constructor(
                             .getOrNull()
                     }
                     ?: RepositoryState()
-                val existingIds = database.tournamentDao().observeAll().first().map { it.id }.toSet()
-                restored.tournaments
-                    .filter { it.id !in existingIds }
-                    .forEach { database.tournamentDao().upsert(it.toEntity()) }
-                val normalizedTournaments = database.tournamentDao().observeAll().first().map { it.toDomain() }
-                val synchronizedState = restored.copy(tournaments = normalizedTournaments)
-                if (synchronizedState.tournaments != restored.tournaments) {
-                    database.stateDao().save(
-                        RankForgeStateEntity(payload = json.encodeToString(synchronizedState.toPersistedState())),
+                val synchronizedState = database.withTransaction {
+                    val existingIds = database.tournamentDao().observeAll().first().map { it.id }.toSet()
+                    restored.tournaments
+                        .filter { it.id !in existingIds }
+                        .forEach { database.tournamentDao().upsert(it.toEntity()) }
+
+                    val normalizedTournaments = database.tournamentDao().observeAll().first().map { it.toDomain() }
+                    normalizedTournaments.forEach { tournament ->
+                        backfillSlots(tournament.id, restored)
+                        backfillRoster(tournament.id, restored)
+                    }
+
+                    val normalizedSlots = normalizedTournaments.associate { tournament ->
+                        tournament.id to database.teamSlotDao()
+                            .observeByTournamentId(tournament.id)
+                            .first()
+                            .map { it.toDomain() }
+                    }
+                    val normalizedRosters = normalizedTournaments
+                        .flatMap { tournament ->
+                            TeamSlot.SLOT_NUMBERS.mapNotNull { slotNumber ->
+                                val players = database.rosterPlayerDao()
+                                    .observeByTournamentAndSlot(tournament.id, slotNumber)
+                                    .first()
+                                    .map { it.toDomain() }
+                                players.takeIf { it.isNotEmpty() }
+                                    ?.let { RosterKey(tournament.id, slotNumber) to it }
+                            }
+                        }
+                        .toMap()
+                    val synchronized = restored.copy(
+                        tournaments = normalizedTournaments,
+                        slots = normalizedSlots,
+                        rosters = normalizedRosters,
                     )
+                    if (synchronized != restored) {
+                        database.stateDao().save(
+                            RankForgeStateEntity(payload = json.encodeToString(synchronized.toPersistedState())),
+                        )
+                    }
+                    synchronized
                 }
                 state.value = synchronizedState
             } finally {
@@ -96,31 +128,43 @@ class RoomTournamentRepository @Inject constructor(
         awaitState()
         writeMutex.withLock {
             val current = state.value
-            val existing = database.tournamentDao().observeById(tournament.id).first()
-            if (existing != null) {
-                if (current.tournaments.none { it.id == tournament.id }) {
-                    val next = current.withTournamentMirror(existing.toDomain())
-                    saveLegacyState(next)
-                    state.value = next
+            database.withTransaction {
+                val existing = database.tournamentDao().observeById(tournament.id).first()
+                if (existing != null) {
+                    val existingSlots = database.teamSlotDao().observeByTournamentId(tournament.id).first()
+                    val missingSlots = TeamSlot.SLOT_NUMBERS
+                        .filter { slotNumber -> existingSlots.none { it.slotNumber == slotNumber } }
+                        .map { slotNumber -> TeamSlot.create(tournament.id, slotNumber).toEntity() }
+                    if (missingSlots.isNotEmpty()) {
+                        database.teamSlotDao().upsertAll(missingSlots)
+                    }
+                    val normalizedSlots = database.teamSlotDao()
+                        .observeByTournamentId(tournament.id)
+                        .first()
+                        .map { it.toDomain() }
+                    val next = current.withTournamentMirror(existing.toDomain(), normalizedSlots)
+                    if (next != current) {
+                        saveLegacyState(next)
+                        state.value = next
+                    }
+                    return@withTransaction
                 }
-                return@withLock
-            }
 
-            database.tournamentDao().upsert(tournament.toEntity())
-            val next = current.withTournamentMirror(tournament)
-            saveLegacyState(next)
-            state.value = next
+                database.tournamentDao().upsert(tournament.toEntity())
+                val normalizedSlots = TeamSlot.fixedSlotsForTournament(tournament.id)
+                database.teamSlotDao().upsertAll(normalizedSlots.map { it.toEntity() })
+                val next = current.withTournamentMirror(tournament, normalizedSlots)
+                saveLegacyState(next)
+                state.value = next
+            }
         }
     }
 
-    override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = state.map { current ->
-        if (current.tournaments.none { it.id == tournamentId }) {
-            emptyList()
-        } else {
-            current.slots[tournamentId]
-                ?.takeIf { slots -> slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList() }
-                ?: TeamSlot.fixedSlotsForTournament(tournamentId)
-        }
+    override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = flow {
+        ready.await()
+        emitAll(database.teamSlotDao().observeByTournamentId(tournamentId).map { slots ->
+            slots.map { it.toDomain() }
+        })
     }
 
     override suspend fun saveTeamNames(
@@ -128,35 +172,64 @@ class RoomTournamentRepository @Inject constructor(
         teamNamesBySlotNumber: Map<Int, String>,
     ) {
         teamNamesBySlotNumber.keys.forEach { require(it in TeamSlot.SLOT_NUMBERS) }
-        updateState { current ->
-            if (current.tournaments.none { it.id == tournamentId }) return@updateState current
-            val slots = current.slots[tournamentId]
-                ?.takeIf { it.map(TeamSlot::slotNumber) == TeamSlot.SLOT_NUMBERS.toList() }
-                ?: TeamSlot.fixedSlotsForTournament(tournamentId)
-            current.copy(
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            if (current.tournaments.none { it.id == tournamentId }) return@withLock
+            val normalizedSlots = database.teamSlotDao()
+                .observeByTournamentId(tournamentId)
+                .first()
+                .map { it.toDomain() }
+            val legacySlots = current.slots[tournamentId].orEmpty()
+            val slots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                normalizedSlots.firstOrNull { it.slotNumber == slotNumber }
+                    ?: legacySlots.firstOrNull { it.slotNumber == slotNumber }
+                    ?: TeamSlot.create(tournamentId, slotNumber)
+            }
+            val updatedSlots = slots.map { slot ->
+                slot.copy(teamName = teamNamesBySlotNumber[slot.slotNumber] ?: slot.teamName)
+            }
+            val next = current.copy(
                 tournaments = current.tournaments.map { tournament ->
                     if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
                         tournament.copy(status = TournamentStatus.DRAFT)
                     } else tournament
                 },
-                slots = current.slots + (tournamentId to slots.map { slot ->
-                    slot.copy(teamName = teamNamesBySlotNumber[slot.slotNumber] ?: slot.teamName)
-                }),
+                slots = current.slots + (tournamentId to updatedSlots),
             )
+            database.withTransaction {
+                database.teamSlotDao().upsertAll(updatedSlots.map { it.toEntity() })
+                persistTournamentStatusChanges(current, next)
+                saveLegacyState(next)
+            }
+            state.value = next
         }
     }
 
     override fun observeRosterByTournamentAndSlot(
         tournamentId: String,
         slotNumber: Int,
-    ): Flow<List<RosterPlayer>> = observeRosterByTournamentId(tournamentId).map { it[slotNumber].orEmpty() }
+    ): Flow<List<RosterPlayer>> = flow {
+        ready.await()
+        emitAll(
+            database.rosterPlayerDao()
+                .observeByTournamentAndSlot(tournamentId, slotNumber)
+                .map { players -> players.map { it.toDomain() } },
+        )
+    }
 
     override fun observeRosterByTournamentId(
         tournamentId: String,
-    ): Flow<Map<Int, List<RosterPlayer>>> = state.map { current ->
-        if (current.tournaments.none { it.id == tournamentId }) emptyMap()
-        else current.rosters.filterKeys { it.tournamentId == tournamentId }
-            .mapKeys { (key, _) -> key.slotNumber }
+    ): Flow<Map<Int, List<RosterPlayer>>> = flow {
+        ready.await()
+        emitAll(
+            database.rosterPlayerDao()
+                .observeByTournamentId(tournamentId)
+                .map { players ->
+                    players.groupBy { it.slotNumber }
+                        .mapValues { (_, roster) -> roster.map { it.toDomain() } }
+                },
+        )
     }
 
     override suspend fun saveRoster(
@@ -167,9 +240,11 @@ class RoomTournamentRepository @Inject constructor(
         require(slotNumber in TeamSlot.SLOT_NUMBERS)
         require(players.size <= RosterPlayer.MAX_PLAYERS)
         require(players.all { it.tournamentId == tournamentId && it.slotNumber == slotNumber })
-        updateState { current ->
-            if (current.tournaments.none { it.id == tournamentId }) current
-            else current.copy(
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            if (current.tournaments.none { it.id == tournamentId }) return@withLock
+            val next = current.copy(
                 tournaments = current.tournaments.map { tournament ->
                     if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
                         tournament.copy(status = TournamentStatus.DRAFT)
@@ -177,6 +252,13 @@ class RoomTournamentRepository @Inject constructor(
                 },
                 rosters = current.rosters + (RosterKey(tournamentId, slotNumber) to players.toList()),
             )
+            database.withTransaction {
+                database.rosterPlayerDao().deleteByTournamentAndSlot(tournamentId, slotNumber)
+                database.rosterPlayerDao().upsertAll(players.toEntities())
+                persistTournamentStatusChanges(current, next)
+                saveLegacyState(next)
+            }
+            state.value = next
         }
     }
 
@@ -381,13 +463,61 @@ class RoomTournamentRepository @Inject constructor(
         writeMutex.withLock {
             val current = state.value
             val next = transform(current)
-            next.tournaments
-                .filter { nextTournament ->
-                    current.tournaments.firstOrNull { it.id == nextTournament.id }?.status != nextTournament.status
-                }
-                .forEach { database.tournamentDao().upsert(it.toEntity()) }
-            saveLegacyState(next)
+            database.withTransaction {
+                persistTournamentStatusChanges(current, next)
+                saveLegacyState(next)
+            }
             state.value = next
+        }
+    }
+
+    private suspend fun persistTournamentStatusChanges(
+        current: RepositoryState,
+        next: RepositoryState,
+    ) {
+        next.tournaments
+            .filter { nextTournament ->
+                current.tournaments.firstOrNull { it.id == nextTournament.id }?.status != nextTournament.status
+            }
+            .forEach { database.tournamentDao().upsert(it.toEntity()) }
+    }
+
+    private suspend fun backfillSlots(
+        tournamentId: String,
+        restored: RepositoryState,
+    ) {
+        val existingSlots = database.teamSlotDao().observeByTournamentId(tournamentId).first()
+        val legacySlots = restored.slots[tournamentId].orEmpty()
+        val missingSlots = TeamSlot.SLOT_NUMBERS.mapNotNull { slotNumber ->
+            if (existingSlots.any { it.slotNumber == slotNumber }) {
+                null
+            } else {
+                (legacySlots.firstOrNull { it.slotNumber == slotNumber }
+                    ?: TeamSlot.create(tournamentId, slotNumber)).toEntity()
+            }
+        }
+        if (missingSlots.isNotEmpty()) {
+            database.teamSlotDao().upsertAll(missingSlots)
+        }
+    }
+
+    private suspend fun backfillRoster(
+        tournamentId: String,
+        restored: RepositoryState,
+    ) {
+        TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+            val existingPlayers = database.rosterPlayerDao()
+                .observeByTournamentAndSlot(tournamentId, slotNumber)
+                .first()
+            val existingPositions = existingPlayers.map { it.rosterPosition }.toSet()
+            val legacyPlayers = restored.rosters[RosterKey(tournamentId, slotNumber)].orEmpty()
+            val missingPlayers = legacyPlayers.mapIndexedNotNull { index, player ->
+                val rosterPosition = index + 1
+                if (rosterPosition in existingPositions) null else player.toEntity(rosterPosition)
+            }
+            if (missingPlayers.isNotEmpty()) {
+                database.rosterPlayerDao().upsertAll(missingPlayers)
+            }
         }
     }
 
@@ -466,11 +596,13 @@ private data class RepositoryState(
     val draftValues: Map<DraftKey, Map<Int, MatchDraftFieldValues>> = emptyMap(),
 )
 
-private fun RepositoryState.withTournamentMirror(tournament: Tournament): RepositoryState {
-    if (tournaments.any { it.id == tournament.id }) return this
+private fun RepositoryState.withTournamentMirror(
+    tournament: Tournament,
+    slots: List<TeamSlot>,
+): RepositoryState {
     return copy(
-        tournaments = tournaments + tournament,
-        slots = slots + (tournament.id to TeamSlot.fixedSlotsForTournament(tournament.id)),
+        tournaments = if (tournaments.any { it.id == tournament.id }) tournaments else tournaments + tournament,
+        slots = this.slots + (tournament.id to slots),
     )
 }
 
