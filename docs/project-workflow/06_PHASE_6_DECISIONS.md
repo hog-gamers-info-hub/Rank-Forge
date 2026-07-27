@@ -109,3 +109,79 @@ Logout success must clear only the Supabase/auth session. It must not clear Room
 ## Decision Status
 
 Ready to create or continue `feature/v0.6.0-supabase-authentication` after this decision document is restored and committed.
+
+## v0.6.0.1 Session Authentication Hardening Decisions
+
+### Version boundary
+
+`v0.6.0.1` hardens and verifies the session restoration, logout, expired-session, and authentication-error foundation already introduced in `v0.6.0`.
+
+It must not reintroduce authentication or start cloud synchronization.
+
+### Logout scope
+
+Phase 6 logout is current-device/local-session logout.
+
+Do not add global logout across all devices.
+
+Logout must never delete or modify Room tournament, roster, match, correction, scoring, or standings data.
+
+### Offline restoration
+
+A temporary network failure during restoration must:
+
+* preserve the saved local session where safe;
+* preserve all local Room data;
+* keep local tournament workflows available;
+* show a recoverable authentication warning;
+* not claim confirmed backend authorization until validation succeeds.
+
+### Invalid or expired session
+
+A definitively invalid or expired session must:
+
+* clear the unusable local authentication session;
+* transition the UI to signed out;
+* show an actionable sign-in-again message;
+* preserve all Room data.
+
+Temporary connectivity failures must not be treated as definitive session invalidation.
+
+### Logout failure behavior
+
+After the user requests logout, the local device session must be cleared even when remote revocation cannot be confirmed.
+
+The UI must not remain falsely signed in.
+
+Local tournament data must remain unchanged.
+
+### Authentication error model
+
+Authentication errors must be represented through stable typed application/domain failures rather than displaying arbitrary SDK or server exception messages directly.
+
+The approved minimum error categories are:
+
+* invalid credentials;
+* invalid email;
+* weak password;
+* account already registered;
+* email confirmation required;
+* rate limited;
+* network unavailable;
+* timeout;
+* expired or invalid session;
+* missing Supabase configuration;
+* unknown authentication failure.
+
+User-facing messages must use Android string resources during implementation.
+
+Errors and logs must not expose passwords, access tokens, refresh tokens, keys, raw HTTP bodies, or sensitive backend details.
+
+### Sign-up outcome
+
+The implementation must distinguish:
+
+* sign-up that immediately creates an authenticated session;
+* sign-up that requires email confirmation.
+
+The UI must not present both outcomes as the same generic success state.
