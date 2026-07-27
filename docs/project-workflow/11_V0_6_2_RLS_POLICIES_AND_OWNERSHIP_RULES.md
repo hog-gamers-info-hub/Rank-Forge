@@ -152,3 +152,9 @@ RLS coverage was added in `supabase/tests/03_v0_6_2_rls_ownership.sql`. The exis
 `npx.cmd supabase db reset` was blocked before local application because Docker Desktop's Linux engine pipe was unavailable: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` `npx.cmd supabase test db` was also blocked before test execution with `LegacyDbConnectError: failed to connect to postgres`. No local reset or pgTAP success is claimed, and no production database action occurred.
 
 `git diff --check` passed. Final repository status contains only this evidence update, the approved policy migration, the required schema-test expectation update, and the new RLS policy test.
+
+## 17. v0.6.2.1 cross-account test evidence
+
+`supabase/tests/04_v0_6_2_1_cross_account_rls.sql` adds a transactional 28-assertion pgTAP suite using separate owner A and owner B fixtures with complete tournament, team-slot, player, match, and match-result hierarchies. It proves owner A cannot select, update, delete, or insert through owner B's hierarchy; validates ownership-transfer and child-reparenting denials through both `USING` and `WITH CHECK`; and rejects cross-account and same-owner cross-tournament `match_results` parent combinations. No policy or migration change was required after static inspection.
+
+`npx.cmd supabase --version` passed with Supabase CLI `2.109.1`, and `npx.cmd supabase migration list` passed with migrations `20260727163228`, `20260727165522`, and `20260727172504`. Local verification remains blocked: `npx.cmd supabase db reset` could not connect to `//./pipe/dockerDesktopLinuxEngine` because Docker Desktop's Linux engine was unavailable, and `npx.cmd supabase test db` failed before execution with `LegacyDbConnectError: failed to connect to postgres`. No local reset or pgTAP success is claimed, and no production action occurred.
