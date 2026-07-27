@@ -122,3 +122,30 @@ Required future implementation branch:
 ```text
 feature/v0.6.1.1-schema-hardening-tests
 ```
+
+## 12. Implementation evidence
+
+Generated migration:
+
+```text
+supabase/migrations/20260727165522_v0_6_1_1_schema_hardening.sql
+```
+
+It adds the approved positive `revision` columns and checks to all five core tables, the six approved unique constraints, and only `idx_tournaments_owner_id` and `idx_match_results_team_slot_id` as non-unique indexes. It adds no policies, triggers, functions, RPCs, tables, or out-of-scope objects.
+
+Schema coverage was added in:
+
+```text
+supabase/tests/01_v0_6_1_1_schema_structure.sql
+supabase/tests/02_v0_6_1_1_schema_constraints.sql
+```
+
+The pgTAP tests cover retained schema shape, RLS without policies, excluded-object absence, uniqueness failures, existing check failures, foreign-key and cascade behavior, revision defaults and validation, and the two explicit indexes.
+
+## 13. Verification evidence
+
+`npx.cmd supabase --version` passed with Supabase CLI `2.109.1`. `npx.cmd supabase migration list` passed and listed local migrations `20260727163228` and `20260727165522`.
+
+`npx.cmd supabase db reset` was blocked before local application because Docker Desktop's Linux engine pipe was unavailable: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` `npx.cmd supabase test db` was also blocked before test execution with `LegacyDbConnectError: failed to connect to postgres`. No local reset or schema-test success is claimed, and no production database action occurred.
+
+`git diff --check` passed. Final repository status contains only this evidence update, the approved migration, and the two approved schema-test files.
