@@ -5,6 +5,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
+import com.hoggamers.rankforge.data.local.RosterPlayerEntity
+import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -25,6 +27,29 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryTest {
+    @Test
+    fun twelveTeamSlotsPersistThroughDatabaseReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-slots-reopen.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+            assertEquals(12, repository.observeSlotsByTournamentId("tournament-1").first().size)
+            databases.last().close()
+
+            val reopenedDatabase = openDatabase(context, databaseName, databases)
+            val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
+
+            assertEquals(12, reopenedRepository.observeSlotsByTournamentId("tournament-1").first().size)
+            assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("tournament-1").first().size)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun createPersistsTournamentInNormalizedTableAndObservationsReadIt() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -96,6 +121,13 @@ class RoomTournamentRepositoryTest {
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
 
             assertEquals(TournamentStatus.DRAFT, reopenedRepository.observeById("tournament-1").first { it != null }!!.status)
+            assertEquals(
+                "Alpha",
+                reopenedRepository.observeSlotsByTournamentId("tournament-1")
+                    .first { slots -> slots.any { it.teamName == "Alpha" } }
+                    .first { it.slotNumber == 1 }
+                    .teamName,
+            )
             assertEquals("DRAFT", reopenedDatabase.tournamentDao().observeById("tournament-1").first()!!.status)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -127,7 +159,7 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
-    fun legacyOnlyTournamentIsBackfilledIdempotentlyWithoutBackfillingOtherRecords() = runBlocking {
+    fun legacyOnlySlotsAndRostersAreBackfilledIdempotently() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-legacy-backfill.db"
         context.deleteDatabase(databaseName)
@@ -140,6 +172,11 @@ class RoomTournamentRepositoryTest {
                         id = "legacy-tournament",
                         name = "Legacy Cup",
                         status = "DRAFT",
+                        slots = (1..12).map { it to "Legacy Team $it" },
+                        rosters = listOf(
+                            Triple(1, 1, "Legacy Player One"),
+                            Triple(1, 2, "Legacy Player Two"),
+                        ),
                     ),
                 ),
             )
@@ -152,13 +189,24 @@ class RoomTournamentRepositoryTest {
                 repository.observeAll().first(),
             )
             assertEquals(1, database.tournamentDao().observeAll().first().size)
-            assertTrue(database.teamSlotDao().observeByTournamentId("legacy-tournament").first().isEmpty())
+            assertEquals(
+                (1..12).toList(),
+                database.teamSlotDao().observeByTournamentId("legacy-tournament").first().map { it.slotNumber },
+            )
+            assertEquals(
+                listOf("Legacy Player One", "Legacy Player Two"),
+                database.rosterPlayerDao().observeByTournamentAndSlot("legacy-tournament", 1)
+                    .first()
+                    .map { it.displayName },
+            )
 
             database.close()
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
             assertEquals("Legacy Cup", reopenedRepository.observeById("legacy-tournament").first { it != null }!!.name)
             assertEquals(1, reopenedDatabase.tournamentDao().observeAll().first().size)
+            assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("legacy-tournament").first().size)
+            assertEquals(2, reopenedDatabase.rosterPlayerDao().observeByTournamentAndSlot("legacy-tournament", 1).first().size)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -175,12 +223,22 @@ class RoomTournamentRepositoryTest {
             val database = openDatabase(context, databaseName, databases)
             val normalized = tournament("tournament-1", TournamentStatus.CONFIRMED)
             database.tournamentDao().upsert(normalized.toEntity())
+            database.teamSlotDao().upsertAll(
+                (1..12).map { slotNumber ->
+                    TeamSlotEntity(normalized.id, slotNumber, "Normalized Team $slotNumber")
+                },
+            )
+            database.rosterPlayerDao().upsertAll(
+                listOf(RosterPlayerEntity(normalized.id, 1, 1, "Normalized Player")),
+            )
             database.stateDao().save(
                 RankForgeStateEntity(
                     payload = legacyPayload(
                         id = normalized.id,
                         name = "Stale Legacy Name",
                         status = "DRAFT",
+                        slots = listOf(1 to "Stale Legacy Team"),
+                        rosters = listOf(Triple(1, 1, "Stale Legacy Player")),
                     ),
                 ),
             )
@@ -194,6 +252,135 @@ class RoomTournamentRepositoryTest {
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
             assertEquals(normalized, reopenedRepository.observeById(normalized.id).first { it != null })
+            assertEquals(
+                "Normalized Team 1",
+                reopenedRepository.observeSlotsByTournamentId(normalized.id).first().first().teamName,
+            )
+            assertEquals(
+                "Normalized Player",
+                reopenedRepository.observeRosterByTournamentId(normalized.id).first()[1]!!.single().displayName,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun observeRosterByTournamentIdReadsNormalizedRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-normalized-roster-read.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+            database.rosterPlayerDao().upsertAll(
+                listOf(RosterPlayerEntity("tournament-1", 1, 1, "Normalized Player")),
+            )
+
+            assertEquals(
+                "Normalized Player",
+                repository.observeRosterByTournamentId("tournament-1")
+                    .first { it.isNotEmpty() }[1]!!.single().displayName,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun saveTeamNamesRollsBackAllNormalizedSlotChangesWhenOneWriteFails() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-slots-transaction.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.CONFIRMED))
+            database.openHelper.writableDatabase.execSQL(
+                """
+                CREATE TRIGGER fail_team_slot_insert
+                BEFORE INSERT ON team_slots
+                WHEN NEW.tournament_id = 'tournament-1' AND NEW.slot_number = 12
+                BEGIN SELECT RAISE(ABORT, 'forced slot insert failure'); END
+                """.trimIndent(),
+            )
+            database.openHelper.writableDatabase.execSQL(
+                """
+                CREATE TRIGGER fail_team_slot_update
+                BEFORE UPDATE ON team_slots
+                WHEN NEW.tournament_id = 'tournament-1' AND NEW.slot_number = 12
+                BEGIN SELECT RAISE(ABORT, 'forced slot update failure'); END
+                """.trimIndent(),
+            )
+
+            var failed = false
+            try {
+                repository.saveTeamNames("tournament-1", (1..12).associateWith { "Updated Team $it" })
+            } catch (_: Exception) {
+                failed = true
+            }
+
+            assertTrue(failed)
+            assertTrue(database.teamSlotDao().observeByTournamentId("tournament-1").first().all { it.teamName.isEmpty() })
+            assertEquals("CONFIRMED", database.tournamentDao().observeById("tournament-1").first()!!.status)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun saveRosterRollsBackDeleteAndInsertWhenOneWriteFails() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-roster-transaction.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+            repository.saveRoster(
+                "tournament-1",
+                1,
+                listOf(RosterPlayer("tournament-1", 1, "Original Player")),
+            )
+            assertTrue(repository.confirmTournament("tournament-1"))
+            database.openHelper.writableDatabase.execSQL(
+                """
+                CREATE TRIGGER fail_roster_insert
+                BEFORE INSERT ON roster_players
+                WHEN NEW.tournament_id = 'tournament-1' AND NEW.roster_position = 2
+                BEGIN SELECT RAISE(ABORT, 'forced roster insert failure'); END
+                """.trimIndent(),
+            )
+
+            var failed = false
+            try {
+                repository.saveRoster(
+                    "tournament-1",
+                    1,
+                    listOf(
+                        RosterPlayer("tournament-1", 1, "Updated One"),
+                        RosterPlayer("tournament-1", 1, "Updated Two"),
+                    ),
+                )
+            } catch (_: Exception) {
+                failed = true
+            }
+
+            assertTrue(failed)
+            assertEquals(
+                listOf("Original Player"),
+                database.rosterPlayerDao().observeByTournamentAndSlot("tournament-1", 1)
+                    .first()
+                    .map { it.displayName },
+            )
+            assertEquals("CONFIRMED", database.tournamentDao().observeById("tournament-1").first()!!.status)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -483,8 +670,21 @@ class RoomTournamentRepositoryTest {
         status = status,
     )
 
-    private fun legacyPayload(id: String, name: String, status: String) =
-        """{"tournaments":[{"id":"$id","name":"$name","date":"2026-07-24","organizerName":"Organizer","organizerContactNumber":"123","status":"$status"}]}"""
+    private fun legacyPayload(
+        id: String,
+        name: String,
+        status: String,
+        slots: List<Pair<Int, String>> = emptyList(),
+        rosters: List<Triple<Int, Int, String>> = emptyList(),
+    ): String {
+        val slotsJson = slots.joinToString(",") { (slotNumber, teamName) ->
+            """{"tournamentId":"$id","slotNumber":$slotNumber,"teamName":"$teamName"}"""
+        }
+        val rostersJson = rosters.joinToString(",") { (slotNumber, _, displayName) ->
+            """{"tournamentId":"$id","slotNumber":$slotNumber,"displayName":"$displayName"}"""
+        }
+        return """{"tournaments":[{"id":"$id","name":"$name","date":"2026-07-24","organizerName":"Organizer","organizerContactNumber":"123","status":"$status"}],"slots":[$slotsJson],"rosters":[$rostersJson]}"""
+    }
 
     private suspend fun seedTournamentAndMatch(
         repository: RoomTournamentRepository,

@@ -37,6 +37,15 @@ interface RosterPlayerDao {
     @Query(
         """
         SELECT * FROM roster_players
+        WHERE tournament_id = :tournamentId
+        ORDER BY slot_number, roster_position
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<RosterPlayerEntity>>
+
+    @Query(
+        """
+        SELECT * FROM roster_players
         WHERE tournament_id = :tournamentId AND slot_number = :slotNumber
         ORDER BY roster_position
         """,
