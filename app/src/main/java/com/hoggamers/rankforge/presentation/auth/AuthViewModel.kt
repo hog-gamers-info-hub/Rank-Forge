@@ -7,6 +7,11 @@ import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import java.util.concurrent.CancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,23 +33,22 @@ class AuthViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            val restoration = try {
+                restoreSession()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                AuthRestorationResult.Failure(
+                    AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+                )
+            }
+            _uiState.update { currentState ->
+                AuthUiStateReducer.reduceRestoration(currentState, restoration)
+            }
+
             observeAuthState().collect { authState ->
                 _uiState.update { currentState ->
                     AuthUiStateReducer.reduceSession(currentState, authState)
-                }
-            }
-        }
-        viewModelScope.launch {
-            val result = restoreSession()
-            _uiState.update { currentState ->
-                when (result) {
-                    com.hoggamers.rankforge.domain.auth.AuthOperationResult.Success ->
-                        currentState.copy(isSessionLoading = false)
-                    is com.hoggamers.rankforge.domain.auth.AuthOperationResult.Failure ->
-                        currentState.copy(
-                            isSessionLoading = false,
-                            errorMessage = AuthUiMessage.Text(result.message),
-                        )
                 }
             }
         }
@@ -91,25 +95,37 @@ class AuthViewModel @Inject constructor(
                 AuthUiStateReducer.finishOperation(
                     currentState = state.copy(password = ""),
                     result = result,
-                    successMessage = when (currentState.mode) {
-                        AuthMode.Login -> AuthUiMessage.SignedIn
-                        AuthMode.SignUp -> AuthUiMessage.SignUpSubmitted
-                    },
                 )
             }
         }
     }
 
     fun logout() {
+        if (_uiState.value.isSubmitting) {
+            return
+        }
         viewModelScope.launch {
             _uiState.update(AuthUiStateReducer::startOperation)
             val result = logout.invoke()
             _uiState.update { state ->
-                AuthUiStateReducer.finishOperation(
-                    currentState = state.copy(password = ""),
-                    result = result,
-                    successMessage = AuthUiMessage.SignedOut,
-                )
+                when (result) {
+                    is AuthOperationResult.Success ->
+                        AuthUiStateReducer.finishOperation(
+                            currentState = state.copy(password = ""),
+                            result = result,
+                        )
+                    is AuthOperationResult.Failure -> state.copy(
+                        accountEmail = null,
+                        isSubmitting = false,
+                        isSignedIn = false,
+                        password = "",
+                        statusMessage = null,
+                        warningMessage = null,
+                        errorMessage = AuthUiMessage.AuthenticationFailure(
+                            result.failure.category,
+                        ),
+                    )
+                }
             }
         }
     }

@@ -1,25 +1,32 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import java.time.LocalDate
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import java.time.LocalDate
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,26 +51,120 @@ class AuthViewModelTest {
     }
 
     @Test
-    fun restoreSessionFailureShowsErrorWithoutStuckLoading() = runTest {
-        repository.restoreResult = AuthOperationResult.Failure("Session expired.")
-
+    fun initializationRemainsLoadingUntilPersistedSessionInitializationCompletes() = runTest {
+        repository.restoreGate = CompletableDeferred()
         val viewModel = createViewModel()
+
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSessionLoading)
+
+        repository.restoreGate?.complete(Unit)
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isSessionLoading)
-        assertEquals(AuthUiMessage.Text("Session expired."), viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
     @Test
-    fun restoreSessionSuccessUsesObservedSignedInState() = runTest {
-        repository.authState.value = AuthState.SignedIn(AuthUser(id = "user-id", email = "stored@example.com"))
+    fun validPersistedSessionRestores() = runTest {
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser(id = "user-id", email = "stored@example.com"),
+        )
 
         val viewModel = createViewModel()
         advanceUntilIdle()
 
-        assertFalse(viewModel.uiState.value.isSessionLoading)
         assertTrue(viewModel.uiState.value.isSignedIn)
         assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
+    }
+
+    @Test
+    fun absentPersistedSessionRemainsSignedOut() = runTest {
+        repository.restoreResult = AuthRestorationResult.NoSavedSession
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun expiredSessionShowsActionableTypedError() = runTest {
+        repository.restoreResult = AuthRestorationResult.ExpiredOrInvalid(
+            AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            viewModel.uiState.value.errorMessage,
+        )
+    }
+
+    @Test
+    fun temporaryNetworkFailureShowsRecoverableWarning() = runTest {
+        repository.restoreResult = AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.RestorationWarning(AuthFailureCategory.NetworkUnavailable),
+            viewModel.uiState.value.warningMessage,
+        )
+    }
+
+    @Test
+    fun timeoutFailureShowsRecoverableWarning() = runTest {
+        repository.restoreResult = AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.Timeout),
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(
+            AuthUiMessage.RestorationWarning(AuthFailureCategory.Timeout),
+            viewModel.uiState.value.warningMessage,
+        )
+    }
+
+    @Test
+    fun missingConfigurationDoesNotExposeRawFailure() = runTest {
+        repository.restoreResult = AuthRestorationResult.Failure(
+            AuthFailure(AuthFailureCategory.MissingSupabaseConfiguration),
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.MissingSupabaseConfiguration),
+            viewModel.uiState.value.errorMessage,
+        )
+    }
+
+    @Test
+    fun unknownRestorationFailureUsesStableCategory() = runTest {
+        repository.restoreResult = AuthRestorationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+            viewModel.uiState.value.errorMessage,
+        )
     }
 
     @Test
@@ -82,8 +183,10 @@ class AuthViewModelTest {
     }
 
     @Test
-    fun loginFailureShowsErrorState() = runTest {
-        repository.loginResult = AuthOperationResult.Failure("Invalid login credentials.")
+    fun loginFailureShowsTypedError() = runTest {
+        repository.loginResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.InvalidCredentials),
+        )
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -93,11 +196,15 @@ class AuthViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isSignedIn)
-        assertEquals(AuthUiMessage.Text("Invalid login credentials."), viewModel.uiState.value.errorMessage)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.InvalidCredentials),
+            viewModel.uiState.value.errorMessage,
+        )
     }
 
     @Test
-    fun signUpSuccessShowsSubmittedState() = runTest {
+    fun immediateSignUpShowsAuthenticatedOutcome() = runTest {
+        repository.signUpResult = AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -107,12 +214,15 @@ class AuthViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(AuthUiMessage.SignUpSubmitted, viewModel.uiState.value.statusMessage)
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals(AuthUiMessage.SignUpAuthenticated, viewModel.uiState.value.statusMessage)
     }
 
     @Test
-    fun signUpFailureShowsErrorState() = runTest {
-        repository.signUpResult = AuthOperationResult.Failure("User already registered.")
+    fun confirmationRequiredSignUpRemainsSignedOut() = runTest {
+        repository.signUpResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.EmailConfirmationRequired,
+        )
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -122,12 +232,35 @@ class AuthViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(AuthUiMessage.Text("User already registered."), viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.SignUpConfirmationRequired,
+            viewModel.uiState.value.statusMessage,
+        )
+    }
+
+    @Test
+    fun duplicateSubmitIsIgnoredWhileOperationRuns() = runTest {
+        repository.loginGate = CompletableDeferred()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.onPasswordChanged("password")
+
+        viewModel.submit()
+        runCurrent()
+        viewModel.submit()
+
+        assertEquals(1, repository.loginCalls)
+        repository.loginGate?.complete(Unit)
+        advanceUntilIdle()
     }
 
     @Test
     fun logoutClearsOnlyAuthState() = runTest {
-        repository.authState.value = AuthState.SignedIn(AuthUser(id = "user-id", email = "user@example.com"))
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "user@example.com"),
+        )
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -139,8 +272,46 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun logoutFailureCannotLeaveStaleSignedInUi() = runTest {
+        repository.logoutResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "user@example.com"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.logout()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.accountEmail)
+    }
+
+    @Test
+    fun remoteLogoutFailureStillLeavesLocalDeviceSignedOutWithWarning() = runTest {
+        repository.logoutResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.SignedOutLocallyWithRemoteFailure(
+                AuthFailure(AuthFailureCategory.NetworkUnavailable),
+            ),
+        )
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "user@example.com"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.logout()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(AuthUiMessage.LogoutRemoteWarning, viewModel.uiState.value.warningMessage)
+    }
+
+    @Test
     fun logoutDoesNotDeleteLocalTournamentData() = runTest {
-        val tournamentRepository = com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository()
+        val tournamentRepository = InMemoryTournamentRepository()
         tournamentRepository.create(
             com.hoggamers.rankforge.domain.tournament.Tournament(
                 id = "local-id",
@@ -151,7 +322,9 @@ class AuthViewModelTest {
                 status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.DRAFT,
             ),
         )
-        repository.authState.value = AuthState.SignedIn(AuthUser(id = "user-id", email = "user@example.com"))
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "user@example.com"),
+        )
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -160,6 +333,15 @@ class AuthViewModelTest {
 
         val tournaments = tournamentRepository.observeAll().first()
         assertEquals(listOf("Local Cup"), tournaments.map { it.name })
+    }
+
+    @Test
+    fun restartAfterLogoutRemainsSignedOut() = runTest {
+        repository.restoreResult = AuthRestorationResult.NoSavedSession
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
     private fun createViewModel(): AuthViewModel =
@@ -173,14 +355,31 @@ class AuthViewModelTest {
 
     private class FakeAuthRepository : AuthRepository {
         val authState = MutableStateFlow<AuthState>(AuthState.SignedOut)
-        var restoreResult: AuthOperationResult = AuthOperationResult.Success
-        var signUpResult: AuthOperationResult = AuthOperationResult.Success
-        var loginResult: AuthOperationResult = AuthOperationResult.Success
-        var logoutResult: AuthOperationResult = AuthOperationResult.Success
+        var restoreResult: AuthRestorationResult = AuthRestorationResult.NoSavedSession
+        var restoreGate: CompletableDeferred<Unit>? = null
+        var signUpResult: AuthOperationResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.SignUpAuthenticated,
+        )
+        var loginResult: AuthOperationResult = AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        var loginGate: CompletableDeferred<Unit>? = null
+        var loginCalls: Int = 0
+        var logoutResult: AuthOperationResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.SignedOutLocally,
+        )
 
         override fun observeAuthState(): Flow<AuthState> = authState
 
-        override suspend fun restoreSession(): AuthOperationResult = restoreResult
+        override suspend fun restoreSession(): AuthRestorationResult {
+            restoreGate?.await()
+            when (val result = restoreResult) {
+                is AuthRestorationResult.Restored -> authState.value = AuthState.SignedIn(result.user)
+                AuthRestorationResult.NoSavedSession -> authState.value = AuthState.SignedOut
+                is AuthRestorationResult.ExpiredOrInvalid -> authState.value = AuthState.SessionExpired(result.failure)
+                is AuthRestorationResult.TemporaryFailure -> authState.value = AuthState.RestorationWarning(result.failure)
+                is AuthRestorationResult.Failure -> authState.value = AuthState.Error(result.failure)
+            }
+            return restoreResult
+        }
 
         override suspend fun signUp(
             email: String,
@@ -191,14 +390,16 @@ class AuthViewModelTest {
             email: String,
             password: String,
         ): AuthOperationResult {
-            if (loginResult == AuthOperationResult.Success) {
+            loginCalls += 1
+            loginGate?.await()
+            if (loginResult is AuthOperationResult.Success) {
                 authState.value = AuthState.SignedIn(AuthUser(id = "user-id", email = email))
             }
             return loginResult
         }
 
         override suspend fun logout(): AuthOperationResult {
-            if (logoutResult == AuthOperationResult.Success) {
+            if (logoutResult is AuthOperationResult.Success) {
                 authState.value = AuthState.SignedOut
             }
             return logoutResult

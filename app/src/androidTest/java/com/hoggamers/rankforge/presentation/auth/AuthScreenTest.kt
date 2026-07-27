@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -79,5 +80,54 @@ class AuthScreenTest {
             context.getString(R.string.auth_signed_in_as, "user@example.com"),
         ).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun restorationWarningIsDisplayedWithoutSignedInState() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(
+                        warningMessage = AuthUiMessage.RestorationWarning(
+                            AuthFailureCategory.NetworkUnavailable,
+                        ),
+                    ),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_WARNING_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.auth_restoration_network_warning),
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun signUpOutcomesUseDistinctMessages() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(
+                        statusMessage = AuthUiMessage.SignUpConfirmationRequired,
+                    ),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.auth_signup_confirmation_required_message),
+        ).assertIsDisplayed()
     }
 }
