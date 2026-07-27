@@ -153,7 +153,7 @@ select is((
     from pg_policies
     where schemaname = 'public'
         and tablename in ('tournaments', 'tournament_team_slots', 'players', 'matches', 'match_results')
-), 0::bigint, 'core tables have no RLS policies');
+), 20::bigint, 'core tables have the 20 approved RLS operation policies');
 select is((
     select count(*)
     from pg_trigger trigger_row
