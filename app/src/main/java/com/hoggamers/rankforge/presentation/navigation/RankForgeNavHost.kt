@@ -8,6 +8,7 @@ import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.hoggamers.rankforge.presentation.auth.AuthMode
 import com.hoggamers.rankforge.presentation.auth.AuthScreen
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
@@ -20,6 +21,7 @@ import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
+import com.hoggamers.rankforge.presentation.screen.TournamentCloudUploadViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListRoute
@@ -49,6 +51,7 @@ fun RankForgeNavHost(
     creationViewModel: TournamentCreationViewModel? = null,
     listViewModel: TournamentListViewModel? = null,
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
+    cloudUploadViewModelFactory: ((String) -> TournamentCloudUploadViewModel)? = null,
     standingsViewModelFactory: ((String) -> TournamentStandingsViewModel)? = null,
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
@@ -136,6 +139,12 @@ fun RankForgeNavHost(
             val onOpenStandings: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentStandingsDestination(tournamentId))
             }
+            val cloudUploadViewModel = cloudUploadViewModelFactory?.invoke(destination.tournamentId)
+                ?: if (detailsViewModelFactory == null) {
+                    hiltViewModel<TournamentCloudUploadViewModel>()
+                } else {
+                    null
+                }
             val detailsViewModel = detailsViewModelFactory?.invoke(destination.tournamentId)
             if (detailsViewModel == null) {
                 TournamentDetailsRoute(
@@ -147,6 +156,7 @@ fun RankForgeNavHost(
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
+                    uploadViewModel = cloudUploadViewModel,
                 )
             } else {
                 TournamentDetailsRoute(
@@ -159,6 +169,7 @@ fun RankForgeNavHost(
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
                     viewModel = detailsViewModel,
+                    uploadViewModel = cloudUploadViewModel,
                 )
             }
         }
