@@ -891,6 +891,71 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun correctionDraftSurvivesRecreationAndFinalizedCorrectionRegeneratesStandings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-correction-draft-restart.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            seedTournamentAndMatch(repository, "tournament-1", "match-1")
+            repository.finalizeDraftMatch(
+                "match-1",
+                (1..12).map { slot -> MatchPlacement(slot, slot) },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 3 else 0) },
+            )
+            repository.saveDraftMatchValue("tournament-1", "match-1", 1, "2", "9")
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+
+            assertEquals(
+                MatchDraftFieldValues("2", "9"),
+                reopenedRepository.observeDraftMatchValues("tournament-1", "match-1").first()[1],
+            )
+            assertEquals(
+                15,
+                regenerateStandings(reopenedRepository, "tournament-1")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
+
+            reopenedRepository.submitMatchCorrection(
+                "match-1",
+                (1..12).map { slot ->
+                    MatchPlacement(slot, when (slot) {
+                        1 -> 2
+                        2 -> 1
+                        else -> slot
+                    })
+                },
+                (1..12).map { slot -> MatchKill(slot, if (slot == 1) 9 else 0) },
+            )
+            databases.last().close()
+            val afterCorrectionRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+
+            val correctedMatch = afterCorrectionRepository
+                .observeMatchById("match-1")
+                .first { it != null }!!
+            assertEquals(1, correctedMatch.correctionHistory.size)
+            assertTrue(
+                afterCorrectionRepository.observeDraftMatchValues("tournament-1", "match-1")
+                    .first()
+                    .isEmpty(),
+            )
+            assertEquals(
+                18,
+                regenerateStandings(afterCorrectionRepository, "tournament-1")
+                    .first { it.teamSlotNumber == 1 }
+                    .totalPoints,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun discardingCorrectionKeepsOriginalFinalizedResultUnchanged() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-correction-discard.db"
