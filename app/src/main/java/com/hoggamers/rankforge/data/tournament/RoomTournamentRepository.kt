@@ -32,8 +32,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,22 +55,62 @@ class RoomTournamentRepository @Inject constructor(
     init {
         scope.launch {
             try {
-                runCatching { database.stateDao().readPayload() }
+                val restored = runCatching { database.stateDao().readPayload() }
                     .getOrNull()
                     ?.let { payload ->
                         runCatching { json.decodeFromString<PersistedState>(payload).toRepositoryState() }
-                            .onSuccess { restored -> state.value = restored }
+                            .getOrNull()
                     }
+                    ?: RepositoryState()
+                val existingIds = database.tournamentDao().observeAll().first().map { it.id }.toSet()
+                restored.tournaments
+                    .filter { it.id !in existingIds }
+                    .forEach { database.tournamentDao().upsert(it.toEntity()) }
+                val normalizedTournaments = database.tournamentDao().observeAll().first().map { it.toDomain() }
+                val synchronizedState = restored.copy(tournaments = normalizedTournaments)
+                if (synchronizedState.tournaments != restored.tournaments) {
+                    database.stateDao().save(
+                        RankForgeStateEntity(payload = json.encodeToString(synchronizedState.toPersistedState())),
+                    )
+                }
+                state.value = synchronizedState
             } finally {
                 ready.complete(Unit)
             }
         }
     }
 
-    override fun observeAll(): Flow<List<Tournament>> = state.map { it.tournaments }
+    override fun observeAll(): Flow<List<Tournament>> = flow {
+        ready.await()
+        emitAll(database.tournamentDao().observeAll().map { tournaments ->
+            tournaments.map { it.toDomain() }
+        })
+    }
 
-    override fun observeById(tournamentId: String): Flow<Tournament?> = state.map { current ->
-        current.tournaments.firstOrNull { it.id == tournamentId }
+    override fun observeById(tournamentId: String): Flow<Tournament?> = flow {
+        ready.await()
+        emitAll(database.tournamentDao().observeById(tournamentId).map { it?.toDomain() })
+    }
+
+    override suspend fun create(tournament: Tournament) {
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            val existing = database.tournamentDao().observeById(tournament.id).first()
+            if (existing != null) {
+                if (current.tournaments.none { it.id == tournament.id }) {
+                    val next = current.withTournamentMirror(existing.toDomain())
+                    saveLegacyState(next)
+                    state.value = next
+                }
+                return@withLock
+            }
+
+            database.tournamentDao().upsert(tournament.toEntity())
+            val next = current.withTournamentMirror(tournament)
+            saveLegacyState(next)
+            state.value = next
+        }
     }
 
     override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = state.map { current ->
@@ -78,17 +120,6 @@ class RoomTournamentRepository @Inject constructor(
             current.slots[tournamentId]
                 ?.takeIf { slots -> slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList() }
                 ?: TeamSlot.fixedSlotsForTournament(tournamentId)
-        }
-    }
-
-    override suspend fun create(tournament: Tournament) = updateState { current ->
-        if (current.tournaments.any { it.id == tournament.id }) {
-            current
-        } else {
-            current.copy(
-                tournaments = current.tournaments + tournament,
-                slots = current.slots + (tournament.id to TeamSlot.fixedSlotsForTournament(tournament.id)),
-            )
         }
     }
 
@@ -348,12 +379,22 @@ class RoomTournamentRepository @Inject constructor(
     private suspend fun updateState(transform: (RepositoryState) -> RepositoryState) {
         ready.await()
         writeMutex.withLock {
-            val next = transform(state.value)
-            database.stateDao().save(
-                RankForgeStateEntity(payload = json.encodeToString(next.toPersistedState())),
-            )
+            val current = state.value
+            val next = transform(current)
+            next.tournaments
+                .filter { nextTournament ->
+                    current.tournaments.firstOrNull { it.id == nextTournament.id }?.status != nextTournament.status
+                }
+                .forEach { database.tournamentDao().upsert(it.toEntity()) }
+            saveLegacyState(next)
             state.value = next
         }
+    }
+
+    private suspend fun saveLegacyState(state: RepositoryState) {
+        database.stateDao().save(
+            RankForgeStateEntity(payload = json.encodeToString(state.toPersistedState())),
+        )
     }
 
     private fun RepositoryState.replaceMatch(matchId: String, transform: (Match) -> Match): RepositoryState = copy(
@@ -424,6 +465,14 @@ private data class RepositoryState(
     val matches: Map<String, List<Match>> = emptyMap(),
     val draftValues: Map<DraftKey, Map<Int, MatchDraftFieldValues>> = emptyMap(),
 )
+
+private fun RepositoryState.withTournamentMirror(tournament: Tournament): RepositoryState {
+    if (tournaments.any { it.id == tournament.id }) return this
+    return copy(
+        tournaments = tournaments + tournament,
+        slots = slots + (tournament.id to TeamSlot.fixedSlotsForTournament(tournament.id)),
+    )
+}
 
 private data class RosterKey(val tournamentId: String, val slotNumber: Int)
 private data class DraftKey(val tournamentId: String, val matchId: String)
