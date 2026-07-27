@@ -132,3 +132,23 @@ Required future implementation branch:
 ```text
 feature/v0.6.2-rls-ownership-policies
 ```
+
+## 15. Implementation evidence
+
+Generated migration:
+
+```text
+supabase/migrations/20260727172504_v0_6_2_rls_ownership_policies.sql
+```
+
+It creates exactly 20 ownership policies: separate `SELECT`, `INSERT`, `UPDATE`, and `DELETE` policies for each core table, all targeted to `authenticated` and using inline `auth.uid()` ownership predicates. `match_results` policies require its match and team slot to resolve to the same owned tournament. No policy targets `anon`, and no function, trigger, RPC, `SECURITY DEFINER`, table, or other out-of-scope object was added.
+
+RLS coverage was added in `supabase/tests/03_v0_6_2_rls_ownership.sql`. The existing structural test now expects the approved 20 policies while preserving its remaining schema-hardening checks. The new test covers policy shape, single-owner CRUD, owned-parent inserts, same-owner cross-tournament match-result rejection, and anonymous read/write denial. Deliberate two-user cross-account denial remains deferred to `v0.6.2.1`.
+
+## 16. Verification evidence
+
+`npx.cmd supabase --version` passed with Supabase CLI `2.109.1`. `npx.cmd supabase migration list` passed and listed migrations `20260727163228`, `20260727165522`, and `20260727172504`.
+
+`npx.cmd supabase db reset` was blocked before local application because Docker Desktop's Linux engine pipe was unavailable: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` `npx.cmd supabase test db` was also blocked before test execution with `LegacyDbConnectError: failed to connect to postgres`. No local reset or pgTAP success is claimed, and no production database action occurred.
+
+`git diff --check` passed. Final repository status contains only this evidence update, the approved policy migration, the required schema-test expectation update, and the new RLS policy test.
