@@ -1,7 +1,11 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,37 +26,95 @@ class AuthUiStateReducerTest {
     }
 
     @Test
-    fun signedOutSessionKeepsLocalModeAvailable() {
-        val uiState = AuthUiStateReducer.reduceSession(
-            currentState = AuthUiState(accountEmail = "user@example.com", isSignedIn = true),
-            authState = AuthState.SignedOut,
+    fun temporaryRestorationFailureShowsWarningWithoutSigningIn() {
+        val uiState = AuthUiStateReducer.reduceRestoration(
+            currentState = AuthUiState(isSessionLoading = true),
+            result = AuthRestorationResult.TemporaryFailure(
+                AuthFailure(AuthFailureCategory.NetworkUnavailable),
+            ),
         )
 
         assertFalse(uiState.isSignedIn)
-        assertEquals(null, uiState.accountEmail)
+        assertFalse(uiState.isSessionLoading)
+        assertEquals(
+            AuthUiMessage.RestorationWarning(AuthFailureCategory.NetworkUnavailable),
+            uiState.warningMessage,
+        )
     }
 
     @Test
-    fun failedOperationMapsToReadableError() {
-        val uiState = AuthUiStateReducer.finishOperation(
-            currentState = AuthUiState(isSubmitting = true),
-            result = AuthOperationResult.Failure("Invalid login credentials."),
-            successMessage = AuthUiMessage.SignedIn,
+    fun expiredRestorationShowsTypedSignInAgainError() {
+        val uiState = AuthUiStateReducer.reduceRestoration(
+            currentState = AuthUiState(isSessionLoading = true),
+            result = AuthRestorationResult.ExpiredOrInvalid(
+                AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            ),
         )
 
-        assertFalse(uiState.isSubmitting)
-        assertEquals(AuthUiMessage.Text("Invalid login credentials."), uiState.errorMessage)
+        assertFalse(uiState.isSignedIn)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            uiState.errorMessage,
+        )
     }
 
     @Test
-    fun successfulOperationClearsSubmittingState() {
+    fun failedOperationUsesTypedErrorWithoutRawText() {
         val uiState = AuthUiStateReducer.finishOperation(
             currentState = AuthUiState(isSubmitting = true),
-            result = AuthOperationResult.Success,
-            successMessage = AuthUiMessage.SignUpSubmitted,
+            result = AuthOperationResult.Failure(
+                AuthFailure(AuthFailureCategory.InvalidCredentials),
+            ),
         )
 
         assertFalse(uiState.isSubmitting)
-        assertEquals(AuthUiMessage.SignUpSubmitted, uiState.statusMessage)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.InvalidCredentials),
+            uiState.errorMessage,
+        )
+    }
+
+    @Test
+    fun immediateSignUpMapsToSignedInOutcome() {
+        val uiState = AuthUiStateReducer.finishOperation(
+            currentState = AuthUiState(
+                email = "new@example.com",
+                isSubmitting = true,
+            ),
+            result = AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated),
+        )
+
+        assertTrue(uiState.isSignedIn)
+        assertEquals(AuthUiMessage.SignUpAuthenticated, uiState.statusMessage)
+    }
+
+    @Test
+    fun confirmationRequiredSignUpRemainsSignedOut() {
+        val uiState = AuthUiStateReducer.finishOperation(
+            currentState = AuthUiState(isSubmitting = true),
+            result = AuthOperationResult.Success(AuthSuccessOutcome.EmailConfirmationRequired),
+        )
+
+        assertFalse(uiState.isSignedIn)
+        assertEquals(AuthUiMessage.SignUpConfirmationRequired, uiState.statusMessage)
+    }
+
+    @Test
+    fun remoteLogoutWarningStillLeavesSignedOutState() {
+        val uiState = AuthUiStateReducer.finishOperation(
+            currentState = AuthUiState(
+                accountEmail = "user@example.com",
+                isSignedIn = true,
+                isSubmitting = true,
+            ),
+            result = AuthOperationResult.Success(
+                AuthSuccessOutcome.SignedOutLocallyWithRemoteFailure(
+                    AuthFailure(AuthFailureCategory.NetworkUnavailable),
+                ),
+            ),
+        )
+
+        assertFalse(uiState.isSignedIn)
+        assertEquals(AuthUiMessage.LogoutRemoteWarning, uiState.warningMessage)
     }
 }

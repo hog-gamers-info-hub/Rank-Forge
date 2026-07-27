@@ -185,3 +185,32 @@ Ready to implement v0.6.0.1 after this documentation gate is reviewed, committed
 ## 14. Required next branch
 
 `feature/v0.6.0.1-session-auth-hardening`
+
+## 15. Implementation evidence
+
+The implementation on the required branch now includes:
+
+* Supabase Auth initialization is awaited before restoration resolves or session observation emits state.
+* Restoration distinguishes restored, absent, expired or invalid, temporary network or timeout, missing configuration, and unknown outcomes.
+* Authentication failures are mapped to stable domain categories and resource-backed UI messages without exposing raw exception text.
+* Current-device logout uses local session clearing and also clears the local session when remote revocation cannot be confirmed.
+* Sign-up distinguishes immediate authentication from email-confirmation-required registration.
+* Duplicate authentication submissions are blocked while an operation is in progress.
+* Logout state transitions leave local tournament data untouched.
+* Focused JVM and Compose coverage covers initialization ordering, restoration outcomes, typed failure mapping, login, both sign-up outcomes, duplicate actions, logout outcomes, restart-after-logout behavior, local data preservation, and additive navigation.
+
+No Gradle dependency, Room schema, Supabase migration, RLS policy, WorkManager, synchronization, ownership, export, or unrelated UI changes were introduced.
+
+## 16. Verification evidence
+
+Completed successfully on 2026-07-27:
+
+* `.\gradlew.bat testDebugUnitTest` - BUILD SUCCESSFUL
+* `.\gradlew.bat assembleDebug` - BUILD SUCCESSFUL
+* `.\gradlew.bat lintDebug` - BUILD SUCCESSFUL
+* `.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon --stacktrace` - BUILD SUCCESSFUL, 111/111 on I2019 - 14
+* `git diff --check` - passed
+
+Connected-device verification used:
+
+* `1387817719000JM - I2019 - 14`

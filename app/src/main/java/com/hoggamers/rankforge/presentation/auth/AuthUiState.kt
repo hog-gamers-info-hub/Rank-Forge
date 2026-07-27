@@ -9,8 +9,9 @@ data class AuthUiState(
     val isSubmitting: Boolean = false,
     val isSignedIn: Boolean = false,
     val statusMessage: AuthUiMessage? = null,
+    val warningMessage: AuthUiMessage? = null,
     val errorMessage: AuthUiMessage? = null,
 ) {
     val canSubmit: Boolean =
-        email.isNotBlank() && password.isNotBlank() && !isSubmitting
+        email.isNotBlank() && password.isNotBlank() && !isSessionLoading && !isSubmitting
 }

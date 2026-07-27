@@ -18,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
 @RunWith(AndroidJUnit4::class)
@@ -34,8 +35,10 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
+                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
+                    onOpenAuth = {},
                 )
             }
         }
@@ -53,8 +56,10 @@ class TournamentListAndDetailsScreenTest {
                     uiState = TournamentListUiState(
                         tournaments = listOf(tournamentListItem()),
                     ),
+                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
+                    onOpenAuth = {},
                 )
             }
         }
@@ -75,8 +80,10 @@ class TournamentListAndDetailsScreenTest {
                     uiState = TournamentListUiState(
                         tournaments = listOf(tournamentListItem()),
                     ),
+                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = { openedTournamentId = it },
+                    onOpenAuth = {},
                 )
             }
         }

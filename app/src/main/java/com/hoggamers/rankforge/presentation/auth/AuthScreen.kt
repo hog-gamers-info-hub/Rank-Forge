@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
@@ -29,6 +30,7 @@ const val AUTH_PASSWORD_FIELD_TEST_TAG = "auth_password_field"
 const val AUTH_SUBMIT_ACTION_TEST_TAG = "auth_submit_action"
 const val AUTH_LOGOUT_ACTION_TEST_TAG = "auth_logout_action"
 const val AUTH_STATUS_TEST_TAG = "auth_status"
+const val AUTH_WARNING_TEST_TAG = "auth_warning"
 const val AUTH_ERROR_TEST_TAG = "auth_error"
 
 @Composable
@@ -115,6 +117,13 @@ fun AuthScreen(
             Text(
                 text = message.asText(),
                 modifier = Modifier.testTag(AUTH_STATUS_TEST_TAG),
+            )
+        }
+        uiState.warningMessage?.let { message ->
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Text(
+                text = message.asText(),
+                modifier = Modifier.testTag(AUTH_WARNING_TEST_TAG),
             )
         }
         uiState.errorMessage?.let { message ->
@@ -205,9 +214,43 @@ private fun AuthModeSelector(
 private fun AuthUiMessage.asText(): String =
     when (this) {
         AuthUiMessage.MissingCredentials -> stringResource(R.string.auth_missing_credentials_error)
-        AuthUiMessage.SessionRestored -> stringResource(R.string.auth_session_restored_message)
         AuthUiMessage.SignedIn -> stringResource(R.string.auth_signed_in_message)
-        AuthUiMessage.SignUpSubmitted -> stringResource(R.string.auth_signup_submitted_message)
+        AuthUiMessage.SignUpAuthenticated -> stringResource(R.string.auth_signup_authenticated_message)
+        AuthUiMessage.SignUpConfirmationRequired -> stringResource(
+            R.string.auth_signup_confirmation_required_message,
+        )
         AuthUiMessage.SignedOut -> stringResource(R.string.auth_signed_out_message)
-        is AuthUiMessage.Text -> value
+        AuthUiMessage.LogoutRemoteWarning -> stringResource(R.string.auth_logout_remote_warning)
+        is AuthUiMessage.AuthenticationFailure -> this.asFailureText()
+        is AuthUiMessage.RestorationWarning -> this.asRestorationWarningText()
+    }
+
+@Composable
+private fun AuthUiMessage.AuthenticationFailure.asFailureText(): String =
+    stringResource(category.failureMessageResource())
+
+@Composable
+private fun AuthUiMessage.RestorationWarning.asRestorationWarningText(): String =
+    stringResource(category.restorationWarningResource())
+
+private fun AuthFailureCategory.failureMessageResource(): Int =
+    when (this) {
+        AuthFailureCategory.InvalidCredentials -> R.string.auth_failure_invalid_credentials
+        AuthFailureCategory.InvalidEmail -> R.string.auth_failure_invalid_email
+        AuthFailureCategory.WeakPassword -> R.string.auth_failure_weak_password
+        AuthFailureCategory.AccountAlreadyRegistered -> R.string.auth_failure_account_already_registered
+        AuthFailureCategory.EmailConfirmationRequired -> R.string.auth_failure_email_confirmation_required
+        AuthFailureCategory.RateLimited -> R.string.auth_failure_rate_limited
+        AuthFailureCategory.NetworkUnavailable -> R.string.auth_failure_network_unavailable
+        AuthFailureCategory.Timeout -> R.string.auth_failure_timeout
+        AuthFailureCategory.ExpiredOrInvalidSession -> R.string.auth_failure_expired_or_invalid_session
+        AuthFailureCategory.MissingSupabaseConfiguration -> R.string.auth_failure_missing_configuration
+        AuthFailureCategory.UnknownAuthenticationFailure -> R.string.auth_failure_unknown
+    }
+
+private fun AuthFailureCategory.restorationWarningResource(): Int =
+    when (this) {
+        AuthFailureCategory.NetworkUnavailable -> R.string.auth_restoration_network_warning
+        AuthFailureCategory.Timeout -> R.string.auth_restoration_timeout_warning
+        else -> R.string.auth_restoration_unknown_warning
     }
