@@ -69,6 +69,9 @@ interface RosterPlayerDao {
 
 @Dao
 interface MatchDao {
+    @Query("SELECT * FROM matches ORDER BY tournament_id, match_number, id")
+    fun observeAll(): Flow<List<MatchEntity>>
+
     @Query("SELECT * FROM matches WHERE tournament_id = :tournamentId ORDER BY match_number, id")
     fun observeByTournamentId(tournamentId: String): Flow<List<MatchEntity>>
 
@@ -80,4 +83,82 @@ interface MatchDao {
 
     @Query("DELETE FROM matches WHERE tournament_id = :tournamentId")
     suspend fun deleteByTournamentId(tournamentId: String)
+}
+
+@Dao
+interface MatchPlacementDao {
+    @Query(
+        """
+        SELECT match_placements.* FROM match_placements
+        INNER JOIN matches ON matches.id = match_placements.match_id
+        WHERE matches.tournament_id = :tournamentId
+        ORDER BY matches.match_number, matches.id, match_placements.team_slot_number
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<MatchPlacementEntity>>
+
+    @Query("SELECT * FROM match_placements WHERE match_id = :matchId ORDER BY team_slot_number")
+    fun observeByMatchId(matchId: String): Flow<List<MatchPlacementEntity>>
+
+    @Upsert
+    suspend fun upsertAll(placements: List<MatchPlacementEntity>)
+
+    @Query("DELETE FROM match_placements WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+}
+
+@Dao
+interface MatchKillDao {
+    @Query(
+        """
+        SELECT match_kills.* FROM match_kills
+        INNER JOIN matches ON matches.id = match_kills.match_id
+        WHERE matches.tournament_id = :tournamentId
+        ORDER BY matches.match_number, matches.id, match_kills.team_slot_number
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<MatchKillEntity>>
+
+    @Query("SELECT * FROM match_kills WHERE match_id = :matchId ORDER BY team_slot_number")
+    fun observeByMatchId(matchId: String): Flow<List<MatchKillEntity>>
+
+    @Upsert
+    suspend fun upsertAll(kills: List<MatchKillEntity>)
+
+    @Query("DELETE FROM match_kills WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+}
+
+@Dao
+interface MatchDraftValueDao {
+    @Query("SELECT * FROM match_draft_values WHERE match_id = :matchId ORDER BY team_slot_number")
+    fun observeByMatchId(matchId: String): Flow<List<MatchDraftValueEntity>>
+
+    @Upsert
+    suspend fun upsert(value: MatchDraftValueEntity)
+
+    @Upsert
+    suspend fun upsertAll(values: List<MatchDraftValueEntity>)
+
+    @Query("DELETE FROM match_draft_values WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+}
+
+@Dao
+interface MatchCorrectionDao {
+    @Query(
+        """
+        SELECT match_corrections.* FROM match_corrections
+        INNER JOIN matches ON matches.id = match_corrections.match_id
+        WHERE matches.tournament_id = :tournamentId
+        ORDER BY matches.match_number, matches.id, match_corrections.correction_index
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<MatchCorrectionEntity>>
+
+    @Query("SELECT * FROM match_corrections WHERE match_id = :matchId ORDER BY correction_index")
+    fun observeByMatchId(matchId: String): Flow<List<MatchCorrectionEntity>>
+
+    @Upsert
+    suspend fun upsertAll(corrections: List<MatchCorrectionEntity>)
 }

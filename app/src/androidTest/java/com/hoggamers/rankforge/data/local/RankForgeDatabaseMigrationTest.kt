@@ -48,7 +48,50 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
-    fun freshVersion2DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
+    fun migrationFromVersion2AddsMatchResultTablesWithoutDroppingExistingMatch() {
+        createVersion2Database().use { database ->
+            database.execSQL(
+                """
+                INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status)
+                VALUES ('tournament-1', 'Summer Cup', '2026-07-26', 'Organizer', '1234567890', 'CONFIRMED')
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                INSERT INTO matches (id, tournament_id, match_number, date, map_name, status)
+                VALUES ('match-1', 'tournament-1', 1, '2026-07-26', 'Bermuda', 'DRAFT')
+                """.trimIndent(),
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            3,
+            true,
+            RankForgeDatabase.MIGRATION_1_2,
+            RankForgeDatabase.MIGRATION_2_3,
+        )
+
+        migrated.query("SELECT id, status FROM matches WHERE id = 'match-1'").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("match-1", cursor.getString(0))
+            assertEquals("DRAFT", cursor.getString(1))
+        }
+        listOf(
+            "match_placements",
+            "match_kills",
+            "match_draft_values",
+            "match_corrections",
+        ).forEach { table ->
+            migrated.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '$table'").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+            }
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(
                 context,
@@ -181,6 +224,12 @@ class RankForgeDatabaseMigrationTest {
         migrationTestHelper().createDatabase(
             MIGRATION_DATABASE_NAME,
             1,
+        )
+
+    private fun createVersion2Database(): SupportSQLiteDatabase =
+        migrationTestHelper().createDatabase(
+            MIGRATION_DATABASE_NAME,
+            2,
         )
 
     private fun migrationTestHelper() = MigrationTestHelper(
