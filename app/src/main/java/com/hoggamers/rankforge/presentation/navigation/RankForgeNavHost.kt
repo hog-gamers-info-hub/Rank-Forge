@@ -8,6 +8,9 @@ import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.hoggamers.rankforge.presentation.auth.AuthMode
+import com.hoggamers.rankforge.presentation.auth.AuthScreen
+import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.screen.TeamEntryRoute
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
@@ -37,6 +40,12 @@ import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 @Composable
 fun RankForgeNavHost(
     navController: NavHostController = rememberNavController(),
+    authUiState: AuthUiState = AuthUiState(),
+    onAuthModeSelected: (AuthMode) -> Unit = {},
+    onAuthEmailChanged: (String) -> Unit = {},
+    onAuthPasswordChanged: (String) -> Unit = {},
+    onAuthSubmit: () -> Unit = {},
+    onAuthLogout: () -> Unit = {},
     creationViewModel: TournamentCreationViewModel? = null,
     listViewModel: TournamentListViewModel? = null,
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
@@ -59,6 +68,9 @@ fun RankForgeNavHost(
             val onCreateTournament = {
                 navController.navigate(TournamentCreationDestination)
             }
+            val onOpenAuth = {
+                navController.navigate(AuthDestination)
+            }
             val onOpenTournamentDetails: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentDetailsDestination(tournamentId))
             }
@@ -66,14 +78,29 @@ fun RankForgeNavHost(
                 TournamentListRoute(
                     onCreateTournament = onCreateTournament,
                     onOpenTournamentDetails = onOpenTournamentDetails,
+                    authUiState = authUiState,
+                    onOpenAuth = onOpenAuth,
                 )
             } else {
                 TournamentListRoute(
                     onCreateTournament = onCreateTournament,
                     onOpenTournamentDetails = onOpenTournamentDetails,
+                    authUiState = authUiState,
+                    onOpenAuth = onOpenAuth,
                     viewModel = listViewModel,
                 )
             }
+        }
+        composable<AuthDestination> {
+            AuthScreen(
+                uiState = authUiState,
+                onModeSelected = onAuthModeSelected,
+                onEmailChanged = onAuthEmailChanged,
+                onPasswordChanged = onAuthPasswordChanged,
+                onSubmit = onAuthSubmit,
+                onLogout = onAuthLogout,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<TournamentCreationDestination> {
             val onBack: () -> Unit = { navController.popBackStack() }

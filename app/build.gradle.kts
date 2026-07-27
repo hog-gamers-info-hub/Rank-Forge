@@ -1,4 +1,25 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.isFile) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun escapedBuildConfigString(
+    propertyName: String,
+    fallback: String,
+): String {
+    val rawValue = providers.gradleProperty(propertyName)
+        .orElse(localProperties.getProperty(propertyName) ?: fallback)
+        .get()
+    val escapedValue = rawValue
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+    return "\"$escapedValue\""
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -43,6 +64,26 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    defaultConfig {
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            escapedBuildConfigString(
+                propertyName = "RANK_FORGE_SUPABASE_URL",
+                fallback = "https://example.supabase.co",
+            ),
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            escapedBuildConfigString(
+                propertyName = "RANK_FORGE_SUPABASE_PUBLISHABLE_KEY",
+                fallback = "replace-with-supabase-publishable-key",
+            ),
+        )
     }
 
     sourceSets {
@@ -76,6 +117,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.ktor.client.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.hilt.android.testing)
