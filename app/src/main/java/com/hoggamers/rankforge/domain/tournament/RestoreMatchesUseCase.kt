@@ -15,22 +15,29 @@ class RestoreMatchesUseCase @Inject constructor(
     private val cloudRepository: MatchCloudRestorationRepository,
     private val localRepository: MatchRestorationLocalRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
-) : MatchCloudRestorationAction {
+) : MatchCloudRestorationAction, MatchCloudRestorationRetryAction {
     override suspend fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<MatchCloudRestorationResult> {
-        if (!isAuthenticated()) return record(MatchCloudRestorationResult.AuthenticationRequired, tournamentId)
+    ): QueueAwareActionResult<MatchCloudRestorationResult> = record(
+        result = executeForRetry(tournamentId),
+        id = tournamentId,
+    )
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+    ): MatchCloudRestorationResult {
+        if (!isAuthenticated()) return MatchCloudRestorationResult.AuthenticationRequired
         return when (val result = cloudRepository.readOwnedMatches(tournamentId)) {
-            is MatchCloudRestorationRemoteResult.Failure -> record(result.toDomainResult(), tournamentId)
+            is MatchCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is MatchCloudRestorationRemoteResult.Success -> {
-                if (result.value.matches.isEmpty()) return record(MatchCloudRestorationResult.NoCloudMatches, tournamentId)
+                if (result.value.matches.isEmpty()) return MatchCloudRestorationResult.NoCloudMatches
                 try {
                     localRepository.replaceMatches(result.value)
-                    record(MatchCloudRestorationResult.Success, tournamentId)
+                    MatchCloudRestorationResult.Success
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
-                    record(MatchCloudRestorationResult.LocalTransactionFailure, tournamentId)
+                    MatchCloudRestorationResult.LocalTransactionFailure
                 }
             }
         }

@@ -17,7 +17,12 @@ class RoomPersistentSyncQueueRepositoryTest {
         val entry = repository.enqueue(SyncQueueOperationType.DRAFT_MATCH_SYNC, "tournament-id", SyncQueueStatus.BLOCKED_NETWORK, "network")
         assertEquals("tournament-id", entry.tournamentId); assertEquals(0, entry.attemptCount)
         assertEquals(SyncQueueOperationType.DRAFT_MATCH_SYNC, repository.observeAll().first().single().operationType)
+        repository.incrementAttemptCount(entry.id); assertEquals(1, repository.observeAll().first().single().attemptCount)
+        repository.updateRetryFailure(entry.id, SyncQueueStatus.FAILED_UNKNOWN, "retry_unknown")
+        assertEquals(SyncQueueStatus.FAILED_UNKNOWN, repository.observeAll().first().single().status)
+        assertEquals("retry_unknown", repository.observeAll().first().single().failureCategory)
         repository.markCompleted(entry.id); assertEquals(SyncQueueStatus.COMPLETED, repository.observeAll().first().single().status)
+        assertEquals(1, repository.observeAll().first().single().attemptCount)
         repository.remove(entry.id); assertTrue(repository.observeAll().first().isEmpty())
     }
     private class FakeDao : SyncQueueDao {
@@ -25,6 +30,7 @@ class RoomPersistentSyncQueueRepositoryTest {
         override fun observeAll() = entries
         override suspend fun insert(entry: SyncQueueEntity) { entries.value += entry }
         override suspend fun updateStatus(id: String, status: String, failureCategory: String?) { entries.value = entries.value.map { if (it.id == id) it.copy(status = status, failureCategory = failureCategory) else it } }
+        override suspend fun incrementAttemptCount(id: String) { entries.value = entries.value.map { if (it.id == id) it.copy(attemptCount = it.attemptCount + 1) else it } }
         override suspend fun delete(id: String) { entries.value = entries.value.filterNot { it.id == id } }
     }
 }

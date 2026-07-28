@@ -73,3 +73,7 @@ interface TournamentCloudRestorationAction {
 
     suspend fun restore(tournamentId: String): QueueAwareActionResult<TournamentCloudRestorationResult>
 }
+
+fun interface TournamentCloudRestorationRetryAction {
+    suspend fun executeForRetry(tournamentId: String): TournamentCloudRestorationResult
+}

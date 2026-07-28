@@ -14,6 +14,7 @@ import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -38,11 +39,15 @@ import org.junit.Test
 class AuthViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FakeAuthRepository
+    private var recoveryCalls = 0
+    private var foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = FakeAuthRepository()
+        recoveryCalls = 0
+        foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
     }
 
     @After
@@ -77,6 +82,7 @@ class AuthViewModelTest {
 
         assertTrue(viewModel.uiState.value.isSignedIn)
         assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
+        assertEquals(1, recoveryCalls)
     }
 
     @Test
@@ -88,6 +94,25 @@ class AuthViewModelTest {
 
         assertFalse(viewModel.uiState.value.isSignedIn)
         assertEquals(null, viewModel.uiState.value.errorMessage)
+        assertEquals(0, recoveryCalls)
+    }
+
+    @Test
+    fun retryRecoveryFailureDoesNotChangeRestoredSessionState() = runTest {
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser(id = "user-id", email = "stored@example.com"),
+        )
+        foregroundRecovery = ForegroundSyncQueueRecoveryAction {
+            recoveryCalls += 1
+            throw IllegalStateException("queue unavailable")
+        }
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(1, recoveryCalls)
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
     }
 
     @Test
@@ -351,6 +376,7 @@ class AuthViewModelTest {
             signUp = SignUpUseCase(repository),
             login = LoginUseCase(repository),
             logout = LogoutUseCase(repository),
+            recoverForegroundSyncQueue = foregroundRecovery,
         )
 
     private class FakeAuthRepository : AuthRepository {

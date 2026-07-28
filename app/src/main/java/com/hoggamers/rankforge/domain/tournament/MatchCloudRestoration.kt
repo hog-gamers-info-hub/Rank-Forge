@@ -35,3 +35,7 @@ sealed interface MatchCloudRestorationResult {
 fun interface MatchCloudRestorationAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult>
 }
+
+fun interface MatchCloudRestorationRetryAction {
+    suspend fun executeForRetry(tournamentId: String): MatchCloudRestorationResult
+}

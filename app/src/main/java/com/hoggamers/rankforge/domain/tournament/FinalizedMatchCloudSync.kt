@@ -29,3 +29,7 @@ interface FinalizedMatchCloudSyncRepository {
 fun interface FinalizedMatchCloudSyncAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<FinalizedMatchCloudSyncResult>
 }
+
+fun interface FinalizedMatchCloudSyncRetryAction {
+    suspend fun executeForRetry(tournamentId: String): FinalizedMatchCloudSyncResult
+}

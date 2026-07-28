@@ -22,6 +22,8 @@ interface SyncQueueDao {
     suspend fun insert(entry: SyncQueueEntity)
     @androidx.room.Query("UPDATE sync_queue_entries SET status = :status, failureCategory = :failureCategory WHERE id = :id")
     suspend fun updateStatus(id: String, status: String, failureCategory: String?)
+    @androidx.room.Query("UPDATE sync_queue_entries SET attemptCount = attemptCount + 1 WHERE id = :id")
+    suspend fun incrementAttemptCount(id: String)
     @androidx.room.Query("DELETE FROM sync_queue_entries WHERE id = :id")
     suspend fun delete(id: String)
 }

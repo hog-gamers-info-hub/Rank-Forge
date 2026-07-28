@@ -15,25 +15,32 @@ class UploadTournamentUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val cloudUploadRepository: TournamentCloudUploadRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
-) : TournamentCloudUploadAction {
+) : TournamentCloudUploadAction, TournamentCloudUploadRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<TournamentCloudUploadResult> {
+    ): QueueAwareActionResult<TournamentCloudUploadResult> = record(
+        result = executeForRetry(tournamentId),
+        tournamentId = tournamentId,
+    )
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+    ): TournamentCloudUploadResult {
         val authState = try {
             authRepository.observeAuthState().first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return record(TournamentCloudUploadResult.AuthenticationRequired, tournamentId)
+            return TournamentCloudUploadResult.AuthenticationRequired
         }
 
         val ownerId = (authState as? AuthState.SignedIn)?.user?.id
             ?.takeIf { it.isNotBlank() }
-            ?: return record(TournamentCloudUploadResult.AuthenticationRequired, tournamentId)
+            ?: return TournamentCloudUploadResult.AuthenticationRequired
 
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()
-                ?: return record(TournamentCloudUploadResult.ValidationFailure, tournamentId)
+                ?: return TournamentCloudUploadResult.ValidationFailure
             TournamentCloudUploadSnapshot(
                 tournament = tournament,
                 slots = tournamentRepository.observeSlotsByTournamentId(tournamentId).first(),
@@ -42,10 +49,10 @@ class UploadTournamentUseCase @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return record(TournamentCloudUploadResult.ValidationFailure, tournamentId)
+            return TournamentCloudUploadResult.ValidationFailure
         }
 
-        return record(cloudUploadRepository.upload(snapshot, ownerId), tournamentId)
+        return cloudUploadRepository.upload(snapshot, ownerId)
     }
 
     private suspend fun record(

@@ -15,7 +15,7 @@ class RestoreTournamentUseCase @Inject constructor(
     private val cloudRepository: TournamentCloudRestorationRepository,
     private val localRepository: TournamentRestorationLocalRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
-) : TournamentCloudRestorationAction {
+) : TournamentCloudRestorationAction, TournamentCloudRestorationRetryAction {
     override suspend fun loadAvailable(): TournamentCloudRestorationResult {
         if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
         return cloudRepository.listOwnedTournaments().toResult()
@@ -23,18 +23,25 @@ class RestoreTournamentUseCase @Inject constructor(
 
     override suspend fun restore(
         tournamentId: String,
-    ): QueueAwareActionResult<TournamentCloudRestorationResult> {
-        if (!isAuthenticated()) return record(TournamentCloudRestorationResult.AuthenticationRequired, tournamentId)
+    ): QueueAwareActionResult<TournamentCloudRestorationResult> = record(
+        result = executeForRetry(tournamentId),
+        id = tournamentId,
+    )
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+    ): TournamentCloudRestorationResult {
+        if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
         return when (val result = cloudRepository.readOwnedTournament(tournamentId)) {
-            is TournamentCloudRestorationRemoteResult.Failure -> record(result.toDomainResult(), tournamentId)
+            is TournamentCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is TournamentCloudRestorationRemoteResult.Success -> {
                 try {
                     localRepository.restore(result.value)
-                    record(TournamentCloudRestorationResult.Success(result.value.tournament.name), tournamentId)
+                    TournamentCloudRestorationResult.Success(result.value.tournament.name)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
-                    record(TournamentCloudRestorationResult.LocalTransactionFailure, tournamentId)
+                    TournamentCloudRestorationResult.LocalTransactionFailure
                 }
             }
         }
