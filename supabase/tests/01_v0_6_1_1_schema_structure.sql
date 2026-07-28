@@ -164,16 +164,21 @@ select is((
         and not trigger_row.tgisinternal
 ), 0::bigint, 'core tables have no user-defined triggers');
 select is((
-    select count(*)
+    select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
-), 0::bigint, 'public has no functions or RPCs');
+        and procedure_row.proname in (
+            'write_tournament_snapshot',
+            'write_match_snapshot',
+            'finalize_match_snapshot'
+        )
+)::text, '{finalize_match_snapshot,write_match_snapshot,write_tournament_snapshot}'::text, 'approved revision-safe RPCs exist');
 select is((
-    select coalesce(array_agg(tablename order by tablename), array[]::text[])
+    select coalesce(array_to_string(array_agg(tablename::text order by tablename), ','), '')::text
     from pg_tables
     where schemaname = 'public'
-), array['match_results', 'matches', 'players', 'tournament_team_slots', 'tournaments']::text[], 'no excluded public tables exist');
+), 'match_results,matches,players,tournament_team_slots,tournaments'::text, 'no excluded public tables exist');
 select ok(to_regclass('public.idx_tournaments_owner_id') is not null, 'owner index exists');
 select ok(to_regclass('public.idx_match_results_team_slot_id') is not null, 'match-result team-slot index exists');
 

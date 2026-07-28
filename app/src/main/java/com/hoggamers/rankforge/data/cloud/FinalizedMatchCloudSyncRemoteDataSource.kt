@@ -36,26 +36,47 @@ class SupabaseFinalizedMatchCloudSyncRemoteDataSource @Inject constructor(
 
                 else -> {
                     try {
-                        val response = clientProvider.client.postgrest.rpc(
-                            "write_match_snapshot",
-                            MatchSnapshotWriteParameters(
-                                tournamentId = payloads.matches.firstOrNull()?.tournamentId
+                        val tournamentId = payloads.matches.firstOrNull()?.tournamentId
+                            ?: return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
+                                null,
+                                FinalizedMatchCloudSyncFailureCategory.VALIDATION,
+                            )
+                        var revision = expectedRevision
+                        payloads.matches.sortedBy { it.matchNumber }.forEach { match ->
+                            val response = clientProvider.client.postgrest.rpc(
+                                "finalize_match_snapshot",
+                                ProtectedMatchFinalizationParameters(
+                                    tournamentId = tournamentId,
+                                    match = match,
+                                    matchResults = payloads.matchResults.filter { it.matchId == match.id },
+                                    expectedRevision = revision,
+                                ),
+                            ).decodeSingle<RevisionWriteResponse>()
+                            when (response.outcome) {
+                                "success" -> revision = response.revision
                                     ?: return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
                                         null,
                                         FinalizedMatchCloudSyncFailureCategory.VALIDATION,
-                                    ),
-                                matches = payloads.matches,
-                                matchResults = payloads.matchResults,
-                                expectedRevision = expectedRevision,
-                            ),
-                        ).decodeSingle<RevisionWriteResponse>()
-                        if (response.outcome == "success") FinalizedMatchCloudSyncExecutionResult.Success else {
-                            FinalizedMatchCloudSyncExecutionResult.Failure(
-                                null,
-                                FinalizedMatchCloudSyncFailureCategory.CONFLICT,
-                                response.toRevisionConflict(expectedRevision),
-                            )
+                                    )
+                                "already_finalized" -> Unit
+                                "stale_write", "missing_revision", "finalized_protected" ->
+                                    return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
+                                        null,
+                                        FinalizedMatchCloudSyncFailureCategory.CONFLICT,
+                                        response.toRevisionConflict(revision),
+                                    )
+                                "authentication_required" -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
+                                    null, FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION,
+                                )
+                                "unauthorized" -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
+                                    null, FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION,
+                                )
+                                else -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
+                                    null, FinalizedMatchCloudSyncFailureCategory.VALIDATION,
+                                )
+                            }
                         }
+                        FinalizedMatchCloudSyncExecutionResult.Success
                     } catch (cancellation: kotlinx.coroutines.CancellationException) {
                         throw cancellation
                     } catch (throwable: Throwable) {
