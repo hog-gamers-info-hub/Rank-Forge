@@ -79,6 +79,17 @@
     <string name="upload_tournament_validation_failure">The local tournament data could not be uploaded.</string>
     <string name="upload_tournament_network_failure">Upload failed because the network is unavailable.</string>
     <string name="upload_tournament_partial_failure">Upload partially completed. Retry manually to continue.</string>
+    <string name="restore_tournament_action">Restore cloud tournaments</string>
+    <string name="restore_tournament_loading">Loading cloud tournaments</string>
+    <string name="restore_tournament_available">Select a cloud tournament to restore.</string>
+    <string name="restore_tournament_success">Tournament restored to local storage: %1$s</string>
+    <string name="restore_tournament_authentication_required">Sign in to restore cloud tournaments.</string>
+    <string name="restore_tournament_authorization_failure">This account is not authorized to restore that tournament.</string>
+    <string name="restore_tournament_validation_failure">The cloud tournament data could not be restored.</string>
+    <string name="restore_tournament_network_failure">Restore failed because the network is unavailable.</string>
+    <string name="restore_tournament_local_failure">The cloud data could not be saved locally. No partial local restore was kept.</string>
+    <string name="restore_tournament_empty">No cloud tournaments are available for this account.</string>
+    <string name="restore_tournament_item">Restore %1$s</string>
     <string name="team_slots_section_title">Team slots</string>
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>
