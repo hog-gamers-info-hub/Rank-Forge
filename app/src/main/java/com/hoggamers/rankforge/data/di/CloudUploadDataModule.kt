@@ -6,6 +6,9 @@ import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
+import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
@@ -18,6 +21,9 @@ import com.hoggamers.rankforge.domain.tournament.RestoreTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRepository
+import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -62,6 +68,24 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindDraftMatchCloudSyncAction(
         useCase: SyncDraftMatchesUseCase,
     ): DraftMatchCloudSyncAction
+
+    @Binds
+    @Singleton
+    abstract fun bindFinalizedMatchCloudSyncRemoteDataSource(
+        dataSource: SupabaseFinalizedMatchCloudSyncRemoteDataSource,
+    ): FinalizedMatchCloudSyncRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindFinalizedMatchCloudSyncRepository(
+        repository: SupabaseFinalizedMatchCloudSyncRepository,
+    ): FinalizedMatchCloudSyncRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFinalizedMatchCloudSyncAction(
+        useCase: SyncFinalizedMatchesUseCase,
+    ): FinalizedMatchCloudSyncAction
 
     @Binds
     @Singleton

@@ -39,6 +39,8 @@ const val TOURNAMENT_CLOUD_UPLOAD_ACTION_TEST_TAG = "tournament_cloud_upload_act
 const val TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG = "tournament_cloud_upload_status"
 const val DRAFT_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "draft_match_cloud_sync_action"
 const val DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "draft_match_cloud_sync_status"
+const val FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "finalized_match_cloud_sync_action"
+const val FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "finalized_match_cloud_sync_status"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -53,6 +55,7 @@ fun TournamentDetailsRoute(
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
     uploadViewModel: TournamentCloudUploadViewModel? = null,
     draftMatchSyncViewModel: DraftMatchCloudSyncViewModel? = null,
+    finalizedMatchSyncViewModel: FinalizedMatchCloudSyncViewModel? = null,
 ) {
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
@@ -70,6 +73,12 @@ fun TournamentDetailsRoute(
         val state by draftMatchSyncViewModel.uiState.collectAsStateWithLifecycle()
         state
     }
+    val finalizedMatchSyncUiState = if (finalizedMatchSyncViewModel == null) {
+        FinalizedMatchCloudSyncUiState.Idle
+    } else {
+        val state by finalizedMatchSyncViewModel.uiState.collectAsStateWithLifecycle()
+        state
+    }
 
     TournamentDetailsScreen(
         uiState = uiState,
@@ -84,6 +93,8 @@ fun TournamentDetailsRoute(
         onUpload = { id -> uploadViewModel?.upload(id) },
         draftMatchSyncUiState = draftMatchSyncUiState,
         onSyncDraftMatches = { id -> draftMatchSyncViewModel?.sync(id) },
+        finalizedMatchSyncUiState = finalizedMatchSyncUiState,
+        onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
     )
 }
 
@@ -101,6 +112,8 @@ fun TournamentDetailsScreen(
     onUpload: (String) -> Unit = {},
     draftMatchSyncUiState: DraftMatchCloudSyncUiState = DraftMatchCloudSyncUiState.Idle,
     onSyncDraftMatches: (String) -> Unit = {},
+    finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState = FinalizedMatchCloudSyncUiState.Idle,
+    onSyncFinalizedMatches: (String) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -122,6 +135,8 @@ fun TournamentDetailsScreen(
             onUpload = onUpload,
             draftMatchSyncUiState = draftMatchSyncUiState,
             onSyncDraftMatches = onSyncDraftMatches,
+            finalizedMatchSyncUiState = finalizedMatchSyncUiState,
+            onSyncFinalizedMatches = onSyncFinalizedMatches,
         )
     }
 }
@@ -140,6 +155,8 @@ private fun TournamentDetailsContent(
     onUpload: (String) -> Unit,
     draftMatchSyncUiState: DraftMatchCloudSyncUiState,
     onSyncDraftMatches: (String) -> Unit,
+    finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState,
+    onSyncFinalizedMatches: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -191,6 +208,12 @@ private fun TournamentDetailsContent(
             tournamentId = tournament.id,
             uiState = draftMatchSyncUiState,
             onSync = onSyncDraftMatches,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        FinalizedMatchCloudSyncSection(
+            tournamentId = tournament.id,
+            uiState = finalizedMatchSyncUiState,
+            onSync = onSyncFinalizedMatches,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         TeamSlotList(slots = tournament.slots)
@@ -313,6 +336,54 @@ private fun DraftMatchCloudSyncSection(
                     stringResource(R.string.sync_draft_matches_partial_failure)
             },
             modifier = Modifier.testTag(DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG),
+        )
+    }
+}
+
+@Composable
+private fun FinalizedMatchCloudSyncSection(
+    tournamentId: String,
+    uiState: FinalizedMatchCloudSyncUiState,
+    onSync: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Button(
+            onClick = { onSync(tournamentId) },
+            enabled = uiState !is FinalizedMatchCloudSyncUiState.Loading,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG),
+        ) {
+            Text(
+                text = stringResource(
+                    if (uiState is FinalizedMatchCloudSyncUiState.Loading) {
+                        R.string.sync_finalized_matches_loading
+                    } else {
+                        R.string.sync_finalized_matches_action
+                    },
+                ),
+            )
+        }
+        Text(
+            text = when (uiState) {
+                FinalizedMatchCloudSyncUiState.Idle -> stringResource(R.string.sync_finalized_matches_ready_message)
+                FinalizedMatchCloudSyncUiState.Loading -> stringResource(R.string.sync_finalized_matches_loading)
+                FinalizedMatchCloudSyncUiState.Success -> stringResource(R.string.sync_finalized_matches_success)
+                FinalizedMatchCloudSyncUiState.AuthenticationRequired ->
+                    stringResource(R.string.sync_finalized_matches_authentication_required)
+                FinalizedMatchCloudSyncUiState.AuthorizationFailure ->
+                    stringResource(R.string.sync_finalized_matches_authorization_failure)
+                FinalizedMatchCloudSyncUiState.ValidationFailure ->
+                    stringResource(R.string.sync_finalized_matches_validation_failure)
+                FinalizedMatchCloudSyncUiState.NetworkFailure ->
+                    stringResource(R.string.sync_finalized_matches_network_failure)
+                is FinalizedMatchCloudSyncUiState.PartialFailure ->
+                    stringResource(R.string.sync_finalized_matches_partial_failure)
+            },
+            modifier = Modifier.testTag(FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG),
         )
     }
 }

@@ -88,6 +88,15 @@
     <string name="sync_draft_matches_validation_failure">The local draft match data could not be synced.</string>
     <string name="sync_draft_matches_network_failure">Draft-match sync failed because the network is unavailable.</string>
     <string name="sync_draft_matches_partial_failure">Draft-match sync partially completed. Retry manually to continue.</string>
+    <string name="sync_finalized_matches_action">Sync finalized matches</string>
+    <string name="sync_finalized_matches_ready_message">Local finalized matches are ready to sync.</string>
+    <string name="sync_finalized_matches_loading">Syncing finalized matches</string>
+    <string name="sync_finalized_matches_success">Finalized matches synced.</string>
+    <string name="sync_finalized_matches_authentication_required">Sign in to sync local finalized matches.</string>
+    <string name="sync_finalized_matches_authorization_failure">This account is not authorized to sync these finalized matches.</string>
+    <string name="sync_finalized_matches_validation_failure">The local finalized match data could not be synced.</string>
+    <string name="sync_finalized_matches_network_failure">Finalized-match sync failed because the network is unavailable.</string>
+    <string name="sync_finalized_matches_partial_failure">Finalized-match sync partially completed. Retry manually to continue.</string>
     <string name="restore_tournament_action">Restore cloud tournaments</string>
     <string name="restore_tournament_loading">Loading cloud tournaments</string>
     <string name="restore_tournament_available">Select a cloud tournament to restore.</string>
