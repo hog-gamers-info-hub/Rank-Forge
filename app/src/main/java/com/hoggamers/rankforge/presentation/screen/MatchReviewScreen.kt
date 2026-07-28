@@ -57,6 +57,9 @@ const val MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG = "match_review_replac
 const val MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG = "match_review_unlink_screenshot_action"
 const val MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG = "match_review_linked_screenshot"
 const val MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG = "match_review_screenshot_link_error"
+const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG = "match_review_screenshot_duplicate_in_progress"
+const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG = "match_review_screenshot_duplicate_error"
+const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG = "match_review_screenshot_duplicate_info"
 
 @Composable
 fun MatchReviewRoute(
@@ -272,6 +275,7 @@ private fun MatchReviewContent(
                 ) {
                     Button(
                         onClick = onLinkScreenshot,
+                        enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG),
@@ -281,6 +285,7 @@ private fun MatchReviewContent(
                 }
                 TextButton(
                     onClick = onUnlinkScreenshot,
+                    enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -291,6 +296,7 @@ private fun MatchReviewContent(
         } else if (uiState.isEditable && uiState.isSelectedScreenshotValidated) {
             Button(
                 onClick = onLinkScreenshot,
+                enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -306,6 +312,26 @@ private fun MatchReviewContent(
                 text = stringResource(uiState.screenshotLinkError.toMessageRes()),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG),
+            )
+        }
+        if (uiState.isScreenshotDuplicateDetectionInProgress) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_duplicate_checking),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG),
+            )
+        }
+        if (uiState.screenshotDuplicateInfo != null) {
+            Text(
+                text = stringResource(uiState.screenshotDuplicateInfo.toMessageRes()),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG),
+            )
+        }
+        if (uiState.screenshotDuplicateError != null) {
+            Text(
+                text = stringResource(uiState.screenshotDuplicateError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG),
             )
         }
         if (uiState.isEditable) {
@@ -573,4 +599,18 @@ private fun ScreenshotLinkError.toMessageRes(): Int = when (this) {
     ScreenshotLinkError.MISSING_TOURNAMENT_ID -> R.string.match_review_screenshot_link_missing_tournament_error
     ScreenshotLinkError.MISSING_MATCH_ID -> R.string.match_review_screenshot_link_missing_match_error
     ScreenshotLinkError.FINALIZED_MATCH -> R.string.match_review_screenshot_link_finalized_error
+}
+
+private fun ScreenshotDuplicateInfo.toMessageRes(): Int = when (this) {
+    ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH ->
+        R.string.match_review_screenshot_duplicate_same_match
+}
+
+private fun ScreenshotDuplicateError.toMessageRes(): Int = when (this) {
+    ScreenshotDuplicateError.FINGERPRINT_FAILED ->
+        R.string.match_review_screenshot_duplicate_fingerprint_failed
+    ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH ->
+        R.string.match_review_screenshot_duplicate_other_match
+    ScreenshotDuplicateError.STATE_CONFLICT ->
+        R.string.match_review_screenshot_duplicate_state_conflict
 }

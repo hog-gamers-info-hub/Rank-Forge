@@ -732,6 +732,14 @@ class RankForgeNavigationTest {
                             )
                         },
                     ),
+                    screenshotDuplicateDetector = com.hoggamers.rankforge.presentation.screen.ScreenshotDuplicateDetector(
+                        com.hoggamers.rankforge.presentation.screen.ImageSourceFingerprintGenerator(
+                            com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener { uri ->
+                                uri.encodeToByteArray().inputStream()
+                            },
+                            kotlinx.coroutines.Dispatchers.Unconfined,
+                        ),
+                    ),
                 ).also {
                     it.load(tournamentId, matchId)
                 }

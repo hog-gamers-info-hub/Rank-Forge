@@ -167,6 +167,39 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun duplicateScreenshotStatesAreVisibleAndBlockConcurrentLinkActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                        isScreenshotDuplicateDetectionInProgress = true,
+                        screenshotDuplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+                        screenshotDuplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
     fun validatedScreenshotCanLinkAndLinkedStateShowsUnlinkAction() {
         var linkCount = 0
         var unlinkCount = 0

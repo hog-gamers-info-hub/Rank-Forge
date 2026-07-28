@@ -285,6 +285,11 @@
     <string name="match_review_screenshot_link_missing_tournament_error">The tournament context is missing. The screenshot was not linked.</string>
     <string name="match_review_screenshot_link_missing_match_error">The match context is missing. The screenshot was not linked.</string>
     <string name="match_review_screenshot_link_finalized_error">Finalized matches cannot link or replace screenshots.</string>
+    <string name="match_review_screenshot_duplicate_checking">Checking the selected screenshot for duplicates.</string>
+    <string name="match_review_screenshot_duplicate_same_match">This screenshot is already linked to this match.</string>
+    <string name="match_review_screenshot_duplicate_fingerprint_failed">The selected screenshot could not be checked for duplicates. Try again.</string>
+    <string name="match_review_screenshot_duplicate_other_match">This screenshot is already linked to another match in this tournament.</string>
+    <string name="match_review_screenshot_duplicate_state_conflict">The screenshot link state could not be updated safely. Try again.</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>
     <string name="start_match_correction_message">This opens an editable correction copy. The finalized result stays unchanged until you submit it.</string>
