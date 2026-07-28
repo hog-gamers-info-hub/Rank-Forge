@@ -734,7 +734,13 @@ class RankForgeNavigationTest {
                     observeRoster = ObserveRosterByTournamentUseCase(repository),
                     observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
                     validateMatchResult = ValidateMatchResultUseCase(),
-                    submitCorrection = SubmitMatchCorrectionUseCase(repository, ValidateMatchResultUseCase()),
+                    submitCorrection = SubmitMatchCorrectionUseCase(
+                        repository,
+                        ValidateMatchResultUseCase(),
+                        com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction {
+                            com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionResult.Success(2)
+                        },
+                    ),
                     saveDraftValue = SaveMatchDraftValueUseCase(repository),
                     clearCorrectionDraft = ClearMatchCorrectionDraftUseCase(repository),
                 ).also {

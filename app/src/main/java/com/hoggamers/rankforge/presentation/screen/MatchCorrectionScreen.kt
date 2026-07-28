@@ -289,6 +289,11 @@ private fun MatchCorrectionGlobalError(error: MatchCorrectionGlobalError?) {
         MatchCorrectionGlobalError.MATCH_NOT_FOUND -> stringResource(R.string.match_correction_match_not_found_error)
         MatchCorrectionGlobalError.MATCH_NOT_FINALIZED -> stringResource(R.string.match_correction_not_finalized_error)
         MatchCorrectionGlobalError.INVALID_DATA -> stringResource(R.string.match_correction_invalid_data_error)
+        MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED -> stringResource(R.string.match_correction_authentication_required_error)
+        MatchCorrectionGlobalError.AUTHORIZATION_FAILURE -> stringResource(R.string.match_correction_authorization_error)
+        MatchCorrectionGlobalError.NETWORK_FAILURE -> stringResource(R.string.match_correction_network_error)
+        MatchCorrectionGlobalError.CONFLICT -> stringResource(R.string.match_correction_conflict_error)
+        MatchCorrectionGlobalError.MISSING_REVISION -> stringResource(R.string.match_correction_missing_revision_error)
         null -> null
     }
     if (message != null) Text(text = message, color = MaterialTheme.colorScheme.error)

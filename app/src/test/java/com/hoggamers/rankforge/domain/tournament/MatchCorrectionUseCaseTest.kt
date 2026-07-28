@@ -48,7 +48,11 @@ class MatchCorrectionUseCaseTest {
     @Test
     fun validCorrectionSubmitsAndPreservesPreviousResultInformation() = runTest {
         val repository = createFinalizedRepository()
-        val result = SubmitMatchCorrectionUseCase(repository, ValidateMatchResultUseCase())(
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
+        )(
             SubmitMatchCorrectionInput("match-id", correctedRows()),
         )
 
@@ -77,6 +81,24 @@ class MatchCorrectionUseCaseTest {
             1,
             repository.observeMatchById("match-id").first()!!.placements.first { it.teamSlotNumber == 1 }.position,
         )
+        assertTrue(repository.observeMatchById("match-id").first()!!.correctionHistory.isEmpty())
+    }
+
+    @Test
+    fun protectedCorrectionFailureLeavesFinalizedResultUnchanged() = runTest {
+        val repository = createFinalizedRepository()
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.NetworkFailure },
+        )(SubmitMatchCorrectionInput("match-id", correctedRows()))
+
+        assertEquals(
+            MatchCorrectionGlobalError.NETWORK_FAILURE,
+            (result as SubmitMatchCorrectionResult.Invalid).globalError,
+        )
+        assertEquals(1, repository.observeMatchById("match-id").first()!!.placements.first().position)
         assertTrue(repository.observeMatchById("match-id").first()!!.correctionHistory.isEmpty())
     }
 

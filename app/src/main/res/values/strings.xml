@@ -288,6 +288,11 @@
     <string name="match_correction_match_not_found_error">This match is no longer available.</string>
     <string name="match_correction_not_finalized_error">Only finalized matches can be corrected.</string>
     <string name="match_correction_invalid_data_error">The correction could not be submitted.</string>
+    <string name="match_correction_authentication_required_error">Sign in before submitting a protected correction.</string>
+    <string name="match_correction_authorization_error">You are not allowed to correct this match.</string>
+    <string name="match_correction_network_error">The protected correction could not reach the server. Your finalized result is unchanged.</string>
+    <string name="match_correction_conflict_error">The finalized result changed in the cloud. Review the latest result before correcting it.</string>
+    <string name="match_correction_missing_revision_error">The protected correction needs a current cloud revision.</string>
     <string name="match_correction_not_found_title">Correction unavailable</string>
     <string name="match_correction_not_found_message">Only an existing finalized match can enter correction mode.</string>
     <string name="match_correction_history_title">Correction history</string>

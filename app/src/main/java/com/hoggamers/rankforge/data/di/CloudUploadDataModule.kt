@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRepository
+import com.hoggamers.rankforge.data.cloud.SupabaseProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
@@ -24,6 +25,7 @@ import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRepository
@@ -94,6 +96,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindFinalizedMatchCloudSyncAction(
         useCase: SyncFinalizedMatchesUseCase,
     ): FinalizedMatchCloudSyncAction
+
+    @Binds
+    @Singleton
+    abstract fun bindProtectedMatchCorrectionAction(
+        action: SupabaseProtectedMatchCorrectionAction,
+    ): ProtectedMatchCorrectionAction
 
     @Binds
     @Singleton

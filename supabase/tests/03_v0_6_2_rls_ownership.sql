@@ -98,9 +98,10 @@ select is((
         and procedure_row.proname in (
             'write_tournament_snapshot',
             'write_match_snapshot',
-            'finalize_match_snapshot'
+            'finalize_match_snapshot',
+            'correct_finalized_match_snapshot'
         )
-)::text, '{finalize_match_snapshot,write_match_snapshot,write_tournament_snapshot}'::text, 'approved revision-safe RPCs exist');
+)::text, '{correct_finalized_match_snapshot,finalize_match_snapshot,write_match_snapshot,write_tournament_snapshot}'::text, 'approved revision-safe RPCs exist');
 select is((
     select count(*)
     from pg_trigger trigger_row
@@ -116,7 +117,7 @@ select is((
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
         and procedure_row.prosecdef
-)::text, '{finalize_match_snapshot}'::text, 'only protected finalization uses its documented security definer ownership check');
+)::text, '{correct_finalized_match_snapshot,finalize_match_snapshot}'::text, 'only protected finalization and correction use documented security definer ownership checks');
 
 insert into auth.users (id, email)
 values ('71000000-0000-0000-0000-000000000001', 'rls-owner@example.test');
