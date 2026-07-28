@@ -76,5 +76,6 @@ private fun DraftMatchCloudSyncResult.toUiState(): DraftMatchCloudSyncUiState = 
     DraftMatchCloudSyncResult.ValidationFailure -> DraftMatchCloudSyncUiState.ValidationFailure
     DraftMatchCloudSyncResult.AuthorizationFailure -> DraftMatchCloudSyncUiState.AuthorizationFailure
     DraftMatchCloudSyncResult.NetworkFailure -> DraftMatchCloudSyncUiState.NetworkFailure
+    is DraftMatchCloudSyncResult.Conflict -> DraftMatchCloudSyncUiState.ValidationFailure
     is DraftMatchCloudSyncResult.PartialFailure -> DraftMatchCloudSyncUiState.PartialFailure(completedStage)
 }

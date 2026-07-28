@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncSnapshot
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncStage
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -12,10 +13,12 @@ class SupabaseDraftMatchCloudSyncRepository @Inject constructor(
     private val remoteDataSource: DraftMatchCloudSyncRemoteDataSource,
 ) : DraftMatchCloudSyncRepository {
     override suspend fun sync(snapshot: DraftMatchCloudSyncSnapshot): DraftMatchCloudSyncResult {
+        val expectedRevision = snapshot.expectedCloudRevision
+            ?: return DraftMatchCloudSyncResult.Conflict(RevisionConflict.MissingRevision)
         return when (val mapping = DraftMatchCloudSyncMapper.map(snapshot)) {
             DraftMatchCloudSyncMappingResult.Invalid -> DraftMatchCloudSyncResult.ValidationFailure
             is DraftMatchCloudSyncMappingResult.Success ->
-                remoteDataSource.sync(mapping.payloads).toDomainResult()
+                remoteDataSource.sync(mapping.payloads, expectedRevision).toDomainResult()
         }
     }
 }
@@ -37,6 +40,9 @@ private fun DraftMatchCloudSyncExecutionResult.toDomainResult(): DraftMatchCloud
                 DraftMatchCloudSyncFailureCategory.VALIDATION,
                 DraftMatchCloudSyncFailureCategory.UNKNOWN,
                 -> DraftMatchCloudSyncResult.ValidationFailure
+                DraftMatchCloudSyncFailureCategory.CONFLICT -> DraftMatchCloudSyncResult.Conflict(
+                    conflict ?: RevisionConflict.MissingRevision,
+                )
             }
         }
     }

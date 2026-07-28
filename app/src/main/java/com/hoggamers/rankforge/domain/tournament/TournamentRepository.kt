@@ -1,8 +1,14 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import kotlinx.coroutines.flow.Flow
 
 interface TournamentRepository {
+    /** Missing revision metadata intentionally blocks a cloud write until a safe restore establishes a base. */
+    suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState = LocalRevisionState.Missing
+
+    suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) = Unit
+
     suspend fun create(tournament: Tournament)
 
     fun observeAll(): Flow<List<Tournament>>

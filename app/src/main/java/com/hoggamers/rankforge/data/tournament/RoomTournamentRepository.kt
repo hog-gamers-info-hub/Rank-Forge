@@ -30,6 +30,10 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepos
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.sync.CloudRevision
+import com.hoggamers.rankforge.domain.sync.LocalRevisionState
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
+import com.hoggamers.rankforge.domain.sync.detectDivergence
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -175,6 +179,33 @@ class RoomTournamentRepository @Inject constructor(
         emitAll(database.tournamentDao().observeById(tournamentId).map { it?.toDomain() })
     }
 
+    override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState {
+        awaitState()
+        return database.syncRevisionDao().readByTournamentId(tournamentId)?.toDomain()
+            ?: LocalRevisionState.Missing
+    }
+
+    override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {
+        require(cloudRevision > 0)
+        database.syncRevisionDao().upsert(
+            com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                tournamentId = tournamentId,
+                localRevision = cloudRevision,
+                baseCloudRevision = cloudRevision,
+            ),
+        )
+    }
+
+    override suspend fun detectTournamentDivergence(
+        tournamentId: String,
+        cloudRevision: CloudRevision,
+    ): RevisionConflict? = readLocalRevisionState(tournamentId).detectDivergence(cloudRevision)
+
+    override suspend fun detectMatchDivergence(
+        tournamentId: String,
+        cloudRevision: CloudRevision,
+    ): RevisionConflict? = readLocalRevisionState(tournamentId).detectDivergence(cloudRevision)
+
     override suspend fun create(tournament: Tournament) {
         awaitState()
         writeMutex.withLock {
@@ -204,6 +235,13 @@ class RoomTournamentRepository @Inject constructor(
                 database.tournamentDao().upsert(tournament.toEntity())
                 val normalizedSlots = TeamSlot.fixedSlotsForTournament(tournament.id)
                 database.teamSlotDao().upsertAll(normalizedSlots.map { it.toEntity() })
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        tournamentId = tournament.id,
+                        localRevision = 1,
+                        baseCloudRevision = null,
+                    ),
+                )
                 val next = current.withTournamentMirror(tournament, normalizedSlots)
                 saveLegacyState(next)
                 state.value = next
@@ -260,6 +298,15 @@ class RoomTournamentRepository @Inject constructor(
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
+                snapshot.cloudRevision?.let { revision ->
+                    database.syncRevisionDao().upsert(
+                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                            snapshot.tournament.id,
+                            revision.value,
+                            revision.value,
+                        ),
+                    )
+                }
                 saveLegacyState(next)
             }
             state.value = next
@@ -278,6 +325,15 @@ class RoomTournamentRepository @Inject constructor(
                     database.matchDao().upsert(match.toEntity())
                     database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
                     database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                }
+                snapshot.cloudRevision?.let { revision ->
+                    database.syncRevisionDao().upsert(
+                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                            snapshot.tournamentId,
+                            revision.value,
+                            revision.value,
+                        ),
+                    )
                 }
                 saveLegacyState(next)
             }
@@ -326,6 +382,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.teamSlotDao().upsertAll(updatedSlots.map { it.toEntity() })
                 persistTournamentStatusChanges(current, next)
                 saveLegacyState(next)
+                markLocalRevisionChanged(tournamentId)
             }
             state.value = next
         }
@@ -382,6 +439,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.rosterPlayerDao().upsertAll(players.toEntities())
                 persistTournamentStatusChanges(current, next)
                 saveLegacyState(next)
+                markLocalRevisionChanged(tournamentId)
             }
             state.value = next
         }
@@ -470,6 +528,7 @@ class RoomTournamentRepository @Inject constructor(
                 replaceMatchKills(match.id, match.kills)
                 replaceMatchCorrections(match.id, match.correctionHistory)
                 saveLegacyState(next)
+                markLocalRevisionChanged(match.tournamentId)
             }
             state.value = next
             CreateMatchRepositoryResult.Created
@@ -506,6 +565,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.matchDao().upsert(updatedMatch.toEntity())
                 replaceMatchPlacements(matchId, placements)
                 saveLegacyState(next)
+                markLocalRevisionChanged(match.tournamentId)
             }
             state.value = next
             SaveMatchPlacementsRepositoryResult.Saved
@@ -539,6 +599,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.matchDao().upsert(updatedMatch.toEntity())
                 replaceMatchKills(matchId, kills)
                 saveLegacyState(next)
+                markLocalRevisionChanged(match.tournamentId)
             }
             state.value = next
             SaveMatchKillsRepositoryResult.Saved
@@ -584,6 +645,7 @@ class RoomTournamentRepository @Inject constructor(
                 replaceMatchKills(matchId, kills)
                 database.matchDraftValueDao().deleteByMatchId(matchId)
                 saveLegacyState(next)
+                markLocalRevisionChanged(match.tournamentId)
             }
             state.value = next
             FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
@@ -635,6 +697,7 @@ class RoomTournamentRepository @Inject constructor(
                 replaceMatchCorrections(matchId, correctedMatch.correctionHistory)
                 database.matchDraftValueDao().deleteByMatchId(matchId)
                 saveLegacyState(next)
+                markLocalRevisionChanged(match.tournamentId)
             }
             state.value = next
             SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
@@ -700,6 +763,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.matchKillDao().deleteByMatchId(matchId)
                 database.matchDraftValueDao().deleteByMatchId(matchId)
                 saveLegacyState(next)
+                markLocalRevisionChanged(tournamentId)
             }
             state.value = next
         }
@@ -873,6 +937,22 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    private suspend fun markLocalRevisionChanged(tournamentId: String) {
+        val revisions = database.syncRevisionDao()
+        val existing = revisions.readByTournamentId(tournamentId)
+        if (existing == null) {
+            revisions.upsert(
+                com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                    tournamentId = tournamentId,
+                    localRevision = 1,
+                    baseCloudRevision = null,
+                ),
+            )
+        } else {
+            revisions.incrementLocalRevision(tournamentId)
+        }
+    }
+
     private fun RepositoryState.replaceMatch(matchId: String, transform: (Match) -> Match): RepositoryState = copy(
         matches = matches.mapValues { (_, matches) -> matches.map { if (it.id == matchId) transform(it) else it } },
     )
@@ -954,3 +1034,8 @@ private fun RepositoryState.withTournamentMirror(
 
 private data class RosterKey(val tournamentId: String, val slotNumber: Int)
 private data class DraftKey(val tournamentId: String, val matchId: String)
+
+private fun com.hoggamers.rankforge.data.local.SyncRevisionEntity.toDomain() = LocalRevisionState(
+    localRevision = localRevision,
+    baseCloudRevision = baseCloudRevision?.let(::CloudRevision),
+)

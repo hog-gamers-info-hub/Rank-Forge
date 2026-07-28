@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
+import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 
 class SyncDraftMatchesUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
@@ -41,6 +43,9 @@ class SyncDraftMatchesUseCase @Inject constructor(
             DraftMatchCloudSyncSnapshot(
                 tournament = tournament,
                 matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first(),
+                expectedCloudRevision = tournamentRepository
+                    .readLocalRevisionState(tournamentId)
+                    .expectedRevisionForWrite(),
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -48,7 +53,13 @@ class SyncDraftMatchesUseCase @Inject constructor(
             return DraftMatchCloudSyncResult.ValidationFailure
         }
 
-        return cloudSyncRepository.sync(snapshot)
+        val result = cloudSyncRepository.sync(snapshot)
+        if (result == DraftMatchCloudSyncResult.Success) {
+            snapshot.expectedCloudRevision?.let { expected ->
+                tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
+            }
+        }
+        return result
     }
 
     private suspend fun record(
@@ -60,7 +71,9 @@ class SyncDraftMatchesUseCase @Inject constructor(
             operation = SyncQueueOperationType.DRAFT_MATCH_SYNC,
             tournamentId = id,
             status = result.queueStatus(),
+            failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
 }
-private fun DraftMatchCloudSyncResult.queueStatus() = when (this) { DraftMatchCloudSyncResult.Success -> SyncQueueStatus.COMPLETED; DraftMatchCloudSyncResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; DraftMatchCloudSyncResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; DraftMatchCloudSyncResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; DraftMatchCloudSyncResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; is DraftMatchCloudSyncResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN }
+private fun DraftMatchCloudSyncResult.queueStatus() = when (this) { DraftMatchCloudSyncResult.Success -> SyncQueueStatus.COMPLETED; DraftMatchCloudSyncResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; DraftMatchCloudSyncResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; DraftMatchCloudSyncResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; DraftMatchCloudSyncResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; is DraftMatchCloudSyncResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT; is DraftMatchCloudSyncResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN }
+private fun DraftMatchCloudSyncResult.queueFailureCategory(): String? = (this as? DraftMatchCloudSyncResult.Conflict)?.conflict?.queueFailureCategory()

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 
 class RestoreTournamentUseCase @Inject constructor(
     private val authRepository: AuthRepository,
@@ -35,6 +36,13 @@ class RestoreTournamentUseCase @Inject constructor(
         return when (val result = cloudRepository.readOwnedTournament(tournamentId)) {
             is TournamentCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is TournamentCloudRestorationRemoteResult.Success -> {
+                val cloudRevision = result.value.cloudRevision
+                    ?: return TournamentCloudRestorationResult.Conflict(
+                        com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
+                    )
+                localRepository.detectTournamentDivergence(tournamentId, cloudRevision)?.let { conflict ->
+                    return TournamentCloudRestorationResult.Conflict(conflict)
+                }
                 try {
                     localRepository.restore(result.value)
                     TournamentCloudRestorationResult.Success(result.value.tournament.name)
@@ -56,6 +64,7 @@ class RestoreTournamentUseCase @Inject constructor(
             operation = SyncQueueOperationType.TOURNAMENT_RESTORATION,
             tournamentId = id,
             status = result.queueStatus(),
+            failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
 
@@ -68,7 +77,8 @@ class RestoreTournamentUseCase @Inject constructor(
     }
 }
 
-private fun TournamentCloudRestorationResult.queueStatus() = when (this) { is TournamentCloudRestorationResult.Success -> SyncQueueStatus.COMPLETED; is TournamentCloudRestorationResult.Available -> SyncQueueStatus.COMPLETED; TournamentCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; TournamentCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; TournamentCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; TournamentCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; TournamentCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL }
+private fun TournamentCloudRestorationResult.queueStatus() = when (this) { is TournamentCloudRestorationResult.Success -> SyncQueueStatus.COMPLETED; is TournamentCloudRestorationResult.Available -> SyncQueueStatus.COMPLETED; TournamentCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; TournamentCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; TournamentCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; TournamentCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; TournamentCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL; is TournamentCloudRestorationResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT }
+private fun TournamentCloudRestorationResult.queueFailureCategory(): String? = (this as? TournamentCloudRestorationResult.Conflict)?.conflict?.queueFailureCategory()
 
 private fun TournamentCloudRestorationRemoteResult.Failure.toDomainResult(): TournamentCloudRestorationResult = when (category) {
     TournamentCloudRestorationFailureCategory.AUTHENTICATION ->

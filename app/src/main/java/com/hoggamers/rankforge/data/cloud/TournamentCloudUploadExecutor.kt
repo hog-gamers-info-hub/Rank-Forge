@@ -16,6 +16,7 @@ enum class CloudUploadFailureCategory {
     AUTHORIZATION,
     NETWORK,
     VALIDATION,
+    CONFLICT,
     UNKNOWN,
 }
 
@@ -24,6 +25,7 @@ sealed interface CloudUploadExecutionResult {
     data class Failure(
         val completedStage: CloudUploadCompletedStage?,
         val category: CloudUploadFailureCategory,
+        val conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict? = null,
     ) : CloudUploadExecutionResult
 }
 
@@ -59,7 +61,7 @@ class TournamentCloudUploadExecutor(
     }
 }
 
-private fun Throwable.toCloudUploadFailureCategory(): CloudUploadFailureCategory {
+internal fun Throwable.toCloudUploadFailureCategory(): CloudUploadFailureCategory {
     val description = generateSequence(this) { it.cause }
         .joinToString(" ") { it.message.orEmpty() }
         .lowercase()

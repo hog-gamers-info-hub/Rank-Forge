@@ -1,10 +1,12 @@
 package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 
 data class DraftMatchCloudSyncSnapshot(
     val tournament: Tournament,
     val matches: List<Match>,
+    val expectedCloudRevision: Int? = null,
 )
 
 enum class DraftMatchCloudSyncStage {
@@ -17,6 +19,7 @@ sealed interface DraftMatchCloudSyncResult {
     data object ValidationFailure : DraftMatchCloudSyncResult
     data object AuthorizationFailure : DraftMatchCloudSyncResult
     data object NetworkFailure : DraftMatchCloudSyncResult
+    data class Conflict(val conflict: RevisionConflict) : DraftMatchCloudSyncResult
     data class PartialFailure(
         val completedStage: DraftMatchCloudSyncStage,
     ) : DraftMatchCloudSyncResult

@@ -110,4 +110,6 @@ private fun TournamentCloudRestorationResult.toUiState(): TournamentCloudRestora
         TournamentCloudRestorationUiState.NetworkFailure
     TournamentCloudRestorationResult.LocalTransactionFailure ->
         TournamentCloudRestorationUiState.LocalTransactionFailure
+    is TournamentCloudRestorationResult.Conflict ->
+        TournamentCloudRestorationUiState.ValidationFailure
 }

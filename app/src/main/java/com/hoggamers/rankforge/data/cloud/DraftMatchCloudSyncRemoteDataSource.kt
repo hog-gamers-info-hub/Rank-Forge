@@ -4,13 +4,15 @@ import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 interface DraftMatchCloudSyncRemoteDataSource {
-    suspend fun sync(payloads: DraftMatchCloudSyncPayloads): DraftMatchCloudSyncExecutionResult
+    suspend fun sync(payloads: DraftMatchCloudSyncPayloads, expectedRevision: Int): DraftMatchCloudSyncExecutionResult
 }
 
 @Singleton
@@ -18,7 +20,7 @@ class SupabaseDraftMatchCloudSyncRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
 ) : DraftMatchCloudSyncRemoteDataSource {
-    override suspend fun sync(payloads: DraftMatchCloudSyncPayloads): DraftMatchCloudSyncExecutionResult =
+    override suspend fun sync(payloads: DraftMatchCloudSyncPayloads, expectedRevision: Int): DraftMatchCloudSyncExecutionResult =
         withContext(Dispatchers.IO) {
             when {
                 !config.isConfigured -> DraftMatchCloudSyncExecutionResult.Failure(
@@ -33,11 +35,35 @@ class SupabaseDraftMatchCloudSyncRemoteDataSource @Inject constructor(
                     )
 
                 else -> {
-                    val client = clientProvider.client
-                    DraftMatchCloudSyncExecutor(
-                        upsertMatches = { matches -> client.from("matches").upsert(matches) },
-                        upsertMatchResults = { results -> client.from("match_results").upsert(results) },
-                    ).execute(payloads)
+                    try {
+                        val response = clientProvider.client.postgrest.rpc(
+                            "write_match_snapshot",
+                            MatchSnapshotWriteParameters(
+                                tournamentId = payloads.matches.firstOrNull()?.tournamentId
+                                    ?: return@withContext DraftMatchCloudSyncExecutionResult.Failure(
+                                        null,
+                                        DraftMatchCloudSyncFailureCategory.VALIDATION,
+                                    ),
+                                matches = payloads.matches,
+                                matchResults = payloads.matchResults,
+                                expectedRevision = expectedRevision,
+                            ),
+                        ).decodeSingle<RevisionWriteResponse>()
+                        if (response.outcome == "success") DraftMatchCloudSyncExecutionResult.Success else {
+                            DraftMatchCloudSyncExecutionResult.Failure(
+                                null,
+                                DraftMatchCloudSyncFailureCategory.CONFLICT,
+                                response.toRevisionConflict(expectedRevision),
+                            )
+                        }
+                    } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                        throw cancellation
+                    } catch (throwable: Throwable) {
+                        DraftMatchCloudSyncExecutionResult.Failure(
+                            null,
+                            throwable.toDraftMatchCloudSyncFailureCategory(),
+                        )
+                    }
                 }
             }
         }

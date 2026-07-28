@@ -107,6 +107,28 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion4PreservesDataAndAddsSafeRevisionStorage() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 4).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-revision', 'Revision Cup', '2026-07-26', 'Organizer', '123', 'CONFIRMED')")
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            5,
+            true,
+            RankForgeDatabase.MIGRATION_4_5,
+        )
+        migrated.query("SELECT id FROM tournaments WHERE id = 'tournament-revision'").use {
+            assertTrue(it.moveToFirst())
+        }
+        migrated.query("PRAGMA table_info(sync_revisions)").use { cursor ->
+            val columns = buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
+            assertTrue(setOf("tournament_id", "local_revision", "base_cloud_revision").all(columns::contains))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(

@@ -149,6 +149,7 @@ class RestoreTournamentUseCaseTest {
         players = listOf(
             RestoredRosterPlayer(TOURNAMENT_ID, 1, 1, "Player One"),
         ),
+        cloudRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(1),
     )
 
     private class RecordingCloudRepository(

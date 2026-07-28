@@ -15,6 +15,7 @@ enum class FinalizedMatchCloudSyncFailureCategory {
     AUTHORIZATION,
     NETWORK,
     VALIDATION,
+    CONFLICT,
     UNKNOWN,
 }
 
@@ -23,6 +24,7 @@ sealed interface FinalizedMatchCloudSyncExecutionResult {
     data class Failure(
         val completedStage: FinalizedMatchCloudSyncCompletedStage?,
         val category: FinalizedMatchCloudSyncFailureCategory,
+        val conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict? = null,
     ) : FinalizedMatchCloudSyncExecutionResult
 }
 
@@ -59,7 +61,7 @@ class FinalizedMatchCloudSyncExecutor(
     }
 }
 
-private fun Throwable.toFinalizedMatchCloudSyncFailureCategory(): FinalizedMatchCloudSyncFailureCategory {
+internal fun Throwable.toFinalizedMatchCloudSyncFailureCategory(): FinalizedMatchCloudSyncFailureCategory {
     val description = generateSequence(this) { it.cause }
         .joinToString(" ") { it.message.orEmpty() }
         .lowercase()

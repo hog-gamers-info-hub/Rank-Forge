@@ -37,8 +37,9 @@ interface RankForgeStateDao {
         MatchDraftValueEntity::class,
         MatchCorrectionEntity::class,
         SyncQueueEntity::class,
+        SyncRevisionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -52,6 +53,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchDraftValueDao(): MatchDraftValueDao
     abstract fun matchCorrectionDao(): MatchCorrectionDao
     abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun syncRevisionDao(): SyncRevisionDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -177,6 +179,13 @@ abstract class RankForgeDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `sync_queue_entries` (`id` TEXT NOT NULL, `operationType` TEXT NOT NULL, `tournamentId` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `failureCategory` TEXT, `attemptCount` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+            }
+        }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sync_revisions` (`tournament_id` TEXT NOT NULL, `local_revision` INTEGER NOT NULL, `base_cloud_revision` INTEGER, PRIMARY KEY(`tournament_id`))",
+                )
             }
         }
     }

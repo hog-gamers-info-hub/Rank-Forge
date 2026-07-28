@@ -22,6 +22,7 @@ data class TournamentCloudRestorePayload(
     @SerialName("organizer_name") val organizerName: String,
     @SerialName("organizer_contact") val organizerContact: String,
     val status: String,
+    val revision: Int,
 )
 
 @Serializable
@@ -140,6 +141,7 @@ private fun TournamentCloudRestorePayload.toUploadPayload() = TournamentUploadPa
     organizerName = organizerName,
     organizerContact = organizerContact,
     status = status,
+    revision = revision,
 )
 
 private fun TeamSlotCloudRestorePayload.toUploadPayload() = TeamSlotUploadPayload(

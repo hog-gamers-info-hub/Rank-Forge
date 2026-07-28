@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.time.LocalDate
 import java.util.UUID
 
@@ -49,6 +50,10 @@ object TournamentCloudRestorationMapper {
         val date = payloads.tournament.tournamentDate.toLocalDateOrNull()
             ?: return TournamentCloudRestorationMappingResult.Invalid
         val status = payloads.tournament.status.toLocalStatusOrNull()
+            ?: return TournamentCloudRestorationMappingResult.Invalid
+        val cloudRevision = payloads.tournament.revision
+            ?.takeIf { it > 0 }
+            ?.let(::CloudRevision)
             ?: return TournamentCloudRestorationMappingResult.Invalid
         if (payloads.tournament.ownerId.isBlank()) {
             return TournamentCloudRestorationMappingResult.Invalid
@@ -124,6 +129,7 @@ object TournamentCloudRestorationMapper {
                 ),
                 slots = slots,
                 players = players,
+                cloudRevision = cloudRevision,
             ),
         )
     }

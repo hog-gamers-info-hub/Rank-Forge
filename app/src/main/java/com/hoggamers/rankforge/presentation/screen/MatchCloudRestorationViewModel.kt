@@ -57,4 +57,5 @@ private fun MatchCloudRestorationResult.toUiState(): MatchCloudRestorationUiStat
     MatchCloudRestorationResult.ValidationFailure -> MatchCloudRestorationUiState.ValidationFailure
     MatchCloudRestorationResult.NetworkFailure -> MatchCloudRestorationUiState.NetworkFailure
     MatchCloudRestorationResult.LocalTransactionFailure -> MatchCloudRestorationUiState.LocalTransactionFailure
+    is MatchCloudRestorationResult.Conflict -> MatchCloudRestorationUiState.ValidationFailure
 }

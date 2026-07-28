@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
+import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 
 class UploadTournamentUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
@@ -45,6 +47,9 @@ class UploadTournamentUseCase @Inject constructor(
                 tournament = tournament,
                 slots = tournamentRepository.observeSlotsByTournamentId(tournamentId).first(),
                 rosters = tournamentRepository.observeRosterByTournamentId(tournamentId).first(),
+                expectedCloudRevision = tournamentRepository
+                    .readLocalRevisionState(tournamentId)
+                    .expectedRevisionForWrite(),
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -52,7 +57,13 @@ class UploadTournamentUseCase @Inject constructor(
             return TournamentCloudUploadResult.ValidationFailure
         }
 
-        return cloudUploadRepository.upload(snapshot, ownerId)
+        val result = cloudUploadRepository.upload(snapshot, ownerId)
+        if (result == TournamentCloudUploadResult.Success) {
+            snapshot.expectedCloudRevision?.let { expected ->
+                tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
+            }
+        }
+        return result
     }
 
     private suspend fun record(
@@ -64,6 +75,7 @@ class UploadTournamentUseCase @Inject constructor(
             operation = SyncQueueOperationType.TOURNAMENT_UPLOAD,
             tournamentId = tournamentId,
             status = result.queueStatus(),
+            failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
 }
@@ -74,5 +86,9 @@ private fun TournamentCloudUploadResult.queueStatus() = when (this) {
     TournamentCloudUploadResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK
     TournamentCloudUploadResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION
     TournamentCloudUploadResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION
+    is TournamentCloudUploadResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT
     is TournamentCloudUploadResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN
 }
+
+private fun TournamentCloudUploadResult.queueFailureCategory(): String? =
+    (this as? TournamentCloudUploadResult.Conflict)?.conflict?.queueFailureCategory()

@@ -6,6 +6,18 @@ import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface SyncRevisionDao {
+    @Query("SELECT * FROM sync_revisions WHERE tournament_id = :tournamentId")
+    suspend fun readByTournamentId(tournamentId: String): SyncRevisionEntity?
+
+    @Upsert
+    suspend fun upsert(revision: SyncRevisionEntity)
+
+    @Query("UPDATE sync_revisions SET local_revision = local_revision + 1 WHERE tournament_id = :tournamentId")
+    suspend fun incrementLocalRevision(tournamentId: String)
+}
+
+@Dao
 interface TournamentDao {
     @Query("SELECT * FROM tournaments ORDER BY date, id")
     fun observeAll(): Flow<List<TournamentEntity>>

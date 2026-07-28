@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This decision document defines the prerequisite design for v0.6.7 revision-based conflict detection. It records why the current implementation cannot safely detect stale writes or local/cloud divergence, and establishes the schema and write-contract direction required before implementation begins.
+This decision document defines and records the implemented v0.6.7 revision-based conflict-detection design. It protects cloud writes from stale local state and preserves local/cloud data when restoration detects divergence.
 
 ## 2. Current blocker
 
@@ -25,26 +25,26 @@ The v0.6.7 implementation may include the following prerequisite work:
 * Repository and use-case changes that compare the expected/base revision with the current cloud revision.
 * Queue and retry handling that records stale-write and divergence outcomes deterministically and non-destructively.
 
-These changes must be scoped together. Revision conflict detection must not be added as a partial client-only check that can race with an unconditional cloud write.
+These changes are implemented together. Revision conflict detection is not a client-only pre-check: the Supabase function performs the authoritative comparison while holding the tournament row lock.
 
 ## 4. Supabase revision requirements
 
 Supabase must provide a revision contract for every v0.6.7-protected cloud record:
 
-* A cloud read must return the current revision with the record data.
-* A write must atomically verify the expected/base revision against the current cloud revision and advance the revision only when they match.
+* A cloud read returns the current tournament revision with the record data.
+* `write_tournament_snapshot` and `write_match_snapshot` atomically verify the expected tournament revision while locking the owner-visible tournament row, then advance that revision only when it matches.
 * A write that finds an advanced cloud revision must return a deterministic stale-write conflict and must not overwrite cloud data.
 * A missing or indeterminate revision must fail safely and non-destructively; it must not fall back to an unconditional upsert.
-* The required implementation may use a versioned Supabase migration, including narrowly scoped database support for conditional compare-and-increment writes. The implementation must preserve existing authorization and ownership protections.
+* The versioned Supabase migration adds narrowly scoped, `security invoker` RPCs and grants execution only to `authenticated`. Existing RLS and ownership protections remain in force.
 
 ## 5. Local Room/base-revision requirements
 
 Room must persist the revision values required to make a meaningful comparison after local edits, process restart, restoration, and retry:
 
-* Persist the cloud/base revision associated with each locally stored, synchronizable record or snapshot.
+* Room database version 5 adds `sync_revisions`, keyed by tournament ID, with `local_revision` and nullable `base_cloud_revision` fields.
 * Carry revision values through domain models, cloud DTOs, restoration snapshots, and local entities without substituting timestamps or inferred values.
 * Update the persisted base/cloud revision only from a confirmed cloud read or successful conditional write.
-* Add the required Room version migration before relying on these values in production.
+* Migration 4 to 5 preserves existing data and leaves legacy rows without a revision record. Such rows are treated as missing revision metadata and cannot write until an explicit safe restore establishes a base revision.
 
 The local representation must preserve enough identity and revision context to distinguish a locally changed record from a record whose cloud version has advanced.
 
@@ -52,7 +52,8 @@ The local representation must preserve enough identity and revision context to d
 
 Cloud writes must not overwrite newer cloud data.
 
-* When the expected/base revision matches the current cloud revision, the write may proceed and must advance the revision.
+* A new local tournament uses the explicit create expectation `0`; persisted server revisions remain positive. Known cloud records use their positive base revision.
+* When the expected/base revision matches the current cloud revision, the write may proceed and advances the tournament revision.
 * When the cloud revision has advanced, the write must be blocked and return a stale-write conflict.
 * When the revision is missing, unreadable, or otherwise indeterminate, the action must fail safely and non-destructively.
 * The client must not treat a local revision comparison as sufficient protection without the cloud-side conditional check.
@@ -61,7 +62,7 @@ Cloud writes must not overwrite newer cloud data.
 
 Restore and cloud-read flows should detect local/cloud divergence when both local and cloud revision data are available.
 
-* A detected divergence must preserve both local and cloud data for a later decision.
+* A detected divergence preserves both local and cloud data for a later decision. Restoration returns a deterministic conflict before any local replacement occurs.
 * v0.6.7 must not auto-merge divergent data.
 * v0.6.7 must not delete local data or overwrite cloud data to resolve divergence.
 * v0.6.7 does not add conflict-resolution UI.
@@ -72,8 +73,8 @@ If revision data is unavailable or indeterminate, the flow must preserve data an
 
 Revision conflicts must integrate with the existing persistent sync queue without changing the v0.6.6 duplicate-prevention guarantees:
 
-* Stale-write and divergence outcomes must not create duplicate active queue entries.
-* A retry must re-read or conditionally re-check the cloud revision before attempting its write.
+* Stale-write and divergence outcomes use `FAILED_CONFLICT` with stable failure metadata (`STALE_WRITE_CONFLICT`, `LOCAL_CLOUD_DIVERGENCE`, or `MISSING_REVISION`) and do not create duplicate active queue entries.
+* A retry repeats the same conditional RPC write, so the cloud revision is re-checked before every write attempt.
 * Conflicts are non-retryable unless a later version adds explicit resolution. While no dedicated persistent conflict status exists, the implementation must record a stable non-retryable failure outcome and deterministic conflict metadata using the existing queue contract.
 * v0.6.6 operation-identity duplicate prevention must remain intact.
 * Completed queue entries remain retained; v0.6.7 does not add a cleanup or deletion policy.
@@ -103,4 +104,4 @@ The following remain deferred beyond v0.6.7:
 
 ## 11. Implementation approval status
 
-The revision-conflict design direction is approved, but the current implementation is blocked until a subsequent scoped task authorizes the required versioned Supabase migration and Room schema/version migration together with their Kotlin propagation. No client-only stale-write or divergence implementation is approved before those prerequisites exist.
+Implemented in the v0.6.7 branch. Tournament/roster upload, draft-match sync, and finalized-match sync use revision-safe RPC writes. Tournament and match restoration carry the tournament revision and block local replacement when local/cloud divergence is detected. Existing legacy local records with no revision metadata safely return a missing-revision conflict for writes until restored; no automatic reconciliation is performed.

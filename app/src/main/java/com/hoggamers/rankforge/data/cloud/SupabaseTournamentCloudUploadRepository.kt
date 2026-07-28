@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadStage
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,10 +16,12 @@ class SupabaseTournamentCloudUploadRepository @Inject constructor(
         snapshot: TournamentCloudUploadSnapshot,
         ownerId: String,
     ): TournamentCloudUploadResult {
+        val expectedRevision = snapshot.expectedCloudRevision
+            ?: return TournamentCloudUploadResult.Conflict(RevisionConflict.MissingRevision)
         return when (val mapping = TournamentCloudUploadMapper.map(snapshot, ownerId)) {
             TournamentCloudUploadMappingResult.Invalid -> TournamentCloudUploadResult.ValidationFailure
             is TournamentCloudUploadMappingResult.Success ->
-                remoteDataSource.upload(mapping.payloads).toDomainResult()
+                remoteDataSource.upload(mapping.payloads, expectedRevision).toDomainResult()
         }
     }
 }
@@ -44,6 +47,9 @@ private fun CloudUploadExecutionResult.toDomainResult(): TournamentCloudUploadRe
                 CloudUploadFailureCategory.VALIDATION,
                 CloudUploadFailureCategory.UNKNOWN,
                 -> TournamentCloudUploadResult.ValidationFailure
+                CloudUploadFailureCategory.CONFLICT -> TournamentCloudUploadResult.Conflict(
+                    conflict ?: RevisionConflict.MissingRevision,
+                )
             }
         }
     }
