@@ -11,7 +11,11 @@ import org.junit.Test
 class RecoverForegroundSyncQueueUseCaseTest {
     @Test fun authenticatedForegroundRecoveryInspectsQueueAndRetriesEligibleEntries() = runTest {
         val networkEntry = entry("network", SyncQueueStatus.BLOCKED_NETWORK)
-        val authenticationEntry = entry("authentication", SyncQueueStatus.BLOCKED_AUTHENTICATION)
+        val authenticationEntry = entry(
+            id = "authentication",
+            status = SyncQueueStatus.BLOCKED_AUTHENTICATION,
+            operationType = SyncQueueOperationType.DRAFT_MATCH_SYNC,
+        )
         val repository = RecordingQueueRepository(listOf(networkEntry, authenticationEntry))
         val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
         val recovery = RecoverForegroundSyncQueueUseCase(
@@ -64,9 +68,13 @@ class RecoverForegroundSyncQueueUseCaseTest {
         assertTrue(repository.entries.isEmpty())
     }
 
-    private fun entry(id: String, status: SyncQueueStatus) = SyncQueueEntry(
+    private fun entry(
+        id: String,
+        status: SyncQueueStatus,
+        operationType: SyncQueueOperationType = SyncQueueOperationType.TOURNAMENT_UPLOAD,
+    ) = SyncQueueEntry(
         id = id,
-        operationType = SyncQueueOperationType.TOURNAMENT_UPLOAD,
+        operationType = operationType,
         tournamentId = "tournament-id",
         createdAtEpochMillis = 0,
         status = status,
@@ -99,6 +107,7 @@ class RecoverForegroundSyncQueueUseCaseTest {
             status: SyncQueueStatus,
             failureCategory: String?,
         ): SyncQueueEntry = error("not used")
+        override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
         override suspend fun incrementAttemptCount(id: String) {
             replace(id) { it.copy(attemptCount = it.attemptCount + 1) }
         }

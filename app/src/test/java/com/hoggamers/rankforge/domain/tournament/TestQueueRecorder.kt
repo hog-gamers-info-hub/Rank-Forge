@@ -30,6 +30,7 @@ internal class RecordingTestQueueRepository(
             attemptCount = 0,
         ).also(entries::add)
     }
+    override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
     override suspend fun incrementAttemptCount(id: String) = Unit
     override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
     override suspend fun markCompleted(id: String) = Unit

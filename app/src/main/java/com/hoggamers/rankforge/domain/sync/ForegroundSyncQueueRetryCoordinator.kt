@@ -37,9 +37,14 @@ class ForegroundSyncQueueRetryCoordinator(
     suspend fun retryEligible(
         entries: Iterable<SyncQueueEntry>,
         hasAuthenticatedSession: Boolean,
-    ): List<SyncQueueEntry> = entries.filter {
-        eligibilityPolicy.isEligible(it, hasAuthenticatedSession)
-    }.map { entry ->
+    ): List<SyncQueueEntry> = entries
+        .filter { eligibilityPolicy.isEligible(it, hasAuthenticatedSession) }
+        .groupBy { SyncOperationIdentity.from(it.operationType, it.tournamentId) }
+        .values
+        .map { duplicates ->
+            duplicates.minWith(compareBy<SyncQueueEntry> { it.createdAtEpochMillis }.thenBy { it.id })
+        }
+        .map { entry ->
         repository.incrementAttemptCount(entry.id)
         val attemptedEntry = entry.copy(attemptCount = entry.attemptCount + 1)
         when (val outcome = executor.execute(attemptedEntry)) {
@@ -51,5 +56,5 @@ class ForegroundSyncQueueRetryCoordinator(
             )
         }
         attemptedEntry
-    }
+        }
 }

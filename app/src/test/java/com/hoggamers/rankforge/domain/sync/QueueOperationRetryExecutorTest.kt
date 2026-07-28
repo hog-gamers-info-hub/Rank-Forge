@@ -166,6 +166,7 @@ class QueueOperationRetryExecutorTest {
             enqueueCalls += 1
             error("Retry execution must not enqueue")
         }
+        override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
         override suspend fun incrementAttemptCount(id: String) {
             incrementedIds += id
             replace(id) { it.copy(attemptCount = it.attemptCount + 1) }
