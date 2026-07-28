@@ -11,6 +11,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
@@ -74,7 +75,12 @@ object TournamentDataProvidersModule {
     ).addMigrations(
         RankForgeDatabase.MIGRATION_1_2,
         RankForgeDatabase.MIGRATION_2_3,
+        RankForgeDatabase.MIGRATION_3_4,
     ).build()
+
+    @Provides
+    @Singleton
+    fun provideSyncQueueDao(database: RankForgeDatabase): SyncQueueDao = database.syncQueueDao()
 
     @Provides
     @Singleton

@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -56,6 +57,40 @@ class TournamentCloudUploadScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(TOURNAMENT_ID, uploadedTournamentId)
         }
+    }
+
+    @Test
+    fun queuedUploadStateShowsSavedForLaterSyncMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = detailsState(),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    uploadUiState = TournamentCloudUploadUiState.Queued,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG)
+            .assertTextEquals("Upload could not complete. Saved locally for later sync.")
+    }
+
+    @Test
+    fun queuePersistenceFailureStateShowsLocalSaveFailureMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = detailsState(),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    uploadUiState = TournamentCloudUploadUiState.QueuePersistenceFailure,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG)
+            .assertTextEquals("Upload failed and could not be saved locally.")
     }
 
     private fun detailsState() = TournamentDetailsUiState(

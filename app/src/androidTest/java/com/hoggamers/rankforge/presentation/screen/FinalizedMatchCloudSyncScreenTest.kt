@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -55,6 +56,20 @@ class FinalizedMatchCloudSyncScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(TOURNAMENT_ID, syncedTournamentId)
         }
+    }
+
+    @Test
+    fun queuedStateShowsFinalizedSyncSavedLocallyMessage() {
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.Queued) } }
+        composeTestRule.onNodeWithTag(FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
+            .assertTextEquals("Finalized-match sync could not complete. Saved locally for later sync.")
+    }
+
+    @Test
+    fun queuePersistenceFailureStateShowsFinalizedSyncLocalSaveFailureMessage() {
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.QueuePersistenceFailure) } }
+        composeTestRule.onNodeWithTag(FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
+            .assertTextEquals("Finalized-match sync failed and could not be saved locally.")
     }
 
     private fun detailsState() = TournamentDetailsUiState(

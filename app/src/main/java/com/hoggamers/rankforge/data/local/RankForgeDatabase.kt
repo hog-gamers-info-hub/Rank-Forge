@@ -36,8 +36,9 @@ interface RankForgeStateDao {
         MatchKillEntity::class,
         MatchDraftValueEntity::class,
         MatchCorrectionEntity::class,
+        SyncQueueEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -50,6 +51,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchKillDao(): MatchKillDao
     abstract fun matchDraftValueDao(): MatchDraftValueDao
     abstract fun matchCorrectionDao(): MatchCorrectionDao
+    abstract fun syncQueueDao(): SyncQueueDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -170,6 +172,11 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_kills_match_id` ON `match_kills` (`match_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_draft_values_match_id` ON `match_draft_values` (`match_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_corrections_match_id` ON `match_corrections` (`match_id`)")
+            }
+        }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sync_queue_entries` (`id` TEXT NOT NULL, `operationType` TEXT NOT NULL, `tournamentId` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `failureCategory` TEXT, `attemptCount` INTEGER NOT NULL, PRIMARY KEY(`id`))")
             }
         }
     }

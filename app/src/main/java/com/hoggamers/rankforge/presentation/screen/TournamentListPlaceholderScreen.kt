@@ -250,6 +250,10 @@ private fun TournamentCloudRestorationUiState.restoreStatusText(): String = when
         stringResource(R.string.restore_tournament_network_failure)
     TournamentCloudRestorationUiState.LocalTransactionFailure ->
         stringResource(R.string.restore_tournament_local_failure)
+    TournamentCloudRestorationUiState.Queued ->
+        stringResource(R.string.restore_tournament_queued)
+    TournamentCloudRestorationUiState.QueuePersistenceFailure ->
+        stringResource(R.string.restore_tournament_queue_persistence_failed)
 }
 
 @Composable

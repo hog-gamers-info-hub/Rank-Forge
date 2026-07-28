@@ -2,9 +2,12 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +24,8 @@ sealed interface MatchCloudRestorationUiState {
     data object ValidationFailure : MatchCloudRestorationUiState
     data object NetworkFailure : MatchCloudRestorationUiState
     data object LocalTransactionFailure : MatchCloudRestorationUiState
+    data object Queued : MatchCloudRestorationUiState
+    data object QueuePersistenceFailure : MatchCloudRestorationUiState
 }
 
 @HiltViewModel
@@ -29,7 +34,19 @@ class MatchCloudRestorationViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchCloudRestorationUiState>(MatchCloudRestorationUiState.Idle)
     val uiState: StateFlow<MatchCloudRestorationUiState> = _uiState.asStateFlow()
-    fun restore(tournamentId: String) { if (_uiState.value !is MatchCloudRestorationUiState.Loading) viewModelScope.launch { _uiState.value = MatchCloudRestorationUiState.Loading; _uiState.value = restoreMatches(tournamentId).toUiState() } }
+    fun restore(tournamentId: String) { if (_uiState.value !is MatchCloudRestorationUiState.Loading) viewModelScope.launch { _uiState.value = MatchCloudRestorationUiState.Loading; _uiState.value = try { restoreMatches(tournamentId).toUiState() } catch (cancellation: CancellationException) { throw cancellation } catch (_: Throwable) { MatchCloudRestorationUiState.NetworkFailure } } }
+}
+
+private fun QueueAwareActionResult<MatchCloudRestorationResult>.toUiState(): MatchCloudRestorationUiState {
+    if (primaryResult == MatchCloudRestorationResult.Success || primaryResult == MatchCloudRestorationResult.NoCloudMatches) {
+        return primaryResult.toUiState()
+    }
+
+    return when (queueRecordingResult) {
+        QueueRecordingResult.RECORDED -> MatchCloudRestorationUiState.Queued
+        QueueRecordingResult.PERSISTENCE_FAILED -> MatchCloudRestorationUiState.QueuePersistenceFailure
+        QueueRecordingResult.NOT_REQUIRED -> primaryResult.toUiState()
+    }
 }
 
 private fun MatchCloudRestorationResult.toUiState(): MatchCloudRestorationUiState = when (this) {

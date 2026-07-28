@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +27,8 @@ sealed interface TournamentCloudRestorationUiState {
     data object ValidationFailure : TournamentCloudRestorationUiState
     data object NetworkFailure : TournamentCloudRestorationUiState
     data object LocalTransactionFailure : TournamentCloudRestorationUiState
+    data object Queued : TournamentCloudRestorationUiState
+    data object QueuePersistenceFailure : TournamentCloudRestorationUiState
 }
 
 @HiltViewModel
@@ -50,7 +54,7 @@ class TournamentCloudRestorationViewModel @Inject constructor(
         ) return
         viewModelScope.launch {
             _uiState.value = TournamentCloudRestorationUiState.Restoring(tournamentId)
-            _uiState.value = runAction { restoreTournament.restore(tournamentId) }
+            _uiState.value = runRestoreAction { restoreTournament.restore(tournamentId) }
         }
     }
 
@@ -66,6 +70,28 @@ class TournamentCloudRestorationViewModel @Inject constructor(
         throw cancellation
     } catch (_: Throwable) {
         TournamentCloudRestorationUiState.NetworkFailure
+    }
+
+    private suspend fun runRestoreAction(
+        action: suspend () -> QueueAwareActionResult<TournamentCloudRestorationResult>,
+    ): TournamentCloudRestorationUiState = try {
+        action().toUiState()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        TournamentCloudRestorationUiState.NetworkFailure
+    }
+}
+
+private fun QueueAwareActionResult<TournamentCloudRestorationResult>.toUiState(): TournamentCloudRestorationUiState {
+    if (primaryResult is TournamentCloudRestorationResult.Success) {
+        return primaryResult.toUiState()
+    }
+
+    return when (queueRecordingResult) {
+        QueueRecordingResult.RECORDED -> TournamentCloudRestorationUiState.Queued
+        QueueRecordingResult.PERSISTENCE_FAILED -> TournamentCloudRestorationUiState.QueuePersistenceFailure
+        QueueRecordingResult.NOT_REQUIRED -> primaryResult.toUiState()
     }
 }
 

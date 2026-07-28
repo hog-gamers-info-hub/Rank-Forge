@@ -7,6 +7,9 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
+import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -19,52 +22,94 @@ import org.junit.Test
 
 class UploadTournamentUseCaseTest {
     @Test
-    fun unauthenticatedUploadDoesNotCallCloudOrChangeLocalData() = runTest {
+    fun authenticationFailureIsRecordedAndDoesNotCallCloudOrChangeLocalData() = runTest {
         val repository = localRepository()
         val cloud = RecordingCloudRepository()
+        val queueRepository = RecordingTestQueueRepository()
         val before = repository.observeById(TOURNAMENT_ID).first()
         val useCase = UploadTournamentUseCase(
             tournamentRepository = repository,
             authRepository = FakeAuthRepository(AuthState.SignedOut),
             cloudUploadRepository = cloud,
+            queueRecorder = queueRepository.recorder(),
         )
 
         val result = useCase(TOURNAMENT_ID)
 
-        assertEquals(TournamentCloudUploadResult.AuthenticationRequired, result)
+        assertEquals(TournamentCloudUploadResult.AuthenticationRequired, result.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
         assertNull(cloud.snapshot)
         assertEquals(before, repository.observeById(TOURNAMENT_ID).first())
+        assertEquals(1, queueRepository.entries.size)
+        assertEquals(SyncQueueOperationType.TOURNAMENT_UPLOAD, queueRepository.entries.single().operationType)
+        assertEquals(TOURNAMENT_ID, queueRepository.entries.single().tournamentId)
+        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queueRepository.entries.single().status)
+        assertEquals(0, queueRepository.entries.single().attemptCount)
     }
 
     @Test
     fun authenticatedUploadSendsLocalSnapshotWithOwnerId() = runTest {
         val repository = localRepository()
         val cloud = RecordingCloudRepository()
+        val queueRepository = RecordingTestQueueRepository()
         val useCase = UploadTournamentUseCase(
             tournamentRepository = repository,
             authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.com"))),
             cloudUploadRepository = cloud,
+            queueRecorder = queueRepository.recorder(),
         )
 
         val result = useCase(TOURNAMENT_ID)
 
-        assertEquals(TournamentCloudUploadResult.Success, result)
+        assertEquals(TournamentCloudUploadResult.Success, result.primaryResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertEquals(OWNER_ID, cloud.ownerId)
         assertEquals(TOURNAMENT_ID, cloud.snapshot?.tournament?.id)
         assertEquals(12, cloud.snapshot?.slots?.size)
         assertTrue(cloud.snapshot?.rosters?.get(1)?.single()?.displayName == "Player One")
+        assertTrue(queueRepository.entries.isEmpty())
     }
 
     @Test
-    fun authorizationAndPartialFailuresAreReturnedToCaller() = runTest {
+    fun networkFailureIsRecorded() = runTest {
+        val queueRepository = RecordingTestQueueRepository()
+        val result = UploadTournamentUseCase(
+            localRepository(),
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            RecordingCloudRepository(TournamentCloudUploadResult.NetworkFailure),
+            queueRepository.recorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudUploadResult.NetworkFailure, result.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queueRepository.entries.single().status)
+    }
+
+    @Test
+    fun queuePersistenceFailurePreservesCloudFailure() = runTest {
+        val result = UploadTournamentUseCase(
+            localRepository(),
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            RecordingCloudRepository(TournamentCloudUploadResult.NetworkFailure),
+            RecordingTestQueueRepository(enqueueFailure = IllegalStateException()).recorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudUploadResult.NetworkFailure, result.primaryResult)
+        assertEquals(QueueRecordingResult.PERSISTENCE_FAILED, result.queueRecordingResult)
+    }
+
+    @Test
+    fun authorizationAndPartialFailuresArePreserved() = runTest {
         val repository = localRepository()
         val authorizationCloud = RecordingCloudRepository(TournamentCloudUploadResult.AuthorizationFailure)
         val authorizationResult = UploadTournamentUseCase(
             repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             authorizationCloud,
+            testQueueRecorder(),
         )(TOURNAMENT_ID)
-        assertEquals(TournamentCloudUploadResult.AuthorizationFailure, authorizationResult)
+        assertEquals(TournamentCloudUploadResult.AuthorizationFailure, authorizationResult.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, authorizationResult.queueRecordingResult)
 
         val partialCloud = RecordingCloudRepository(
             TournamentCloudUploadResult.PartialFailure(TournamentCloudUploadStage.TOURNAMENT),
@@ -73,11 +118,13 @@ class UploadTournamentUseCaseTest {
             repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             partialCloud,
+            testQueueRecorder(),
         )(TOURNAMENT_ID)
         assertEquals(
             TournamentCloudUploadResult.PartialFailure(TournamentCloudUploadStage.TOURNAMENT),
-            partialResult,
+            partialResult.primaryResult,
         )
+        assertEquals(QueueRecordingResult.RECORDED, partialResult.queueRecordingResult)
     }
 
     private fun localRepository(): InMemoryTournamentRepository = InMemoryTournamentRepository().also { repository ->

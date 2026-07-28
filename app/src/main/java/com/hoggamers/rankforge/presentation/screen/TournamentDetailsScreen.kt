@@ -276,6 +276,8 @@ private fun MatchCloudRestorationSection(tournamentId: String, uiState: MatchClo
             MatchCloudRestorationUiState.ValidationFailure -> stringResource(R.string.restore_matches_validation_failure)
             MatchCloudRestorationUiState.NetworkFailure -> stringResource(R.string.restore_matches_network_failure)
             MatchCloudRestorationUiState.LocalTransactionFailure -> stringResource(R.string.restore_matches_local_failure)
+            MatchCloudRestorationUiState.Queued -> stringResource(R.string.restore_matches_queued)
+            MatchCloudRestorationUiState.QueuePersistenceFailure -> stringResource(R.string.restore_matches_queue_persistence_failed)
         }, modifier = Modifier.testTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG))
     }
 }
@@ -320,6 +322,10 @@ private fun TournamentCloudUploadSection(
                     stringResource(R.string.upload_tournament_validation_failure)
                 TournamentCloudUploadUiState.NetworkFailure ->
                     stringResource(R.string.upload_tournament_network_failure)
+                TournamentCloudUploadUiState.Queued ->
+                    stringResource(R.string.upload_tournament_queued)
+                TournamentCloudUploadUiState.QueuePersistenceFailure ->
+                    stringResource(R.string.upload_tournament_queue_persistence_failed)
                 is TournamentCloudUploadUiState.PartialFailure ->
                     stringResource(R.string.upload_tournament_partial_failure)
             },
@@ -368,6 +374,10 @@ private fun DraftMatchCloudSyncSection(
                     stringResource(R.string.sync_draft_matches_validation_failure)
                 DraftMatchCloudSyncUiState.NetworkFailure ->
                     stringResource(R.string.sync_draft_matches_network_failure)
+                DraftMatchCloudSyncUiState.Queued ->
+                    stringResource(R.string.sync_draft_matches_queued)
+                DraftMatchCloudSyncUiState.QueuePersistenceFailure ->
+                    stringResource(R.string.sync_draft_matches_queue_persistence_failed)
                 is DraftMatchCloudSyncUiState.PartialFailure ->
                     stringResource(R.string.sync_draft_matches_partial_failure)
             },
@@ -416,6 +426,10 @@ private fun FinalizedMatchCloudSyncSection(
                     stringResource(R.string.sync_finalized_matches_validation_failure)
                 FinalizedMatchCloudSyncUiState.NetworkFailure ->
                     stringResource(R.string.sync_finalized_matches_network_failure)
+                FinalizedMatchCloudSyncUiState.Queued ->
+                    stringResource(R.string.sync_finalized_matches_queued)
+                FinalizedMatchCloudSyncUiState.QueuePersistenceFailure ->
+                    stringResource(R.string.sync_finalized_matches_queue_persistence_failed)
                 is FinalizedMatchCloudSyncUiState.PartialFailure ->
                     stringResource(R.string.sync_finalized_matches_partial_failure)
             },

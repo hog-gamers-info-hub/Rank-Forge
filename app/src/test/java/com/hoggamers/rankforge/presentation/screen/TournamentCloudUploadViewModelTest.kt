@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadStage
@@ -30,8 +32,13 @@ class TournamentCloudUploadViewModelTest {
     }
 
     @Test
-    fun mapsAllUploadStates() = runTest {
-        val action = RecordingAction(TournamentCloudUploadResult.Success)
+    fun successWithNoQueueRequirementMapsToSuccessAndPassesTournamentId() = runTest {
+        val action = RecordingAction(
+            QueueAwareActionResult(
+                TournamentCloudUploadResult.Success,
+                QueueRecordingResult.NOT_REQUIRED,
+            ),
+        )
         val viewModel = TournamentCloudUploadViewModel(action)
 
         viewModel.upload(TOURNAMENT_ID)
@@ -42,31 +49,100 @@ class TournamentCloudUploadViewModelTest {
     }
 
     @Test
-    fun exposesPartialFailureForManualRetry() = runTest {
+    fun recordedFailureMapsToQueued() = runTest {
         val viewModel = TournamentCloudUploadViewModel(
-            RecordingAction(TournamentCloudUploadResult.PartialFailure(TournamentCloudUploadStage.TOURNAMENT)),
+            RecordingAction(
+                QueueAwareActionResult(
+                    TournamentCloudUploadResult.NetworkFailure,
+                    QueueRecordingResult.RECORDED,
+                ),
+            ),
         )
 
         viewModel.upload(TOURNAMENT_ID)
         advanceUntilIdle()
 
         assertEquals(
-            TournamentCloudUploadUiState.PartialFailure(TournamentCloudUploadStage.TOURNAMENT),
+            TournamentCloudUploadUiState.Queued,
             viewModel.uiState.value,
         )
+    }
+
+    @Test
+    fun queuePersistenceFailureMapsToLocalSaveFailure() = runTest {
+        val viewModel = TournamentCloudUploadViewModel(
+            RecordingAction(
+                QueueAwareActionResult(
+                    TournamentCloudUploadResult.NetworkFailure,
+                    QueueRecordingResult.PERSISTENCE_FAILED,
+                ),
+            ),
+        )
+
+        viewModel.upload(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals(TournamentCloudUploadUiState.QueuePersistenceFailure, viewModel.uiState.value)
+    }
+
+    @Test
+    fun failedPrimaryResultWithoutQueueRequirementKeepsPrimaryFailureState() = runTest {
+        val viewModel = TournamentCloudUploadViewModel(
+            RecordingAction(
+                QueueAwareActionResult(
+                    TournamentCloudUploadResult.AuthenticationRequired,
+                    QueueRecordingResult.NOT_REQUIRED,
+                ),
+            ),
+        )
+
+        viewModel.upload(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals(TournamentCloudUploadUiState.AuthenticationRequired, viewModel.uiState.value)
+    }
+
+    @Test
+    fun unexpectedExceptionMapsToNetworkFailureWithoutClaimingQueued() = runTest {
+        val viewModel = TournamentCloudUploadViewModel(ThrowingAction())
+
+        viewModel.upload(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals(TournamentCloudUploadUiState.NetworkFailure, viewModel.uiState.value)
+    }
+
+    @Test
+    fun resetReturnsToIdle() = runTest {
+        val viewModel = TournamentCloudUploadViewModel(
+            RecordingAction(
+                QueueAwareActionResult(
+                    TournamentCloudUploadResult.PartialFailure(TournamentCloudUploadStage.TOURNAMENT),
+                    QueueRecordingResult.NOT_REQUIRED,
+                ),
+            ),
+        )
+
+        viewModel.upload(TOURNAMENT_ID)
+        advanceUntilIdle()
         viewModel.reset()
         assertEquals(TournamentCloudUploadUiState.Idle, viewModel.uiState.value)
     }
 
     private class RecordingAction(
-        private val result: TournamentCloudUploadResult,
+        private val result: QueueAwareActionResult<TournamentCloudUploadResult>,
     ) : TournamentCloudUploadAction {
         var tournamentId: String? = null
 
-        override suspend fun invoke(tournamentId: String): TournamentCloudUploadResult {
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult> {
             this.tournamentId = tournamentId
             return result
         }
+    }
+
+    private class ThrowingAction : TournamentCloudUploadAction {
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult> =
+            throw IllegalStateException()
     }
 
     private companion object {

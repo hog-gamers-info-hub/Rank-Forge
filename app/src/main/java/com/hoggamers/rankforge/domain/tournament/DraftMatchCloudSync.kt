@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+
 data class DraftMatchCloudSyncSnapshot(
     val tournament: Tournament,
     val matches: List<Match>,
@@ -25,5 +27,5 @@ interface DraftMatchCloudSyncRepository {
 }
 
 fun interface DraftMatchCloudSyncAction {
-    suspend operator fun invoke(tournamentId: String): DraftMatchCloudSyncResult
+    suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<DraftMatchCloudSyncResult>
 }

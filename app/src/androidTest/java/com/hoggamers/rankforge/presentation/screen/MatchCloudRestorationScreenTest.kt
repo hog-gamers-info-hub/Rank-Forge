@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -29,6 +30,17 @@ class MatchCloudRestorationScreenTest {
     @Test fun authenticationRequiredStateIsVisible() {
         composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.AuthenticationRequired) } }
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
+    }
+    @Test fun queuedStateShowsMatchRestorationSavedLocallyMessage() {
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.Queued) } }
+        composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo()
+            .assertTextEquals("Match restore could not complete. Saved locally for later sync.")
+    }
+
+    @Test fun queuePersistenceFailureStateShowsMatchRestorationLocalSaveFailureMessage() {
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.QueuePersistenceFailure) } }
+        composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo()
+            .assertTextEquals("Match restore failed and could not be saved locally.")
     }
     private fun details() = TournamentDetailsUiState(false, tournament = TournamentDetailsItemUiState(TOURNAMENT_ID, "Cup", LocalDate.of(2026, 7, 24), "Alex", "123", TournamentStatus.CONFIRMED, TeamSlot.SLOT_NUMBERS.map { TeamSlotUiState(it, "") }))
     private companion object { const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111" }

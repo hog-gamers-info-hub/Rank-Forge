@@ -2,32 +2,50 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
+import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
+import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
+import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 
 class RestoreMatchesUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val cloudRepository: MatchCloudRestorationRepository,
     private val localRepository: MatchRestorationLocalRepository,
+    private val queueRecorder: RecordSyncQueueOutcome,
 ) : MatchCloudRestorationAction {
-    override suspend fun invoke(tournamentId: String): MatchCloudRestorationResult {
-        if (!isAuthenticated()) return MatchCloudRestorationResult.AuthenticationRequired
+    override suspend fun invoke(
+        tournamentId: String,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> {
+        if (!isAuthenticated()) return record(MatchCloudRestorationResult.AuthenticationRequired, tournamentId)
         return when (val result = cloudRepository.readOwnedMatches(tournamentId)) {
-            is MatchCloudRestorationRemoteResult.Failure -> result.toDomainResult()
+            is MatchCloudRestorationRemoteResult.Failure -> record(result.toDomainResult(), tournamentId)
             is MatchCloudRestorationRemoteResult.Success -> {
-                if (result.value.matches.isEmpty()) return MatchCloudRestorationResult.NoCloudMatches
+                if (result.value.matches.isEmpty()) return record(MatchCloudRestorationResult.NoCloudMatches, tournamentId)
                 try {
                     localRepository.replaceMatches(result.value)
-                    MatchCloudRestorationResult.Success
+                    record(MatchCloudRestorationResult.Success, tournamentId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
-                    MatchCloudRestorationResult.LocalTransactionFailure
+                    record(MatchCloudRestorationResult.LocalTransactionFailure, tournamentId)
                 }
             }
         }
     }
+    private suspend fun record(
+        result: MatchCloudRestorationResult,
+        id: String,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> = QueueAwareActionResult(
+        primaryResult = result,
+        queueRecordingResult = queueRecorder.record(
+            operation = SyncQueueOperationType.MATCH_RESTORATION,
+            tournamentId = id,
+            status = result.queueStatus(),
+        ),
+    )
 
     private suspend fun isAuthenticated() = try {
         authRepository.observeAuthState().first() is AuthState.SignedIn
@@ -35,6 +53,8 @@ class RestoreMatchesUseCase @Inject constructor(
         throw cancellation
     } catch (_: Throwable) { false }
 }
+
+private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL }
 
 private fun MatchCloudRestorationRemoteResult.Failure.toDomainResult() = when (category) {
     MatchCloudRestorationFailureCategory.AUTHENTICATION -> MatchCloudRestorationResult.AuthenticationRequired

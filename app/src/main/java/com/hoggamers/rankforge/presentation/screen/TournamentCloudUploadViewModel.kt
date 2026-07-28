@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadStage
@@ -21,6 +23,8 @@ sealed interface TournamentCloudUploadUiState {
     data object AuthorizationFailure : TournamentCloudUploadUiState
     data object ValidationFailure : TournamentCloudUploadUiState
     data object NetworkFailure : TournamentCloudUploadUiState
+    data object Queued : TournamentCloudUploadUiState
+    data object QueuePersistenceFailure : TournamentCloudUploadUiState
     data class PartialFailure(
         val completedStage: TournamentCloudUploadStage,
     ) : TournamentCloudUploadUiState
@@ -42,7 +46,8 @@ class TournamentCloudUploadViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                TournamentCloudUploadResult.NetworkFailure
+                _uiState.value = TournamentCloudUploadUiState.NetworkFailure
+                return@launch
             }
             _uiState.value = result.toUiState()
         }
@@ -50,6 +55,18 @@ class TournamentCloudUploadViewModel @Inject constructor(
 
     fun reset() {
         _uiState.value = TournamentCloudUploadUiState.Idle
+    }
+}
+
+private fun QueueAwareActionResult<TournamentCloudUploadResult>.toUiState(): TournamentCloudUploadUiState {
+    if (primaryResult == TournamentCloudUploadResult.Success) {
+        return TournamentCloudUploadUiState.Success
+    }
+
+    return when (queueRecordingResult) {
+        QueueRecordingResult.RECORDED -> TournamentCloudUploadUiState.Queued
+        QueueRecordingResult.PERSISTENCE_FAILED -> TournamentCloudUploadUiState.QueuePersistenceFailure
+        QueueRecordingResult.NOT_REQUIRED -> primaryResult.toUiState()
     }
 }
 
