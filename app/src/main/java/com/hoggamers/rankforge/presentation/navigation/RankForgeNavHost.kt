@@ -23,6 +23,7 @@ import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCloudUploadViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCloudRestorationViewModel
+import com.hoggamers.rankforge.presentation.screen.DraftMatchCloudSyncViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListRoute
@@ -54,6 +55,7 @@ fun RankForgeNavHost(
     cloudRestorationViewModelFactory: (() -> TournamentCloudRestorationViewModel)? = null,
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
     cloudUploadViewModelFactory: ((String) -> TournamentCloudUploadViewModel)? = null,
+    draftMatchSyncViewModelFactory: ((String) -> DraftMatchCloudSyncViewModel)? = null,
     standingsViewModelFactory: ((String) -> TournamentStandingsViewModel)? = null,
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
@@ -155,6 +157,12 @@ fun RankForgeNavHost(
                 } else {
                     null
                 }
+            val draftMatchSyncViewModel = draftMatchSyncViewModelFactory?.invoke(destination.tournamentId)
+                ?: if (detailsViewModelFactory == null) {
+                    hiltViewModel<DraftMatchCloudSyncViewModel>()
+                } else {
+                    null
+                }
             val detailsViewModel = detailsViewModelFactory?.invoke(destination.tournamentId)
             if (detailsViewModel == null) {
                 TournamentDetailsRoute(
@@ -167,6 +175,7 @@ fun RankForgeNavHost(
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
                     uploadViewModel = cloudUploadViewModel,
+                    draftMatchSyncViewModel = draftMatchSyncViewModel,
                 )
             } else {
                 TournamentDetailsRoute(
@@ -180,6 +189,7 @@ fun RankForgeNavHost(
                     onOpenStandings = onOpenStandings,
                     viewModel = detailsViewModel,
                     uploadViewModel = cloudUploadViewModel,
+                    draftMatchSyncViewModel = draftMatchSyncViewModel,
                 )
             }
         }
