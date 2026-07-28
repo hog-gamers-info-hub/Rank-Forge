@@ -128,7 +128,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun photoPickerSelectionReplacesThePreviousTemporaryUri() = runTest {
+    fun validatedPhotoPickerSelectionReplacesThePreviousTemporaryState() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
@@ -136,38 +136,76 @@ class MatchReviewViewModelTest {
         viewModel.requestPhotoPicker()
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult("content://picker/first")
+        advanceUntilIdle()
         assertEquals("content://picker/first", viewModel.uiState.value.selectedScreenshotUri)
+        assertTrue(viewModel.uiState.value.isSelectedScreenshotValidated)
 
         viewModel.requestPhotoPicker()
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult("content://picker/second")
+        advanceUntilIdle()
 
         assertEquals("content://picker/second", viewModel.uiState.value.selectedScreenshotUri)
+        assertTrue(viewModel.uiState.value.isSelectedScreenshotValidated)
         assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
         assertEquals(null, viewModel.uiState.value.photoPickerError)
     }
 
     @Test
-    fun photoPickerCancellationAndInvalidResultsPreserveTheTemporaryUri() = runTest {
+    fun photoPickerCancellationPreservesStateAndBlankResultIsRejected() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/selected")
+        advanceUntilIdle()
 
         viewModel.requestPhotoPicker()
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult(null)
 
         assertEquals("content://picker/selected", viewModel.uiState.value.selectedScreenshotUri)
+        assertTrue(viewModel.uiState.value.isSelectedScreenshotValidated)
         assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
 
         viewModel.requestPhotoPicker()
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult("")
 
-        assertEquals("content://picker/selected", viewModel.uiState.value.selectedScreenshotUri)
-        assertEquals(PhotoPickerError.INVALID_RESULT, viewModel.uiState.value.photoPickerError)
+        assertEquals(null, viewModel.uiState.value.selectedScreenshotUri)
+        assertFalse(viewModel.uiState.value.isSelectedScreenshotValidated)
+        assertEquals(ImageValidationError.EMPTY_URI, viewModel.uiState.value.imageValidationError)
         assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+    }
+
+    @Test
+    fun invalidSelectionShowsValidationErrorAndReselectionCanBecomeValid() = runTest {
+        val viewModel = reviewViewModel(
+            ImageCandidateValidator(
+                ImageCandidateMetadataReader { uri ->
+                    if (uri.endsWith("unsupported")) {
+                        ImageCandidateReadResult.Metadata("image/gif", width = 1080, height = 1920)
+                    } else {
+                        ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
+                    }
+                },
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/unsupported")
+        advanceUntilIdle()
+
+        assertEquals("content://picker/unsupported", viewModel.uiState.value.selectedScreenshotUri)
+        assertFalse(viewModel.uiState.value.isSelectedScreenshotValidated)
+        assertEquals(ImageValidationError.UNSUPPORTED_FORMAT, viewModel.uiState.value.imageValidationError)
+
+        viewModel.onPhotoPickerResult("content://picker/png")
+        advanceUntilIdle()
+
+        assertEquals("content://picker/png", viewModel.uiState.value.selectedScreenshotUri)
+        assertTrue(viewModel.uiState.value.isSelectedScreenshotValidated)
+        assertEquals(null, viewModel.uiState.value.imageValidationError)
     }
 
     @Test
@@ -227,12 +265,19 @@ class MatchReviewViewModelTest {
         assertFalse(viewModel.uiState.value.isFinalizing)
     }
 
-    private fun reviewViewModel() = MatchReviewViewModel(
+    private fun reviewViewModel(
+        imageCandidateValidator: ImageCandidateValidator = ImageCandidateValidator(
+            ImageCandidateMetadataReader {
+                ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
+            },
+        ),
+    ) = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
         validateMatchResult = ValidateMatchResultUseCase(),
         finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+        imageCandidateValidator = imageCandidateValidator,
     )
 }
