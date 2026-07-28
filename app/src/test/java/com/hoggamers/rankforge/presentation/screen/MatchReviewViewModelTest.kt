@@ -218,6 +218,7 @@ class MatchReviewViewModelTest {
         viewModel.onPhotoPickerResult("content://picker/first")
         advanceUntilIdle()
         viewModel.linkScreenshot()
+        advanceUntilIdle()
 
         assertEquals("content://picker/first", viewModel.uiState.value.linkedScreenshotUri)
         assertEquals(beforeMatch, repository.observeMatchById(matchId).first())
@@ -225,6 +226,7 @@ class MatchReviewViewModelTest {
         viewModel.onPhotoPickerResult("content://picker/second")
         advanceUntilIdle()
         viewModel.linkScreenshot()
+        advanceUntilIdle()
         assertEquals("content://picker/second", viewModel.uiState.value.linkedScreenshotUri)
 
         viewModel.unlinkScreenshot()
@@ -249,6 +251,7 @@ class MatchReviewViewModelTest {
         viewModel.onPhotoPickerResult("content://picker/first")
         advanceUntilIdle()
         viewModel.linkScreenshot()
+        advanceUntilIdle()
         assertEquals("content://picker/first", viewModel.uiState.value.linkedScreenshotUri)
 
         viewModel.load("tournament-id", secondMatchId)
@@ -256,6 +259,99 @@ class MatchReviewViewModelTest {
 
         assertEquals(secondMatchId, viewModel.uiState.value.matchId)
         assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+    }
+
+    @Test
+    fun sameMatchDuplicateIsReportedAsNoOpAndKeepsTheExistingLink() = runTest {
+        val firstUri = "content://picker/first"
+        val duplicateUri = "content://picker/duplicate"
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(
+                mapOf(firstUri to "same-image".encodeToByteArray(), duplicateUri to "same-image".encodeToByteArray()),
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult(firstUri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult(duplicateUri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(firstUri, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(
+            ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+            viewModel.uiState.value.screenshotDuplicateInfo,
+        )
+        assertEquals(null, viewModel.uiState.value.screenshotDuplicateError)
+    }
+
+    @Test
+    fun duplicateLinkedToAnotherMatchIsRejectedWithinTheTournament() = runTest {
+        val secondMatchId = (CreateMatchUseCase(repository)(
+            CreateMatchInput(
+                tournamentId = "tournament-id",
+                matchNumber = "2",
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+            ),
+        ) as CreateMatchResult.Created).match.id
+        val firstUri = "content://picker/first"
+        val duplicateUri = "content://picker/duplicate"
+        val detector = duplicateDetector(
+            mapOf(firstUri to "same-image".encodeToByteArray(), duplicateUri to "same-image".encodeToByteArray()),
+        )
+        val firstViewModel = reviewViewModel(screenshotDuplicateDetector = detector)
+        firstViewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        firstViewModel.onPhotoPickerResult(firstUri)
+        advanceUntilIdle()
+        firstViewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        val secondViewModel = reviewViewModel(screenshotDuplicateDetector = detector)
+        secondViewModel.load("tournament-id", secondMatchId)
+        advanceUntilIdle()
+        secondViewModel.onPhotoPickerResult(duplicateUri)
+        advanceUntilIdle()
+        secondViewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(null, secondViewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(
+            ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+            secondViewModel.uiState.value.screenshotDuplicateError,
+        )
+    }
+
+    @Test
+    fun fingerprintFailureShowsControlledDuplicateError() = runTest {
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = ScreenshotDuplicateDetector(
+                ImageSourceFingerprintGenerator(
+                    ImageSourceStreamOpener { null },
+                    Dispatchers.Unconfined,
+                ),
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/unreadable")
+        advanceUntilIdle()
+
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(
+            ScreenshotDuplicateError.FINGERPRINT_FAILED,
+            viewModel.uiState.value.screenshotDuplicateError,
+        )
     }
 
     @Test
@@ -372,10 +468,11 @@ class MatchReviewViewModelTest {
 
     private fun reviewViewModel(
         imageCandidateValidator: ImageCandidateValidator = ImageCandidateValidator(
-            ImageCandidateMetadataReader {
-                ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
-            },
-        ),
+        ImageCandidateMetadataReader {
+            ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
+        },
+    ),
+        screenshotDuplicateDetector: ScreenshotDuplicateDetector = duplicateDetector(),
     ) = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -384,5 +481,17 @@ class MatchReviewViewModelTest {
         validateMatchResult = ValidateMatchResultUseCase(),
         finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         imageCandidateValidator = imageCandidateValidator,
+        screenshotDuplicateDetector = screenshotDuplicateDetector,
+    )
+
+    private fun duplicateDetector(
+        bytesByUri: Map<String, ByteArray> = emptyMap(),
+    ) = ScreenshotDuplicateDetector(
+        ImageSourceFingerprintGenerator(
+            ImageSourceStreamOpener { uri ->
+                (bytesByUri[uri] ?: uri.encodeToByteArray()).inputStream()
+            },
+            Dispatchers.Unconfined,
+        ),
     )
 }

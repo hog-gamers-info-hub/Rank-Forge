@@ -23,6 +23,16 @@ enum class ScreenshotLinkError {
     FINALIZED_MATCH,
 }
 
+enum class ScreenshotDuplicateError {
+    FINGERPRINT_FAILED,
+    LINKED_TO_OTHER_MATCH,
+    STATE_CONFLICT,
+}
+
+enum class ScreenshotDuplicateInfo {
+    ALREADY_LINKED_TO_THIS_MATCH,
+}
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -44,7 +54,11 @@ data class MatchReviewUiState(
     val isSelectedScreenshotValidated: Boolean = false,
     val imageValidationError: ImageValidationError? = null,
     val linkedScreenshotUri: String? = null,
+    val linkedScreenshotFingerprint: String? = null,
     val screenshotLinkError: ScreenshotLinkError? = null,
+    val isScreenshotDuplicateDetectionInProgress: Boolean = false,
+    val screenshotDuplicateError: ScreenshotDuplicateError? = null,
+    val screenshotDuplicateInfo: ScreenshotDuplicateInfo? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

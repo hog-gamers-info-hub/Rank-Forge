@@ -32,11 +32,13 @@ class MatchReviewViewModel @Inject constructor(
     private val validateMatchResult: ValidateMatchResultUseCase,
     private val finalizeMatch: FinalizeMatchUseCase,
     private val imageCandidateValidator: ImageCandidateValidator,
+    private val screenshotDuplicateDetector: ScreenshotDuplicateDetector,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
     private var validationJob: Job? = null
+    private var duplicateDetectionJob: Job? = null
     private var loadedMatchKey: String? = null
 
     fun load(tournamentId: String, matchId: String) {
@@ -45,6 +47,7 @@ class MatchReviewViewModel @Inject constructor(
         loadedMatchKey = matchKey
         loadJob?.cancel()
         validationJob?.cancel()
+        duplicateDetectionJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -128,7 +131,11 @@ class MatchReviewViewModel @Inject constructor(
                         isSelectedScreenshotValidated = current.isSelectedScreenshotValidated,
                         imageValidationError = current.imageValidationError,
                         linkedScreenshotUri = current.linkedScreenshotUri,
+                        linkedScreenshotFingerprint = current.linkedScreenshotFingerprint,
                         screenshotLinkError = current.screenshotLinkError,
+                        isScreenshotDuplicateDetectionInProgress = current.isScreenshotDuplicateDetectionInProgress,
+                        screenshotDuplicateError = current.screenshotDuplicateError,
+                        screenshotDuplicateInfo = current.screenshotDuplicateInfo,
                     )
                 }
             }
@@ -191,6 +198,7 @@ class MatchReviewViewModel @Inject constructor(
         }
 
         validationJob?.cancel()
+        duplicateDetectionJob?.cancel()
         if (selectedUri.isBlank()) {
             _uiState.update {
                 it.copy(
@@ -202,6 +210,9 @@ class MatchReviewViewModel @Inject constructor(
                     isSelectedScreenshotValidated = false,
                     imageValidationError = ImageValidationError.EMPTY_URI,
                     screenshotLinkError = null,
+                    isScreenshotDuplicateDetectionInProgress = false,
+                    screenshotDuplicateError = null,
+                    screenshotDuplicateInfo = null,
                 )
             }
             return
@@ -217,6 +228,9 @@ class MatchReviewViewModel @Inject constructor(
                 isSelectedScreenshotValidated = false,
                 imageValidationError = null,
                 screenshotLinkError = null,
+                isScreenshotDuplicateDetectionInProgress = false,
+                screenshotDuplicateError = null,
+                screenshotDuplicateInfo = null,
             )
         }
         validationJob = viewModelScope.launch {
@@ -257,24 +271,85 @@ class MatchReviewViewModel @Inject constructor(
 
     fun linkScreenshot() {
         val current = _uiState.value
+        val selectedUri = current.selectedScreenshotUri?.takeIf { it.isNotBlank() }
         val error = when {
             current.tournamentId.isNullOrBlank() -> ScreenshotLinkError.MISSING_TOURNAMENT_ID
             current.matchId.isNullOrBlank() -> ScreenshotLinkError.MISSING_MATCH_ID
             current.status == MatchStatus.FINALIZED -> ScreenshotLinkError.FINALIZED_MATCH
-            !current.isSelectedScreenshotValidated || current.selectedScreenshotUri.isNullOrBlank() ->
+            !current.isSelectedScreenshotValidated || selectedUri == null ->
                 ScreenshotLinkError.INVALID_IMAGE
             !current.isAvailable -> ScreenshotLinkError.INVALID_IMAGE
             else -> null
         }
         if (error != null) {
-            _uiState.update { it.copy(screenshotLinkError = error) }
+            _uiState.update {
+                it.copy(
+                    screenshotLinkError = error,
+                    screenshotDuplicateError = null,
+                    screenshotDuplicateInfo = null,
+                )
+            }
             return
         }
+        if (current.isScreenshotDuplicateDetectionInProgress) return
         _uiState.update {
             it.copy(
-                linkedScreenshotUri = it.selectedScreenshotUri,
                 screenshotLinkError = null,
+                isScreenshotDuplicateDetectionInProgress = true,
+                screenshotDuplicateError = null,
+                screenshotDuplicateInfo = null,
             )
+        }
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        duplicateDetectionJob = viewModelScope.launch {
+            val result = screenshotDuplicateDetector.link(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                selectedUri = selectedUri ?: return@launch,
+                currentFingerprint = current.linkedScreenshotFingerprint,
+            )
+            _uiState.update { latest ->
+                if (
+                    latest.tournamentId != tournamentId ||
+                    latest.matchId != matchId ||
+                    latest.selectedScreenshotUri != selectedUri
+                ) {
+                    latest
+                } else {
+                    when (result) {
+                        is ScreenshotDuplicateLinkResult.Linked -> latest.copy(
+                            linkedScreenshotUri = selectedUri,
+                            linkedScreenshotFingerprint = result.fingerprint,
+                            screenshotLinkError = null,
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            screenshotDuplicateError = null,
+                            screenshotDuplicateInfo = null,
+                        )
+                        ScreenshotDuplicateLinkResult.SameMatch -> latest.copy(
+                            screenshotLinkError = null,
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            screenshotDuplicateError = null,
+                            screenshotDuplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+                        )
+                        is ScreenshotDuplicateLinkResult.LinkedToOtherMatch -> latest.copy(
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            screenshotDuplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                            screenshotDuplicateInfo = null,
+                        )
+                        ScreenshotDuplicateLinkResult.FingerprintFailure -> latest.copy(
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            screenshotDuplicateError = ScreenshotDuplicateError.FINGERPRINT_FAILED,
+                            screenshotDuplicateInfo = null,
+                        )
+                        ScreenshotDuplicateLinkResult.StateConflict -> latest.copy(
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            screenshotDuplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
+                            screenshotDuplicateInfo = null,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -288,14 +363,35 @@ class MatchReviewViewModel @Inject constructor(
             else -> null
         }
         if (error != null) {
-            _uiState.update { it.copy(screenshotLinkError = error) }
+            _uiState.update {
+                it.copy(
+                    screenshotLinkError = error,
+                    screenshotDuplicateError = null,
+                    screenshotDuplicateInfo = null,
+                )
+            }
             return
         }
+        if (current.isScreenshotDuplicateDetectionInProgress) return
+        val result = screenshotDuplicateDetector.unlink(
+            tournamentId = current.tournamentId.orEmpty(),
+            matchId = current.matchId.orEmpty(),
+            fingerprint = current.linkedScreenshotFingerprint,
+        )
         _uiState.update {
-            it.copy(
-                linkedScreenshotUri = null,
-                screenshotLinkError = null,
-            )
+            when (result) {
+                ScreenshotDuplicateUnlinkResult.Unlinked -> it.copy(
+                    linkedScreenshotUri = null,
+                    linkedScreenshotFingerprint = null,
+                    screenshotLinkError = null,
+                    screenshotDuplicateError = null,
+                    screenshotDuplicateInfo = null,
+                )
+                ScreenshotDuplicateUnlinkResult.StateConflict -> it.copy(
+                    screenshotDuplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
+                    screenshotDuplicateInfo = null,
+                )
+            }
         }
     }
 
