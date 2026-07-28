@@ -122,7 +122,15 @@ internal object MatchCloudIdentity {
     fun matchId(
         tournamentId: UUID,
         localMatchId: String,
-    ): String = deterministicUuid("rank-forge:match:$tournamentId:$localMatchId")
+    ): String {
+        // Restored cloud rows retain their UUIDv3 cloud ID locally. This preserves the existing
+        // upsert identity when a restored match is later synced again; newly created local
+        // matches continue to use their UUIDv4/random local ID as the deterministic input.
+        val parsedId = runCatching { UUID.fromString(localMatchId) }.getOrNull()
+        return if (parsedId?.version() == 3) localMatchId else {
+            deterministicUuid("rank-forge:match:$tournamentId:$localMatchId")
+        }
+    }
 
     fun matchResultId(
         matchId: String,

@@ -27,6 +27,8 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import javax.inject.Inject
@@ -50,7 +52,7 @@ import kotlinx.serialization.json.Json
 @Singleton
 class RoomTournamentRepository @Inject constructor(
     private val database: RankForgeDatabase,
-) : TournamentRepository, TournamentRestorationLocalRepository {
+) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository {
     private val state = MutableStateFlow(RepositoryState())
     private val writeMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -258,6 +260,25 @@ class RoomTournamentRepository @Inject constructor(
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
+    override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) {
+        require(snapshot.matches.all { it.tournamentId == snapshot.tournamentId })
+        require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
+        awaitState()
+        writeMutex.withLock {
+            val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to snapshot.matches))
+            database.withTransaction {
+                database.matchDao().deleteByTournamentId(snapshot.tournamentId)
+                snapshot.matches.forEach { match ->
+                    database.matchDao().upsert(match.toEntity())
+                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
+                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                }
                 saveLegacyState(next)
             }
             state.value = next

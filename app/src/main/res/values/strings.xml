@@ -285,4 +285,14 @@
     <string name="match_correction_history_title">Correction history</string>
     <string name="match_correction_revision_label">Correction %1$d</string>
     <string name="match_correction_corrected_value">Corrected result — Slot %1$d: placement %2$d, kills %3$d</string>
+    <string name="restore_matches_action">Restore cloud matches</string>
+    <string name="restore_matches_loading">Restoring cloud matches</string>
+    <string name="restore_matches_ready">Restore cloud matches for this tournament manually.</string>
+    <string name="restore_matches_success">Cloud matches were restored locally.</string>
+    <string name="restore_matches_none">No cloud matches are available for this tournament.</string>
+    <string name="restore_matches_authentication_required">Sign in to restore cloud matches.</string>
+    <string name="restore_matches_authorization_failure">You are not authorized to restore these cloud matches.</string>
+    <string name="restore_matches_validation_failure">Cloud match data could not be verified.</string>
+    <string name="restore_matches_network_failure">Cloud matches could not be reached. Check your connection.</string>
+    <string name="restore_matches_local_failure">Cloud matches could not be saved locally.</string>
 </resources>
