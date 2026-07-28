@@ -23,6 +23,10 @@ interface MatchCloudRestorationRepository {
 
 interface MatchRestorationLocalRepository {
     suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot)
+
+    /** Replaces draft rows only; finalized rows are intentionally preserved. */
+    suspend fun replaceDraftMatches(snapshot: MatchCloudRestorationSnapshot): Unit =
+        error("Draft-only match replacement is not supported by this repository.")
     suspend fun detectMatchDivergence(
         tournamentId: String,
         cloudRevision: CloudRevision,
@@ -36,7 +40,10 @@ sealed interface MatchCloudRestorationResult {
     data object AuthorizationFailure : MatchCloudRestorationResult
     data object ValidationFailure : MatchCloudRestorationResult
     data object NetworkFailure : MatchCloudRestorationResult
-    data class Conflict(val conflict: RevisionConflict) : MatchCloudRestorationResult
+    data class Conflict(
+        val conflict: RevisionConflict,
+        val context: ConflictResolutionContext? = null,
+    ) : MatchCloudRestorationResult
     data object LocalTransactionFailure : MatchCloudRestorationResult
 }
 

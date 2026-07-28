@@ -95,6 +95,9 @@ interface MatchDao {
 
     @Query("DELETE FROM matches WHERE tournament_id = :tournamentId")
     suspend fun deleteByTournamentId(tournamentId: String)
+
+    @Query("DELETE FROM matches WHERE tournament_id = :tournamentId AND status = 'DRAFT'")
+    suspend fun deleteDraftByTournamentId(tournamentId: String)
 }
 
 @Dao

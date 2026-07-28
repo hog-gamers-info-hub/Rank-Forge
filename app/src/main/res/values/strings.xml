@@ -305,4 +305,17 @@
     <string name="restore_matches_local_failure">Cloud matches could not be saved locally.</string>
     <string name="restore_matches_queued">Match restore could not complete. Saved locally for later sync.</string>
     <string name="restore_matches_queue_persistence_failed">Match restore failed and could not be saved locally.</string>
+    <string name="draft_conflict_detected">Draft conflict detected. Your data has not been changed.</string>
+    <string name="resolve_draft_conflict_action">Resolve draft conflict</string>
+    <string name="draft_conflict_resolution_title">Resolve draft conflict</string>
+    <string name="draft_conflict_resolution_message">Choose explicitly whether to keep the local draft or accept the cloud draft. Finalized data is never changed here.</string>
+    <string name="keep_local_draft_action">Keep local draft</string>
+    <string name="accept_cloud_draft_action">Accept cloud draft</string>
+    <string name="accept_cloud_draft_title">Accept cloud draft?</string>
+    <string name="accept_cloud_draft_message">This replaces only local draft data. Finalized data will remain unchanged.</string>
+    <string name="draft_conflict_resolving">Resolving draft conflict</string>
+    <string name="draft_conflict_keep_local_success">Local draft was saved safely.</string>
+    <string name="draft_conflict_accept_cloud_success">Cloud draft was accepted locally.</string>
+    <string name="draft_conflict_blocked">This conflict cannot be resolved safely in this version.</string>
+    <string name="draft_conflict_failed">The draft conflict could not be resolved. No local data was changed.</string>
 </resources>

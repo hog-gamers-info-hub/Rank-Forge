@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncStage
+import com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -25,6 +26,7 @@ sealed interface DraftMatchCloudSyncUiState {
     data object NetworkFailure : DraftMatchCloudSyncUiState
     data object Queued : DraftMatchCloudSyncUiState
     data object QueuePersistenceFailure : DraftMatchCloudSyncUiState
+    data class Conflict(val context: ConflictResolutionContext?) : DraftMatchCloudSyncUiState
     data class PartialFailure(
         val completedStage: DraftMatchCloudSyncStage,
     ) : DraftMatchCloudSyncUiState
@@ -76,6 +78,6 @@ private fun DraftMatchCloudSyncResult.toUiState(): DraftMatchCloudSyncUiState = 
     DraftMatchCloudSyncResult.ValidationFailure -> DraftMatchCloudSyncUiState.ValidationFailure
     DraftMatchCloudSyncResult.AuthorizationFailure -> DraftMatchCloudSyncUiState.AuthorizationFailure
     DraftMatchCloudSyncResult.NetworkFailure -> DraftMatchCloudSyncUiState.NetworkFailure
-    is DraftMatchCloudSyncResult.Conflict -> DraftMatchCloudSyncUiState.ValidationFailure
+    is DraftMatchCloudSyncResult.Conflict -> DraftMatchCloudSyncUiState.Conflict(context)
     is DraftMatchCloudSyncResult.PartialFailure -> DraftMatchCloudSyncUiState.PartialFailure(completedStage)
 }

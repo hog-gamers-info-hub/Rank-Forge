@@ -42,6 +42,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
+import com.hoggamers.rankforge.presentation.screen.DraftConflictResolutionRoute
 
 @Composable
 fun RankForgeNavHost(
@@ -155,6 +156,16 @@ fun RankForgeNavHost(
             val onOpenStandings: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentStandingsDestination(tournamentId))
             }
+            val onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = { conflict ->
+                conflict.currentCloudRevision?.let { revision ->
+                    navController.navigate(
+                        DraftConflictResolutionDestination(
+                            tournamentId = conflict.tournamentId,
+                            currentCloudRevision = revision.value,
+                        ),
+                    )
+                }
+            }
             val cloudUploadViewModel = cloudUploadViewModelFactory?.invoke(destination.tournamentId)
                 ?: if (detailsViewModelFactory == null) {
                     hiltViewModel<TournamentCloudUploadViewModel>()
@@ -186,6 +197,7 @@ fun RankForgeNavHost(
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
+                    onResolveDraftConflict = onResolveDraftConflict,
                     uploadViewModel = cloudUploadViewModel,
                     draftMatchSyncViewModel = draftMatchSyncViewModel,
                     finalizedMatchSyncViewModel = finalizedMatchSyncViewModel,
@@ -201,6 +213,7 @@ fun RankForgeNavHost(
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
+                    onResolveDraftConflict = onResolveDraftConflict,
                     viewModel = detailsViewModel,
                     uploadViewModel = cloudUploadViewModel,
                     draftMatchSyncViewModel = draftMatchSyncViewModel,
@@ -208,6 +221,14 @@ fun RankForgeNavHost(
                     matchCloudRestorationViewModel = matchCloudRestorationViewModel,
                 )
             }
+        }
+        composable<DraftConflictResolutionDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<DraftConflictResolutionDestination>()
+            DraftConflictResolutionRoute(
+                tournamentId = destination.tournamentId,
+                currentCloudRevision = destination.currentCloudRevision,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<TournamentStandingsDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<TournamentStandingsDestination>()

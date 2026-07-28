@@ -196,6 +196,22 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun rebaseCloudRevisionForConflictResolution(
+        tournamentId: String,
+        cloudRevision: Int,
+    ) {
+        require(cloudRevision > 0)
+        awaitState()
+        val existing = database.syncRevisionDao().readByTournamentId(tournamentId)
+        database.syncRevisionDao().upsert(
+            com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                tournamentId = tournamentId,
+                localRevision = existing?.localRevision ?: 1,
+                baseCloudRevision = cloudRevision,
+            ),
+        )
+    }
+
     override suspend fun detectTournamentDivergence(
         tournamentId: String,
         cloudRevision: CloudRevision,
@@ -321,6 +337,36 @@ class RoomTournamentRepository @Inject constructor(
             val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to snapshot.matches))
             database.withTransaction {
                 database.matchDao().deleteByTournamentId(snapshot.tournamentId)
+                snapshot.matches.forEach { match ->
+                    database.matchDao().upsert(match.toEntity())
+                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
+                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                }
+                snapshot.cloudRevision?.let { revision ->
+                    database.syncRevisionDao().upsert(
+                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                            snapshot.tournamentId,
+                            revision.value,
+                            revision.value,
+                        ),
+                    )
+                }
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
+    override suspend fun replaceDraftMatches(snapshot: MatchCloudRestorationSnapshot) {
+        require(snapshot.matches.all { it.tournamentId == snapshot.tournamentId && it.status == MatchStatus.DRAFT })
+        require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
+        awaitState()
+        writeMutex.withLock {
+            val finalized = state.value.matches[snapshot.tournamentId].orEmpty()
+                .filter { it.status == MatchStatus.FINALIZED }
+            val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to (finalized + snapshot.matches)))
+            database.withTransaction {
+                database.matchDao().deleteDraftByTournamentId(snapshot.tournamentId)
                 snapshot.matches.forEach { match ->
                     database.matchDao().upsert(match.toEntity())
                     database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
