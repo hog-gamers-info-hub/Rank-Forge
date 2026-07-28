@@ -117,6 +117,10 @@ class MatchReviewViewModel @Inject constructor(
                         navigation = current.navigation,
                         isFinalizing = current.isFinalizing,
                         finalizationError = current.finalizationError,
+                        selectedScreenshotUri = current.selectedScreenshotUri,
+                        isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
+                        isPhotoPickerRequestActive = current.isPhotoPickerRequestActive,
+                        photoPickerError = current.photoPickerError,
                     )
                 }
             }
@@ -149,6 +153,54 @@ class MatchReviewViewModel @Inject constructor(
 
     fun onNavigationHandled() {
         _uiState.update { it.copy(navigation = null) }
+    }
+
+    fun requestPhotoPicker() {
+        val current = _uiState.value
+        if (!current.isAvailable || current.isPhotoPickerRequestActive) return
+        _uiState.update {
+            it.copy(
+                isPhotoPickerLaunchPending = true,
+                isPhotoPickerRequestActive = true,
+                photoPickerError = null,
+            )
+        }
+    }
+
+    fun onPhotoPickerLaunchHandled() {
+        _uiState.update { it.copy(isPhotoPickerLaunchPending = false) }
+    }
+
+    fun onPhotoPickerResult(selectedUri: String?) {
+        _uiState.update { current ->
+            when {
+                selectedUri == null -> current.copy(
+                    isPhotoPickerLaunchPending = false,
+                    isPhotoPickerRequestActive = false,
+                )
+                selectedUri.isBlank() -> current.copy(
+                    isPhotoPickerLaunchPending = false,
+                    isPhotoPickerRequestActive = false,
+                    photoPickerError = PhotoPickerError.INVALID_RESULT,
+                )
+                else -> current.copy(
+                    selectedScreenshotUri = selectedUri,
+                    isPhotoPickerLaunchPending = false,
+                    isPhotoPickerRequestActive = false,
+                    photoPickerError = null,
+                )
+            }
+        }
+    }
+
+    fun onPhotoPickerLaunchFailed() {
+        _uiState.update {
+            it.copy(
+                isPhotoPickerLaunchPending = false,
+                isPhotoPickerRequestActive = false,
+                photoPickerError = PhotoPickerError.LAUNCH_FAILED,
+            )
+        }
     }
 
     fun finalize() {
