@@ -61,7 +61,7 @@ object DraftMatchCloudSyncMapper {
             .associate { match ->
                 match.id to
                 DraftMatchUploadPayload(
-                    id = DraftMatchCloudIdentity.matchId(tournamentUuid, match.id),
+                    id = MatchCloudIdentity.matchId(tournamentUuid, match.id),
                     tournamentId = snapshot.tournament.id,
                     matchNumber = match.matchNumber,
                     matchDate = match.date.toString(),
@@ -104,7 +104,7 @@ object DraftMatchCloudSyncMapper {
         return slots.sorted().map { slotNumber ->
             val teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentId, slotNumber)
             DraftMatchResultUploadPayload(
-                id = DraftMatchCloudIdentity.matchResultId(cloudMatchId, teamSlotId),
+                id = MatchCloudIdentity.matchResultId(cloudMatchId, teamSlotId),
                 matchId = cloudMatchId,
                 teamSlotId = teamSlotId,
                 placement = placementsBySlot[slotNumber]?.position,
@@ -118,7 +118,7 @@ object DraftMatchCloudSyncMapper {
     private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
 }
 
-internal object DraftMatchCloudIdentity {
+internal object MatchCloudIdentity {
     fun matchId(
         tournamentId: UUID,
         localMatchId: String,
