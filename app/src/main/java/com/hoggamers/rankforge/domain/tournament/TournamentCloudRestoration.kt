@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+
 data class TournamentCloudRestorationSummary(
     val id: String,
     val name: String,
@@ -69,5 +71,5 @@ interface TournamentRestorationLocalRepository {
 interface TournamentCloudRestorationAction {
     suspend fun loadAvailable(): TournamentCloudRestorationResult
 
-    suspend fun restore(tournamentId: String): TournamentCloudRestorationResult
+    suspend fun restore(tournamentId: String): QueueAwareActionResult<TournamentCloudRestorationResult>
 }

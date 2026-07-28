@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+
 data class MatchCloudRestorationSnapshot(
     val tournamentId: String,
     val matches: List<Match>,
@@ -31,5 +33,5 @@ sealed interface MatchCloudRestorationResult {
 }
 
 fun interface MatchCloudRestorationAction {
-    suspend operator fun invoke(tournamentId: String): MatchCloudRestorationResult
+    suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult>
 }

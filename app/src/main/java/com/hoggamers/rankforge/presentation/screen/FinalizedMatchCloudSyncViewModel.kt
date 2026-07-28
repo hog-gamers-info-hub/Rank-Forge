@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncStage
@@ -21,6 +23,8 @@ sealed interface FinalizedMatchCloudSyncUiState {
     data object AuthorizationFailure : FinalizedMatchCloudSyncUiState
     data object ValidationFailure : FinalizedMatchCloudSyncUiState
     data object NetworkFailure : FinalizedMatchCloudSyncUiState
+    data object Queued : FinalizedMatchCloudSyncUiState
+    data object QueuePersistenceFailure : FinalizedMatchCloudSyncUiState
     data class PartialFailure(
         val completedStage: FinalizedMatchCloudSyncStage,
     ) : FinalizedMatchCloudSyncUiState
@@ -44,7 +48,8 @@ class FinalizedMatchCloudSyncViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                FinalizedMatchCloudSyncResult.NetworkFailure
+                _uiState.value = FinalizedMatchCloudSyncUiState.NetworkFailure
+                return@launch
             }
             _uiState.value = result.toUiState()
         }
@@ -52,6 +57,18 @@ class FinalizedMatchCloudSyncViewModel @Inject constructor(
 
     fun reset() {
         _uiState.value = FinalizedMatchCloudSyncUiState.Idle
+    }
+}
+
+private fun QueueAwareActionResult<FinalizedMatchCloudSyncResult>.toUiState(): FinalizedMatchCloudSyncUiState {
+    if (primaryResult == FinalizedMatchCloudSyncResult.Success) {
+        return FinalizedMatchCloudSyncUiState.Success
+    }
+
+    return when (queueRecordingResult) {
+        QueueRecordingResult.RECORDED -> FinalizedMatchCloudSyncUiState.Queued
+        QueueRecordingResult.PERSISTENCE_FAILED -> FinalizedMatchCloudSyncUiState.QueuePersistenceFailure
+        QueueRecordingResult.NOT_REQUIRED -> primaryResult.toUiState()
     }
 }
 

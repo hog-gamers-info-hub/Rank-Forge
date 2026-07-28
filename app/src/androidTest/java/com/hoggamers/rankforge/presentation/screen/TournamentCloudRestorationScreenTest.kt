@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -70,6 +71,38 @@ class TournamentCloudRestorationScreenTest {
 
         composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun queuedStateShowsRestorationSavedLocallyMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    authUiState = AuthUiState(isSignedIn = true),
+                    onCreateTournament = {}, onOpenTournamentDetails = {}, onOpenAuth = {},
+                    restorationUiState = TournamentCloudRestorationUiState.Queued,
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message")
+            .assertTextEquals("Restore could not complete. Saved locally for later sync.")
+    }
+
+    @Test
+    fun queuePersistenceFailureStateShowsRestorationLocalSaveFailureMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    authUiState = AuthUiState(isSignedIn = true),
+                    onCreateTournament = {}, onOpenTournamentDetails = {}, onOpenAuth = {},
+                    restorationUiState = TournamentCloudRestorationUiState.QueuePersistenceFailure,
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message")
+            .assertTextEquals("Restore failed and could not be saved locally.")
     }
 
     private companion object {

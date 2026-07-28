@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncStage
@@ -21,6 +23,8 @@ sealed interface DraftMatchCloudSyncUiState {
     data object AuthorizationFailure : DraftMatchCloudSyncUiState
     data object ValidationFailure : DraftMatchCloudSyncUiState
     data object NetworkFailure : DraftMatchCloudSyncUiState
+    data object Queued : DraftMatchCloudSyncUiState
+    data object QueuePersistenceFailure : DraftMatchCloudSyncUiState
     data class PartialFailure(
         val completedStage: DraftMatchCloudSyncStage,
     ) : DraftMatchCloudSyncUiState
@@ -42,7 +46,8 @@ class DraftMatchCloudSyncViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                DraftMatchCloudSyncResult.NetworkFailure
+                _uiState.value = DraftMatchCloudSyncUiState.NetworkFailure
+                return@launch
             }
             _uiState.value = result.toUiState()
         }
@@ -50,6 +55,18 @@ class DraftMatchCloudSyncViewModel @Inject constructor(
 
     fun reset() {
         _uiState.value = DraftMatchCloudSyncUiState.Idle
+    }
+}
+
+private fun QueueAwareActionResult<DraftMatchCloudSyncResult>.toUiState(): DraftMatchCloudSyncUiState {
+    if (primaryResult == DraftMatchCloudSyncResult.Success) {
+        return DraftMatchCloudSyncUiState.Success
+    }
+
+    return when (queueRecordingResult) {
+        QueueRecordingResult.RECORDED -> DraftMatchCloudSyncUiState.Queued
+        QueueRecordingResult.PERSISTENCE_FAILED -> DraftMatchCloudSyncUiState.QueuePersistenceFailure
+        QueueRecordingResult.NOT_REQUIRED -> primaryResult.toUiState()
     }
 }
 

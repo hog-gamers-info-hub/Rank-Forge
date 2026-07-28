@@ -1,0 +1,573 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "930e08b4e6fc4487c4d79228c351b2d6",
+    "entities": [
+      {
+        "tableName": "rank_forge_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "tournaments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `date` TEXT NOT NULL, `organizer_name` TEXT NOT NULL, `organizer_contact_number` TEXT NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "organizerName",
+            "columnName": "organizer_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "organizerContactNumber",
+            "columnName": "organizer_contact_number",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "team_slots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `slot_number` INTEGER NOT NULL, `team_name` TEXT NOT NULL, PRIMARY KEY(`tournament_id`, `slot_number`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slotNumber",
+            "columnName": "slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamName",
+            "columnName": "team_name",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_team_slots_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_team_slots_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "roster_players",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `slot_number` INTEGER NOT NULL, `roster_position` INTEGER NOT NULL, `display_name` TEXT NOT NULL, PRIMARY KEY(`tournament_id`, `slot_number`, `roster_position`), FOREIGN KEY(`tournament_id`, `slot_number`) REFERENCES `team_slots`(`tournament_id`, `slot_number`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slotNumber",
+            "columnName": "slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rosterPosition",
+            "columnName": "roster_position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "slot_number",
+            "roster_position"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_roster_players_tournament_id_slot_number",
+            "unique": false,
+            "columnNames": [
+              "tournament_id",
+              "slot_number"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_roster_players_tournament_id_slot_number` ON `${TABLE_NAME}` (`tournament_id`, `slot_number`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "team_slots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id",
+              "slot_number"
+            ],
+            "referencedColumns": [
+              "tournament_id",
+              "slot_number"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "matches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `match_number` INTEGER NOT NULL, `date` TEXT NOT NULL, `map_name` TEXT NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchNumber",
+            "columnName": "match_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mapName",
+            "columnName": "map_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_matches_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_placements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_placements_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_placements_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_kills",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `kills` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kills",
+            "columnName": "kills",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_kills_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_kills_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_draft_values",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `placement_input` TEXT NOT NULL, `kills_input` TEXT NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placementInput",
+            "columnName": "placement_input",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "killsInput",
+            "columnName": "kills_input",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_draft_values_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_draft_values_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_corrections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `correction_index` INTEGER NOT NULL, `previous_placements` TEXT NOT NULL, `previous_kills` TEXT NOT NULL, `corrected_placements` TEXT NOT NULL, `corrected_kills` TEXT NOT NULL, PRIMARY KEY(`match_id`, `correction_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionIndex",
+            "columnName": "correction_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previousPlacements",
+            "columnName": "previous_placements",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previousKills",
+            "columnName": "previous_kills",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedPlacements",
+            "columnName": "corrected_placements",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedKills",
+            "columnName": "corrected_kills",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "correction_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_corrections_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_corrections_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sync_queue_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `operationType` TEXT NOT NULL, `tournamentId` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `failureCategory` TEXT, `attemptCount` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationType",
+            "columnName": "operationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournamentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCategory",
+            "columnName": "failureCategory",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '930e08b4e6fc4487c4d79228c351b2d6')"
+    ]
+  }
+}

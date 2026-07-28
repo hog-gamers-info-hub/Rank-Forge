@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+
 data class TournamentCloudUploadSnapshot(
     val tournament: Tournament,
     val slots: List<TeamSlot>,
@@ -30,5 +32,5 @@ interface TournamentCloudUploadRepository {
 }
 
 fun interface TournamentCloudUploadAction {
-    suspend operator fun invoke(tournamentId: String): TournamentCloudUploadResult
+    suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult>
 }

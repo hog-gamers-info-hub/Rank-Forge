@@ -7,6 +7,9 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
+import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -14,20 +17,29 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncFinalizedMatchesUseCaseTest {
     @Test
     fun unauthenticatedSyncIsRejectedBeforeCloudAccess() = runTest {
         val cloud = RecordingCloudRepository()
+        val queue = RecordingTestQueueRepository()
         val useCase = SyncFinalizedMatchesUseCase(
             tournamentRepository = localRepository(),
             authRepository = FakeAuthRepository(AuthState.SignedOut),
             cloudSyncRepository = cloud,
+            queueRecorder = queue.recorder(),
         )
 
-        assertEquals(FinalizedMatchCloudSyncResult.AuthenticationRequired, useCase(TOURNAMENT_ID))
+        val result = useCase(TOURNAMENT_ID)
+        assertEquals(FinalizedMatchCloudSyncResult.AuthenticationRequired, result.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
         assertNull(cloud.snapshot)
+        assertEquals(SyncQueueOperationType.FINALIZED_MATCH_SYNC, queue.entries.single().operationType)
+        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
+        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
+        assertEquals(0, queue.entries.single().attemptCount)
     }
 
     @Test
@@ -35,15 +47,45 @@ class SyncFinalizedMatchesUseCaseTest {
         val local = localRepository()
         val before = local.observeMatchesByTournamentId(TOURNAMENT_ID).first()
         val cloud = RecordingCloudRepository()
+        val queue = RecordingTestQueueRepository()
         val useCase = SyncFinalizedMatchesUseCase(
             tournamentRepository = local,
             authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
             cloudSyncRepository = cloud,
+            queueRecorder = queue.recorder(),
         )
 
-        assertEquals(FinalizedMatchCloudSyncResult.Success, useCase(TOURNAMENT_ID))
+        val result = useCase(TOURNAMENT_ID)
+        assertEquals(FinalizedMatchCloudSyncResult.Success, result.primaryResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertEquals(before, cloud.snapshot?.matches)
         assertEquals(before, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
+        assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun networkFailureIsRecordedAndQueuePersistenceFailureIsExposed() = runTest {
+        val local = localRepository()
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null)))
+        val queue = RecordingTestQueueRepository()
+        val networkResult = SyncFinalizedMatchesUseCase(
+            local,
+            auth,
+            RecordingCloudRepository(FinalizedMatchCloudSyncResult.NetworkFailure),
+            queue.recorder(),
+        )(TOURNAMENT_ID)
+        assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, networkResult.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+
+        val persistenceFailure = SyncFinalizedMatchesUseCase(
+            local,
+            auth,
+            RecordingCloudRepository(FinalizedMatchCloudSyncResult.NetworkFailure),
+            RecordingTestQueueRepository(IllegalStateException()).recorder(),
+        )(TOURNAMENT_ID)
+        assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, persistenceFailure.primaryResult)
+        assertEquals(QueueRecordingResult.PERSISTENCE_FAILED, persistenceFailure.queueRecordingResult)
     }
 
     @Test
@@ -56,15 +98,17 @@ class SyncFinalizedMatchesUseCaseTest {
             local,
             auth,
             RecordingCloudRepository(FinalizedMatchCloudSyncResult.AuthorizationFailure),
+            testQueueRecorder(),
         )(TOURNAMENT_ID)
         val network = SyncFinalizedMatchesUseCase(
             local,
             auth,
             RecordingCloudRepository(FinalizedMatchCloudSyncResult.NetworkFailure),
+            testQueueRecorder(),
         )(TOURNAMENT_ID)
 
-        assertEquals(FinalizedMatchCloudSyncResult.AuthorizationFailure, authorization)
-        assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, network)
+        assertEquals(FinalizedMatchCloudSyncResult.AuthorizationFailure, authorization.primaryResult)
+        assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, network.primaryResult)
         assertEquals(before, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
     }
 

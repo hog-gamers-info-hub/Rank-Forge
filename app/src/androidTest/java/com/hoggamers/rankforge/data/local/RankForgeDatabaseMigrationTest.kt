@@ -92,6 +92,21 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion3AddsQueueTableWithoutDroppingTournamentOrMatchData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 3).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-queue', 'Queue Cup', '2026-07-26', 'Organizer', '123', 'CONFIRMED')")
+            database.execSQL("INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-queue', 'tournament-queue', 1, '2026-07-26', 'Bermuda', 'DRAFT')")
+        }
+        val migrated = migrationTestHelper().runMigrationsAndValidate(MIGRATION_DATABASE_NAME, 4, true, RankForgeDatabase.MIGRATION_3_4)
+        migrated.query("SELECT id FROM matches WHERE id = 'match-queue'").use { assertTrue(it.moveToFirst()) }
+        migrated.query("PRAGMA table_info(sync_queue_entries)").use { cursor ->
+            val columns = buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
+            assertTrue(setOf("id", "operationType", "tournamentId", "createdAtEpochMillis", "status", "failureCategory", "attemptCount").all(columns::contains))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(

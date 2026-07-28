@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
@@ -76,17 +78,84 @@ class TournamentCloudRestorationViewModelTest {
         )
     }
 
+    @Test
+    fun restoreQueueOutcomesMapToDistinctStates() = runTest {
+        val queuedViewModel = TournamentCloudRestorationViewModel(
+            RecordingAction(
+                TournamentCloudRestorationResult.Available(SUMMARIES),
+                TournamentCloudRestorationResult.NetworkFailure,
+                QueueRecordingResult.RECORDED,
+            ),
+        )
+        queuedViewModel.restore(TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(TournamentCloudRestorationUiState.Queued, queuedViewModel.uiState.value)
+
+        val persistenceFailureViewModel = TournamentCloudRestorationViewModel(
+            RecordingAction(
+                TournamentCloudRestorationResult.Available(SUMMARIES),
+                TournamentCloudRestorationResult.NetworkFailure,
+                QueueRecordingResult.PERSISTENCE_FAILED,
+            ),
+        )
+        persistenceFailureViewModel.restore(TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(
+            TournamentCloudRestorationUiState.QueuePersistenceFailure,
+            persistenceFailureViewModel.uiState.value,
+        )
+
+        val primaryFailureViewModel = TournamentCloudRestorationViewModel(
+            RecordingAction(
+                TournamentCloudRestorationResult.Available(SUMMARIES),
+                TournamentCloudRestorationResult.AuthenticationRequired,
+            ),
+        )
+        primaryFailureViewModel.restore(TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(
+            TournamentCloudRestorationUiState.AuthenticationRequired,
+            primaryFailureViewModel.uiState.value,
+        )
+    }
+
+    @Test
+    fun thrownRestoreExceptionMapsToNetworkFailureAndResetReturnsToIdle() = runTest {
+        val viewModel = TournamentCloudRestorationViewModel(
+            RecordingAction(
+                TournamentCloudRestorationResult.Available(SUMMARIES),
+                TournamentCloudRestorationResult.NetworkFailure,
+                throwOnRestore = true,
+            ),
+        )
+
+        viewModel.restore(TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(TournamentCloudRestorationUiState.NetworkFailure, viewModel.uiState.value)
+
+        viewModel.reset()
+        assertEquals(TournamentCloudRestorationUiState.Idle, viewModel.uiState.value)
+    }
+
     private class RecordingAction(
         private val loadResult: TournamentCloudRestorationResult,
         private val restoreResult: TournamentCloudRestorationResult,
+        private val queueRecordingResult: QueueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        private val throwOnRestore: Boolean = false,
     ) : TournamentCloudRestorationAction {
         var restoredTournamentId: String? = null
 
         override suspend fun loadAvailable(): TournamentCloudRestorationResult = loadResult
 
-        override suspend fun restore(tournamentId: String): TournamentCloudRestorationResult {
+        override suspend fun restore(
+            tournamentId: String,
+        ): QueueAwareActionResult<TournamentCloudRestorationResult> {
             restoredTournamentId = tournamentId
-            return restoreResult
+            if (throwOnRestore) throw IllegalStateException()
+            return QueueAwareActionResult(
+                primaryResult = restoreResult,
+                queueRecordingResult = queueRecordingResult,
+            )
         }
     }
 

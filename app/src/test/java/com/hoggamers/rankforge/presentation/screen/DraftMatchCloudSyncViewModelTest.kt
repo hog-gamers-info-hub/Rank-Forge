@@ -1,11 +1,14 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -40,11 +43,46 @@ class DraftMatchCloudSyncViewModelTest {
         )
 
         results.forEach { (result, expectedState) ->
-            val viewModel = DraftMatchCloudSyncViewModel(RecordingAction(result))
+            val action = RecordingAction(result)
+            val viewModel = DraftMatchCloudSyncViewModel(action)
             viewModel.sync(TOURNAMENT_ID)
             advanceUntilIdle()
             assertEquals(expectedState, viewModel.uiState.value)
+            assertEquals(TOURNAMENT_ID, action.tournamentId)
         }
+    }
+
+    @Test
+    fun queueOutcomesMapToDistinctStatesAndThrownExceptionMapsToNetworkFailure() = runTest {
+        assertEquals(
+            DraftMatchCloudSyncUiState.Queued,
+            stateFor(DraftMatchCloudSyncResult.NetworkFailure, QueueRecordingResult.RECORDED),
+        )
+        assertEquals(
+            DraftMatchCloudSyncUiState.QueuePersistenceFailure,
+            stateFor(DraftMatchCloudSyncResult.NetworkFailure, QueueRecordingResult.PERSISTENCE_FAILED),
+        )
+        assertEquals(
+            DraftMatchCloudSyncUiState.AuthenticationRequired,
+            stateFor(DraftMatchCloudSyncResult.AuthenticationRequired, QueueRecordingResult.NOT_REQUIRED),
+        )
+
+        val viewModel = DraftMatchCloudSyncViewModel(
+            RecordingAction(DraftMatchCloudSyncResult.NetworkFailure, throwOnInvoke = true),
+        )
+        viewModel.sync(TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(DraftMatchCloudSyncUiState.NetworkFailure, viewModel.uiState.value)
+    }
+
+    private suspend fun TestScope.stateFor(
+        result: DraftMatchCloudSyncResult,
+        queueRecordingResult: QueueRecordingResult,
+    ): DraftMatchCloudSyncUiState {
+        val viewModel = DraftMatchCloudSyncViewModel(RecordingAction(result, queueRecordingResult))
+        viewModel.sync(TOURNAMENT_ID)
+        advanceUntilIdle()
+        return viewModel.uiState.value
     }
 
     @Test
@@ -66,8 +104,18 @@ class DraftMatchCloudSyncViewModelTest {
 
     private class RecordingAction(
         private val result: DraftMatchCloudSyncResult,
+        private val queueRecordingResult: QueueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        private val throwOnInvoke: Boolean = false,
     ) : DraftMatchCloudSyncAction {
-        override suspend fun invoke(tournamentId: String): DraftMatchCloudSyncResult = result
+        var tournamentId: String? = null
+
+        override suspend fun invoke(
+            tournamentId: String,
+        ): QueueAwareActionResult<DraftMatchCloudSyncResult> {
+            this.tournamentId = tournamentId
+            if (throwOnInvoke) throw IllegalStateException()
+            return QueueAwareActionResult(result, queueRecordingResult)
+        }
     }
 
     private companion object {
