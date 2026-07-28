@@ -15,6 +15,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -68,6 +69,13 @@ internal fun RosterPlayerEntity.toDomain(): RosterPlayer = RosterPlayer(
 internal fun List<RosterPlayer>.toEntities(): List<RosterPlayerEntity> = mapIndexed { index, player ->
     player.toEntity(rosterPosition = index + 1)
 }
+
+internal fun RestoredRosterPlayer.toEntity(): RosterPlayerEntity = RosterPlayerEntity(
+    tournamentId = tournamentId,
+    slotNumber = slotNumber,
+    rosterPosition = rosterPosition,
+    displayName = displayName,
+)
 
 internal fun Match.toEntity(): MatchEntity = MatchEntity(
     id = id,

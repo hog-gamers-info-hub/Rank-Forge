@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCloudUploadViewModel
+import com.hoggamers.rankforge.presentation.screen.TournamentCloudRestorationViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListRoute
@@ -50,6 +51,7 @@ fun RankForgeNavHost(
     onAuthLogout: () -> Unit = {},
     creationViewModel: TournamentCreationViewModel? = null,
     listViewModel: TournamentListViewModel? = null,
+    cloudRestorationViewModelFactory: (() -> TournamentCloudRestorationViewModel)? = null,
     detailsViewModelFactory: ((String) -> TournamentDetailsViewModel)? = null,
     cloudUploadViewModelFactory: ((String) -> TournamentCloudUploadViewModel)? = null,
     standingsViewModelFactory: ((String) -> TournamentStandingsViewModel)? = null,
@@ -77,12 +79,19 @@ fun RankForgeNavHost(
             val onOpenTournamentDetails: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentDetailsDestination(tournamentId))
             }
+            val cloudRestorationViewModel = cloudRestorationViewModelFactory?.invoke()
+                ?: if (listViewModel == null) {
+                    hiltViewModel<TournamentCloudRestorationViewModel>()
+                } else {
+                    null
+                }
             if (listViewModel == null) {
                 TournamentListRoute(
                     onCreateTournament = onCreateTournament,
                     onOpenTournamentDetails = onOpenTournamentDetails,
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
+                    restorationViewModel = cloudRestorationViewModel,
                 )
             } else {
                 TournamentListRoute(
@@ -91,6 +100,7 @@ fun RankForgeNavHost(
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
                     viewModel = listViewModel,
+                    restorationViewModel = cloudRestorationViewModel,
                 )
             }
         }

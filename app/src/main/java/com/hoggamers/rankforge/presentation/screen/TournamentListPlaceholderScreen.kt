@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 
 private val listDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 
@@ -35,6 +36,9 @@ const val TOURNAMENT_LIST_SCREEN_TEST_TAG = "tournament_list_screen"
 const val TOURNAMENT_LIST_EMPTY_TEST_TAG = "tournament_list_empty"
 const val TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX = "tournament_list_item_"
 const val TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG = "tournament_list_auth_entry"
+const val TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG = "tournament_cloud_restoration_action"
+const val TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG = "tournament_cloud_restoration_status"
+const val TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX = "tournament_cloud_restoration_item_"
 
 @Composable
 fun TournamentListRoute(
@@ -43,8 +47,15 @@ fun TournamentListRoute(
     authUiState: AuthUiState = AuthUiState(),
     onOpenAuth: () -> Unit = {},
     viewModel: TournamentListViewModel = hiltViewModel(),
+    restorationViewModel: TournamentCloudRestorationViewModel? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val restorationUiState = if (restorationViewModel == null) {
+        null
+    } else {
+        val state by restorationViewModel.uiState.collectAsStateWithLifecycle()
+        state
+    }
 
     TournamentListScreen(
         uiState = uiState,
@@ -52,6 +63,9 @@ fun TournamentListRoute(
         onCreateTournament = onCreateTournament,
         onOpenTournamentDetails = onOpenTournamentDetails,
         onOpenAuth = onOpenAuth,
+        restorationUiState = restorationUiState,
+        onLoadCloudTournaments = { restorationViewModel?.loadAvailable() },
+        onRestoreCloudTournament = { tournamentId -> restorationViewModel?.restore(tournamentId) },
     )
 }
 
@@ -75,6 +89,9 @@ fun TournamentListScreen(
     onCreateTournament: () -> Unit,
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAuth: () -> Unit,
+    restorationUiState: TournamentCloudRestorationUiState? = null,
+    onLoadCloudTournaments: () -> Unit = {},
+    onRestoreCloudTournament: (String) -> Unit = {},
 ) {
     RankForgeScreenContainer(
         modifier = Modifier.testTag(TOURNAMENT_LIST_SCREEN_TEST_TAG),
@@ -93,6 +110,15 @@ fun TournamentListScreen(
         )
 
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+
+        if (restorationUiState != null) {
+            TournamentCloudRestorationSection(
+                uiState = restorationUiState,
+                onLoadCloudTournaments = onLoadCloudTournaments,
+                onRestoreCloudTournament = onRestoreCloudTournament,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        }
 
         Button(
             onClick = onCreateTournament,
@@ -126,6 +152,104 @@ fun TournamentListScreen(
             }
         }
     }
+}
+
+@Composable
+private fun TournamentCloudRestorationSection(
+    uiState: TournamentCloudRestorationUiState,
+    onLoadCloudTournaments: () -> Unit,
+    onRestoreCloudTournament: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(RankForgeSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        ) {
+            Text(
+                text = stringResource(R.string.restore_tournament_action),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Button(
+                onClick = onLoadCloudTournaments,
+                enabled = uiState !is TournamentCloudRestorationUiState.Loading &&
+                    uiState !is TournamentCloudRestorationUiState.Restoring,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = if (
+                        uiState is TournamentCloudRestorationUiState.Loading ||
+                        uiState is TournamentCloudRestorationUiState.Restoring
+                    ) {
+                        stringResource(R.string.restore_tournament_loading)
+                    } else {
+                        stringResource(R.string.restore_tournament_action)
+                    },
+                )
+            }
+            Text(
+                text = uiState.restoreStatusText(),
+                modifier = Modifier.testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message"),
+            )
+            if (uiState is TournamentCloudRestorationUiState.Available) {
+                if (uiState.tournaments.isEmpty()) {
+                    Text(text = stringResource(R.string.restore_tournament_empty))
+                } else {
+                    uiState.tournaments.forEach { tournament ->
+                        CloudTournamentRestoreItem(
+                            tournament = tournament,
+                            onRestore = { onRestoreCloudTournament(tournament.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudTournamentRestoreItem(
+    tournament: TournamentCloudRestorationSummary,
+    onRestore: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onRestore,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX + tournament.id),
+    ) {
+        Text(text = stringResource(R.string.restore_tournament_item, tournament.name))
+    }
+}
+
+@Composable
+private fun TournamentCloudRestorationUiState.restoreStatusText(): String = when (this) {
+    TournamentCloudRestorationUiState.Idle -> stringResource(R.string.restore_tournament_action)
+    TournamentCloudRestorationUiState.Loading,
+    is TournamentCloudRestorationUiState.Restoring,
+    -> stringResource(R.string.restore_tournament_loading)
+    is TournamentCloudRestorationUiState.Available -> stringResource(R.string.restore_tournament_available)
+    is TournamentCloudRestorationUiState.Success -> stringResource(
+        R.string.restore_tournament_success,
+        tournamentName,
+    )
+    TournamentCloudRestorationUiState.AuthenticationRequired ->
+        stringResource(R.string.restore_tournament_authentication_required)
+    TournamentCloudRestorationUiState.AuthorizationFailure ->
+        stringResource(R.string.restore_tournament_authorization_failure)
+    TournamentCloudRestorationUiState.ValidationFailure ->
+        stringResource(R.string.restore_tournament_validation_failure)
+    TournamentCloudRestorationUiState.NetworkFailure ->
+        stringResource(R.string.restore_tournament_network_failure)
+    TournamentCloudRestorationUiState.LocalTransactionFailure ->
+        stringResource(R.string.restore_tournament_local_failure)
 }
 
 @Composable

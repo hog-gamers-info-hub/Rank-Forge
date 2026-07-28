@@ -68,7 +68,7 @@ object TournamentCloudUploadMapper {
             val localSlot = slotsByNumber[slotNumber]?.singleOrNull()
                 ?: TeamSlot.create(snapshot.tournament.id, slotNumber)
             TeamSlotUploadPayload(
-                id = deterministicUuid("rank-forge:team-slot:${tournamentUuid}:$slotNumber"),
+                id = TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber),
                 tournamentId = snapshot.tournament.id,
                 slotNumber = slotNumber,
                 teamName = localSlot.teamName,
@@ -85,12 +85,8 @@ object TournamentCloudUploadMapper {
                     }
                     val position = index + 1
                     PlayerUploadPayload(
-                        id = deterministicUuid(
-                            "rank-forge:player:${tournamentUuid}:$slotNumber:$position",
-                        ),
-                        teamSlotId = deterministicUuid(
-                            "rank-forge:team-slot:${tournamentUuid}:$slotNumber",
-                        ),
+                        id = TournamentCloudIdentity.playerId(tournamentUuid, slotNumber, position),
+                        teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber),
                         displayName = player.displayName,
                         normalizedName = RosterNameNormalizer.normalize(player.displayName),
                     )
@@ -114,8 +110,21 @@ object TournamentCloudUploadMapper {
         )
     }
 
+    private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
+}
+
+internal object TournamentCloudIdentity {
+    fun teamSlotId(
+        tournamentId: UUID,
+        slotNumber: Int,
+    ): String = deterministicUuid("rank-forge:team-slot:$tournamentId:$slotNumber")
+
+    fun playerId(
+        tournamentId: UUID,
+        slotNumber: Int,
+        rosterPosition: Int,
+    ): String = deterministicUuid("rank-forge:player:$tournamentId:$slotNumber:$rosterPosition")
+
     private fun deterministicUuid(value: String): String =
         UUID.nameUUIDFromBytes(value.toByteArray(StandardCharsets.UTF_8)).toString()
-
-    private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
 }

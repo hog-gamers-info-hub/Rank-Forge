@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
@@ -24,6 +25,8 @@ import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepository
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import javax.inject.Inject
@@ -47,7 +50,7 @@ import kotlinx.serialization.json.Json
 @Singleton
 class RoomTournamentRepository @Inject constructor(
     private val database: RankForgeDatabase,
-) : TournamentRepository {
+) : TournamentRepository, TournamentRestorationLocalRepository {
     private val state = MutableStateFlow(RepositoryState())
     private val writeMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -203,6 +206,61 @@ class RoomTournamentRepository @Inject constructor(
                 saveLegacyState(next)
                 state.value = next
             }
+        }
+    }
+
+    override suspend fun restore(snapshot: TournamentCloudRestorationSnapshot) {
+        require(snapshot.slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList())
+        require(snapshot.slots.all { it.tournamentId == snapshot.tournament.id })
+        require(snapshot.players.all {
+            it.tournamentId == snapshot.tournament.id &&
+                it.slotNumber in TeamSlot.SLOT_NUMBERS &&
+                it.rosterPosition in 1..RosterPlayer.MAX_PLAYERS
+        })
+        require(
+            snapshot.players
+                .groupBy { it.slotNumber }
+                .values
+                .all { players -> players.map { it.rosterPosition }.distinct().size == players.size },
+        )
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            val next = current.copy(
+                tournaments = current.tournaments.map { tournament ->
+                    if (tournament.id == snapshot.tournament.id) snapshot.tournament else tournament
+                }.let { tournaments ->
+                    if (tournaments.any { it.id == snapshot.tournament.id }) {
+                        tournaments
+                    } else {
+                        tournaments + snapshot.tournament
+                    }
+                },
+                slots = current.slots + (snapshot.tournament.id to snapshot.slots),
+                rosters = current.rosters
+                    .filterKeys { it.tournamentId != snapshot.tournament.id }
+                    .plus(
+                        snapshot.players
+                            .groupBy { RosterKey(it.tournamentId, it.slotNumber) }
+                            .mapValues { (_, players) ->
+                                players.sortedBy { it.rosterPosition }.map { player ->
+                                    RosterPlayer(
+                                        tournamentId = player.tournamentId,
+                                        slotNumber = player.slotNumber,
+                                        displayName = player.displayName,
+                                    )
+                                }
+                            },
+                    ),
+            )
+            database.withTransaction {
+                database.tournamentDao().upsert(snapshot.tournament.toEntity())
+                database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
+                database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
+                database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
+                saveLegacyState(next)
+            }
+            state.value = next
         }
     }
 
