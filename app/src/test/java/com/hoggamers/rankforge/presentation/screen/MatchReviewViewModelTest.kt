@@ -128,6 +128,65 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun photoPickerSelectionReplacesThePreviousTemporaryUri() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://picker/first")
+        assertEquals("content://picker/first", viewModel.uiState.value.selectedScreenshotUri)
+
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://picker/second")
+
+        assertEquals("content://picker/second", viewModel.uiState.value.selectedScreenshotUri)
+        assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+        assertEquals(null, viewModel.uiState.value.photoPickerError)
+    }
+
+    @Test
+    fun photoPickerCancellationAndInvalidResultsPreserveTheTemporaryUri() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/selected")
+
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult(null)
+
+        assertEquals("content://picker/selected", viewModel.uiState.value.selectedScreenshotUri)
+        assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("")
+
+        assertEquals("content://picker/selected", viewModel.uiState.value.selectedScreenshotUri)
+        assertEquals(PhotoPickerError.INVALID_RESULT, viewModel.uiState.value.photoPickerError)
+        assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+    }
+
+    @Test
+    fun repeatedPhotoPickerRequestsDoNotCreateConcurrentLaunchState() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker()
+        viewModel.requestPhotoPicker()
+
+        assertTrue(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertTrue(viewModel.uiState.value.isPhotoPickerRequestActive)
+        viewModel.onPhotoPickerLaunchHandled()
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertTrue(viewModel.uiState.value.isPhotoPickerRequestActive)
+    }
+
+    @Test
     fun validReviewFinalizesAndBecomesReadOnly() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(

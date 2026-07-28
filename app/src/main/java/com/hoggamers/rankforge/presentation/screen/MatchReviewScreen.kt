@@ -1,6 +1,9 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +48,9 @@ const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_statu
 const val MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG = "match_review_correction_action"
 const val MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG = "match_review_correction_confirm_action"
 const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_history"
+const val MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG = "match_review_photo_picker_action"
+const val MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG = "match_review_selected_screenshot"
+const val MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG = "match_review_photo_picker_error"
 
 @Composable
 fun MatchReviewRoute(
@@ -60,6 +66,22 @@ fun MatchReviewRoute(
         viewModel.load(tournamentId, matchId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { selectedUri -> viewModel.onPhotoPickerResult(selectedUri?.toString()) },
+    )
+    LaunchedEffect(uiState.isPhotoPickerLaunchPending) {
+        if (uiState.isPhotoPickerLaunchPending) {
+            viewModel.onPhotoPickerLaunchHandled()
+            try {
+                photoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            } catch (_: Exception) {
+                viewModel.onPhotoPickerLaunchFailed()
+            }
+        }
+    }
     LaunchedEffect(uiState.navigation) {
         when (uiState.navigation) {
             MatchReviewNavigation.PLACEMENTS -> {
@@ -90,6 +112,7 @@ fun MatchReviewRoute(
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onFinalize = viewModel::finalize,
+        onSelectScreenshot = viewModel::requestPhotoPicker,
     )
 }
 
@@ -101,6 +124,7 @@ fun MatchReviewScreen(
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit = {},
+    onSelectScreenshot: () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -114,6 +138,7 @@ fun MatchReviewScreen(
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onFinalize = onFinalize,
+            onSelectScreenshot = onSelectScreenshot,
         )
     }
 }
@@ -126,6 +151,7 @@ private fun MatchReviewContent(
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit,
+    onSelectScreenshot: () -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -184,6 +210,28 @@ private fun MatchReviewContent(
         if (uiState.correctionHistory.isNotEmpty()) {
             MatchCorrectionHistory(uiState.correctionHistory)
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        }
+        Button(
+            onClick = onSelectScreenshot,
+            enabled = !uiState.isPhotoPickerRequestActive,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG),
+        ) {
+            Text(stringResource(R.string.match_review_select_screenshot_action))
+        }
+        if (uiState.selectedScreenshotUri != null) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_selected),
+                modifier = Modifier.testTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG),
+            )
+        }
+        if (uiState.photoPickerError != null) {
+            Text(
+                text = stringResource(uiState.photoPickerError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
+            )
         }
         if (uiState.isEditable) {
             Button(
@@ -429,4 +477,9 @@ private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.t
         R.string.match_review_finalize_not_draft_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.INVALID_DATA ->
         R.string.match_review_finalize_invalid_data_error
+}
+
+private fun PhotoPickerError.toMessageRes(): Int = when (this) {
+    PhotoPickerError.INVALID_RESULT -> R.string.match_review_photo_picker_invalid_result_error
+    PhotoPickerError.LAUNCH_FAILED -> R.string.match_review_photo_picker_launch_failed_error
 }

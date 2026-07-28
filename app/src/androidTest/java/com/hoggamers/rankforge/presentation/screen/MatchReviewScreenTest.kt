@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -95,6 +96,48 @@ class MatchReviewScreenTest {
             assertEquals(1, killCount)
             assertEquals(1, detailsCount)
         }
+    }
+
+    @Test
+    fun photoPickerActionIsAvailableAndSelectedStateIsVisible() {
+        var photoPickerActionCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(selectedScreenshotUri = "content://picker/selected"),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onSelectScreenshot = { photoPickerActionCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(1, photoPickerActionCount) }
+    }
+
+    @Test
+    fun photoPickerActionIsDisabledWhileARequestIsActive() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(isPhotoPickerRequestActive = true),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
     }
 
     @Test

@@ -265,6 +265,10 @@
     <string name="match_review_finalize_match_not_found_error">This match is no longer available.</string>
     <string name="match_review_finalize_not_draft_error">Only draft matches can be finalized.</string>
     <string name="match_review_finalize_invalid_data_error">The match results could not be finalized.</string>
+    <string name="match_review_select_screenshot_action">Select screenshot</string>
+    <string name="match_review_screenshot_selected">Screenshot selected.</string>
+    <string name="match_review_photo_picker_invalid_result_error">The selected image could not be used. Try again.</string>
+    <string name="match_review_photo_picker_launch_failed_error">The image picker could not be opened. Try again.</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>
     <string name="start_match_correction_message">This opens an editable correction copy. The finalized result stays unchanged until you submit it.</string>
