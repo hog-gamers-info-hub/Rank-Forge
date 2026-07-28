@@ -1,10 +1,13 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 
 data class MatchCloudRestorationSnapshot(
     val tournamentId: String,
     val matches: List<Match>,
+    val cloudRevision: CloudRevision? = null,
 )
 
 enum class MatchCloudRestorationFailureCategory { AUTHENTICATION, AUTHORIZATION, NETWORK, VALIDATION }
@@ -20,6 +23,10 @@ interface MatchCloudRestorationRepository {
 
 interface MatchRestorationLocalRepository {
     suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot)
+    suspend fun detectMatchDivergence(
+        tournamentId: String,
+        cloudRevision: CloudRevision,
+    ): RevisionConflict? = null
 }
 
 sealed interface MatchCloudRestorationResult {
@@ -29,6 +36,7 @@ sealed interface MatchCloudRestorationResult {
     data object AuthorizationFailure : MatchCloudRestorationResult
     data object ValidationFailure : MatchCloudRestorationResult
     data object NetworkFailure : MatchCloudRestorationResult
+    data class Conflict(val conflict: RevisionConflict) : MatchCloudRestorationResult
     data object LocalTransactionFailure : MatchCloudRestorationResult
 }
 

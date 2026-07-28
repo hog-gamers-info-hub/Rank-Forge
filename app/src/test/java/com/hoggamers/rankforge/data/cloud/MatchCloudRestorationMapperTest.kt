@@ -44,13 +44,13 @@ class MatchCloudRestorationMapperTest {
         val draftId = UUID.nameUUIDFromBytes("draft".toByteArray()).toString()
         val finalId = UUID.nameUUIDFromBytes("final".toByteArray()).toString()
         val matches = listOf(
-            MatchCloudRestorePayload(draftId, TOURNAMENT_ID, 1, "2026-07-24", "Bermuda", "draft"),
-            MatchCloudRestorePayload(finalId, TOURNAMENT_ID, 2, "2026-07-24", "Purgatory", "finalized"),
+            MatchCloudRestorePayload(draftId, TOURNAMENT_ID, 1, "2026-07-24", "Bermuda", "draft", 1),
+            MatchCloudRestorePayload(finalId, TOURNAMENT_ID, 2, "2026-07-24", "Purgatory", "finalized", 1),
         )
         val tournamentUuid = UUID.fromString(TOURNAMENT_ID)
         val results = listOf(MatchResultCloudRestorePayload(UUID.randomUUID().toString(), draftId, TournamentCloudIdentity.teamSlotId(tournamentUuid, 1), null, 2)) +
             (1..12).map { slot -> MatchResultCloudRestorePayload(UUID.randomUUID().toString(), finalId, TournamentCloudIdentity.teamSlotId(tournamentUuid, slot), slot, slot - 1) }
-        return MatchCloudRestorationPayloads(TOURNAMENT_ID, matches, results)
+        return MatchCloudRestorationPayloads(TOURNAMENT_ID, matches, results, cloudRevision = 1)
     }
     private companion object { const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111" }
 }

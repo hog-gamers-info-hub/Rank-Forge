@@ -12,6 +12,7 @@ class SyncQueueRetryEligibilityPolicy {
         SyncQueueStatus.FAILED_VALIDATION,
         SyncQueueStatus.FAILED_AUTHORIZATION,
         SyncQueueStatus.FAILED_LOCAL,
+        SyncQueueStatus.FAILED_CONFLICT,
         SyncQueueStatus.FAILED_UNKNOWN,
         -> false
     }

@@ -79,6 +79,7 @@ private fun FinalizedMatchCloudSyncResult.toUiState(): FinalizedMatchCloudSyncUi
     FinalizedMatchCloudSyncResult.ValidationFailure -> FinalizedMatchCloudSyncUiState.ValidationFailure
     FinalizedMatchCloudSyncResult.AuthorizationFailure -> FinalizedMatchCloudSyncUiState.AuthorizationFailure
     FinalizedMatchCloudSyncResult.NetworkFailure -> FinalizedMatchCloudSyncUiState.NetworkFailure
+    is FinalizedMatchCloudSyncResult.Conflict -> FinalizedMatchCloudSyncUiState.ValidationFailure
     is FinalizedMatchCloudSyncResult.PartialFailure ->
         FinalizedMatchCloudSyncUiState.PartialFailure(completedStage)
 }

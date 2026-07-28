@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.time.LocalDate
 import java.util.UUID
 
@@ -13,6 +14,7 @@ data class MatchCloudRestorationPayloads(
     val tournamentId: String,
     val matches: List<MatchCloudRestorePayload>,
     val results: List<MatchResultCloudRestorePayload>,
+    val cloudRevision: Int,
 )
 
 sealed interface MatchCloudRestorationMappingResult {
@@ -42,7 +44,9 @@ object MatchCloudRestorationMapper {
                 placements = placements.sortedBy { it.teamSlotNumber }, kills = rows.map { MatchKill(teamSlotNumber(tournamentUuid, it.teamSlotId)!!, it.kills) }.sortedBy { it.teamSlotNumber })
         }
         if (payloads.results.any { it.matchId !in payloads.matches.map { match -> match.id }.toSet() }) return MatchCloudRestorationMappingResult.Invalid
-        return MatchCloudRestorationMappingResult.Success(MatchCloudRestorationSnapshot(payloads.tournamentId, matches.sortedBy { it.matchNumber }))
+        val cloudRevision = payloads.cloudRevision.takeIf { it > 0 }?.let(::CloudRevision)
+            ?: return MatchCloudRestorationMappingResult.Invalid
+        return MatchCloudRestorationMappingResult.Success(MatchCloudRestorationSnapshot(payloads.tournamentId, matches.sortedBy { it.matchNumber }, cloudRevision))
     }
 
     private fun teamSlotNumber(tournamentId: UUID, teamSlotId: String): Int? = TeamSlot.SLOT_NUMBERS.firstOrNull {

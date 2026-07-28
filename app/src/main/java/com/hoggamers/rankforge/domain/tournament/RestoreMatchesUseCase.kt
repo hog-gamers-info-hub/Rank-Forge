@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 
 class RestoreMatchesUseCase @Inject constructor(
     private val authRepository: AuthRepository,
@@ -30,6 +31,13 @@ class RestoreMatchesUseCase @Inject constructor(
         return when (val result = cloudRepository.readOwnedMatches(tournamentId)) {
             is MatchCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is MatchCloudRestorationRemoteResult.Success -> {
+                val cloudRevision = result.value.cloudRevision
+                    ?: return MatchCloudRestorationResult.Conflict(
+                        com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
+                    )
+                localRepository.detectMatchDivergence(tournamentId, cloudRevision)?.let { conflict ->
+                    return MatchCloudRestorationResult.Conflict(conflict)
+                }
                 if (result.value.matches.isEmpty()) return MatchCloudRestorationResult.NoCloudMatches
                 try {
                     localRepository.replaceMatches(result.value)
@@ -51,6 +59,7 @@ class RestoreMatchesUseCase @Inject constructor(
             operation = SyncQueueOperationType.MATCH_RESTORATION,
             tournamentId = id,
             status = result.queueStatus(),
+            failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
 
@@ -61,7 +70,8 @@ class RestoreMatchesUseCase @Inject constructor(
     } catch (_: Throwable) { false }
 }
 
-private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL }
+private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL; is MatchCloudRestorationResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT }
+private fun MatchCloudRestorationResult.queueFailureCategory(): String? = (this as? MatchCloudRestorationResult.Conflict)?.conflict?.queueFailureCategory()
 
 private fun MatchCloudRestorationRemoteResult.Failure.toDomainResult() = when (category) {
     MatchCloudRestorationFailureCategory.AUTHENTICATION -> MatchCloudRestorationResult.AuthenticationRequired

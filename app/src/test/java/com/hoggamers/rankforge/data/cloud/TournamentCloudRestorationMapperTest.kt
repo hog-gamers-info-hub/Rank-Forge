@@ -92,6 +92,7 @@ class TournamentCloudRestorationMapperTest {
             organizerName = "Organizer",
             organizerContact = "123",
             status = "draft",
+            revision = 1,
         ),
         teamSlots = listOf(
             TeamSlotUploadPayload(

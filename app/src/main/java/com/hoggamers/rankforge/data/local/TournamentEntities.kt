@@ -6,6 +6,17 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+@Entity(tableName = "sync_revisions")
+data class SyncRevisionEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "local_revision")
+    val localRevision: Int,
+    @ColumnInfo(name = "base_cloud_revision")
+    val baseCloudRevision: Int?,
+)
+
 @Entity(tableName = "tournaments")
 data class TournamentEntity(
     @PrimaryKey val id: String,

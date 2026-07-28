@@ -6,7 +6,12 @@ import java.util.concurrent.CancellationException
 enum class QueueRecordingResult { NOT_REQUIRED, RECORDED, PERSISTENCE_FAILED }
 
 class RecordSyncQueueOutcome @Inject constructor(private val repository: PersistentSyncQueueRepository) {
-    suspend fun record(operation: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus): QueueRecordingResult {
+    suspend fun record(
+        operation: SyncQueueOperationType,
+        tournamentId: String?,
+        status: SyncQueueStatus,
+        failureCategory: String? = status.name,
+    ): QueueRecordingResult {
         if (status == SyncQueueStatus.COMPLETED) {
             try {
                 repository.completeOldestUnresolved(operation, tournamentId)
@@ -18,7 +23,7 @@ class RecordSyncQueueOutcome @Inject constructor(private val repository: Persist
             return QueueRecordingResult.NOT_REQUIRED
         }
         return try {
-            repository.enqueue(operation, tournamentId, status, status.name)
+            repository.enqueue(operation, tournamentId, status, failureCategory)
             QueueRecordingResult.RECORDED
         } catch (cancellation: CancellationException) {
             throw cancellation

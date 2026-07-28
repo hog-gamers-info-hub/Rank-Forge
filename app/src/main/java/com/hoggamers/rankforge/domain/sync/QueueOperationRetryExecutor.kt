@@ -44,6 +44,7 @@ private fun TournamentCloudUploadResult.toRetryOutcome(): SyncQueueRetryOutcome 
     TournamentCloudUploadResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     TournamentCloudUploadResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     TournamentCloudUploadResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
+    is TournamentCloudUploadResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
     is TournamentCloudUploadResult.PartialFailure -> retryOutcome(SyncQueueStatus.FAILED_UNKNOWN)
 }
 
@@ -56,6 +57,7 @@ private fun TournamentCloudRestorationResult.toRetryOutcome(): SyncQueueRetryOut
     TournamentCloudRestorationResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     TournamentCloudRestorationResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
     TournamentCloudRestorationResult.LocalTransactionFailure -> retryOutcome(SyncQueueStatus.FAILED_LOCAL)
+    is TournamentCloudRestorationResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
 }
 
 private fun DraftMatchCloudSyncResult.toRetryOutcome(): SyncQueueRetryOutcome = when (this) {
@@ -64,6 +66,7 @@ private fun DraftMatchCloudSyncResult.toRetryOutcome(): SyncQueueRetryOutcome = 
     DraftMatchCloudSyncResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     DraftMatchCloudSyncResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     DraftMatchCloudSyncResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
+    is DraftMatchCloudSyncResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
     is DraftMatchCloudSyncResult.PartialFailure -> retryOutcome(SyncQueueStatus.FAILED_UNKNOWN)
 }
 
@@ -73,6 +76,7 @@ private fun FinalizedMatchCloudSyncResult.toRetryOutcome(): SyncQueueRetryOutcom
     FinalizedMatchCloudSyncResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     FinalizedMatchCloudSyncResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     FinalizedMatchCloudSyncResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
+    is FinalizedMatchCloudSyncResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
     is FinalizedMatchCloudSyncResult.PartialFailure -> retryOutcome(SyncQueueStatus.FAILED_UNKNOWN)
 }
 
@@ -85,4 +89,5 @@ private fun MatchCloudRestorationResult.toRetryOutcome(): SyncQueueRetryOutcome 
     MatchCloudRestorationResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     MatchCloudRestorationResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
     MatchCloudRestorationResult.LocalTransactionFailure -> retryOutcome(SyncQueueStatus.FAILED_LOCAL)
+    is MatchCloudRestorationResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
 }

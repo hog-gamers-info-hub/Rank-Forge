@@ -17,6 +17,7 @@ data class TournamentUploadPayload(
     @SerialName("organizer_name") val organizerName: String,
     @SerialName("organizer_contact") val organizerContact: String,
     val status: String,
+    val revision: Int? = null,
 )
 
 @Serializable

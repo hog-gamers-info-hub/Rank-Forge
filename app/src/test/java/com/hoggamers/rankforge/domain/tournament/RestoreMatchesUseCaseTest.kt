@@ -24,7 +24,11 @@ class RestoreMatchesUseCaseTest {
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             FakeCloudRepository(
                 MatchCloudRestorationRemoteResult.Success(
-                    MatchCloudRestorationSnapshot(TOURNAMENT_ID, emptyList()),
+                    MatchCloudRestorationSnapshot(
+                        TOURNAMENT_ID,
+                        emptyList(),
+                        com.hoggamers.rankforge.domain.sync.CloudRevision(1),
+                    ),
                 ),
             ),
             RecordingLocalRepository(),

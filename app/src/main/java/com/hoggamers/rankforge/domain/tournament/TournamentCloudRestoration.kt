@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 
 data class TournamentCloudRestorationSummary(
     val id: String,
@@ -21,6 +23,7 @@ data class TournamentCloudRestorationSnapshot(
     val tournament: Tournament,
     val slots: List<TeamSlot>,
     val players: List<RestoredRosterPlayer>,
+    val cloudRevision: CloudRevision? = null,
 )
 
 enum class TournamentCloudRestorationFailureCategory {
@@ -43,6 +46,7 @@ sealed interface TournamentCloudRestorationResult {
     data object AuthorizationFailure : TournamentCloudRestorationResult
     data object ValidationFailure : TournamentCloudRestorationResult
     data object NetworkFailure : TournamentCloudRestorationResult
+    data class Conflict(val conflict: RevisionConflict) : TournamentCloudRestorationResult
     data object LocalTransactionFailure : TournamentCloudRestorationResult
 }
 
@@ -66,6 +70,10 @@ interface TournamentCloudRestorationRepository {
 
 interface TournamentRestorationLocalRepository {
     suspend fun restore(snapshot: TournamentCloudRestorationSnapshot)
+    suspend fun detectTournamentDivergence(
+        tournamentId: String,
+        cloudRevision: CloudRevision,
+    ): RevisionConflict? = null
 }
 
 interface TournamentCloudRestorationAction {

@@ -15,6 +15,7 @@ enum class DraftMatchCloudSyncFailureCategory {
     AUTHORIZATION,
     NETWORK,
     VALIDATION,
+    CONFLICT,
     UNKNOWN,
 }
 
@@ -23,6 +24,7 @@ sealed interface DraftMatchCloudSyncExecutionResult {
     data class Failure(
         val completedStage: DraftMatchCloudSyncCompletedStage?,
         val category: DraftMatchCloudSyncFailureCategory,
+        val conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict? = null,
     ) : DraftMatchCloudSyncExecutionResult
 }
 
@@ -59,7 +61,7 @@ class DraftMatchCloudSyncExecutor(
     }
 }
 
-private fun Throwable.toDraftMatchCloudSyncFailureCategory(): DraftMatchCloudSyncFailureCategory {
+internal fun Throwable.toDraftMatchCloudSyncFailureCategory(): DraftMatchCloudSyncFailureCategory {
     val description = generateSequence(this) { it.cause }
         .joinToString(" ") { it.message.orEmpty() }
         .lowercase()
