@@ -36,7 +36,17 @@ class RestoreMatchesUseCase @Inject constructor(
                         com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
                     )
                 localRepository.detectMatchDivergence(tournamentId, cloudRevision)?.let { conflict ->
-                    return MatchCloudRestorationResult.Conflict(conflict)
+                    return MatchCloudRestorationResult.Conflict(
+                        conflict = conflict,
+                        context = ConflictResolutionContext(
+                            tournamentId = tournamentId,
+                            operation = ConflictOperation.MATCH_RESTORATION,
+                            conflict = conflict,
+                            resolvability = ConflictResolvability.FINALIZED_OR_UNSUPPORTED,
+                            cloudDraftMatches = result.value.matches.filter { it.status == MatchStatus.DRAFT },
+                            currentCloudRevision = cloudRevision,
+                        ),
+                    )
                 }
                 if (result.value.matches.isEmpty()) return MatchCloudRestorationResult.NoCloudMatches
                 try {

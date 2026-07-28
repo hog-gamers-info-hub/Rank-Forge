@@ -53,7 +53,7 @@ class SyncDraftMatchesUseCase @Inject constructor(
             return DraftMatchCloudSyncResult.ValidationFailure
         }
 
-        val result = cloudSyncRepository.sync(snapshot)
+        val result = cloudSyncRepository.sync(snapshot).withConflictContext(snapshot)
         if (result == DraftMatchCloudSyncResult.Success) {
             snapshot.expectedCloudRevision?.let { expected ->
                 tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
@@ -73,6 +73,41 @@ class SyncDraftMatchesUseCase @Inject constructor(
             status = result.queueStatus(),
             failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
+    )
+}
+
+private fun DraftMatchCloudSyncResult.withConflictContext(
+    snapshot: DraftMatchCloudSyncSnapshot,
+): DraftMatchCloudSyncResult = when (this) {
+    is DraftMatchCloudSyncResult.Conflict -> copy(
+        context = context ?: snapshot.toConflictContext(conflict),
+    )
+    else -> this
+}
+
+private fun DraftMatchCloudSyncSnapshot.toConflictContext(
+    conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict,
+): ConflictResolutionContext {
+    val localState = expectedCloudRevision?.let { value -> com.hoggamers.rankforge.domain.sync.CloudRevision(value) }
+    val current = when (conflict) {
+        is com.hoggamers.rankforge.domain.sync.RevisionConflict.StaleWrite -> conflict.currentCloudRevision
+        is com.hoggamers.rankforge.domain.sync.RevisionConflict.LocalCloudDivergence -> conflict.cloudRevision
+        com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision -> null
+    }
+    val draftsOnly = matches.isNotEmpty() && matches.all { it.status == MatchStatus.DRAFT }
+    return ConflictResolutionContext(
+        tournamentId = tournament.id,
+        operation = ConflictOperation.DRAFT_MATCH_SYNC,
+        conflict = conflict,
+        resolvability = if (draftsOnly && current != null) {
+            ConflictResolvability.DRAFT_RESOLVABLE
+        } else {
+            ConflictResolvability.FINALIZED_OR_UNSUPPORTED
+        },
+        localDraftMatches = matches.filter { it.status == MatchStatus.DRAFT },
+        localRevision = null,
+        baseCloudRevision = localState,
+        currentCloudRevision = current,
     )
 }
 private fun DraftMatchCloudSyncResult.queueStatus() = when (this) { DraftMatchCloudSyncResult.Success -> SyncQueueStatus.COMPLETED; DraftMatchCloudSyncResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; DraftMatchCloudSyncResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; DraftMatchCloudSyncResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; DraftMatchCloudSyncResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; is DraftMatchCloudSyncResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT; is DraftMatchCloudSyncResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN }

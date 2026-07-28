@@ -39,6 +39,7 @@ const val TOURNAMENT_CLOUD_UPLOAD_ACTION_TEST_TAG = "tournament_cloud_upload_act
 const val TOURNAMENT_CLOUD_UPLOAD_STATUS_TEST_TAG = "tournament_cloud_upload_status"
 const val DRAFT_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "draft_match_cloud_sync_action"
 const val DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "draft_match_cloud_sync_status"
+const val DRAFT_MATCH_CONFLICT_RESOLUTION_ACTION_TEST_TAG = "draft_match_conflict_resolution_action"
 const val FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "finalized_match_cloud_sync_action"
 const val FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "finalized_match_cloud_sync_status"
 const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
@@ -54,6 +55,7 @@ fun TournamentDetailsRoute(
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
+    onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = {},
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
     uploadViewModel: TournamentCloudUploadViewModel? = null,
     draftMatchSyncViewModel: DraftMatchCloudSyncViewModel? = null,
@@ -99,6 +101,7 @@ fun TournamentDetailsRoute(
         onUpload = { id -> uploadViewModel?.upload(id) },
         draftMatchSyncUiState = draftMatchSyncUiState,
         onSyncDraftMatches = { id -> draftMatchSyncViewModel?.sync(id) },
+        onResolveDraftConflict = onResolveDraftConflict,
         finalizedMatchSyncUiState = finalizedMatchSyncUiState,
         onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
         matchCloudRestorationUiState = matchCloudRestorationUiState,
@@ -120,6 +123,7 @@ fun TournamentDetailsScreen(
     onUpload: (String) -> Unit = {},
     draftMatchSyncUiState: DraftMatchCloudSyncUiState = DraftMatchCloudSyncUiState.Idle,
     onSyncDraftMatches: (String) -> Unit = {},
+    onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = {},
     finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState = FinalizedMatchCloudSyncUiState.Idle,
     onSyncFinalizedMatches: (String) -> Unit = {},
     matchCloudRestorationUiState: MatchCloudRestorationUiState = MatchCloudRestorationUiState.Idle,
@@ -145,6 +149,7 @@ fun TournamentDetailsScreen(
             onUpload = onUpload,
             draftMatchSyncUiState = draftMatchSyncUiState,
             onSyncDraftMatches = onSyncDraftMatches,
+            onResolveDraftConflict = onResolveDraftConflict,
             finalizedMatchSyncUiState = finalizedMatchSyncUiState,
             onSyncFinalizedMatches = onSyncFinalizedMatches,
             matchCloudRestorationUiState = matchCloudRestorationUiState,
@@ -167,6 +172,7 @@ private fun TournamentDetailsContent(
     onUpload: (String) -> Unit,
     draftMatchSyncUiState: DraftMatchCloudSyncUiState,
     onSyncDraftMatches: (String) -> Unit,
+    onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit,
     finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState,
     onSyncFinalizedMatches: (String) -> Unit,
     matchCloudRestorationUiState: MatchCloudRestorationUiState,
@@ -222,6 +228,7 @@ private fun TournamentDetailsContent(
             tournamentId = tournament.id,
             uiState = draftMatchSyncUiState,
             onSync = onSyncDraftMatches,
+            onResolveConflict = onResolveDraftConflict,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         FinalizedMatchCloudSyncSection(
@@ -339,6 +346,7 @@ private fun DraftMatchCloudSyncSection(
     tournamentId: String,
     uiState: DraftMatchCloudSyncUiState,
     onSync: (String) -> Unit,
+    onResolveConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -378,11 +386,19 @@ private fun DraftMatchCloudSyncSection(
                     stringResource(R.string.sync_draft_matches_queued)
                 DraftMatchCloudSyncUiState.QueuePersistenceFailure ->
                     stringResource(R.string.sync_draft_matches_queue_persistence_failed)
+                is DraftMatchCloudSyncUiState.Conflict -> stringResource(R.string.draft_conflict_detected)
                 is DraftMatchCloudSyncUiState.PartialFailure ->
                     stringResource(R.string.sync_draft_matches_partial_failure)
             },
             modifier = Modifier.testTag(DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG),
         )
+        val conflict = (uiState as? DraftMatchCloudSyncUiState.Conflict)?.context
+        if (conflict != null) {
+            TextButton(
+                onClick = { onResolveConflict(conflict) },
+                modifier = Modifier.testTag(DRAFT_MATCH_CONFLICT_RESOLUTION_ACTION_TEST_TAG),
+            ) { Text(stringResource(R.string.resolve_draft_conflict_action)) }
+        }
     }
 }
 

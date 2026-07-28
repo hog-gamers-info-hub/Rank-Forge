@@ -14,6 +14,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.ConflictOperation
+import com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext
+import com.hoggamers.rankforge.domain.tournament.ConflictResolvability
+import com.hoggamers.rankforge.domain.sync.CloudRevision
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
 @RunWith(AndroidJUnit4::class)
@@ -70,6 +75,33 @@ class DraftMatchCloudSyncScreenTest {
         composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, draftMatchSyncUiState = DraftMatchCloudSyncUiState.QueuePersistenceFailure) } }
         composeTestRule.onNodeWithTag(DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
             .assertTextEquals("Draft-match sync failed and could not be saved locally.")
+    }
+
+    @Test
+    fun draftConflictShowsExplicitResolutionAction() {
+        var selected: ConflictResolutionContext? = null
+        val context = ConflictResolutionContext(
+            tournamentId = TOURNAMENT_ID,
+            operation = ConflictOperation.DRAFT_MATCH_SYNC,
+            conflict = RevisionConflict.StaleWrite(CloudRevision(2), CloudRevision(3)),
+            resolvability = ConflictResolvability.DRAFT_RESOLVABLE,
+            currentCloudRevision = CloudRevision(3),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = detailsState(),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    draftMatchSyncUiState = DraftMatchCloudSyncUiState.Conflict(context),
+                    onResolveDraftConflict = { selected = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(DRAFT_MATCH_CONFLICT_RESOLUTION_ACTION_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle { assertEquals(context, selected) }
     }
 
     private fun detailsState() = TournamentDetailsUiState(

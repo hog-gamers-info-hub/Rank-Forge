@@ -19,7 +19,10 @@ sealed interface DraftMatchCloudSyncResult {
     data object ValidationFailure : DraftMatchCloudSyncResult
     data object AuthorizationFailure : DraftMatchCloudSyncResult
     data object NetworkFailure : DraftMatchCloudSyncResult
-    data class Conflict(val conflict: RevisionConflict) : DraftMatchCloudSyncResult
+    data class Conflict(
+        val conflict: RevisionConflict,
+        val context: ConflictResolutionContext? = null,
+    ) : DraftMatchCloudSyncResult
     data class PartialFailure(
         val completedStage: DraftMatchCloudSyncStage,
     ) : DraftMatchCloudSyncResult

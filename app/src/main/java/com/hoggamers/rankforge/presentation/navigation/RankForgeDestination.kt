@@ -17,6 +17,12 @@ data class TournamentDetailsDestination(
 )
 
 @Serializable
+data class DraftConflictResolutionDestination(
+    val tournamentId: String,
+    val currentCloudRevision: Int,
+)
+
+@Serializable
 data class TeamEntryDestination(
     val tournamentId: String,
     val focusSlotNumber: Int? = null,
