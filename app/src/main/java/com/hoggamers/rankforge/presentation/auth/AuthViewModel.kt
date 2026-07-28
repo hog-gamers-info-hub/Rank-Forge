@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import java.util.concurrent.CancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -27,6 +28,7 @@ class AuthViewModel @Inject constructor(
     private val signUp: SignUpUseCase,
     private val login: LoginUseCase,
     private val logout: LogoutUseCase,
+    private val recoverForegroundSyncQueue: ForegroundSyncQueueRecoveryAction,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState(isSessionLoading = true))
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -44,6 +46,16 @@ class AuthViewModel @Inject constructor(
             }
             _uiState.update { currentState ->
                 AuthUiStateReducer.reduceRestoration(currentState, restoration)
+            }
+
+            if (restoration is AuthRestorationResult.Restored) {
+                try {
+                    recoverForegroundSyncQueue.recoverAfterAuthenticatedSession()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Queue recovery must not change the restored authentication result.
+                }
             }
 
             observeAuthState().collect { authState ->
