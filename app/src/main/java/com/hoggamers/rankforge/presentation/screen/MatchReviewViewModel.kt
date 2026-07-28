@@ -127,6 +127,8 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotValidationInProgress = current.isScreenshotValidationInProgress,
                         isSelectedScreenshotValidated = current.isSelectedScreenshotValidated,
                         imageValidationError = current.imageValidationError,
+                        linkedScreenshotUri = current.linkedScreenshotUri,
+                        screenshotLinkError = current.screenshotLinkError,
                     )
                 }
             }
@@ -199,6 +201,7 @@ class MatchReviewViewModel @Inject constructor(
                     isScreenshotValidationInProgress = false,
                     isSelectedScreenshotValidated = false,
                     imageValidationError = ImageValidationError.EMPTY_URI,
+                    screenshotLinkError = null,
                 )
             }
             return
@@ -213,6 +216,7 @@ class MatchReviewViewModel @Inject constructor(
                 isScreenshotValidationInProgress = true,
                 isSelectedScreenshotValidated = false,
                 imageValidationError = null,
+                screenshotLinkError = null,
             )
         }
         validationJob = viewModelScope.launch {
@@ -247,6 +251,50 @@ class MatchReviewViewModel @Inject constructor(
                 isPhotoPickerLaunchPending = false,
                 isPhotoPickerRequestActive = false,
                 photoPickerError = PhotoPickerError.LAUNCH_FAILED,
+            )
+        }
+    }
+
+    fun linkScreenshot() {
+        val current = _uiState.value
+        val error = when {
+            current.tournamentId.isNullOrBlank() -> ScreenshotLinkError.MISSING_TOURNAMENT_ID
+            current.matchId.isNullOrBlank() -> ScreenshotLinkError.MISSING_MATCH_ID
+            current.status == MatchStatus.FINALIZED -> ScreenshotLinkError.FINALIZED_MATCH
+            !current.isSelectedScreenshotValidated || current.selectedScreenshotUri.isNullOrBlank() ->
+                ScreenshotLinkError.INVALID_IMAGE
+            !current.isAvailable -> ScreenshotLinkError.INVALID_IMAGE
+            else -> null
+        }
+        if (error != null) {
+            _uiState.update { it.copy(screenshotLinkError = error) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                linkedScreenshotUri = it.selectedScreenshotUri,
+                screenshotLinkError = null,
+            )
+        }
+    }
+
+    fun unlinkScreenshot() {
+        val current = _uiState.value
+        val error = when {
+            current.tournamentId.isNullOrBlank() -> ScreenshotLinkError.MISSING_TOURNAMENT_ID
+            current.matchId.isNullOrBlank() -> ScreenshotLinkError.MISSING_MATCH_ID
+            current.status == MatchStatus.FINALIZED -> ScreenshotLinkError.FINALIZED_MATCH
+            !current.isAvailable -> ScreenshotLinkError.INVALID_IMAGE
+            else -> null
+        }
+        if (error != null) {
+            _uiState.update { it.copy(screenshotLinkError = error) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                linkedScreenshotUri = null,
+                screenshotLinkError = null,
             )
         }
     }

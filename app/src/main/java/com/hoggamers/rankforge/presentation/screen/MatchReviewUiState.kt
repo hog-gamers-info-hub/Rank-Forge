@@ -16,6 +16,13 @@ enum class PhotoPickerError {
     LAUNCH_FAILED,
 }
 
+enum class ScreenshotLinkError {
+    INVALID_IMAGE,
+    MISSING_TOURNAMENT_ID,
+    MISSING_MATCH_ID,
+    FINALIZED_MATCH,
+}
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -36,6 +43,8 @@ data class MatchReviewUiState(
     val isScreenshotValidationInProgress: Boolean = false,
     val isSelectedScreenshotValidated: Boolean = false,
     val imageValidationError: ImageValidationError? = null,
+    val linkedScreenshotUri: String? = null,
+    val screenshotLinkError: ScreenshotLinkError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

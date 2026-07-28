@@ -209,6 +209,111 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun validatedDraftScreenshotCanLinkReplaceAndUnlinkWithoutChangingMatchData() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        val beforeMatch = repository.observeMatchById(matchId).first()
+
+        viewModel.onPhotoPickerResult("content://picker/first")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+
+        assertEquals("content://picker/first", viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(beforeMatch, repository.observeMatchById(matchId).first())
+
+        viewModel.onPhotoPickerResult("content://picker/second")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        assertEquals("content://picker/second", viewModel.uiState.value.linkedScreenshotUri)
+
+        viewModel.unlinkScreenshot()
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(beforeMatch, repository.observeMatchById(matchId).first())
+    }
+
+    @Test
+    fun screenshotLinkDoesNotCarryToAnotherMatchContext() = runTest {
+        val secondMatchId = (CreateMatchUseCase(repository)(
+            CreateMatchInput(
+                tournamentId = "tournament-id",
+                matchNumber = "2",
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+            ),
+        ) as CreateMatchResult.Created).match.id
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/first")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        assertEquals("content://picker/first", viewModel.uiState.value.linkedScreenshotUri)
+
+        viewModel.load("tournament-id", secondMatchId)
+        advanceUntilIdle()
+
+        assertEquals(secondMatchId, viewModel.uiState.value.matchId)
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+    }
+
+    @Test
+    fun invalidScreenshotCannotBeLinked() = runTest {
+        val viewModel = reviewViewModel(
+            ImageCandidateValidator(
+                ImageCandidateMetadataReader {
+                    ImageCandidateReadResult.Metadata("image/gif", width = 1080, height = 1920)
+                },
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/unsupported")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(ScreenshotLinkError.INVALID_IMAGE, viewModel.uiState.value.screenshotLinkError)
+    }
+
+    @Test
+    fun finalizedMatchCannotLinkOrReplaceScreenshot() = runTest {
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = "0",
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/validated")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+
+        assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(ScreenshotLinkError.FINALIZED_MATCH, viewModel.uiState.value.screenshotLinkError)
+    }
+
+    @Test
+    fun missingTournamentContextBlocksLinkingWithoutCrashing() = runTest {
+        val viewModel = reviewViewModel()
+
+        viewModel.linkScreenshot()
+
+        assertEquals(ScreenshotLinkError.MISSING_TOURNAMENT_ID, viewModel.uiState.value.screenshotLinkError)
+    }
+
+    @Test
     fun repeatedPhotoPickerRequestsDoNotCreateConcurrentLaunchState() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
