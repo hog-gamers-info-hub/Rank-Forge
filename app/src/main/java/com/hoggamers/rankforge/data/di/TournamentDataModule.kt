@@ -36,6 +36,7 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.StartMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
+import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 
@@ -230,7 +231,8 @@ object TournamentDataProvidersModule {
     fun provideSubmitMatchCorrectionUseCase(
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
-    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(repository, validateMatchResult)
+        protectedCorrection: ProtectedMatchCorrectionAction,
+    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(repository, validateMatchResult, protectedCorrection)
 
     @Provides
     @Singleton

@@ -29,6 +29,8 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
+import com.hoggamers.rankforge.domain.sync.CloudRevision
+import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 
 @Singleton
 class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
@@ -37,6 +39,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
     private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
     private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
+    private val cloudRevisions = MutableStateFlow<Map<String, Int>>(emptyMap())
 
     override suspend fun create(tournament: Tournament) {
         tournaments.update { current ->
@@ -49,6 +52,16 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
                 current + (tournament.id to TeamSlot.fixedSlotsForTournament(tournament.id))
             }
         }
+        cloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
+    }
+
+    override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState =
+        cloudRevisions.value[tournamentId]?.let { revision ->
+            LocalRevisionState(localRevision = revision, baseCloudRevision = CloudRevision(revision))
+        } ?: LocalRevisionState.Missing
+
+    override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {
+        cloudRevisions.update { it + (tournamentId to cloudRevision) }
     }
 
     override fun observeAll(): Flow<List<Tournament>> = tournaments

@@ -6,6 +6,11 @@ enum class MatchCorrectionGlobalError {
     MATCH_NOT_FOUND,
     MATCH_NOT_FINALIZED,
     INVALID_DATA,
+    AUTHENTICATION_REQUIRED,
+    AUTHORIZATION_FAILURE,
+    NETWORK_FAILURE,
+    CONFLICT,
+    MISSING_REVISION,
 }
 
 sealed interface StartMatchCorrectionResult {
@@ -45,6 +50,9 @@ sealed interface SubmitMatchCorrectionResult {
 class SubmitMatchCorrectionUseCase(
     private val repository: TournamentRepository,
     private val validateMatchResult: ValidateMatchResultUseCase,
+    private val protectedCorrection: ProtectedMatchCorrectionAction = ProtectedMatchCorrectionAction {
+        ProtectedMatchCorrectionResult.AuthenticationRequired
+    },
 ) {
     suspend operator fun invoke(input: SubmitMatchCorrectionInput): SubmitMatchCorrectionResult {
         val match = repository.observeMatchById(input.matchId).first()
@@ -74,6 +82,36 @@ class SubmitMatchCorrectionUseCase(
                 kills = row.kills!!.trim().toInt(),
             )
         }
+        val tournament = repository.observeById(match.tournamentId).first()
+            ?: return cloudFailure(MatchCorrectionGlobalError.MATCH_NOT_FOUND, match)
+        val expectedRevision = repository.readLocalRevisionState(match.tournamentId).expectedCloudRevision
+            ?: return cloudFailure(MatchCorrectionGlobalError.MISSING_REVISION, match)
+        val protectedResult = protectedCorrection(
+            ProtectedMatchCorrectionRequest(
+                tournament = tournament,
+                match = match,
+                placements = placements,
+                kills = kills,
+                expectedRevision = expectedRevision,
+            ),
+        )
+        val cloudRevision = when (protectedResult) {
+            is ProtectedMatchCorrectionResult.Success -> protectedResult.revision
+            is ProtectedMatchCorrectionResult.AlreadyCorrected -> protectedResult.revision
+            ProtectedMatchCorrectionResult.AuthenticationRequired -> return cloudFailure(MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED, match)
+            ProtectedMatchCorrectionResult.AuthorizationFailure -> return cloudFailure(MatchCorrectionGlobalError.AUTHORIZATION_FAILURE, match)
+            ProtectedMatchCorrectionResult.NetworkFailure -> return cloudFailure(MatchCorrectionGlobalError.NETWORK_FAILURE, match)
+            ProtectedMatchCorrectionResult.ValidationFailure -> return cloudFailure(MatchCorrectionGlobalError.INVALID_DATA, match)
+            ProtectedMatchCorrectionResult.MatchNotFinalized -> return cloudFailure(MatchCorrectionGlobalError.MATCH_NOT_FINALIZED, match)
+            is ProtectedMatchCorrectionResult.Conflict -> return cloudFailure(
+                if (protectedResult.conflict is com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision) {
+                    MatchCorrectionGlobalError.MISSING_REVISION
+                } else {
+                    MatchCorrectionGlobalError.CONFLICT
+                },
+                match,
+            )
+        }
         return when (
             val result = repository.submitMatchCorrection(
                 matchId = input.matchId,
@@ -81,8 +119,10 @@ class SubmitMatchCorrectionUseCase(
                 kills = kills,
             )
         ) {
-            is SubmitMatchCorrectionRepositoryResult.Submitted ->
+            is SubmitMatchCorrectionRepositoryResult.Submitted -> {
+                repository.confirmCloudRevision(match.tournamentId, cloudRevision)
                 SubmitMatchCorrectionResult.Submitted(result.match)
+            }
             is SubmitMatchCorrectionRepositoryResult.Rejected ->
                 SubmitMatchCorrectionResult.Invalid(
                     validation = validateMatchResult(match),
@@ -94,6 +134,14 @@ class SubmitMatchCorrectionUseCase(
                 )
         }
     }
+
+    private fun cloudFailure(
+        error: MatchCorrectionGlobalError,
+        match: Match,
+    ): SubmitMatchCorrectionResult.Invalid = SubmitMatchCorrectionResult.Invalid(
+        validation = validateMatchResult(match),
+        globalError = error,
+    )
 }
 
 enum class MatchCorrectionFailure {
