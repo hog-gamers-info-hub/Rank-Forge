@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.map
         val entry = SyncQueueEntry(UUID.randomUUID().toString(), operationType, tournamentId, System.currentTimeMillis(), status, failureCategory, 0)
         dao.insert(entry.toEntity()); return entry
     }
+    override suspend fun incrementAttemptCount(id: String) { dao.incrementAttemptCount(id) }
+    override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) { dao.updateStatus(id, status.name, failureCategory) }
     override suspend fun markCompleted(id: String) { dao.updateStatus(id, SyncQueueStatus.COMPLETED.name, null) }
     override suspend fun remove(id: String) { dao.delete(id) }
 }

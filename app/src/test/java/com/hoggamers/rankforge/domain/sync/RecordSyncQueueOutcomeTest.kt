@@ -21,6 +21,8 @@ class RecordSyncQueueOutcomeTest {
         val entries = mutableListOf<SyncQueueEntry>()
         override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(entries)
         override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?) = SyncQueueEntry("${entries.size}", operationType, tournamentId, 0, status, failureCategory, 0).also(entries::add)
+        override suspend fun incrementAttemptCount(id: String) = Unit
+        override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
         override suspend fun markCompleted(id: String) = Unit
         override suspend fun remove(id: String) = Unit
     }
