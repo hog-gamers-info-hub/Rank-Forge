@@ -13,7 +13,6 @@ enum class MatchReviewNavigation {
 }
 
 enum class PhotoPickerError {
-    INVALID_RESULT,
     LAUNCH_FAILED,
 }
 
@@ -34,6 +33,9 @@ data class MatchReviewUiState(
     val isPhotoPickerLaunchPending: Boolean = false,
     val isPhotoPickerRequestActive: Boolean = false,
     val photoPickerError: PhotoPickerError? = null,
+    val isScreenshotValidationInProgress: Boolean = false,
+    val isSelectedScreenshotValidated: Boolean = false,
+    val imageValidationError: ImageValidationError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

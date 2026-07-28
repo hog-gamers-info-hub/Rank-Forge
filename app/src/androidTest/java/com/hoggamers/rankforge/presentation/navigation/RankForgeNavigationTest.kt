@@ -723,6 +723,15 @@ class RankForgeNavigationTest {
                     observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
                     validateMatchResult = ValidateMatchResultUseCase(),
                     finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+                    imageCandidateValidator = com.hoggamers.rankforge.presentation.screen.ImageCandidateValidator(
+                        com.hoggamers.rankforge.presentation.screen.ImageCandidateMetadataReader {
+                            com.hoggamers.rankforge.presentation.screen.ImageCandidateReadResult.Metadata(
+                                "image/png",
+                                width = 1080,
+                                height = 1920,
+                            )
+                        },
+                    ),
                 ).also {
                     it.load(tournamentId, matchId)
                 }

@@ -104,7 +104,10 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState().copy(selectedScreenshotUri = "content://picker/selected"),
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                    ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -138,6 +141,28 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun invalidImageSelectionShowsValidationErrorWithoutValidatedConfirmation() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/unsupported",
+                        imageValidationError = ImageValidationError.UNSUPPORTED_FORMAT,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG).assertCountEquals(0)
     }
 
     @Test

@@ -31,10 +31,12 @@ class MatchReviewViewModel @Inject constructor(
     private val observeDraftValues: ObserveMatchDraftValuesUseCase,
     private val validateMatchResult: ValidateMatchResultUseCase,
     private val finalizeMatch: FinalizeMatchUseCase,
+    private val imageCandidateValidator: ImageCandidateValidator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
+    private var validationJob: Job? = null
     private var loadedMatchKey: String? = null
 
     fun load(tournamentId: String, matchId: String) {
@@ -42,6 +44,7 @@ class MatchReviewViewModel @Inject constructor(
         if (loadedMatchKey == matchKey) return
         loadedMatchKey = matchKey
         loadJob?.cancel()
+        validationJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -121,6 +124,9 @@ class MatchReviewViewModel @Inject constructor(
                         isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
                         isPhotoPickerRequestActive = current.isPhotoPickerRequestActive,
                         photoPickerError = current.photoPickerError,
+                        isScreenshotValidationInProgress = current.isScreenshotValidationInProgress,
+                        isSelectedScreenshotValidated = current.isSelectedScreenshotValidated,
+                        imageValidationError = current.imageValidationError,
                     )
                 }
             }
@@ -172,23 +178,65 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     fun onPhotoPickerResult(selectedUri: String?) {
-        _uiState.update { current ->
-            when {
-                selectedUri == null -> current.copy(
+        if (selectedUri == null) {
+            _uiState.update {
+                it.copy(
                     isPhotoPickerLaunchPending = false,
                     isPhotoPickerRequestActive = false,
                 )
-                selectedUri.isBlank() -> current.copy(
-                    isPhotoPickerLaunchPending = false,
-                    isPhotoPickerRequestActive = false,
-                    photoPickerError = PhotoPickerError.INVALID_RESULT,
-                )
-                else -> current.copy(
-                    selectedScreenshotUri = selectedUri,
+            }
+            return
+        }
+
+        validationJob?.cancel()
+        if (selectedUri.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    selectedScreenshotUri = null,
                     isPhotoPickerLaunchPending = false,
                     isPhotoPickerRequestActive = false,
                     photoPickerError = null,
+                    isScreenshotValidationInProgress = false,
+                    isSelectedScreenshotValidated = false,
+                    imageValidationError = ImageValidationError.EMPTY_URI,
                 )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                selectedScreenshotUri = selectedUri,
+                isPhotoPickerLaunchPending = false,
+                isPhotoPickerRequestActive = false,
+                photoPickerError = null,
+                isScreenshotValidationInProgress = true,
+                isSelectedScreenshotValidated = false,
+                imageValidationError = null,
+            )
+        }
+        validationJob = viewModelScope.launch {
+            val result = runCatching { imageCandidateValidator.validate(selectedUri) }
+                .getOrElse {
+                    ImageCandidateValidationResult.Invalid(ImageValidationError.DECODE_FAILED)
+                }
+            _uiState.update { current ->
+                if (current.selectedScreenshotUri != selectedUri) {
+                    current
+                } else {
+                    when (result) {
+                        ImageCandidateValidationResult.Valid -> current.copy(
+                            isScreenshotValidationInProgress = false,
+                            isSelectedScreenshotValidated = true,
+                            imageValidationError = null,
+                        )
+                        is ImageCandidateValidationResult.Invalid -> current.copy(
+                            isScreenshotValidationInProgress = false,
+                            isSelectedScreenshotValidated = false,
+                            imageValidationError = result.error,
+                        )
+                    }
+                }
             }
         }
     }

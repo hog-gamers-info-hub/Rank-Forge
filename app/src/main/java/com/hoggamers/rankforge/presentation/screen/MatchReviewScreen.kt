@@ -51,6 +51,7 @@ const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_hi
 const val MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG = "match_review_photo_picker_action"
 const val MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG = "match_review_selected_screenshot"
 const val MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG = "match_review_photo_picker_error"
+const val MATCH_REVIEW_SCREENSHOT_VALIDATION_IN_PROGRESS_TEST_TAG = "match_review_screenshot_validation_in_progress"
 
 @Composable
 fun MatchReviewRoute(
@@ -220,15 +221,28 @@ private fun MatchReviewContent(
         ) {
             Text(stringResource(R.string.match_review_select_screenshot_action))
         }
-        if (uiState.selectedScreenshotUri != null) {
+        if (uiState.isScreenshotValidationInProgress) {
             Text(
-                text = stringResource(R.string.match_review_screenshot_selected),
+                text = stringResource(R.string.match_review_screenshot_validating),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_VALIDATION_IN_PROGRESS_TEST_TAG),
+            )
+        }
+        if (uiState.isSelectedScreenshotValidated) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_selected_and_validated),
                 modifier = Modifier.testTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG),
             )
         }
         if (uiState.photoPickerError != null) {
             Text(
                 text = stringResource(uiState.photoPickerError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
+            )
+        }
+        if (uiState.imageValidationError != null) {
+            Text(
+                text = stringResource(uiState.imageValidationError.toMessageRes()),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
             )
@@ -480,6 +494,15 @@ private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.t
 }
 
 private fun PhotoPickerError.toMessageRes(): Int = when (this) {
-    PhotoPickerError.INVALID_RESULT -> R.string.match_review_photo_picker_invalid_result_error
     PhotoPickerError.LAUNCH_FAILED -> R.string.match_review_photo_picker_launch_failed_error
+}
+
+private fun ImageValidationError.toMessageRes(): Int = when (this) {
+    ImageValidationError.EMPTY_URI -> R.string.match_review_image_validation_empty_uri_error
+    ImageValidationError.NON_IMAGE_CONTENT -> R.string.match_review_image_validation_non_image_error
+    ImageValidationError.UNSUPPORTED_FORMAT -> R.string.match_review_image_validation_unsupported_format_error
+    ImageValidationError.UNREADABLE_URI -> R.string.match_review_image_validation_unreadable_error
+    ImageValidationError.DECODE_FAILED -> R.string.match_review_image_validation_decode_failed_error
+    ImageValidationError.INVALID_DIMENSIONS -> R.string.match_review_image_validation_invalid_dimensions_error
+    ImageValidationError.IMAGE_TOO_LARGE -> R.string.match_review_image_validation_too_large_error
 }
