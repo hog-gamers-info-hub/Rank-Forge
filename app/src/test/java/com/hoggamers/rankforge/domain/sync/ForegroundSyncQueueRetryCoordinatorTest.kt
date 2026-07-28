@@ -60,6 +60,25 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(3, attempted.single().attemptCount)
     }
 
+    @Test fun duplicateEligibleEntriesExecuteOnlyTheOldestOperationIdentity() = runTest {
+        val oldest = entry(SyncQueueOperationType.DRAFT_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK).copy(
+            id = "oldest",
+            createdAtEpochMillis = 1,
+        )
+        val duplicate = oldest.copy(id = "duplicate", createdAtEpochMillis = 2)
+        val repository = RecordingRepository(listOf(oldest, duplicate))
+        val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
+
+        ForegroundSyncQueueRetryCoordinator(repository, executor).retryEligible(
+            listOf(duplicate, oldest),
+            hasAuthenticatedSession = false,
+        )
+
+        assertEquals(listOf("oldest"), executor.executedEntries.map { it.id })
+        assertEquals(SyncQueueStatus.COMPLETED, repository.entries.first { it.id == "oldest" }.status)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK, repository.entries.first { it.id == "duplicate" }.status)
+    }
+
     @Test fun failedEligibleRetryUpdatesStatusAndFailureMetadata() = runTest {
         val entry = entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
         val repository = RecordingRepository(listOf(entry))
@@ -110,6 +129,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             status: SyncQueueStatus,
             failureCategory: String?,
         ): SyncQueueEntry = error("not used")
+        override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
         override suspend fun incrementAttemptCount(id: String) {
             incrementedIds += id
             replace(id) { it.copy(attemptCount = it.attemptCount + 1) }

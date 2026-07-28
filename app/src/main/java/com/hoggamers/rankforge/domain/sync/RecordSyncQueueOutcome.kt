@@ -7,7 +7,16 @@ enum class QueueRecordingResult { NOT_REQUIRED, RECORDED, PERSISTENCE_FAILED }
 
 class RecordSyncQueueOutcome @Inject constructor(private val repository: PersistentSyncQueueRepository) {
     suspend fun record(operation: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus): QueueRecordingResult {
-        if (status == SyncQueueStatus.COMPLETED) return QueueRecordingResult.NOT_REQUIRED
+        if (status == SyncQueueStatus.COMPLETED) {
+            try {
+                repository.completeOldestUnresolved(operation, tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // A successful cloud action remains successful if completion persistence is unavailable.
+            }
+            return QueueRecordingResult.NOT_REQUIRED
+        }
         return try {
             repository.enqueue(operation, tournamentId, status, status.name)
             QueueRecordingResult.RECORDED

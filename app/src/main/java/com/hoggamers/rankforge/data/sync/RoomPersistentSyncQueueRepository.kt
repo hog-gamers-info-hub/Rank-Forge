@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.SyncQueueEntity
 import com.hoggamers.rankforge.domain.sync.PersistentSyncQueueRepository
 import com.hoggamers.rankforge.domain.sync.SyncQueueEntry
+import com.hoggamers.rankforge.domain.sync.SyncOperationIdentity
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import java.util.UUID
@@ -11,12 +12,29 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton class RoomPersistentSyncQueueRepository @Inject constructor(private val dao: SyncQueueDao) : PersistentSyncQueueRepository {
+    private val enqueueMutex = Mutex()
     override fun observeAll(): Flow<List<SyncQueueEntry>> = dao.observeAll().map { entries -> entries.map { it.toDomain() } }
-    override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?): SyncQueueEntry {
+    override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?): SyncQueueEntry = enqueueMutex.withLock {
+        val identity = SyncOperationIdentity.from(operationType, tournamentId)
+        val existing = dao.findOldestUnresolved(identity.operationType.name, identity.tournamentId)
+        if (existing != null) {
+            dao.updateStatus(existing.id, status.name, failureCategory)
+            return@withLock existing.copy(status = status.name, failureCategory = failureCategory).toDomain()
+        }
         val entry = SyncQueueEntry(UUID.randomUUID().toString(), operationType, tournamentId, System.currentTimeMillis(), status, failureCategory, 0)
         dao.insert(entry.toEntity()); return entry
+    }
+    override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) {
+        enqueueMutex.withLock {
+            val identity = SyncOperationIdentity.from(operationType, tournamentId)
+            dao.findOldestUnresolved(identity.operationType.name, identity.tournamentId)?.let { entry ->
+                dao.updateStatus(entry.id, SyncQueueStatus.COMPLETED.name, null)
+            }
+        }
     }
     override suspend fun incrementAttemptCount(id: String) { dao.incrementAttemptCount(id) }
     override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) { dao.updateStatus(id, status.name, failureCategory) }

@@ -18,6 +18,8 @@ data class SyncQueueEntity(
 interface SyncQueueDao {
     @androidx.room.Query("SELECT * FROM sync_queue_entries ORDER BY createdAtEpochMillis")
     fun observeAll(): kotlinx.coroutines.flow.Flow<List<SyncQueueEntity>>
+    @androidx.room.Query("SELECT * FROM sync_queue_entries WHERE operationType = :operationType AND ((:tournamentId IS NULL AND tournamentId IS NULL) OR tournamentId = :tournamentId) AND status != 'COMPLETED' ORDER BY createdAtEpochMillis, id LIMIT 1")
+    suspend fun findOldestUnresolved(operationType: String, tournamentId: String?): SyncQueueEntity?
     @androidx.room.Insert
     suspend fun insert(entry: SyncQueueEntity)
     @androidx.room.Query("UPDATE sync_queue_entries SET status = :status, failureCategory = :failureCategory WHERE id = :id")
