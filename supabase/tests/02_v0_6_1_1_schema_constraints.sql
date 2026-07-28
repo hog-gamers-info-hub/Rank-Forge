@@ -116,6 +116,7 @@ insert into public.matches (id, tournament_id, match_number)
 values ('50000000-0000-0000-0000-000000000010', '20000000-0000-0000-0000-000000000002', 1);
 insert into public.match_results (id, match_id, team_slot_id, placement)
 values ('60000000-0000-0000-0000-000000000010', '50000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000010', 1);
+delete from public.matches where id = '50000000-0000-0000-0000-000000000010';
 delete from public.tournaments where id = '20000000-0000-0000-0000-000000000002';
 select is((
     (select count(*) from public.tournament_team_slots where id = '30000000-0000-0000-0000-000000000010')

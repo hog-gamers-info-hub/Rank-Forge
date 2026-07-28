@@ -91,11 +91,16 @@ select is((
         and (coalesce(qual, '') || coalesce(with_check, '')) ~* 'auth\.role'
 ), 0::bigint, 'no core policy uses auth.role');
 select is((
-    select count(*)
+    select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
-), 0::bigint, 'public has no functions or RPCs');
+        and procedure_row.proname in (
+            'write_tournament_snapshot',
+            'write_match_snapshot',
+            'finalize_match_snapshot'
+        )
+)::text, '{finalize_match_snapshot,write_match_snapshot,write_tournament_snapshot}'::text, 'approved revision-safe RPCs exist');
 select is((
     select count(*)
     from pg_trigger trigger_row
@@ -106,12 +111,12 @@ select is((
         and not trigger_row.tgisinternal
 ), 0::bigint, 'core tables have no user-defined triggers');
 select is((
-    select count(*)
+    select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
         and procedure_row.prosecdef
-), 0::bigint, 'public has no SECURITY DEFINER functions');
+)::text, '{finalize_match_snapshot}'::text, 'only protected finalization uses its documented security definer ownership check');
 
 insert into auth.users (id, email)
 values ('71000000-0000-0000-0000-000000000001', 'rls-owner@example.test');
