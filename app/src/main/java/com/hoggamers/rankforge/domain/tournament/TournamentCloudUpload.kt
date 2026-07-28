@@ -34,3 +34,7 @@ interface TournamentCloudUploadRepository {
 fun interface TournamentCloudUploadAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult>
 }
+
+fun interface TournamentCloudUploadRetryAction {
+    suspend fun executeForRetry(tournamentId: String): TournamentCloudUploadResult
+}

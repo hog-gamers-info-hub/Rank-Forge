@@ -29,3 +29,7 @@ interface DraftMatchCloudSyncRepository {
 fun interface DraftMatchCloudSyncAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<DraftMatchCloudSyncResult>
 }
+
+fun interface DraftMatchCloudSyncRetryAction {
+    suspend fun executeForRetry(tournamentId: String): DraftMatchCloudSyncResult
+}

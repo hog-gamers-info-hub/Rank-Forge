@@ -15,10 +15,17 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val cloudSyncRepository: FinalizedMatchCloudSyncRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
-) : FinalizedMatchCloudSyncAction {
+) : FinalizedMatchCloudSyncAction, FinalizedMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<FinalizedMatchCloudSyncResult> {
+    ): QueueAwareActionResult<FinalizedMatchCloudSyncResult> = record(
+        result = executeForRetry(tournamentId),
+        id = tournamentId,
+    )
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+    ): FinalizedMatchCloudSyncResult {
         val authenticated = try {
             authRepository.observeAuthState().first() is AuthState.SignedIn
         } catch (cancellation: CancellationException) {
@@ -26,11 +33,11 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         } catch (_: Throwable) {
             false
         }
-        if (!authenticated) return record(FinalizedMatchCloudSyncResult.AuthenticationRequired, tournamentId)
+        if (!authenticated) return FinalizedMatchCloudSyncResult.AuthenticationRequired
 
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()
-                ?: return record(FinalizedMatchCloudSyncResult.ValidationFailure, tournamentId)
+                ?: return FinalizedMatchCloudSyncResult.ValidationFailure
             FinalizedMatchCloudSyncSnapshot(
                 tournament = tournament,
                 matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first(),
@@ -38,10 +45,10 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return record(FinalizedMatchCloudSyncResult.ValidationFailure, tournamentId)
+            return FinalizedMatchCloudSyncResult.ValidationFailure
         }
 
-        return record(cloudSyncRepository.sync(snapshot), tournamentId)
+        return cloudSyncRepository.sync(snapshot)
     }
     private suspend fun record(
         result: FinalizedMatchCloudSyncResult,
