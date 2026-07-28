@@ -24,6 +24,12 @@ import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
+import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRepository
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRepository
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationAction
+import com.hoggamers.rankforge.domain.tournament.RestoreMatchesUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -104,4 +110,13 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentCloudRestorationAction(
         useCase: RestoreTournamentUseCase,
     ): TournamentCloudRestorationAction
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationRemoteDataSource(dataSource: SupabaseMatchCloudRestorationRemoteDataSource): MatchCloudRestorationRemoteDataSource
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationRepository(repository: SupabaseMatchCloudRestorationRepository): MatchCloudRestorationRepository
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationAction(useCase: RestoreMatchesUseCase): MatchCloudRestorationAction
 }

@@ -41,6 +41,8 @@ const val DRAFT_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "draft_match_cloud_sync_actio
 const val DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "draft_match_cloud_sync_status"
 const val FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "finalized_match_cloud_sync_action"
 const val FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "finalized_match_cloud_sync_status"
+const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
+const val MATCH_CLOUD_RESTORE_STATUS_TEST_TAG = "match_cloud_restore_status"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -56,6 +58,7 @@ fun TournamentDetailsRoute(
     uploadViewModel: TournamentCloudUploadViewModel? = null,
     draftMatchSyncViewModel: DraftMatchCloudSyncViewModel? = null,
     finalizedMatchSyncViewModel: FinalizedMatchCloudSyncViewModel? = null,
+    matchCloudRestorationViewModel: MatchCloudRestorationViewModel? = null,
 ) {
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
@@ -79,6 +82,9 @@ fun TournamentDetailsRoute(
         val state by finalizedMatchSyncViewModel.uiState.collectAsStateWithLifecycle()
         state
     }
+    val matchCloudRestorationUiState = if (matchCloudRestorationViewModel == null) MatchCloudRestorationUiState.Idle else {
+        val state by matchCloudRestorationViewModel.uiState.collectAsStateWithLifecycle(); state
+    }
 
     TournamentDetailsScreen(
         uiState = uiState,
@@ -95,6 +101,8 @@ fun TournamentDetailsRoute(
         onSyncDraftMatches = { id -> draftMatchSyncViewModel?.sync(id) },
         finalizedMatchSyncUiState = finalizedMatchSyncUiState,
         onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
+        matchCloudRestorationUiState = matchCloudRestorationUiState,
+        onRestoreMatches = { id -> matchCloudRestorationViewModel?.restore(id) },
     )
 }
 
@@ -114,6 +122,8 @@ fun TournamentDetailsScreen(
     onSyncDraftMatches: (String) -> Unit = {},
     finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState = FinalizedMatchCloudSyncUiState.Idle,
     onSyncFinalizedMatches: (String) -> Unit = {},
+    matchCloudRestorationUiState: MatchCloudRestorationUiState = MatchCloudRestorationUiState.Idle,
+    onRestoreMatches: (String) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -137,6 +147,8 @@ fun TournamentDetailsScreen(
             onSyncDraftMatches = onSyncDraftMatches,
             finalizedMatchSyncUiState = finalizedMatchSyncUiState,
             onSyncFinalizedMatches = onSyncFinalizedMatches,
+            matchCloudRestorationUiState = matchCloudRestorationUiState,
+            onRestoreMatches = onRestoreMatches,
         )
     }
 }
@@ -157,6 +169,8 @@ private fun TournamentDetailsContent(
     onSyncDraftMatches: (String) -> Unit,
     finalizedMatchSyncUiState: FinalizedMatchCloudSyncUiState,
     onSyncFinalizedMatches: (String) -> Unit,
+    matchCloudRestorationUiState: MatchCloudRestorationUiState,
+    onRestoreMatches: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -226,6 +240,8 @@ private fun TournamentDetailsContent(
             onReviewMatch = onReviewMatch,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        MatchCloudRestorationSection(tournament.id, matchCloudRestorationUiState, onRestoreMatches)
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = { onOpenStandings(tournament.id) },
             modifier = Modifier
@@ -241,6 +257,26 @@ private fun TournamentDetailsContent(
         ) {
             Text(text = stringResource(R.string.back_to_tournament_list_action))
         }
+    }
+}
+
+@Composable
+private fun MatchCloudRestorationSection(tournamentId: String, uiState: MatchCloudRestorationUiState, onRestore: (String) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+        Button(onClick = { onRestore(tournamentId) }, enabled = uiState !is MatchCloudRestorationUiState.Loading, modifier = Modifier.fillMaxWidth().testTag(MATCH_CLOUD_RESTORE_ACTION_TEST_TAG)) {
+            Text(text = stringResource(if (uiState is MatchCloudRestorationUiState.Loading) R.string.restore_matches_loading else R.string.restore_matches_action))
+        }
+        Text(text = when (uiState) {
+            MatchCloudRestorationUiState.Idle -> stringResource(R.string.restore_matches_ready)
+            MatchCloudRestorationUiState.Loading -> stringResource(R.string.restore_matches_loading)
+            MatchCloudRestorationUiState.Success -> stringResource(R.string.restore_matches_success)
+            MatchCloudRestorationUiState.NoCloudMatches -> stringResource(R.string.restore_matches_none)
+            MatchCloudRestorationUiState.AuthenticationRequired -> stringResource(R.string.restore_matches_authentication_required)
+            MatchCloudRestorationUiState.AuthorizationFailure -> stringResource(R.string.restore_matches_authorization_failure)
+            MatchCloudRestorationUiState.ValidationFailure -> stringResource(R.string.restore_matches_validation_failure)
+            MatchCloudRestorationUiState.NetworkFailure -> stringResource(R.string.restore_matches_network_failure)
+            MatchCloudRestorationUiState.LocalTransactionFailure -> stringResource(R.string.restore_matches_local_failure)
+        }, modifier = Modifier.testTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG))
     }
 }
 

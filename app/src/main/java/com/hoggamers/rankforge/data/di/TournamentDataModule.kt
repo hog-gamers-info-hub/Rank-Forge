@@ -29,6 +29,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.StartMatchCorrectionUseCase
@@ -51,6 +52,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindTournamentRestorationLocalRepository(
         repository: RoomTournamentRepository,
     ): TournamentRestorationLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchRestorationLocalRepository(
+        repository: RoomTournamentRepository,
+    ): MatchRestorationLocalRepository
 }
 
 @Module
