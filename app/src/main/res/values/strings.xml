@@ -276,6 +276,15 @@
     <string name="match_review_image_validation_decode_failed_error">The selected image could not be decoded. Try again.</string>
     <string name="match_review_image_validation_invalid_dimensions_error">The selected image has invalid dimensions.</string>
     <string name="match_review_image_validation_too_large_error">The selected image is too large. Choose a smaller image.</string>
+    <string name="match_review_screenshot_link_action">Link screenshot to match</string>
+    <string name="match_review_replace_screenshot_action">Replace linked screenshot</string>
+    <string name="match_review_unlink_screenshot_action">Remove linked screenshot</string>
+    <string name="match_review_screenshot_linked">Screenshot linked to this match.</string>
+    <string name="match_review_screenshot_link_finalized_protected">Finalized matches cannot link or replace screenshots.</string>
+    <string name="match_review_screenshot_link_invalid_image_error">Validate an image before linking it.</string>
+    <string name="match_review_screenshot_link_missing_tournament_error">The tournament context is missing. The screenshot was not linked.</string>
+    <string name="match_review_screenshot_link_missing_match_error">The match context is missing. The screenshot was not linked.</string>
+    <string name="match_review_screenshot_link_finalized_error">Finalized matches cannot link or replace screenshots.</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>
     <string name="start_match_correction_message">This opens an editable correction copy. The finalized result stays unchanged until you submit it.</string>

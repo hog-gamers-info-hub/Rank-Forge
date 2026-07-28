@@ -163,6 +163,65 @@ class MatchReviewScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun validatedScreenshotCanLinkAndLinkedStateShowsUnlinkAction() {
+        var linkCount = 0
+        var unlinkCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                        linkedScreenshotUri = "content://picker/selected",
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onLinkScreenshot = { linkCount++ },
+                    onUnlinkScreenshot = { unlinkCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(0, linkCount)
+            assertEquals(1, unlinkCount)
+        }
+    }
+
+    @Test
+    fun finalizedMatchDoesNotExposeScreenshotLinkActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Finalized matches cannot link or replace screenshots.")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
     }
 
     @Test

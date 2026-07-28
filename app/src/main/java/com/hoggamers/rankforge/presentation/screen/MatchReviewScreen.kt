@@ -52,6 +52,11 @@ const val MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG = "match_review_photo_picker
 const val MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG = "match_review_selected_screenshot"
 const val MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG = "match_review_photo_picker_error"
 const val MATCH_REVIEW_SCREENSHOT_VALIDATION_IN_PROGRESS_TEST_TAG = "match_review_screenshot_validation_in_progress"
+const val MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG = "match_review_link_screenshot_action"
+const val MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG = "match_review_replace_screenshot_action"
+const val MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG = "match_review_unlink_screenshot_action"
+const val MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG = "match_review_linked_screenshot"
+const val MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG = "match_review_screenshot_link_error"
 
 @Composable
 fun MatchReviewRoute(
@@ -114,6 +119,8 @@ fun MatchReviewRoute(
         onBackToDetails = viewModel::onBackToDetails,
         onFinalize = viewModel::finalize,
         onSelectScreenshot = viewModel::requestPhotoPicker,
+        onLinkScreenshot = viewModel::linkScreenshot,
+        onUnlinkScreenshot = viewModel::unlinkScreenshot,
     )
 }
 
@@ -126,6 +133,8 @@ fun MatchReviewScreen(
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
+    onLinkScreenshot: () -> Unit = {},
+    onUnlinkScreenshot: () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -140,6 +149,8 @@ fun MatchReviewScreen(
             onBackToDetails = onBackToDetails,
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
+            onLinkScreenshot = onLinkScreenshot,
+            onUnlinkScreenshot = onUnlinkScreenshot,
         )
     }
 }
@@ -153,6 +164,8 @@ private fun MatchReviewContent(
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
+    onLinkScreenshot: () -> Unit,
+    onUnlinkScreenshot: () -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -245,6 +258,54 @@ private fun MatchReviewContent(
                 text = stringResource(uiState.imageValidationError.toMessageRes()),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
+            )
+        }
+        if (uiState.linkedScreenshotUri != null) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_linked),
+                modifier = Modifier.testTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG),
+            )
+            if (uiState.isEditable) {
+                if (
+                    uiState.isSelectedScreenshotValidated &&
+                    uiState.selectedScreenshotUri != uiState.linkedScreenshotUri
+                ) {
+                    Button(
+                        onClick = onLinkScreenshot,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG),
+                    ) {
+                        Text(stringResource(R.string.match_review_replace_screenshot_action))
+                    }
+                }
+                TextButton(
+                    onClick = onUnlinkScreenshot,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.match_review_unlink_screenshot_action))
+                }
+            }
+        } else if (uiState.isEditable && uiState.isSelectedScreenshotValidated) {
+            Button(
+                onClick = onLinkScreenshot,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.match_review_screenshot_link_action))
+            }
+        }
+        if (uiState.status == MatchStatus.FINALIZED && uiState.isSelectedScreenshotValidated) {
+            Text(text = stringResource(R.string.match_review_screenshot_link_finalized_protected))
+        }
+        if (uiState.screenshotLinkError != null) {
+            Text(
+                text = stringResource(uiState.screenshotLinkError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG),
             )
         }
         if (uiState.isEditable) {
@@ -505,4 +566,11 @@ private fun ImageValidationError.toMessageRes(): Int = when (this) {
     ImageValidationError.DECODE_FAILED -> R.string.match_review_image_validation_decode_failed_error
     ImageValidationError.INVALID_DIMENSIONS -> R.string.match_review_image_validation_invalid_dimensions_error
     ImageValidationError.IMAGE_TOO_LARGE -> R.string.match_review_image_validation_too_large_error
+}
+
+private fun ScreenshotLinkError.toMessageRes(): Int = when (this) {
+    ScreenshotLinkError.INVALID_IMAGE -> R.string.match_review_screenshot_link_invalid_image_error
+    ScreenshotLinkError.MISSING_TOURNAMENT_ID -> R.string.match_review_screenshot_link_missing_tournament_error
+    ScreenshotLinkError.MISSING_MATCH_ID -> R.string.match_review_screenshot_link_missing_match_error
+    ScreenshotLinkError.FINALIZED_MATCH -> R.string.match_review_screenshot_link_finalized_error
 }
