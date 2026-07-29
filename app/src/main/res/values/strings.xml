@@ -375,4 +375,23 @@
     <string name="draft_conflict_accept_cloud_success">Cloud draft was accepted locally.</string>
     <string name="draft_conflict_blocked">This conflict cannot be resolved safely in this version.</string>
     <string name="draft_conflict_failed">The draft conflict could not be resolved. No local data was changed.</string>
+    <string name="roster_screenshot_intake_title">Roster screenshots</string>
+    <string name="roster_screenshot_intake_incomplete">Draft set: %1$d of %2$d screenshots selected.</string>
+    <string name="roster_screenshot_intake_complete">Complete set: %1$d of %2$d screenshots selected.</string>
+    <string name="roster_screenshot_intake_slot_label">Roster screenshot %1$d</string>
+    <string name="roster_screenshot_intake_validating">Validating selected image.</string>
+    <string name="roster_screenshot_intake_selected">Image selected and validated.</string>
+    <string name="roster_screenshot_intake_select_action">Select screenshot %1$d</string>
+    <string name="roster_screenshot_intake_replace_action">Replace screenshot %1$d</string>
+    <string name="roster_screenshot_intake_remove_action">Remove screenshot %1$d</string>
+    <string name="roster_screenshot_intake_missing_tournament">The tournament context is missing. A roster screenshot was not selected.</string>
+    <string name="roster_screenshot_intake_picker_failed">The image picker could not be opened. Try again.</string>
+    <string name="roster_screenshot_intake_empty_uri">The selected image is unavailable. Try again.</string>
+    <string name="roster_screenshot_intake_non_image">Select an image file.</string>
+    <string name="roster_screenshot_intake_unsupported_format">Select a PNG, JPEG, or WebP image.</string>
+    <string name="roster_screenshot_intake_unreadable">The selected image could not be read. Try another image.</string>
+    <string name="roster_screenshot_intake_decode_failed">The selected image could not be decoded. Try another image.</string>
+    <string name="roster_screenshot_intake_invalid_dimensions">The selected image has invalid dimensions.</string>
+    <string name="roster_screenshot_intake_too_large">The selected image is too large.</string>
+    <string name="roster_screenshot_intake_duplicate">This image is already selected for another roster screenshot.</string>
 </resources>

@@ -48,6 +48,9 @@ fun RosterReviewRoute(
         onEditRoster = onEditRoster,
         onConfirm = viewModel::confirmRoster,
         onBackToTeamEntry = onBackToTeamEntry,
+        rosterScreenshotIntake = {
+            RosterScreenshotIntakeRoute(tournamentId = tournamentId)
+        },
     )
 }
 
@@ -58,6 +61,7 @@ fun RosterReviewScreen(
     onEditRoster: (Int) -> Unit,
     onConfirm: () -> Unit,
     onBackToTeamEntry: () -> Unit,
+    rosterScreenshotIntake: @Composable () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -70,6 +74,7 @@ fun RosterReviewScreen(
             onEditRoster = onEditRoster,
             onConfirm = onConfirm,
             onBackToTeamEntry = onBackToTeamEntry,
+            rosterScreenshotIntake = rosterScreenshotIntake,
         )
     }
 }
@@ -81,6 +86,7 @@ private fun RosterReviewContent(
     onEditRoster: (Int) -> Unit,
     onConfirm: () -> Unit,
     onBackToTeamEntry: () -> Unit,
+    rosterScreenshotIntake: @Composable () -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -104,6 +110,8 @@ private fun RosterReviewContent(
             ),
             modifier = Modifier.testTag(ROSTER_REVIEW_STATUS_TEST_TAG),
         )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        rosterScreenshotIntake()
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         RosterValidationIssues(issues = uiState.validationIssues)
         if (uiState.validationIssues.isNotEmpty()) {

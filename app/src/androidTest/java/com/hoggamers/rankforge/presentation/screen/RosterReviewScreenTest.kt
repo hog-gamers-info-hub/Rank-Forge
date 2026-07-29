@@ -108,10 +108,14 @@ class RosterReviewScreenTest {
                         state = state.copy(status = TournamentStatus.CONFIRMED)
                     },
                     onBackToTeamEntry = {},
+                    rosterScreenshotIntake = {
+                        androidx.compose.material3.Text("Roster screenshot intake")
+                    },
                 )
             }
         }
 
+        composeTestRule.onNodeWithText("Roster screenshot intake").assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(ROSTER_REVIEW_SLOT_ITEM_TEST_TAG_PREFIX + 7)
             .performScrollTo()
