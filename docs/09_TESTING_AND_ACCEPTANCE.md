@@ -16,8 +16,8 @@ The approved testing principles are:
 * Tests must distinguish planned functionality from implemented functionality.
 * Deterministic domain logic must be unit tested independently from UI, OCR, storage, and networking.
 * Manual and OCR-assisted match processing must converge into the same validated result model.
-* Tournament rosters are manually entered and maintained through structured application input.
-* Roster import, roster-screenshot OCR, roster-image import, and automatic roster extraction are outside MVP scope unless separately approved and added to the roadmap.
+* Manual tournament rosters remain entered and maintained through structured application input.
+* The separately staged roster screenshot OCR extension produces candidate data only and requires review and explicit confirmation before persistence.
 * OCR confidence must not affect tournament scoring.
 * Finalized data must not be silently overwritten.
 * Repeated synchronization and export attempts must not create duplicates.
@@ -69,6 +69,9 @@ Required evidence boundaries:
 * Fake screenshots are not OCR acceptance evidence.
 * Private or sensitive screenshots must not be committed publicly.
 * Real screenshot acceptance remains deferred until approved samples exist.
+* Real screenshots, real player names, raw OCR payloads, and private paths must not appear in committed fixtures without explicit privacy approval.
+* Synthetic sanitized fixtures are preferred for automated intake, crop, extraction, parsing, validation, review, persistence, and sync tests.
+* Approved representative screenshot evaluation is local-only under documented privacy rules until a later canonical policy permits otherwise.
 
 ## 5. Unit Test Requirements
 
@@ -250,6 +253,9 @@ Required OCR and screenshot tests must cover:
 * Empty OCR result
 * Partial OCR result
 * OCR processing failure
+* Roster screenshot intake and operator-crop behavior
+* Cropped roster-layout compatibility, extraction, parsing, slot association, and validation
+* Atomic confirmed-roster replacement, revision-safe sync replacement, stale-player deletion, conflict handling, and rollback
 
 OCR acceptance requirements:
 
@@ -262,6 +268,7 @@ OCR acceptance requirements:
 * Target team-identification accuracy is at least 95 percent on the approved real screenshot test set.
 * Scoring accuracy after operator confirmation is 100 percent.
 * OCR acceptance remains deferred until approved genuine screenshots are available.
+* Real roster OCR acceptance requires approved representative screenshots and manually verified expected data; it must not use committed private screenshots or real player names without explicit approval.
 
 Fake screenshots are not accepted as OCR acceptance evidence.
 
@@ -465,13 +472,13 @@ Roadmap alignment for testing and acceptance is:
 * Phase 2 validates tournament and manual roster workflows.
 * Phase 3 validates manual match processing.
 * Phase 4 validates scoring and standings.
-* Phase 5 validates Room persistence, offline work, and recovery.
-* Phase 6 validates Supabase authentication, RLS, synchronization, idempotency, conflict handling, and finalized-data protection.
-* Phase 7 validates screenshot intake and storage.
-* Phase 8 validates OCR extraction and real screenshot evaluation.
-* Phase 9 validates matching, review, correction, and safe finalization.
+* Phase 5 validates Room persistence, offline work, recovery, and atomic confirmed-roster replacement.
+* Phase 6 validates Supabase authentication, RLS, synchronization, idempotency, conflict handling, finalized-data protection, and revision-safe roster replacement.
+* Phase 7 validates screenshot intake and storage, including roster intake, operator crop, and set association.
+* Phase 8 validates completed scoreboard OCR and the staged cropped roster extraction, parsing, association, and validation extension.
+* Phase 9 validates matching, review, correction, safe finalization, and roster OCR review/correction.
 * Phase 10 validates CSV and Google Sheets export.
 * Phase 11 validates complete workflow integration.
-* Phase 12 completes quality assurance and security validation.
+* Phase 12 completes quality assurance and security validation, including real roster OCR acceptance evaluation.
 * Phase 13 validates controlled real-tournament beta testing.
 * Phase 14 validates release-candidate and production-release evidence.

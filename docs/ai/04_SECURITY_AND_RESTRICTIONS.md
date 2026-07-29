@@ -103,10 +103,10 @@ If a task conflicts with security restrictions, Codex must stop and report the c
 
 ## 9. OCR and Image-Data Restrictions
 
-* OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
-* Roster-screenshot OCR is outside MVP.
-* Roster-image import is outside MVP.
-* Automatic roster extraction is outside MVP.
+* Scoreboard OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
+* The separately staged roster screenshot OCR extension uses privately preserved, operator-cropped roster panels only.
+* Roster OCR output is candidate data only and must never automatically replace or confirm a roster.
+* Representative screenshots and manually verified ground truth are required before roster layout or extraction-accuracy work; crop coordinates must not be guessed.
 * Fake screenshots are not OCR acceptance evidence.
 * OCR output must never be treated as automatically correct.
 * Low-confidence or uncertain OCR must require review.
@@ -114,6 +114,7 @@ If a task conflicts with security restrictions, Codex must stop and report the c
 * OCR confidence must not affect tournament scoring.
 * Do not introduce external OCR, cloud OCR, generative vision, or OpenAI Vision unless separately approved and roadmapped.
 * Do not claim real OCR acceptance without approved real screenshots and manually verified ground truth.
+* Do not commit real roster screenshots, player names, raw OCR payloads, or private paths without explicit privacy approval; prefer synthetic sanitized fixtures and local-only approved evaluation.
 
 ## 10. Export and Google Sheets Restrictions
 

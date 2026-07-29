@@ -44,14 +44,14 @@ These capabilities are roadmap-controlled. Their inclusion here describes approv
 
 The current approved MVP boundaries are:
 
-* Tournament rosters are entered and maintained manually.
-* ML Kit OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
-* Roster-screenshot OCR and roster-image import are outside MVP scope unless separately approved and scheduled in the roadmap.
+* Manual roster entry remains available and protected.
+* ML Kit OCR applies to genuine supported Free Fire MAX scoreboard screenshots and, only in the separately staged roadmap extension, approved cropped roster panels.
+* Roster screenshots are candidate evidence only: three screenshots are expected to cover the 12 fixed slots, with four visible team slots per screenshot, before review and explicit confirmation.
 * OCR output requires validation and correction before finalization.
 * Only finalized results may be exported.
 * The roadmap controls when each capability is implemented.
 
-Manual roster management and scoreboard OCR are separate responsibilities. This overview does not authorize roster-image intake, automatic finalization, or any roadmap capability ahead of its approved phase and version.
+Manual roster management, roster OCR, and scoreboard OCR are separate responsibilities. This overview does not authorize automatic confirmation, automatic finalization, or any roadmap capability ahead of its approved phase and version.
 
 ## 6. Approved Technical Direction
 
@@ -141,5 +141,5 @@ Current limitations and pending matters include:
 * Planned: real Free Fire MAX screenshots for OCR acceptance are not yet available in the repository, and OCR acceptance testing remains deferred.
 * Phase 0 is closed at the documentation and governance level with documented deferrals.
 * Later Phase 1 versions require their own explicitly approved implementation tasks.
-* Requires an explicit decision: any capability outside the approved roadmap order, including roster-screenshot OCR or roster-image import, requires separate approval and scheduling.
+* The staged roster screenshot OCR extension requires representative screenshots, manually verified ground truth, and an explicit privacy approval before layout or extraction work; it does not authorize guessed crop coordinates.
 * Requires an explicit decision: production backup commands and production restoration execution remain to be validated before the first production deployment.

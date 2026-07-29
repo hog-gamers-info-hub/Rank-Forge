@@ -38,8 +38,8 @@ The approved high-level Android stack is:
 * `StateFlow`
 * Room for approved local persistence
 * Supabase client integration for authentication and backend synchronization
-* Google ML Kit bundled Latin Text Recognition v2 for scoreboard OCR
-* Android Photo Picker for approved scoreboard screenshot selection
+* Google ML Kit bundled Latin Text Recognition v2 for scoreboard OCR and the separately staged cropped roster OCR extension
+* Android Photo Picker for approved scoreboard and staged roster screenshot selection
 * CSV export
 * Secure Google Sheets export through the approved Supabase backend flow
 
@@ -183,7 +183,7 @@ This document does not define tournament formats, public visibility, collaborati
 Approved team and roster workflow rules:
 
 * Every tournament contains exactly 12 fixed team slots.
-* Team and player rosters are entered manually through structured Android input.
+* Manual team and player roster entry remains available through structured Android input.
 * Each team contains four to six players.
 * Team names must be unique within the tournament.
 * Duplicate players and invalid player counts must be detected according to approved rules.
@@ -195,9 +195,7 @@ Approved team and roster workflow rules:
 
 Explicit MVP exclusions:
 
-* Roster-screenshot OCR
-* Roster-image import
-* Automatic roster extraction
+* Silent automatic roster confirmation or replacement
 * Unapproved CSV roster import
 
 This document does not define exact form controls or screen layouts.
@@ -271,6 +269,20 @@ Requirements:
 * Fake screenshots must not be treated as OCR acceptance evidence.
 
 This document does not define camera capture, crop coordinates, exact image preparation, resolutions, parser implementation, or matching formulas.
+
+### Staged roster screenshot workflow
+
+The separately staged roster workflow selects exactly three roster screenshots
+for one tournament and preserves each original privately. Before OCR, the
+operator must crop the roster panel in-app. OCR uses only the cropped panel or
+reproducible crop metadata, then produces candidate team and player data for
+the fixed 12 slots. Manual roster entry remains the correction, unsupported-
+input, and fallback workflow. Candidate data requires review and explicit
+confirmation before any persistence work.
+
+Representative screenshots and manually verified ground truth are required
+before fixed roster layout coordinates or extraction-accuracy behavior is
+implemented. Full-screenshot crop coordinates must not be guessed.
 
 ## 13. Review, Correction, and Finalization
 
@@ -513,8 +525,8 @@ Approved Android constraints:
 * Exactly 12 team slots
 * Four to six players per team
 * Maximum 10 matches
-* Manual roster entry
-* Scoreboard-only OCR
+* Manual roster entry remains available
+* Scoreboard OCR plus the separately staged roster OCR extension
 * Portrait-orientation testing
 * Room for approved local responsibilities
 * Supabase as permanent backend authority
@@ -524,9 +536,7 @@ Approved Android constraints:
 
 Explicit exclusions:
 
-* Roster-screenshot OCR
-* Roster-image import
-* Automatic roster extraction
+* Silent automatic roster confirmation or replacement
 * Public spectator mode
 * Player accounts
 * Payments and subscriptions
@@ -551,7 +561,7 @@ The following Android decisions remain deferred:
 * Exact background-work implementation
 * Exact synchronization conflict UI
 * Exact file-export destination behavior
-* Exact screenshot layout and crop coordinates
+* Exact scoreboard and roster screenshot layout and crop coordinates
 * Exact OCR review presentation
 * Exact post-finalization correction authorization UI
 * Complete-tie presentation behavior
@@ -569,9 +579,11 @@ Approved roadmap alignment:
 * Phase 4 implements scoring and standings presentation.
 * Phase 5 implements Room, offline operation, and restart recovery.
 * Phase 6 implements authentication, Supabase persistence, synchronization, and finalized-data protection.
-* Phase 7 implements Photo Picker screenshot intake and storage.
-* Phase 8 implements ML Kit OCR and parsing.
-* Phase 9 implements matching, OCR review, correction, and safe finalization.
+* Phase 7 implements Photo Picker screenshot intake and storage, including the staged roster intake, crop preparation, and set association extension.
+* Phase 8 implements ML Kit OCR and parsing, preserving completed scoreboard OCR and adding staged cropped roster OCR.
+* Phase 9 implements matching, OCR review, correction, safe finalization, and roster OCR review/correction.
+* Phase 5 and Phase 6 own the staged atomic local and revision-safe cloud roster replacement work.
+* Phase 12 owns real roster OCR acceptance evaluation under approved privacy rules.
 * Phase 10 implements CSV and Google Sheets export.
 * Phase 11 integrates complete workflows and error states.
 * Phase 12 completes Android, integration, device, recovery, and security testing.

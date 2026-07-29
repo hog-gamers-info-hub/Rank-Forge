@@ -31,10 +31,12 @@ The approved MVP scope includes:
 * Tournament creation and management
 * Exactly 12 fixed team slots per tournament
 * Manual structured team and player roster entry
+* A staged screenshot-first roster OCR workflow, with manual entry retained for review, correction, unsupported screenshots, and fallback
 * Four to six players per team
 * Maximum 10 matches per tournament
 * Manual match result entry
 * Scoreboard screenshot intake for genuine supported Free Fire MAX scoreboards
+* Privately preserved, manually cropped roster screenshots for the approved staged roster OCR extension
 * On-device Google ML Kit OCR for scoreboard text extraction when implemented
 * Team matching against manually maintained rosters
 * Operator review, correction, and confirmation
@@ -47,9 +49,7 @@ The approved MVP scope includes:
 
 The approved MVP excludes:
 
-* Roster-screenshot OCR
-* Roster-image import
-* Automatic roster extraction
+* Silent automatic roster confirmation or replacement
 * Public spectator access
 * Player-login accounts
 * Team-owner accounts

@@ -2,7 +2,7 @@
 
 ## 1. Document Purpose
 
-This document defines the approved MVP rules for scoreboard screenshot intake, Google ML Kit OCR, parsing, normalization, player matching, team-confidence assessment, manual correction, assignment safety, finalization, and OCR acceptance requirements.
+This document defines the approved MVP rules for scoreboard screenshot intake, the separately staged roster screenshot OCR extension, Google ML Kit OCR, parsing, normalization, player matching, team-confidence assessment, manual correction, assignment safety, finalization, and OCR acceptance requirements.
 
 It is a canonical documentation artifact only. It does not create Android code, OCR processing code, parser logic, matching formulas, database schema changes, tests, storage configuration, or implementation details that remain deferred.
 
@@ -10,20 +10,19 @@ This document follows the approved authority hierarchy. Product scope, roadmap s
 
 ## 2. Scope and Boundaries
 
-This document covers scoreboard screenshot processing and team identification.
+This document covers scoreboard screenshot processing, the separately staged roster screenshot OCR workflow, and team identification.
 
 Approved MVP scope boundaries:
 
-* Tournament rosters are manually entered and maintained as structured application data.
-* OCR does not create or import tournament rosters.
-* OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
-* Roster screenshots and roster images are not accepted OCR inputs for the MVP.
+* Manual tournament roster entry remains available and maintained as structured application data.
+* Scoreboard OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
+* The separately staged roster OCR workflow may create review-required candidates from approved roster screenshots; it does not automatically create, replace, or confirm tournament rosters.
 * Unsupported screenshot layouts must be rejected or marked for manual processing.
 * OCR-assisted processing is optional; manual match entry remains supported.
 * Scoring rules remain governed by `docs/05_SCORING_AND_PROCESSING_RULES.md`.
 * Database implementation remains governed by `docs/03_DATABASE_DESIGN.md`.
 
-This document does not authorize roster-screenshot OCR, roster-image import, automatic roster extraction, unsupported screenshot processing, or implementation beyond approved roadmap sequencing.
+This document does not authorize implementation beyond approved roadmap sequencing, automatic roster acceptance, unsupported screenshot processing, or any crop coordinates without representative screenshots and manually verified ground truth.
 
 ## 3. OCR and Matching Principles
 
@@ -70,6 +69,20 @@ Approved metadata may include:
 
 This document does not define bucket names, object paths, file-size limits, exact supported resolutions, or exact metadata schemas.
 
+### Staged roster screenshot intake
+
+The staged roster workflow expects three screenshots for one tournament, with
+four visible team slots per screenshot. The original selected image is private
+evidence and must be preserved through approved owner-scoped storage behavior.
+Before roster OCR, the operator must crop the roster panel in-app. OCR may use
+only the cropped panel or reproducible crop metadata, never the full roster
+screenshot. Candidate team and player data must be mapped to fixed slots 1
+through 12, validated, reviewed, and explicitly confirmed before persistence.
+
+Representative screenshots and manually verified expected data are prerequisites
+for roster layout, crop coordinates, extraction accuracy, and genuine evaluation.
+Manual roster entry remains the correction, unsupported-input, and fallback path.
+
 ## 5. Image Validation and Duplicate Detection
 
 Image intake must validate file type, resolution, orientation, and basic usability.
@@ -89,6 +102,7 @@ The hashing algorithm remains deferred unless separately approved.
 Later approved implementation may include:
 
 * Fixed-layout cropping
+* Operator-controlled roster-panel cropping for the separately staged roster workflow
 * Scaling
 * Contrast adjustment
 * Image enhancement
@@ -442,6 +456,7 @@ Approved roadmap alignment:
 * Phase 7 implements screenshot intake, validation, duplicate detection, preservation, storage, and metadata.
 * Phase 8 implements ML Kit OCR, supported-layout definition, preprocessing, extraction, parsing, and genuine screenshot evaluation.
 * Phase 9 implements normalization, similarity matching, candidate scoring, confidence tiers, assignment safety, review, correction, and safe finalization.
+* The roster OCR extension adds Phase 7 intake/crop/set association, Phase 8 cropped roster OCR, Phase 5/6 safe confirmed-roster replacement, Phase 9 roster review/correction, and Phase 12 real acceptance evaluation.
 * Phase 11 integrates the full screenshot-processing workflow.
 * Phase 12 completes OCR, matching, security, and regression validation.
 * Phase 13 validates the workflow using controlled genuine tournament data.
