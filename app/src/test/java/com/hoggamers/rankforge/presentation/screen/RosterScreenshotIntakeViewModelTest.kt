@@ -144,6 +144,100 @@ class RosterScreenshotIntakeViewModelTest {
         assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
     }
 
+    @Test
+    fun cropCanBeSetReplacedAndClearedForSelectedRosterScreenshot() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+
+        setCrop(viewModel, 1, "0.10", "0.10", "0.60", "0.70")
+        assertTrue(viewModel.uiState.value.slots[0].isCropReady)
+        assertEquals(
+            NormalizedCropRect(0.10, 0.10, 0.60, 0.70),
+            (viewModel.uiState.value.slots[0].cropState as RosterScreenshotCropState.Set).crop,
+        )
+
+        setCrop(viewModel, 1, "0.20", "0.20", "0.80", "0.80")
+        assertEquals(
+            NormalizedCropRect(0.20, 0.20, 0.80, 0.80),
+            (viewModel.uiState.value.slots[0].cropState as RosterScreenshotCropState.Set).crop,
+        )
+
+        viewModel.clearCrop(1)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+        assertEquals(RosterScreenshotCropState.NotSet, viewModel.uiState.value.slots[0].cropState)
+    }
+
+    @Test
+    fun cropRejectsMissingImagesInvalidBoundsAndTooSmallRectangles() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+
+        viewModel.setCrop(1)
+        assertEquals(
+            RosterScreenshotCropError.MISSING_SELECTED_IMAGE,
+            viewModel.uiState.value.slots[0].cropError,
+        )
+
+        select(viewModel, 1, "content://one")
+        setCrop(viewModel, 1, "-0.01", "0.10", "0.80", "0.80")
+        assertEquals(RosterScreenshotCropError.OUT_OF_BOUNDS, viewModel.uiState.value.slots[0].cropError)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+
+        setCrop(viewModel, 1, "0.10", "0.10", "0.19", "0.20")
+        assertEquals(RosterScreenshotCropError.TOO_SMALL, viewModel.uiState.value.slots[0].cropError)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+    }
+
+    @Test
+    fun cropReadyStateIsLimitedToThreeSelectedRosterScreenshotPositions() = runTest {
+        val imageUris = (1..3).associate { index -> "content://$index" to validMetadata() }
+        val imageBytes = (1..3).associate { index -> "content://$index" to byteArrayOf(index.toByte()) }
+        val viewModel = viewModel(metadata = imageUris, imageBytes = imageBytes)
+        viewModel.load("tournament-1")
+
+        (1..3).forEach { index ->
+            select(viewModel, index, "content://$index")
+            setCrop(viewModel, index, "0.10", "0.10", "0.60", "0.60")
+        }
+        viewModel.setCrop(4)
+
+        assertEquals((1..3).toList(), viewModel.uiState.value.slots.map { it.index })
+        assertEquals(3, viewModel.uiState.value.cropReadyImageCount)
+        assertTrue(viewModel.uiState.value.isCompleteCropReadySet)
+    }
+
+    @Test
+    fun replacingOrRemovingSelectedImageClearsItsCropState() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf(
+                "content://one" to validMetadata(),
+                "content://replacement" to validMetadata(),
+            ),
+            imageBytes = mapOf(
+                "content://one" to byteArrayOf(1),
+                "content://replacement" to byteArrayOf(2),
+            ),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+        setCrop(viewModel, 1, "0.10", "0.10", "0.60", "0.60")
+
+        select(viewModel, 1, "content://replacement")
+        assertEquals(RosterScreenshotCropState.NotSet, viewModel.uiState.value.slots[0].cropState)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+
+        viewModel.removeSelectedImage(1)
+        assertEquals(RosterScreenshotCropState.NotSet, viewModel.uiState.value.slots[0].cropState)
+        assertNull(viewModel.uiState.value.slots[0].selectedImageUri)
+    }
+
     private suspend fun TestScope.select(
         viewModel: RosterScreenshotIntakeViewModel,
         slotIndex: Int,
@@ -153,6 +247,21 @@ class RosterScreenshotIntakeViewModelTest {
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
+    }
+
+    private fun setCrop(
+        viewModel: RosterScreenshotIntakeViewModel,
+        slotIndex: Int,
+        left: String,
+        top: String,
+        right: String,
+        bottom: String,
+    ) {
+        viewModel.onCropCoordinateChanged(slotIndex, RosterScreenshotCropCoordinate.LEFT, left)
+        viewModel.onCropCoordinateChanged(slotIndex, RosterScreenshotCropCoordinate.TOP, top)
+        viewModel.onCropCoordinateChanged(slotIndex, RosterScreenshotCropCoordinate.RIGHT, right)
+        viewModel.onCropCoordinateChanged(slotIndex, RosterScreenshotCropCoordinate.BOTTOM, bottom)
+        viewModel.setCrop(slotIndex)
     }
 
     private fun viewModel(

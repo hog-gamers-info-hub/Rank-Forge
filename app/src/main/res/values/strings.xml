@@ -394,4 +394,20 @@
     <string name="roster_screenshot_intake_invalid_dimensions">The selected image has invalid dimensions.</string>
     <string name="roster_screenshot_intake_too_large">The selected image is too large.</string>
     <string name="roster_screenshot_intake_duplicate">This image is already selected for another roster screenshot.</string>
+    <string name="roster_screenshot_crop_title">Crop preparation</string>
+    <string name="roster_screenshot_crop_not_set">Crop not set.</string>
+    <string name="roster_screenshot_crop_ready">Crop ready.</string>
+    <string name="roster_screenshot_crop_left_label">Left (0 to 1)</string>
+    <string name="roster_screenshot_crop_top_label">Top (0 to 1)</string>
+    <string name="roster_screenshot_crop_right_label">Right (0 to 1)</string>
+    <string name="roster_screenshot_crop_bottom_label">Bottom (0 to 1)</string>
+    <string name="roster_screenshot_crop_set_action">Set crop</string>
+    <string name="roster_screenshot_crop_update_action">Update crop</string>
+    <string name="roster_screenshot_crop_clear_action">Clear crop</string>
+    <string name="roster_screenshot_crop_missing_image">Select and validate a roster screenshot before setting a crop.</string>
+    <string name="roster_screenshot_crop_invalid_number">Enter valid normalized numbers for all crop edges.</string>
+    <string name="roster_screenshot_crop_non_finite">Crop values must be finite numbers.</string>
+    <string name="roster_screenshot_crop_out_of_bounds">Crop values must stay between 0 and 1.</string>
+    <string name="roster_screenshot_crop_invalid_edges">Right must be greater than left, and bottom must be greater than top.</string>
+    <string name="roster_screenshot_crop_too_small">The crop must be at least 0.10 wide and 0.10 high.</string>
 </resources>
