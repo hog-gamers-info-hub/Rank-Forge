@@ -11,7 +11,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.SyncQueueDao
+import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
@@ -60,6 +63,13 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindMatchRestorationLocalRepository(
         repository: RoomTournamentRepository,
     ): MatchRestorationLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindScreenshotMetadataRepository(
+        repository: RoomScreenshotMetadataRepository,
+    ): ScreenshotMetadataRepository
+
 }
 
 @Module
@@ -78,11 +88,17 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_2_3,
         RankForgeDatabase.MIGRATION_3_4,
         RankForgeDatabase.MIGRATION_4_5,
+        RankForgeDatabase.MIGRATION_5_6,
     ).build()
 
     @Provides
     @Singleton
     fun provideSyncQueueDao(database: RankForgeDatabase): SyncQueueDao = database.syncQueueDao()
+
+    @Provides
+    @Singleton
+    fun provideScreenshotMetadataDao(database: RankForgeDatabase): ScreenshotMetadataDao =
+        database.screenshotMetadataDao()
 
     @Provides
     @Singleton

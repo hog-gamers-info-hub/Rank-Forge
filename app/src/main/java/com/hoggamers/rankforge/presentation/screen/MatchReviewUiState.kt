@@ -38,6 +38,9 @@ enum class ScreenshotPreservationError {
     COPY_FAILED,
     ATOMIC_MOVE_FAILED,
     CLEANUP_FAILED,
+    ROOM_WRITE_FAILED,
+    LOCAL_FILE_MISSING,
+    INVALID_RELATIVE_PATH,
     MISSING_TOURNAMENT_ID,
     MISSING_MATCH_ID,
     FINALIZED_MATCH,
@@ -53,7 +56,27 @@ enum class ScreenshotUploadError {
     NETWORK,
     AUTHORIZATION,
     UPLOAD_FAILED,
+    CLOUD_METADATA_WRITE_FAILED,
+    RLS_DENIED,
 }
+
+enum class ScreenshotMetadataLocalUiStatus {
+    PRESERVED,
+    MISSING,
+    CLEANUP_FAILED,
+}
+
+enum class ScreenshotMetadataUploadUiStatus {
+    PENDING,
+    UPLOADED,
+    FAILED,
+}
+
+data class ScreenshotMetadataUiState(
+    val localStatus: ScreenshotMetadataLocalUiStatus,
+    val uploadStatus: ScreenshotMetadataUploadUiStatus,
+    val revision: Long,
+)
 
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
@@ -74,7 +97,11 @@ data class MatchReviewUiState(
     val photoPickerError: PhotoPickerError? = null,
     val isScreenshotValidationInProgress: Boolean = false,
     val isSelectedScreenshotValidated: Boolean = false,
+    val selectedScreenshotMimeType: String? = null,
+    val selectedScreenshotWidth: Int? = null,
+    val selectedScreenshotHeight: Int? = null,
     val imageValidationError: ImageValidationError? = null,
+    val isScreenshotLinked: Boolean = false,
     val linkedScreenshotUri: String? = null,
     val linkedScreenshotFingerprint: String? = null,
     val screenshotLinkError: ScreenshotLinkError? = null,
@@ -83,7 +110,9 @@ data class MatchReviewUiState(
     val screenshotDuplicateInfo: ScreenshotDuplicateInfo? = null,
     val isScreenshotPreservationInProgress: Boolean = false,
     val isScreenshotLocallyPreserved: Boolean = false,
-    val preservedScreenshotPath: String? = null,
+    val preservedScreenshotRelativePath: String? = null,
+    val screenshotMetadata: ScreenshotMetadataUiState? = null,
+    val isPreservedScreenshotMissing: Boolean = false,
     val screenshotPreservationError: ScreenshotPreservationError? = null,
     val isScreenshotUploadInProgress: Boolean = false,
     val isScreenshotUploaded: Boolean = false,
@@ -98,6 +127,9 @@ data class MatchReviewUiState(
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT
+
+    val hasLinkedScreenshot: Boolean
+        get() = isScreenshotLinked || linkedScreenshotUri != null
 }
 
 data class MatchReviewRowUiState(

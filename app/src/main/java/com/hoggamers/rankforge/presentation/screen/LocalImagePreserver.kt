@@ -211,6 +211,34 @@ class LocalImagePreserver(
         extension: String,
     ): File = File(matchDirectory(tournamentId, matchId), "original.$extension")
 
+    fun relativePath(
+        tournamentId: String,
+        matchId: String,
+        extension: String,
+    ): String = "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/original.$extension"
+
+    fun relativePathFor(file: File): String? {
+        val rootPath = runCatching { File(appPrivateRoot, SCREENSHOTS_DIRECTORY).canonicalFile.toPath() }
+            .getOrNull()
+            ?: return null
+        val filePath = runCatching { file.canonicalFile.toPath() }
+            .getOrNull()
+            ?: return null
+        if (!filePath.startsWith(rootPath)) return null
+        val relative = rootPath.relativize(filePath).joinToString("/")
+        return "$SCREENSHOTS_DIRECTORY/$relative"
+    }
+
+    fun resolveRelativePath(relativePath: String): File? {
+        if (relativePath.isBlank()) return null
+        val normalized = relativePath.replace('\\', '/')
+        if (!normalized.startsWith("$SCREENSHOTS_DIRECTORY/")) return null
+        if (normalized.contains("../") || normalized.contains("/..")) return null
+        val root = runCatching { appPrivateRoot.canonicalFile }.getOrNull() ?: return null
+        val target = runCatching { File(root, normalized).canonicalFile }.getOrNull() ?: return null
+        return if (target.toPath().startsWith(root.toPath())) target else null
+    }
+
     private fun matchDirectory(tournamentId: String, matchId: String): File =
         File(File(appPrivateRoot, SCREENSHOTS_DIRECTORY), "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}")
 

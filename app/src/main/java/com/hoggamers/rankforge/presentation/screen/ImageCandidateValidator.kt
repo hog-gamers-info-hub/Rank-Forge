@@ -69,6 +69,16 @@ class ImageCandidateValidator(
         }
     }
 
+    suspend fun readValidMetadata(uri: String?): ImageCandidateReadResult.Metadata? {
+        if (uri.isNullOrBlank()) return null
+        val metadata = metadataReader.read(uri) as? ImageCandidateReadResult.Metadata ?: return null
+        return if (validateMetadata(metadata) == ImageCandidateValidationResult.Valid) {
+            metadata
+        } else {
+            null
+        }
+    }
+
     private fun validateMetadata(
         metadata: ImageCandidateReadResult.Metadata,
     ): ImageCandidateValidationResult {

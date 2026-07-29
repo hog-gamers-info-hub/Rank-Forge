@@ -67,6 +67,8 @@ const val MATCH_REVIEW_SCREENSHOT_UPLOAD_IN_PROGRESS_TEST_TAG = "match_review_sc
 const val MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG = "match_review_screenshot_uploaded"
 const val MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG = "match_review_screenshot_upload_error"
 const val MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG = "match_review_screenshot_upload_retry_action"
+const val MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG = "match_review_screenshot_metadata_restored"
+const val MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG = "match_review_screenshot_local_missing"
 
 @Composable
 fun MatchReviewRoute(
@@ -274,11 +276,17 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
             )
         }
-        if (uiState.linkedScreenshotUri != null) {
+        if (uiState.hasLinkedScreenshot) {
             Text(
                 text = stringResource(R.string.match_review_screenshot_linked),
                 modifier = Modifier.testTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG),
             )
+            if (uiState.screenshotMetadata != null) {
+                Text(
+                    text = stringResource(R.string.match_review_screenshot_metadata_restored),
+                    modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG),
+                )
+            }
             if (uiState.isEditable) {
                 if (
                     uiState.isSelectedScreenshotValidated &&
@@ -349,6 +357,13 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG),
             )
         }
+        if (uiState.isPreservedScreenshotMissing) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_local_missing),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG),
+            )
+        }
         if (uiState.screenshotPreservationError != null) {
             Text(
                 text = stringResource(uiState.screenshotPreservationError.toMessageRes()),
@@ -374,7 +389,7 @@ private fun MatchReviewContent(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG),
             )
-            if (uiState.isEditable && uiState.linkedScreenshotUri != null) {
+            if (uiState.isEditable && uiState.hasLinkedScreenshot) {
                 TextButton(
                     onClick = onRetryScreenshotUpload,
                     enabled = !uiState.isScreenshotUploadInProgress,
@@ -692,6 +707,12 @@ private fun ScreenshotPreservationError.toMessageRes(): Int = when (this) {
         R.string.match_review_screenshot_preservation_atomic_move_failed
     ScreenshotPreservationError.CLEANUP_FAILED ->
         R.string.match_review_screenshot_preservation_cleanup_failed
+    ScreenshotPreservationError.ROOM_WRITE_FAILED ->
+        R.string.match_review_screenshot_metadata_room_write_failed
+    ScreenshotPreservationError.LOCAL_FILE_MISSING ->
+        R.string.match_review_screenshot_local_missing
+    ScreenshotPreservationError.INVALID_RELATIVE_PATH ->
+        R.string.match_review_screenshot_metadata_invalid_relative_path
     ScreenshotPreservationError.MISSING_TOURNAMENT_ID ->
         R.string.match_review_screenshot_preservation_missing_tournament
     ScreenshotPreservationError.MISSING_MATCH_ID ->
@@ -719,4 +740,8 @@ private fun ScreenshotUploadError.toMessageRes(): Int = when (this) {
         R.string.match_review_screenshot_upload_authorization_failed
     ScreenshotUploadError.UPLOAD_FAILED ->
         R.string.match_review_screenshot_upload_failed
+    ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED ->
+        R.string.match_review_screenshot_metadata_cloud_write_failed
+    ScreenshotUploadError.RLS_DENIED ->
+        R.string.match_review_screenshot_metadata_rls_denied
 }

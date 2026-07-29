@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.data.di
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotMetadataCloudDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
@@ -50,6 +52,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindScreenshotStorageUploader(
         uploader: SupabaseScreenshotStorageUploader,
     ): ScreenshotStorageUploader
+
+    @Binds
+    @Singleton
+    abstract fun bindScreenshotMetadataCloudDataSource(
+        dataSource: SupabaseScreenshotMetadataCloudDataSource,
+    ): ScreenshotMetadataCloudDataSource
 
     @Binds
     @Singleton
