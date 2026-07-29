@@ -33,12 +33,14 @@ class MatchReviewViewModel @Inject constructor(
     private val finalizeMatch: FinalizeMatchUseCase,
     private val imageCandidateValidator: ImageCandidateValidator,
     private val screenshotDuplicateDetector: ScreenshotDuplicateDetector,
+    private val localImagePreserver: LocalImagePreserver,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
     private var validationJob: Job? = null
     private var duplicateDetectionJob: Job? = null
+    private var preservationJob: Job? = null
     private var loadedMatchKey: String? = null
 
     fun load(tournamentId: String, matchId: String) {
@@ -48,6 +50,7 @@ class MatchReviewViewModel @Inject constructor(
         loadJob?.cancel()
         validationJob?.cancel()
         duplicateDetectionJob?.cancel()
+        preservationJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -136,6 +139,10 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotDuplicateDetectionInProgress = current.isScreenshotDuplicateDetectionInProgress,
                         screenshotDuplicateError = current.screenshotDuplicateError,
                         screenshotDuplicateInfo = current.screenshotDuplicateInfo,
+                        isScreenshotPreservationInProgress = current.isScreenshotPreservationInProgress,
+                        isScreenshotLocallyPreserved = current.isScreenshotLocallyPreserved,
+                        preservedScreenshotPath = current.preservedScreenshotPath,
+                        screenshotPreservationError = current.screenshotPreservationError,
                     )
                 }
             }
@@ -199,6 +206,7 @@ class MatchReviewViewModel @Inject constructor(
 
         validationJob?.cancel()
         duplicateDetectionJob?.cancel()
+        preservationJob?.cancel()
         if (selectedUri.isBlank()) {
             _uiState.update {
                 it.copy(
@@ -213,6 +221,8 @@ class MatchReviewViewModel @Inject constructor(
                     isScreenshotDuplicateDetectionInProgress = false,
                     screenshotDuplicateError = null,
                     screenshotDuplicateInfo = null,
+                    isScreenshotPreservationInProgress = false,
+                    screenshotPreservationError = null,
                 )
             }
             return
@@ -231,6 +241,8 @@ class MatchReviewViewModel @Inject constructor(
                 isScreenshotDuplicateDetectionInProgress = false,
                 screenshotDuplicateError = null,
                 screenshotDuplicateInfo = null,
+                isScreenshotPreservationInProgress = false,
+                screenshotPreservationError = null,
             )
         }
         validationJob = viewModelScope.launch {
@@ -291,7 +303,10 @@ class MatchReviewViewModel @Inject constructor(
             }
             return
         }
-        if (current.isScreenshotDuplicateDetectionInProgress) return
+        if (
+            current.isScreenshotDuplicateDetectionInProgress ||
+            current.isScreenshotPreservationInProgress
+        ) return
         _uiState.update {
             it.copy(
                 screenshotLinkError = null,
@@ -302,51 +317,120 @@ class MatchReviewViewModel @Inject constructor(
         }
         val tournamentId = current.tournamentId ?: return
         val matchId = current.matchId ?: return
+        val candidateUri = selectedUri ?: return
         duplicateDetectionJob = viewModelScope.launch {
             val result = screenshotDuplicateDetector.link(
                 tournamentId = tournamentId,
                 matchId = matchId,
-                selectedUri = selectedUri ?: return@launch,
+                selectedUri = candidateUri,
                 currentFingerprint = current.linkedScreenshotFingerprint,
             )
-            _uiState.update { latest ->
-                if (
-                    latest.tournamentId != tournamentId ||
-                    latest.matchId != matchId ||
-                    latest.selectedScreenshotUri != selectedUri
-                ) {
-                    latest
-                } else {
-                    when (result) {
-                        is ScreenshotDuplicateLinkResult.Linked -> latest.copy(
+            if (result is ScreenshotDuplicateLinkResult.Linked) {
+                val previousFingerprint = current.linkedScreenshotFingerprint
+                _uiState.update { latest ->
+                    if (
+                        latest.tournamentId == tournamentId &&
+                        latest.matchId == matchId &&
+                        latest.selectedScreenshotUri == selectedUri
+                    ) {
+                        latest.copy(
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            isScreenshotPreservationInProgress = true,
+                            screenshotDuplicateError = null,
+                            screenshotDuplicateInfo = null,
+                            screenshotPreservationError = null,
+                        )
+                    } else {
+                        latest
+                    }
+                }
+                val preservationResult = localImagePreserver.preserve(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    selectedUri = candidateUri,
+                )
+                val preservationFailure = preservationResult as? LocalImagePreservationResult.Failed
+                if (preservationFailure != null) {
+                    screenshotDuplicateDetector.rollback(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        newFingerprint = result.fingerprint,
+                        previousFingerprint = previousFingerprint,
+                    )
+                }
+                _uiState.update { latest ->
+                    if (
+                        latest.tournamentId != tournamentId ||
+                        latest.matchId != matchId ||
+                        latest.selectedScreenshotUri != selectedUri
+                    ) {
+                        latest
+                    } else if (preservationFailure != null) {
+                        latest.copy(
+                            isScreenshotDuplicateDetectionInProgress = false,
+                            isScreenshotPreservationInProgress = false,
+                            screenshotDuplicateError = null,
+                            screenshotDuplicateInfo = null,
+                            screenshotPreservationError = preservationFailure.error.toUiError(),
+                        )
+                    } else {
+                        val preservedFile = when (preservationResult) {
+                            is LocalImagePreservationResult.Preserved -> preservationResult.file
+                            is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservationResult.file
+                            is LocalImagePreservationResult.Failed -> error("unreachable")
+                        }
+                        val cleanupFailed = preservationResult is LocalImagePreservationResult.PreservedWithCleanupFailure
+                        latest.copy(
                             linkedScreenshotUri = selectedUri,
                             linkedScreenshotFingerprint = result.fingerprint,
                             screenshotLinkError = null,
                             isScreenshotDuplicateDetectionInProgress = false,
+                            isScreenshotPreservationInProgress = false,
+                            isScreenshotLocallyPreserved = true,
+                            preservedScreenshotPath = preservedFile.absolutePath,
                             screenshotDuplicateError = null,
                             screenshotDuplicateInfo = null,
+                            screenshotPreservationError = if (cleanupFailed) {
+                                ScreenshotPreservationError.CLEANUP_FAILED
+                            } else {
+                                null
+                            },
                         )
-                        ScreenshotDuplicateLinkResult.SameMatch -> latest.copy(
-                            screenshotLinkError = null,
-                            isScreenshotDuplicateDetectionInProgress = false,
-                            screenshotDuplicateError = null,
-                            screenshotDuplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
-                        )
-                        is ScreenshotDuplicateLinkResult.LinkedToOtherMatch -> latest.copy(
-                            isScreenshotDuplicateDetectionInProgress = false,
-                            screenshotDuplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
-                            screenshotDuplicateInfo = null,
-                        )
-                        ScreenshotDuplicateLinkResult.FingerprintFailure -> latest.copy(
-                            isScreenshotDuplicateDetectionInProgress = false,
-                            screenshotDuplicateError = ScreenshotDuplicateError.FINGERPRINT_FAILED,
-                            screenshotDuplicateInfo = null,
-                        )
-                        ScreenshotDuplicateLinkResult.StateConflict -> latest.copy(
-                            isScreenshotDuplicateDetectionInProgress = false,
-                            screenshotDuplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
-                            screenshotDuplicateInfo = null,
-                        )
+                    }
+                }
+            } else {
+                _uiState.update { latest ->
+                    if (
+                        latest.tournamentId != tournamentId ||
+                        latest.matchId != matchId ||
+                        latest.selectedScreenshotUri != selectedUri
+                    ) {
+                        latest
+                    } else {
+                        when (result) {
+                            ScreenshotDuplicateLinkResult.SameMatch -> latest.copy(
+                                screenshotLinkError = null,
+                                isScreenshotDuplicateDetectionInProgress = false,
+                                screenshotDuplicateError = null,
+                                screenshotDuplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+                            )
+                            is ScreenshotDuplicateLinkResult.LinkedToOtherMatch -> latest.copy(
+                                isScreenshotDuplicateDetectionInProgress = false,
+                                screenshotDuplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                                screenshotDuplicateInfo = null,
+                            )
+                            ScreenshotDuplicateLinkResult.FingerprintFailure -> latest.copy(
+                                isScreenshotDuplicateDetectionInProgress = false,
+                                screenshotDuplicateError = ScreenshotDuplicateError.FINGERPRINT_FAILED,
+                                screenshotDuplicateInfo = null,
+                            )
+                            ScreenshotDuplicateLinkResult.StateConflict -> latest.copy(
+                                isScreenshotDuplicateDetectionInProgress = false,
+                                screenshotDuplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
+                                screenshotDuplicateInfo = null,
+                            )
+                            is ScreenshotDuplicateLinkResult.Linked -> latest
+                        }
                     }
                 }
             }
@@ -372,25 +456,65 @@ class MatchReviewViewModel @Inject constructor(
             }
             return
         }
-        if (current.isScreenshotDuplicateDetectionInProgress) return
+        if (
+            current.isScreenshotDuplicateDetectionInProgress ||
+            current.isScreenshotPreservationInProgress
+        ) return
         val result = screenshotDuplicateDetector.unlink(
             tournamentId = current.tournamentId.orEmpty(),
             matchId = current.matchId.orEmpty(),
             fingerprint = current.linkedScreenshotFingerprint,
         )
-        _uiState.update {
-            when (result) {
-                ScreenshotDuplicateUnlinkResult.Unlinked -> it.copy(
-                    linkedScreenshotUri = null,
-                    linkedScreenshotFingerprint = null,
-                    screenshotLinkError = null,
-                    screenshotDuplicateError = null,
-                    screenshotDuplicateInfo = null,
-                )
-                ScreenshotDuplicateUnlinkResult.StateConflict -> it.copy(
+        if (result == ScreenshotDuplicateUnlinkResult.StateConflict) {
+            _uiState.update {
+                it.copy(
                     screenshotDuplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
                     screenshotDuplicateInfo = null,
                 )
+            }
+            return
+        }
+
+        val preservedPath = current.preservedScreenshotPath
+        _uiState.update {
+            it.copy(
+                linkedScreenshotUri = null,
+                linkedScreenshotFingerprint = null,
+                screenshotLinkError = null,
+                screenshotDuplicateError = null,
+                screenshotDuplicateInfo = null,
+                isScreenshotLocallyPreserved = false,
+                isScreenshotPreservationInProgress = preservedPath != null,
+                screenshotPreservationError = null,
+            )
+        }
+        if (preservedPath == null) return
+
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        preservationJob = viewModelScope.launch {
+            when (localImagePreserver.cleanup(tournamentId, matchId)) {
+                LocalImageCleanupResult.Cleaned -> _uiState.update { latest ->
+                    if (latest.tournamentId == tournamentId && latest.matchId == matchId) {
+                        latest.copy(
+                            isScreenshotPreservationInProgress = false,
+                            preservedScreenshotPath = null,
+                            screenshotPreservationError = null,
+                        )
+                    } else {
+                        latest
+                    }
+                }
+                LocalImageCleanupResult.Failed -> _uiState.update { latest ->
+                    if (latest.tournamentId == tournamentId && latest.matchId == matchId) {
+                        latest.copy(
+                            isScreenshotPreservationInProgress = false,
+                            screenshotPreservationError = ScreenshotPreservationError.CLEANUP_FAILED,
+                        )
+                    } else {
+                        latest
+                    }
+                }
             }
         }
     }
@@ -398,7 +522,12 @@ class MatchReviewViewModel @Inject constructor(
     fun finalize() {
         val current = _uiState.value
         val matchId = current.matchId ?: return
-        if (!current.isEditable || !current.isValid || current.isFinalizing) return
+        if (
+            !current.isEditable ||
+            !current.isValid ||
+            current.isFinalizing ||
+            current.isScreenshotPreservationInProgress
+        ) return
         _uiState.update { it.copy(isFinalizing = true, finalizationError = null) }
         viewModelScope.launch {
             when (
@@ -433,4 +562,10 @@ class MatchReviewViewModel @Inject constructor(
             }
         }
     }
+}
+
+private fun LocalImagePreservationFailure.toUiError(): ScreenshotPreservationError = when (this) {
+    LocalImagePreservationFailure.SOURCE_READ_FAILED -> ScreenshotPreservationError.SOURCE_READ_FAILED
+    LocalImagePreservationFailure.COPY_FAILED -> ScreenshotPreservationError.COPY_FAILED
+    LocalImagePreservationFailure.ATOMIC_MOVE_FAILED -> ScreenshotPreservationError.ATOMIC_MOVE_FAILED
 }

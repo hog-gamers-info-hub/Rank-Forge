@@ -33,6 +33,16 @@ enum class ScreenshotDuplicateInfo {
     ALREADY_LINKED_TO_THIS_MATCH,
 }
 
+enum class ScreenshotPreservationError {
+    SOURCE_READ_FAILED,
+    COPY_FAILED,
+    ATOMIC_MOVE_FAILED,
+    CLEANUP_FAILED,
+    MISSING_TOURNAMENT_ID,
+    MISSING_MATCH_ID,
+    FINALIZED_MATCH,
+}
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -59,6 +69,10 @@ data class MatchReviewUiState(
     val isScreenshotDuplicateDetectionInProgress: Boolean = false,
     val screenshotDuplicateError: ScreenshotDuplicateError? = null,
     val screenshotDuplicateInfo: ScreenshotDuplicateInfo? = null,
+    val isScreenshotPreservationInProgress: Boolean = false,
+    val isScreenshotLocallyPreserved: Boolean = false,
+    val preservedScreenshotPath: String? = null,
+    val screenshotPreservationError: ScreenshotPreservationError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

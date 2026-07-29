@@ -168,4 +168,26 @@ class ScreenshotDuplicateDetector @Inject constructor(
             else -> ScreenshotDuplicateUnlinkResult.StateConflict
         }
     }
+
+    fun rollback(
+        tournamentId: String,
+        matchId: String,
+        newFingerprint: String,
+        previousFingerprint: String?,
+    ): Boolean = synchronized(lock) {
+        val owners = fingerprintOwnersByTournament[tournamentId] ?: return@synchronized false
+        if (owners[newFingerprint] != matchId) return@synchronized false
+        if (previousFingerprint != null) {
+            val previousOwner = owners[previousFingerprint]
+            if (previousOwner != null && previousOwner != matchId) return@synchronized false
+        }
+        owners.remove(newFingerprint)
+        if (previousFingerprint != null) {
+            owners[previousFingerprint] = matchId
+        }
+        if (owners.isEmpty()) {
+            fingerprintOwnersByTournament.remove(tournamentId)
+        }
+        true
+    }
 }

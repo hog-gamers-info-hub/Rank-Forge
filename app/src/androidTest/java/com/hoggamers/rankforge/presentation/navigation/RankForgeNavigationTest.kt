@@ -740,6 +740,16 @@ class RankForgeNavigationTest {
                             kotlinx.coroutines.Dispatchers.Unconfined,
                         ),
                     ),
+                    localImagePreserver = com.hoggamers.rankforge.presentation.screen.LocalImagePreserver(
+                        appPrivateRoot = context.filesDir,
+                        sourceStreamOpener = com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener { uri ->
+                            uri.encodeToByteArray().inputStream()
+                        },
+                        mimeTypeReader = com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader {
+                            "image/png"
+                        },
+                        ioDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+                    ),
                 ).also {
                     it.load(tournamentId, matchId)
                 }

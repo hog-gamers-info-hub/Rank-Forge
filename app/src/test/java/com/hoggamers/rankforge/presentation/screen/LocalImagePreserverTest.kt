@@ -1,0 +1,148 @@
+package com.hoggamers.rankforge.presentation.screen
+
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.nio.file.Files
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LocalImagePreserverTest {
+    @Test
+    fun preservesBytesInTournamentAndMatchScopedMimeDerivedFile() = runTest {
+        val bytes = byteArrayOf(0, 1, 2, 3, 255.toByte())
+        val preserver = preserver(bytes, "image/jpeg")
+
+        val result = preserver.preserve("tournament one", "match/one", "content://picked/image")
+
+        val file = (result as LocalImagePreservationResult.Preserved).file
+        assertTrue(file.path.contains("screenshots"))
+        assertTrue(file.path.contains("746f75726e616d656e74206f6e65"))
+        assertTrue(file.path.contains("6d617463682f6f6e65"))
+        assertEquals("original.jpg", file.name)
+        assertArrayEquals(bytes, file.readBytes())
+        assertFalse(file.path.contains("content:"))
+    }
+
+    @Test
+    fun webpUsesWebpExtension() = runTest {
+        val file = (preserver(byteArrayOf(7), "image/webp").preserve(
+            "tournament",
+            "match",
+            "uri",
+        ) as LocalImagePreservationResult.Preserved).file
+
+        assertEquals("original.webp", file.name)
+    }
+
+    @Test
+    fun replacementReplacesPreviousFileAndRemovesOldExtension() = runTest {
+        var bytes = byteArrayOf(1, 2)
+        var mime = "image/png"
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("rank-forge-replacement").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { bytes.inputStream() },
+            mimeTypeReader = ImageSourceMimeTypeReader { mime },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val first = preserver.preserve("tournament", "match", "first")
+        bytes = byteArrayOf(9, 8, 7)
+        mime = "image/jpeg"
+        val second = preserver.preserve("tournament", "match", "second")
+
+        assertEquals("original.png", (first as LocalImagePreservationResult.Preserved).file.name)
+        val secondFile = (second as LocalImagePreservationResult.Preserved).file
+        assertEquals("original.jpg", secondFile.name)
+        assertArrayEquals(bytes, secondFile.readBytes())
+        assertFalse(File(secondFile.parentFile, "original.png").exists())
+    }
+
+    @Test
+    fun atomicMoveFailureLeavesNoFinalFile() = runTest {
+        val operations = TestFileOperations(failAtomicMove = true)
+        val preserver = preserver(byteArrayOf(1, 2), "image/png", operations)
+
+        val result = preserver.preserve("tournament", "match", "uri")
+
+        assertEquals(
+            LocalImagePreservationFailure.ATOMIC_MOVE_FAILED,
+            (result as LocalImagePreservationResult.Failed).error,
+        )
+        assertTrue(operations.createdFiles.none { it.name.startsWith("original.") })
+        assertTrue(operations.createdFiles.none { it.name.endsWith(".tmp") && it.exists() })
+    }
+
+    @Test
+    fun sourceReadFailureIsControlled() = runTest {
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("rank-forge-source-failure").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val result = preserver.preserve("tournament", "match", "uri")
+
+        assertEquals(
+            LocalImagePreservationFailure.SOURCE_READ_FAILED,
+            (result as LocalImagePreservationResult.Failed).error,
+        )
+    }
+
+    @Test
+    fun cleanupFailureIsReportedAfterPreservation() = runTest {
+        val operations = TestFileOperations(failDelete = true)
+        val preserver = preserver(byteArrayOf(1), "image/png", operations)
+        val preserved = preserver.preserve("tournament", "match", "uri")
+
+        assertTrue(preserved is LocalImagePreservationResult.Preserved)
+        assertEquals(
+            LocalImageCleanupResult.Failed,
+            preserver.cleanup("tournament", "match"),
+        )
+    }
+
+    private fun preserver(
+        bytes: ByteArray,
+        mimeType: String,
+        operations: TestFileOperations = TestFileOperations(),
+    ) = LocalImagePreserver(
+        appPrivateRoot = Files.createTempDirectory("rank-forge-preserver").toFile(),
+        sourceStreamOpener = ImageSourceStreamOpener { bytes.inputStream() },
+        mimeTypeReader = ImageSourceMimeTypeReader { mimeType },
+        fileOperations = operations,
+        ioDispatcher = Dispatchers.Unconfined,
+    )
+
+    private class TestFileOperations(
+        private val failAtomicMove: Boolean = false,
+        private val failDelete: Boolean = false,
+    ) : LocalImageFileOperations {
+        val createdFiles = mutableListOf<File>()
+
+        override fun ensureDirectory(directory: File): Boolean =
+            directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+
+        override fun createTempFile(directory: File): File =
+            File.createTempFile("original-", ".tmp", directory).also(createdFiles::add)
+
+        override fun openOutput(file: File): OutputStream = FileOutputStream(file)
+
+        override fun atomicMove(source: File, target: File): Boolean {
+            if (failAtomicMove) return false
+            if (target.exists()) target.delete()
+            return source.renameTo(target).also { if (it) createdFiles.add(target) }
+        }
+
+        override fun listFiles(directory: File): List<File>? =
+            if (!directory.exists()) emptyList() else directory.listFiles()?.toList()
+
+        override fun delete(file: File): Boolean = if (failDelete) false else !file.exists() || file.delete()
+    }
+}

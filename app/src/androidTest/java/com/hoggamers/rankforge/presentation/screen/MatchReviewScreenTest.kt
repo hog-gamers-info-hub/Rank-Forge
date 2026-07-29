@@ -200,6 +200,39 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun localPreservationStatesAreVisibleAndBlockLinkActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                        isScreenshotPreservationInProgress = true,
+                        isScreenshotLocallyPreserved = true,
+                        screenshotPreservationError = ScreenshotPreservationError.CLEANUP_FAILED,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
     fun validatedScreenshotCanLinkAndLinkedStateShowsUnlinkAction() {
         var linkCount = 0
         var unlinkCount = 0
