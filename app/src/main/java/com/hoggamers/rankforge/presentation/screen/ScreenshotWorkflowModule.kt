@@ -14,4 +14,10 @@ abstract class ScreenshotWorkflowModule {
     abstract fun bindScreenshotOwnerProvider(
         provider: AuthStateScreenshotOwnerProvider,
     ): ScreenshotOwnerProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindRosterScreenshotLocalImageStore(
+        store: LocalRosterScreenshotImageStore,
+    ): RosterScreenshotLocalImageStore
 }

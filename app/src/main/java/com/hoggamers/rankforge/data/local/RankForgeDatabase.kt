@@ -39,8 +39,9 @@ interface RankForgeStateDao {
         SyncQueueEntity::class,
         SyncRevisionEntity::class,
         ScreenshotMetadataEntity::class,
+        RosterScreenshotMetadataEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -56,6 +57,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncRevisionDao(): SyncRevisionDao
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
+    abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -225,6 +227,35 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_owner_user_id` ON `screenshot_metadata` (`owner_user_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_sha256` ON `screenshot_metadata` (`sha256`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_upload_status` ON `screenshot_metadata` (`upload_status`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `roster_screenshot_metadata` (
+                        `tournament_id` TEXT NOT NULL,
+                        `roster_screenshot_index` INTEGER NOT NULL,
+                        `local_relative_path` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `width` INTEGER NOT NULL,
+                        `height` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `validation_status` TEXT NOT NULL,
+                        `crop_left` REAL,
+                        `crop_top` REAL,
+                        `crop_right` REAL,
+                        `crop_bottom` REAL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `roster_screenshot_index`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_tournament_id` ON `roster_screenshot_metadata` (`tournament_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_sha256` ON `roster_screenshot_metadata` (`sha256`)")
             }
         }
     }

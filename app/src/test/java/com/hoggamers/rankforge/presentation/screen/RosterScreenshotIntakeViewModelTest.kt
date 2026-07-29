@@ -1,5 +1,10 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.local.RosterScreenshotAssociationSaveResult
+import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataEntity
+import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.RosterScreenshotValidationStatus
+import com.hoggamers.rankforge.data.local.NoOpRosterScreenshotMetadataRepository
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -9,6 +14,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -238,6 +245,70 @@ class RosterScreenshotIntakeViewModelTest {
         assertNull(viewModel.uiState.value.slots[0].selectedImageUri)
     }
 
+    @Test
+    fun restoresDurableRosterAssociationAndItsCropMetadataInPositionOrder() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository(
+            listOf(
+                association(index = 3, crop = NormalizedCropRect(0.10, 0.20, 0.90, 0.80)),
+                association(index = 1),
+            ),
+        )
+        val localStore = FakeRosterScreenshotLocalImageStore(
+            mapOf(
+                "screenshots/tournament/roster/1/original.png" to "file:///one.png",
+                "screenshots/tournament/roster/3/original.png" to "file:///three.png",
+            ),
+        )
+        val viewModel = viewModel(
+            repository = repository,
+            localImageStore = localStore,
+        )
+
+        viewModel.load("tournament-1")
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 2, 3), viewModel.uiState.value.slots.map { it.index })
+        assertEquals("file:///one.png", viewModel.uiState.value.slots[0].selectedImageUri)
+        assertNull(viewModel.uiState.value.slots[1].selectedImageUri)
+        assertEquals("file:///three.png", viewModel.uiState.value.slots[2].selectedImageUri)
+        assertEquals(
+            RosterScreenshotCropState.Set(NormalizedCropRect(0.10, 0.20, 0.90, 0.80)),
+            viewModel.uiState.value.slots[2].cropState,
+        )
+    }
+
+    @Test
+    fun selectionCropAndRemovalPersistOnlyTournamentScopedRosterAssociation() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository()
+        val localStore = FakeRosterScreenshotLocalImageStore(
+            mapOf("screenshots/tournament/roster/1/original.png" to "file:///one.png"),
+        )
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+            repository = repository,
+            localImageStore = localStore,
+        )
+        viewModel.load("tournament-1")
+
+        select(viewModel, 1, "content://one")
+        setCrop(viewModel, 1, "0.10", "0.20", "0.90", "0.80")
+        advanceUntilIdle()
+
+        val saved = repository.current("tournament-1", 1)!!
+        assertEquals("tournament-1", saved.tournamentId)
+        assertEquals(1, saved.rosterScreenshotIndex)
+        assertEquals("screenshots/tournament/roster/1/original.png", saved.localRelativePath)
+        assertEquals(0.10, saved.cropLeft)
+        assertEquals(0.80, saved.cropBottom)
+
+        viewModel.removeSelectedImage(1)
+        advanceUntilIdle()
+
+        assertNull(repository.current("tournament-1", 1))
+        assertEquals(listOf(1), localStore.cleanedIndexes)
+    }
+
     private suspend fun TestScope.select(
         viewModel: RosterScreenshotIntakeViewModel,
         slotIndex: Int,
@@ -267,6 +338,8 @@ class RosterScreenshotIntakeViewModelTest {
     private fun viewModel(
         metadata: Map<String, ImageCandidateReadResult> = emptyMap(),
         imageBytes: Map<String, ByteArray> = emptyMap(),
+        repository: RosterScreenshotMetadataRepository = NoOpRosterScreenshotMetadataRepository(),
+        localImageStore: RosterScreenshotLocalImageStore = NoOpRosterScreenshotLocalImageStore(),
     ) = RosterScreenshotIntakeViewModel(
         imageCandidateValidator = ImageCandidateValidator(
             ImageCandidateMetadataReader { uri ->
@@ -279,6 +352,8 @@ class RosterScreenshotIntakeViewModelTest {
             },
             coroutineDispatcher = dispatcher,
         ),
+        rosterScreenshotMetadataRepository = repository,
+        rosterScreenshotLocalImageStore = localImageStore,
     )
 
     private fun validMetadata() = ImageCandidateReadResult.Metadata(
@@ -286,4 +361,88 @@ class RosterScreenshotIntakeViewModelTest {
         width = 100,
         height = 100,
     )
+
+    private fun association(
+        index: Int,
+        crop: NormalizedCropRect? = null,
+    ) = RosterScreenshotMetadataEntity(
+        tournamentId = "tournament-1",
+        rosterScreenshotIndex = index,
+        localRelativePath = "screenshots/tournament/roster/$index/original.png",
+        mimeType = "image/png",
+        width = 100,
+        height = 100,
+        sha256 = ("$index").repeat(64),
+        validationStatus = RosterScreenshotValidationStatus.VALID.name,
+        cropLeft = crop?.left,
+        cropTop = crop?.top,
+        cropRight = crop?.right,
+        cropBottom = crop?.bottom,
+        createdAt = 1,
+        updatedAt = 2,
+    )
+
+    private class FakeRosterScreenshotMetadataRepository(
+        initial: List<RosterScreenshotMetadataEntity> = emptyList(),
+    ) : RosterScreenshotMetadataRepository {
+        private val state = MutableStateFlow(initial.sortedBy { it.rosterScreenshotIndex })
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<RosterScreenshotMetadataEntity>> = state
+
+        override suspend fun saveOrReplace(
+            metadata: RosterScreenshotMetadataEntity,
+        ): RosterScreenshotAssociationSaveResult {
+            if (metadata.rosterScreenshotIndex !in 1..3) {
+                return RosterScreenshotAssociationSaveResult.InvalidIndex
+            }
+            if (state.value.any {
+                    it.tournamentId == metadata.tournamentId &&
+                        it.rosterScreenshotIndex != metadata.rosterScreenshotIndex &&
+                        it.sha256 == metadata.sha256
+                }
+            ) {
+                return RosterScreenshotAssociationSaveResult.DuplicateFingerprint
+            }
+            state.value = state.value
+                .filterNot {
+                    it.tournamentId == metadata.tournamentId &&
+                        it.rosterScreenshotIndex == metadata.rosterScreenshotIndex
+                }
+                .plus(metadata)
+                .sortedBy { it.rosterScreenshotIndex }
+            return RosterScreenshotAssociationSaveResult.Saved
+        }
+
+        override suspend fun deleteByTournamentAndIndex(tournamentId: String, index: Int) {
+            state.value = state.value.filterNot {
+                it.tournamentId == tournamentId && it.rosterScreenshotIndex == index
+            }
+        }
+
+        fun current(tournamentId: String, index: Int): RosterScreenshotMetadataEntity? =
+            state.value.firstOrNull {
+                it.tournamentId == tournamentId && it.rosterScreenshotIndex == index
+            }
+    }
+
+    private class FakeRosterScreenshotLocalImageStore(
+        private val displayUris: Map<String, String>,
+    ) : RosterScreenshotLocalImageStore {
+        val cleanedIndexes = mutableListOf<Int>()
+
+        override suspend fun preserve(
+            tournamentId: String,
+            rosterScreenshotIndex: Int,
+            selectedUri: String,
+        ): RosterScreenshotLocalImageStoreResult = RosterScreenshotLocalImageStoreResult.Preserved(
+            localRelativePath = "screenshots/tournament/roster/$rosterScreenshotIndex/original.png",
+            displayUri = displayUris.getValue("screenshots/tournament/roster/$rosterScreenshotIndex/original.png"),
+        )
+
+        override suspend fun cleanup(tournamentId: String, rosterScreenshotIndex: Int) {
+            cleanedIndexes += rosterScreenshotIndex
+        }
+
+        override fun displayUriOrNull(localRelativePath: String): String? = displayUris[localRelativePath]
+    }
 }
