@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,10 @@ const val ROSTER_SCREENSHOT_INTAKE_SELECT_BUTTON_TEST_TAG_PREFIX =
 const val ROSTER_SCREENSHOT_INTAKE_REMOVE_BUTTON_TEST_TAG_PREFIX =
     "roster_screenshot_intake_remove_"
 const val ROSTER_SCREENSHOT_INTAKE_ERROR_TEST_TAG_PREFIX = "roster_screenshot_intake_error_"
+const val ROSTER_SCREENSHOT_INTAKE_CROP_STATUS_TEST_TAG_PREFIX = "roster_screenshot_intake_crop_status_"
+const val ROSTER_SCREENSHOT_INTAKE_CROP_INPUT_TEST_TAG_PREFIX = "roster_screenshot_intake_crop_input_"
+const val ROSTER_SCREENSHOT_INTAKE_SET_CROP_BUTTON_TEST_TAG_PREFIX = "roster_screenshot_intake_set_crop_"
+const val ROSTER_SCREENSHOT_INTAKE_CLEAR_CROP_BUTTON_TEST_TAG_PREFIX = "roster_screenshot_intake_clear_crop_"
 
 @Composable
 fun RosterScreenshotIntakeRoute(
@@ -60,6 +65,9 @@ fun RosterScreenshotIntakeRoute(
         uiState = uiState,
         onSelectImage = viewModel::requestPhotoPicker,
         onRemoveImage = viewModel::removeSelectedImage,
+        onCropCoordinateChanged = viewModel::onCropCoordinateChanged,
+        onSetCrop = viewModel::setCrop,
+        onClearCrop = viewModel::clearCrop,
     )
 }
 
@@ -68,6 +76,9 @@ fun RosterScreenshotIntakeSection(
     uiState: RosterScreenshotIntakeUiState,
     onSelectImage: (Int) -> Unit,
     onRemoveImage: (Int) -> Unit,
+    onCropCoordinateChanged: (Int, RosterScreenshotCropCoordinate, String) -> Unit = { _, _, _ -> },
+    onSetCrop: (Int) -> Unit = {},
+    onClearCrop: (Int) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -104,6 +115,9 @@ fun RosterScreenshotIntakeSection(
                 enabled = uiState.canSelectImages && !slot.isValidationInProgress,
                 onSelectImage = onSelectImage,
                 onRemoveImage = onRemoveImage,
+                onCropCoordinateChanged = onCropCoordinateChanged,
+                onSetCrop = onSetCrop,
+                onClearCrop = onClearCrop,
             )
         }
     }
@@ -115,6 +129,9 @@ private fun RosterScreenshotSlot(
     enabled: Boolean,
     onSelectImage: (Int) -> Unit,
     onRemoveImage: (Int) -> Unit,
+    onCropCoordinateChanged: (Int, RosterScreenshotCropCoordinate, String) -> Unit,
+    onSetCrop: (Int) -> Unit,
+    onClearCrop: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
         Text(
@@ -171,9 +188,105 @@ private fun RosterScreenshotSlot(
             ) {
                 Text(text = stringResource(R.string.roster_screenshot_intake_remove_action, slot.index))
             }
+            RosterScreenshotCropControls(
+                slot = slot,
+                onCropCoordinateChanged = onCropCoordinateChanged,
+                onSetCrop = onSetCrop,
+                onClearCrop = onClearCrop,
+            )
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
     }
+}
+
+@Composable
+private fun RosterScreenshotCropControls(
+    slot: RosterScreenshotSlotUiState,
+    onCropCoordinateChanged: (Int, RosterScreenshotCropCoordinate, String) -> Unit,
+    onSetCrop: (Int) -> Unit,
+    onClearCrop: (Int) -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.roster_screenshot_crop_title),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    Text(
+        text = stringResource(slot.cropStatusStringRes()),
+        modifier = Modifier.testTag(ROSTER_SCREENSHOT_INTAKE_CROP_STATUS_TEST_TAG_PREFIX + slot.index),
+    )
+    slot.cropError?.let { error ->
+        Text(
+            text = stringResource(error.toStringRes()),
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag(ROSTER_SCREENSHOT_INTAKE_ERROR_TEST_TAG_PREFIX + "crop_" + slot.index),
+        )
+    }
+    CropCoordinateInput(
+        slot = slot,
+        coordinate = RosterScreenshotCropCoordinate.LEFT,
+        value = slot.cropDraft.left,
+        onCropCoordinateChanged = onCropCoordinateChanged,
+    )
+    CropCoordinateInput(
+        slot = slot,
+        coordinate = RosterScreenshotCropCoordinate.TOP,
+        value = slot.cropDraft.top,
+        onCropCoordinateChanged = onCropCoordinateChanged,
+    )
+    CropCoordinateInput(
+        slot = slot,
+        coordinate = RosterScreenshotCropCoordinate.RIGHT,
+        value = slot.cropDraft.right,
+        onCropCoordinateChanged = onCropCoordinateChanged,
+    )
+    CropCoordinateInput(
+        slot = slot,
+        coordinate = RosterScreenshotCropCoordinate.BOTTOM,
+        value = slot.cropDraft.bottom,
+        onCropCoordinateChanged = onCropCoordinateChanged,
+    )
+    Button(
+        onClick = { onSetCrop(slot.index) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(ROSTER_SCREENSHOT_INTAKE_SET_CROP_BUTTON_TEST_TAG_PREFIX + slot.index),
+    ) {
+        Text(
+            text = stringResource(
+                if (slot.cropState is RosterScreenshotCropState.Set) {
+                    R.string.roster_screenshot_crop_update_action
+                } else {
+                    R.string.roster_screenshot_crop_set_action
+                },
+            ),
+        )
+    }
+    Button(
+        onClick = { onClearCrop(slot.index) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(ROSTER_SCREENSHOT_INTAKE_CLEAR_CROP_BUTTON_TEST_TAG_PREFIX + slot.index),
+    ) {
+        Text(text = stringResource(R.string.roster_screenshot_crop_clear_action))
+    }
+}
+
+@Composable
+private fun CropCoordinateInput(
+    slot: RosterScreenshotSlotUiState,
+    coordinate: RosterScreenshotCropCoordinate,
+    value: String,
+    onCropCoordinateChanged: (Int, RosterScreenshotCropCoordinate, String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { onCropCoordinateChanged(slot.index, coordinate, it) },
+        label = { Text(stringResource(coordinate.toStringRes())) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(ROSTER_SCREENSHOT_INTAKE_CROP_INPUT_TEST_TAG_PREFIX + slot.index + "_" + coordinate.name.lowercase()),
+        singleLine = true,
+    )
 }
 
 private fun ImageValidationError.toStringRes(): Int = when (this) {
@@ -191,4 +304,25 @@ private fun RosterScreenshotIntakeError.toStringRes(): Int = when (this) {
         R.string.roster_screenshot_intake_missing_tournament
     RosterScreenshotIntakeError.PHOTO_PICKER_LAUNCH_FAILED ->
         R.string.roster_screenshot_intake_picker_failed
+}
+
+private fun RosterScreenshotCropCoordinate.toStringRes(): Int = when (this) {
+    RosterScreenshotCropCoordinate.LEFT -> R.string.roster_screenshot_crop_left_label
+    RosterScreenshotCropCoordinate.TOP -> R.string.roster_screenshot_crop_top_label
+    RosterScreenshotCropCoordinate.RIGHT -> R.string.roster_screenshot_crop_right_label
+    RosterScreenshotCropCoordinate.BOTTOM -> R.string.roster_screenshot_crop_bottom_label
+}
+
+private fun RosterScreenshotSlotUiState.cropStatusStringRes(): Int = when {
+    isCropReady -> R.string.roster_screenshot_crop_ready
+    else -> R.string.roster_screenshot_crop_not_set
+}
+
+private fun RosterScreenshotCropError.toStringRes(): Int = when (this) {
+    RosterScreenshotCropError.MISSING_SELECTED_IMAGE -> R.string.roster_screenshot_crop_missing_image
+    RosterScreenshotCropError.INVALID_NUMBER -> R.string.roster_screenshot_crop_invalid_number
+    RosterScreenshotCropError.NON_FINITE_VALUE -> R.string.roster_screenshot_crop_non_finite
+    RosterScreenshotCropError.OUT_OF_BOUNDS -> R.string.roster_screenshot_crop_out_of_bounds
+    RosterScreenshotCropError.INVALID_EDGES -> R.string.roster_screenshot_crop_invalid_edges
+    RosterScreenshotCropError.TOO_SMALL -> R.string.roster_screenshot_crop_too_small
 }

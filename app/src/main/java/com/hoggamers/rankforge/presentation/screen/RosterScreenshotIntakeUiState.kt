@@ -20,9 +20,15 @@ data class RosterScreenshotSlotUiState(
     val isValidationInProgress: Boolean = false,
     val lastValidationError: ImageValidationError? = null,
     val duplicateSelectionState: RosterScreenshotDuplicateSelectionState? = null,
+    val cropDraft: RosterScreenshotCropDraft = RosterScreenshotCropDraft(),
+    val cropState: RosterScreenshotCropState = RosterScreenshotCropState.NotSet,
+    val cropError: RosterScreenshotCropError? = null,
 ) {
     val hasValidatedImage: Boolean
         get() = selectedImageUri != null && isSelectedImageValidated
+
+    val isCropReady: Boolean
+        get() = hasValidatedImage && cropState is RosterScreenshotCropState.Set
 }
 
 data class RosterScreenshotIntakeUiState(
@@ -35,11 +41,17 @@ data class RosterScreenshotIntakeUiState(
     val selectedImageCount: Int
         get() = slots.count { it.hasValidatedImage }
 
+    val cropReadyImageCount: Int
+        get() = slots.count { it.isCropReady }
+
     val isCompleteSet: Boolean
         get() = slots.size == REQUIRED_SCREENSHOT_COUNT && slots.all { it.hasValidatedImage }
 
     val isIncompleteDraftSet: Boolean
         get() = !isCompleteSet
+
+    val isCompleteCropReadySet: Boolean
+        get() = slots.size == REQUIRED_SCREENSHOT_COUNT && slots.all { it.isCropReady }
 
     val canSelectImages: Boolean
         get() = !tournamentId.isNullOrBlank() && !isPhotoPickerLaunchPending
