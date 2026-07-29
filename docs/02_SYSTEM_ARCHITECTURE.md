@@ -31,6 +31,7 @@ Rank-Forge is architected as:
 * A native Android client used by tournament organizers and authorized operators
 * A Supabase backend providing authentication, permanent backend data, storage, Row Level Security, restricted backend functions, and synchronization authority
 * An on-device Google ML Kit OCR capability for supported genuine Free Fire MAX scoreboard screenshots
+* A separately staged roster screenshot OCR capability using privately preserved, operator-cropped roster panels
 * Room-based local persistence for approved drafts, cache, recovery, and pending synchronization
 * CSV export and secure Google Sheets export
 
@@ -167,7 +168,7 @@ This document does not define tables, fields, SQL policies, RPC names, Edge Func
 
 ## 9. Screenshot and OCR Architecture
 
-The approved scoreboard-only pipeline is:
+The approved scoreboard screenshot pipeline is:
 
 1. Select a genuine Free Fire MAX scoreboard screenshot.
 2. Validate basic image usability.
@@ -183,14 +184,30 @@ The approved scoreboard-only pipeline is:
 
 Required OCR boundaries:
 
-* OCR applies only to supported genuine scoreboard screenshots.
-* Tournament rosters remain manually entered structured data.
-* Roster-screenshot OCR and roster-image import are outside MVP scope.
+* Scoreboard OCR applies only to supported genuine scoreboard screenshots.
+* Manual tournament roster entry remains available and protected.
+* The separately staged roster OCR extension applies only to approved roster screenshots after operator-controlled crop preparation; it does not alter scoreboard OCR.
 * OCR extraction, parsing, matching, scoring, correction, and finalization remain separate responsibilities.
 * Raw OCR values and corrected values remain distinguishable.
 * OCR acceptance remains deferred until approved genuine screenshot data exists.
 
 This document does not define crop coordinates, image dimensions, preprocessing parameters, parser expressions, confidence thresholds, or supported layouts.
+
+### Staged roster screenshot pipeline
+
+The staged roster workflow is separate from the scoreboard pipeline:
+
+1. Select exactly three roster screenshots for one tournament.
+2. Preserve each original privately.
+3. Let the operator crop the roster panel in-app.
+4. Use only the cropped panel or reproducible crop metadata for roster OCR.
+5. Extract, parse, associate, and validate candidate team/player data for fixed slots 1 through 12.
+6. Present candidates for correction, abandonment, and explicit confirmation before any roster replacement.
+
+Representative screenshots and manually verified ground truth are required before
+fixed roster-layout coordinates or extraction-accuracy behavior is defined.
+Full screenshots must not be processed as roster panels, and coordinates must
+not be inferred from a single sample.
 
 ## 10. Team Matching and Result Processing
 
@@ -282,7 +299,7 @@ The architecture must provide seams for:
 * Room persistence and migration tests
 * Supabase schema, function, RLS, and authorization tests
 * Synchronization and idempotency tests
-* OCR fixture and genuine screenshot evaluation
+* Scoreboard and roster OCR fixture and genuine screenshot evaluation
 * Export validation
 * Compose UI and end-to-end workflow tests
 * Emulator and physical-device verification
@@ -297,8 +314,8 @@ The approved architectural constraints are:
 * Exactly 12 team slots
 * Four to six players per team
 * Maximum 10 matches per tournament
-* Manual roster entry
-* Scoreboard-only OCR
+* Manual roster entry remains available
+* Scoreboard OCR plus the separately staged roster OCR extension
 * Supabase permanent backend authority
 * Room limited to approved local and offline responsibilities
 * Finalized-only export
@@ -315,6 +332,7 @@ The following matters remain unresolved and require approval or later canonical 
 * Supabase schema and RLS definitions
 * Synchronization conflict-resolution mechanism
 * Supported scoreboard layout and crop coordinates
+* Supported cropped roster layout and crop coordinates
 * OCR preprocessing details
 * Matching algorithm implementation details
 * Export column definitions

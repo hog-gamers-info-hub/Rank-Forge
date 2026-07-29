@@ -198,10 +198,10 @@ It will be used for:
 
 ### Restrictions
 
-* Tournament roster management is manual in the MVP.
-* Teams and players must be entered through structured application input.
-* ML Kit OCR applies only to genuine Free Fire MAX scoreboard screenshots.
-* Roster-screenshot OCR and roster-image import are outside MVP scope unless separately approved and assigned to a roadmap version.
+* Manual tournament roster management and structured team/player entry remain available and protected.
+* ML Kit OCR applies to genuine Free Fire MAX scoreboard screenshots and, only in the separately staged roadmap extension, approved cropped roster panels.
+* Roster screenshot OCR produces review-required candidate data only; it cannot automatically replace or confirm roster data.
+* The staged roster workflow requires three privately preserved screenshots, operator-controlled in-app crop, and representative screenshots with verified ground truth before layout/extraction work.
 * ML Kit output must never be treated as automatically correct.
 * Original OCR values must be preserved.
 * Low-confidence results must require review.

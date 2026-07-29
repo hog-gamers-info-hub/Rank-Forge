@@ -55,6 +55,7 @@
 * **v0.5.5 — App-Restart Recovery:** Restore unfinished tournaments and matches after app restart.
 * **v0.5.6 — Offline Operations:** Allow the core tournament workflow without an internet connection.
 * **v0.5.7 — Local Data Integrity:** Add transactions, constraints, duplicate prevention, and failure recovery.
+* **v0.5.8 — Atomic Confirmed Roster Replacement:** Safely replace all 12 confirmed roster slots only after explicit review and confirmation, while preserving old local data until commit succeeds and respecting created/finalized-match safety policy.
 
 # Phase 6 — Authentication, Backend, and Cloud Sync
 
@@ -76,6 +77,7 @@
 * **v0.6.7.1 — Conflict resolution workflow**
 * **v0.6.8 — Protected match finalization**
 * **v0.6.8.1 — Protected corrections and audit history**
+* **v0.6.9 — Revision-Safe Roster Sync Replacement:** Add safe cloud roster replacement, stale-player deletion, revision conflict, rollback, ownership/RLS, queue/idempotency, and restoration behavior.
 
 # Phase 7 — Screenshot Intake and Storage
 
@@ -86,8 +88,13 @@
 * **v0.7.4 — Local Image Preservation:** Preserve original images separately from processed versions.
 * **v0.7.5 — Supabase Storage Integration:** Upload approved screenshots securely with controlled access.
 * **v0.7.6 — Screenshot Metadata:** Store dimensions, hashes, processing status, timestamps, and storage references.
+* **v0.7.7 — Roster Screenshot Intake:** Select exactly three roster screenshots, validate candidates, preserve originals privately, and associate them with one tournament.
+* **v0.7.8 — Roster Screenshot Crop Preparation:** Add operator-controlled in-app crop, crop metadata, and cropped OCR-image preparation for roster screenshots; no OCR.
+* **v0.7.9 — Roster Screenshot Set Association:** Store roster screenshot set ordering, distinguish roster images from match-result images, protect duplicate or incorrect associations, and support local restore behavior.
 
 # Phase 8 — OCR Extraction and Parsing
+
+The completed v0.8.0 through v0.8.8 scoreboard OCR sequence remains closed and protected. The following roster OCR extension is staged after its Phase 7 prerequisites and does not reinterpret completed Phase 8 work.
 
 * **v0.8.0 — ML Kit Integration:** Add the bundled Latin Text Recognition v2 model.
 * **v0.8.1 — Fixed Scoreboard Layout Definition:** Define the supported Free Fire MAX screenshot layout and crop coordinates.
@@ -98,6 +105,11 @@
 * **v0.8.6 — Kill Parsing:** Extract and validate player or team kill values.
 * **v0.8.7 — OCR Failure Handling:** Mark missing, malformed, or uncertain fields for manual review.
 * **v0.8.8 — Real Screenshot Evaluation:** Compare OCR results against manually verified genuine screenshots.
+* **v0.8.9 — Cropped Roster Layout Definition:** Define one supported cropped roster-panel layout for four visible team slots per screenshot after representative screenshots and ground truth are approved.
+* **v0.8.10 — Roster Raw OCR Extraction:** Reuse approved ML Kit/raw OCR boundaries through roster-specific preprocessing from cropped roster panels only.
+* **v0.8.11 — Roster Team and Player Parsing:** Parse candidate team names and four to six player names per visible slot from roster OCR evidence.
+* **v0.8.12 — Roster Slot Association:** Map screenshot number plus visible slot position to fixed tournament slots 1 through 12.
+* **v0.8.13 — Roster OCR Validation:** Detect missing or malformed candidate data, invalid player counts, empty slots, uncertainty, duplicate teams, and policy-defined duplicate-player issues.
 
 # Phase 9 — Team Matching and Manual Correction
 
@@ -111,6 +123,7 @@
 * **v0.9.7 — Manual Field Correction:** Edit player names, kills, placements, and assigned teams.
 * **v0.9.8 — Safe Match Finalization:** Block finalization until every conflict and uncertain result is resolved.
 * **v0.9.9 — Original and Corrected Data Preservation:** Retain raw OCR output alongside confirmed corrected results.
+* **v0.9.x — Roster OCR Review and Correction:** Review roster OCR candidates, allow correction or abandonment, and require explicit confirmation before persistence.
 
 # Phase 10 — CSV and Google Sheets Export
 
@@ -147,6 +160,7 @@
 * **v0.12.7 — Security Review:** Verify credentials, RLS, storage policies, backend authorization, and repository hygiene.
 * **v0.12.8 — OCR Acceptance Testing:** Verify team-identification accuracy against the approved genuine screenshot set.
 * **v0.12.9 — Regression Test Suite:** Add permanent tests for every important defect fixed.
+* **v0.12.x — Real Roster OCR Acceptance Evaluation:** Evaluate the staged roster OCR workflow using approved representative screenshots and manually verified expected data.
 
 # Phase 13 — Beta Testing and Production Readiness
 

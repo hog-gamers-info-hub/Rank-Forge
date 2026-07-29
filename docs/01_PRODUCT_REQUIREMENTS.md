@@ -6,7 +6,7 @@ This document defines the authoritative repository-level MVP product requirement
 
 It establishes approved product behavior and scope boundaries without defining implementation architecture, database schemas, APIs, classes, screen layouts, algorithms, or other technical details that belong in later canonical documents.
 
-This document follows the approved authority hierarchy. Manual roster management and scoreboard-only OCR scope govern this document, and unsupported or conflicting statements must not be promoted into MVP requirements through inference.
+This document follows the approved authority hierarchy. Manual roster management, scoreboard OCR, and the separately staged roster screenshot OCR extension govern this document, and unsupported or conflicting statements must not be promoted into MVP requirements through inference.
 
 ## 2. Product Goals
 
@@ -14,6 +14,7 @@ The approved MVP product goals are:
 
 * Manage Free Fire MAX tournaments.
 * Maintain tournament teams and player rosters.
+* Support the separately staged screenshot-first roster OCR workflow without removing manual roster entry.
 * Process match results accurately.
 * Calculate deterministic standings.
 * Support controlled scoreboard OCR.
@@ -46,7 +47,9 @@ The MVP product must support the following high-level capabilities within approv
 Tournament and roster requirements:
 
 * Every tournament must use exactly 12 fixed team slots.
-* Team and player rosters must be entered and maintained manually through structured application input.
+* Manual structured team and player roster entry must remain available for every tournament.
+* The separately staged roster OCR workflow may produce candidates from three roster screenshots expected to cover the 12 fixed slots, with four visible team slots per screenshot and four to six player names per slot.
+* Roster OCR candidates require review and explicit confirmation before they may replace roster data.
 * Each team must contain four to six players.
 * Team names must be unique within a tournament.
 * Player duplication and invalid roster sizes must be detected.
@@ -70,6 +73,7 @@ The approved MVP workflows are:
 
 * A tournament organizer or authorized operator creates a tournament and prepares exactly 12 team slots.
 * The operator manually enters and reviews team names and player rosters before tournament processing continues.
+* Where the approved staged workflow is available, the operator may review and correct roster OCR candidates from privately preserved, manually cropped roster screenshots before confirmation.
 * The operator creates match records within the approved match limit and enters or reviews match identity information.
 * The operator processes match results through manual entry and, where applicable, supported scoreboard screenshot review.
 * The operator reviews detected values, resolves conflicts, confirms uncertain OCR results, and makes required corrections before finalization.
@@ -136,6 +140,16 @@ Scoreboard screenshot and OCR requirements:
 * Missing, malformed, unsupported, or uncertain values must require review.
 * Genuine screenshot acceptance remains deferred until approved real screenshot data exists.
 
+Roster screenshot OCR requirements:
+
+* Roster screenshot OCR follows the staged cross-phase roadmap extension only.
+* Exactly three roster screenshots are expected to cover all 12 fixed slots, with four visible team slots per image.
+* The original selected image must be preserved privately, and the operator must crop the roster panel in-app before OCR.
+* OCR must use the cropped roster panel or reproducible crop metadata, not the full roster screenshot.
+* Representative screenshots and manually verified expected data are prerequisites for layout coordinates and extraction-accuracy work.
+* Roster OCR output is candidate data only until review, correction where needed, and explicit confirmation.
+* Manual roster entry remains available for corrections, unsupported screenshots, incomplete data, and fallback.
+
 Team matching and manual-correction requirements:
 
 * Detected player names may be normalized and compared against the manually maintained roster.
@@ -159,6 +173,8 @@ The approved MVP persistence and synchronization requirements are:
 * Synchronization conflicts must be detected and handled explicitly.
 * Supabase is the permanent backend source of truth.
 * Finalized data must not be silently overwritten by stale local data.
+* Roster replacement after created or finalized matches requires an explicit safety policy before persistence work.
+* Existing Room and Supabase roster persistence must be extended rather than duplicated.
 
 This document does not define Room entities, Supabase tables, queues, RPCs, policies, or conflict-resolution algorithms.
 
@@ -206,9 +222,6 @@ The MVP is constrained by the following approved boundaries:
 
 The current approved MVP excludes:
 
-* Roster-screenshot OCR
-* Roster-image import
-* Automatic roster extraction
 * Silent automatic confirmation of uncertain OCR results
 * Export of draft or unconfirmed results
 * Public spectator accounts
@@ -244,4 +257,6 @@ The following matters remain pending later approval or later canonical documenta
 * Approved real screenshot acceptance dataset
 * Export column details not yet approved in a populated canonical export document
 * Detailed OCR parsing, preprocessing, normalization, and matching definitions
+* Cross-team duplicate-player policy for roster validation
+* Roster replacement eligibility after created or finalized matches
 * Detailed Android, database, backend, and export technical specifications intentionally deferred to later canonical documents

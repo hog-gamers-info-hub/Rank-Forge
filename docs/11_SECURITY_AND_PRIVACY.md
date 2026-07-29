@@ -146,8 +146,9 @@ This document does not create SQL, policies, RPC names, or migration content.
 
 Screenshot and OCR privacy requirements are:
 
-* OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
-* Scoreboard screenshots may contain private or personally sensitive data.
+* Scoreboard OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
+* The separately staged roster OCR extension applies only to privately preserved, operator-cropped roster panels; roster candidates remain review-required until explicit confirmation.
+* Scoreboard and roster screenshots may contain private or personally sensitive data.
 * Private screenshots must not be committed publicly.
 * Fake screenshots cannot be used as OCR acceptance evidence.
 * Original screenshots and raw OCR output must be preserved where permitted.
@@ -155,7 +156,8 @@ Screenshot and OCR privacy requirements are:
 * Screenshot access must follow tournament ownership.
 * Logs must not expose private screenshot content unnecessarily.
 * Real screenshot acceptance requires approved samples and manually verified ground truth.
-* Roster-screenshot OCR and roster-image import are outside MVP scope.
+* Real roster screenshots and real player names must not be committed without explicit privacy approval; synthetic sanitized fixtures are preferred.
+* Representative roster screenshot evaluation is local-only under documented privacy rules until a later canonical policy permits otherwise.
 
 This document does not define screenshot retention periods, deletion schedules, or public sharing behavior.
 
@@ -364,6 +366,7 @@ Security and privacy roadmap alignment is:
 * Phase 6 implements Supabase authentication, RLS, synchronization, idempotency, conflict handling, and finalized-data protection.
 * Phase 7 introduces controlled screenshot intake and storage.
 * Phase 8 and Phase 9 validate OCR, matching, correction, and raw-versus-confirmed data preservation.
+* The staged roster extension assigns image intake/crop/set association to Phase 7, cropped OCR to Phase 8, safe replacement to Phases 5 and 6, review/correction to Phase 9, and real acceptance evaluation to Phase 12.
 * Phase 10 secures CSV and Google Sheets export.
 * Phase 11 integrates full workflow error handling.
 * Phase 12 completes security, privacy, backend, device, recovery, and regression validation.

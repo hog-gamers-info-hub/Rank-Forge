@@ -29,6 +29,7 @@ gradlew.bat assembleDebug
 * Room database behavior must have repository or database tests.
 * Supabase database functions and RLS policies must have database tests.
 * OCR processing must be checked against the approved screenshot dataset.
+* The staged roster workflow requires phase-appropriate tests for intake and crop, layout compatibility, extraction, parsing, slot association, validation, review, atomic persistence, revision-safe sync replacement, conflict handling, and acceptance evaluation.
 * Changed Compose screens must be manually verified on an emulator or physical device.
 
 ## 3. Verification Rules
@@ -37,6 +38,7 @@ gradlew.bat assembleDebug
 * Existing passing tests must not be removed to make a change pass.
 * Test failures must be investigated to identify the root cause.
 * OCR results must be compared with manually prepared expected results.
+* Real roster evaluation must use approved representative screenshots and manually verified expected data under documented privacy rules; synthetic sanitized fixtures remain the default for committed tests.
 * Manual corrections must be tested for player names, teams, kills and positions.
 * Google Sheets and CSV exports must be checked for missing or duplicate teams.
 * The Git diff must be reviewed before committing.

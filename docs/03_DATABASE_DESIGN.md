@@ -61,7 +61,7 @@ The approved logical entity groups are:
 
 These are logical entities required by approved product scope. They do not imply that physical tables, Room entities, or code structures already exist in the current repository.
 
-This document does not add spectator entities, player-login accounts, team-owner accounts, payment or subscription entities, public social features, roster-image import entities, or unapproved multi-tenant organization structures.
+This document does not add spectator entities, player-login accounts, team-owner accounts, payment or subscription entities, public social features, or unapproved multi-tenant organization structures. The separately staged roster screenshot OCR extension must use approved future phase-specific contracts rather than duplicate existing roster persistence.
 
 ## 5. Tournament and Roster Data
 
@@ -102,7 +102,7 @@ Required constraints:
 * Duplicate players must be detected according to approved validation rules.
 * A complete roster review is required before match processing.
 
-The exact cross-team duplicate-player rule remains a deferred decision requiring explicit confirmation. This document does not introduce roster screenshots, image import, automatic extraction, or CSV roster import.
+The exact cross-team duplicate-player rule remains a deferred decision requiring explicit confirmation. The staged roster screenshot OCR extension must not invent that rule, and it must keep manual roster entry available.
 
 ## 6. Match and Result Data
 
@@ -194,8 +194,8 @@ Required boundaries:
 
 * Original screenshot metadata and raw OCR data must be preserved where permitted.
 * Raw OCR values must not be overwritten by corrected values.
-* OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
-* Roster-screenshot OCR and roster-image import are outside MVP scope.
+* Scoreboard OCR applies only to genuine supported Free Fire MAX scoreboard screenshots.
+* The separately staged roster OCR extension uses privately preserved roster screenshots, operator-controlled crop data, and cropped roster panels only; its candidate data remains separate from confirmed roster data.
 * Screenshot hashes must support duplicate detection.
 
 This document does not define crop coordinates, exact JSON formats, confidence fields, storage paths, bucket names, or OCR parser schemas.
@@ -258,7 +258,8 @@ The logical Supabase relational model is:
 * Players belong to teams.
 * Matches belong to tournaments.
 * Results belong to matches and reference tournament teams.
-* Screenshots belong to tournaments and matches.
+* Scoreboard screenshots belong to tournaments and matches.
+* The staged roster screenshot set belongs to one tournament and is distinct from match screenshots.
 * OCR records belong to screenshots.
 * Corrections or revisions reference affected result data.
 * Export and synchronization records reference their relevant tournament or match operations.
@@ -289,6 +290,7 @@ The approved logical relationships are:
 * One match may reference one or more approved scoreboard screenshots where later workflow rules allow.
 * One screenshot may have multiple processing attempts or OCR runs.
 * One OCR run may contain multiple parsed observations.
+* The staged roster workflow expects three ordered roster screenshots, each with four visible team slots, before association to the fixed 12-slot roster.
 * One match result may have multiple revisions but one current confirmed state.
 * One tournament has one derived current standings projection that is reproducible from finalized matches.
 * One domain record may have multiple synchronization attempts without creating duplicate domain records.
@@ -487,5 +489,6 @@ Approved roadmap alignment is:
 * Phase 7 adds screenshot storage and metadata.
 * Phase 8 adds OCR processing data.
 * Phase 9 adds matching, correction, and raw-versus-confirmed preservation.
+* The roster OCR extension adds approved Phase 5 atomic local replacement, Phase 6 revision-safe cloud replacement, Phase 7 image/crop/set state, Phase 8 cropped OCR, Phase 9 review/correction, and Phase 12 real acceptance evaluation work.
 * Phase 10 adds export-operation and idempotency support.
 * Phase 12 validates database, RLS, synchronization, and migration behavior.
