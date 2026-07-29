@@ -87,6 +87,75 @@ data class MatchEntity(
     val status: String,
 )
 
+enum class ScreenshotLocalStatus {
+    PRESERVED,
+    MISSING,
+    CLEANUP_FAILED,
+}
+
+enum class ScreenshotUploadStatus {
+    PENDING,
+    UPLOADED,
+    FAILED,
+}
+
+@Entity(
+    tableName = "screenshot_metadata",
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["tournament_id"]),
+        Index(value = ["owner_user_id"]),
+        Index(value = ["sha256"]),
+        Index(value = ["upload_status"]),
+    ],
+)
+data class ScreenshotMetadataEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "owner_user_id")
+    val ownerUserId: String,
+    @ColumnInfo(name = "local_relative_path")
+    val localRelativePath: String,
+    @ColumnInfo(name = "file_extension")
+    val fileExtension: String,
+    @ColumnInfo(name = "mime_type")
+    val mimeType: String,
+    val width: Int,
+    val height: Int,
+    @ColumnInfo(name = "byte_size")
+    val byteSize: Long,
+    val sha256: String,
+    @ColumnInfo(name = "storage_bucket")
+    val storageBucket: String?,
+    @ColumnInfo(name = "storage_object_path")
+    val storageObjectPath: String?,
+    @ColumnInfo(name = "local_status")
+    val localStatus: String,
+    @ColumnInfo(name = "upload_status")
+    val uploadStatus: String,
+    @ColumnInfo(name = "upload_failure_code")
+    val uploadFailureCode: String?,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+    @ColumnInfo(name = "preserved_at")
+    val preservedAt: Long,
+    @ColumnInfo(name = "uploaded_at")
+    val uploadedAt: Long?,
+    val revision: Long,
+)
+
 @Entity(
     tableName = "match_placements",
     primaryKeys = ["match_id", "team_slot_number"],

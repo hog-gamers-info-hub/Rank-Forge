@@ -2,6 +2,15 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudDataSource
+import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudFailure
+import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudPayload
+import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudResult
+import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataFailureCode
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -25,6 +34,8 @@ import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -263,9 +274,8 @@ class MatchReviewViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(uri, state.linkedScreenshotUri)
         assertTrue(state.isScreenshotLocallyPreserved)
-        assertNotNull(state.preservedScreenshotPath)
-        assertEquals(bytes.toList(), File(state.preservedScreenshotPath!!).readBytes().toList())
-        assertTrue(state.preservedScreenshotPath!!.endsWith("original.jpg"))
+        assertNotNull(state.preservedScreenshotRelativePath)
+        assertTrue(state.preservedScreenshotRelativePath!!.endsWith("original.jpg"))
     }
 
     @Test
@@ -296,6 +306,101 @@ class MatchReviewViewModelTest {
             "users/user-id/tournaments/tournament-id/matches/$matchId/original.png",
             viewModel.uiState.value.screenshotUploadObjectPath,
         )
+    }
+
+    @Test
+    fun metadataIsCreatedAfterSuccessfulPreservationAndUpdatedAfterStorageUpload() = runTest {
+        val uri = "content://picker/metadata"
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val metadataRepository = FakeScreenshotMetadataRepository()
+        val uploader = RecordingScreenshotStorageUploader(
+            ScreenshotStorageUploadResult.Uploaded(
+                "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+            ),
+        )
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to bytes)),
+            localImagePreserver = localImagePreserver(mapOf(uri to bytes)),
+            screenshotStorageUploader = uploader,
+            screenshotMetadataRepository = metadataRepository,
+            screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        val metadata = metadataRepository.metadata.value!!
+        assertEquals(matchId, metadata.matchId)
+        assertEquals("tournament-id", metadata.tournamentId)
+        assertEquals("owner-id", metadata.ownerUserId)
+        assertEquals("png", metadata.fileExtension)
+        assertEquals("image/png", metadata.mimeType)
+        assertEquals(1080, metadata.width)
+        assertEquals(1920, metadata.height)
+        assertEquals(bytes.size.toLong(), metadata.byteSize)
+        assertEquals(ScreenshotLocalStatus.PRESERVED.name, metadata.localStatus)
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, metadata.uploadStatus)
+        assertEquals(2, metadata.revision)
+        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
+        assertEquals(ScreenshotMetadataUploadUiStatus.UPLOADED, viewModel.uiState.value.screenshotMetadata!!.uploadStatus)
+    }
+
+    @Test
+    fun cloudMetadataFailureMarksLocalMetadataFailedWithControlledCode() = runTest {
+        val metadataRepository = FakeScreenshotMetadataRepository()
+        val cloudDataSource = FakeScreenshotMetadataCloudDataSource(
+            upsertResult = ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.AUTHORIZATION),
+        )
+        val viewModel = reviewViewModel(
+            screenshotStorageUploader = RecordingScreenshotStorageUploader(
+                ScreenshotStorageUploadResult.Uploaded(
+                    "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+                ),
+            ),
+            screenshotMetadataRepository = metadataRepository,
+            screenshotMetadataCloudDataSource = cloudDataSource,
+            screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/cloud-metadata-failure")
+        advanceUntilIdle()
+
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(ScreenshotUploadStatus.FAILED.name, metadataRepository.metadata.value!!.uploadStatus)
+        assertEquals(ScreenshotMetadataFailureCode.RLS_DENIED.name, metadataRepository.metadata.value!!.uploadFailureCode)
+        assertEquals(ScreenshotUploadError.RLS_DENIED, viewModel.uiState.value.screenshotUploadError)
+    }
+
+    @Test
+    fun roomMetadataWriteFailureKeepsPreservedFileAndDoesNotUpload() = runTest {
+        val metadataRepository = FakeScreenshotMetadataRepository().apply {
+            failWrites = true
+        }
+        val uploader = RecordingScreenshotStorageUploader(
+            ScreenshotStorageUploadResult.Uploaded("object/path"),
+        )
+        val viewModel = reviewViewModel(
+            screenshotStorageUploader = uploader,
+            screenshotMetadataRepository = metadataRepository,
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/room-failure")
+        advanceUntilIdle()
+
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(ScreenshotPreservationError.ROOM_WRITE_FAILED, viewModel.uiState.value.screenshotPreservationError)
+        assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(0, uploader.calls.size)
     }
 
     @Test
@@ -442,11 +547,47 @@ class MatchReviewViewModelTest {
         viewModel.unlinkScreenshot()
         advanceUntilIdle()
 
-        assertNull(viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(uri, viewModel.uiState.value.linkedScreenshotUri)
         assertEquals(
             ScreenshotPreservationError.CLEANUP_FAILED,
             viewModel.uiState.value.screenshotPreservationError,
         )
+    }
+
+    @Test
+    fun restoredMetadataShowsLinkedStateAndMissingLocalFileMarksMetadataMissing() = runTest {
+        val metadataRepository = FakeScreenshotMetadataRepository(
+            metadata = ScreenshotMetadataEntity(
+                matchId = matchId,
+                tournamentId = "tournament-id",
+                ownerUserId = "owner-id",
+                localRelativePath = "screenshots/missing/match/original.png",
+                fileExtension = "png",
+                mimeType = "image/png",
+                width = 1080,
+                height = 1920,
+                byteSize = 4,
+                sha256 = "a".repeat(64),
+                storageBucket = "match-screenshots",
+                storageObjectPath = "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+                localStatus = ScreenshotLocalStatus.PRESERVED.name,
+                uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                uploadFailureCode = null,
+                createdAt = 1,
+                updatedAt = 1,
+                preservedAt = 1,
+                uploadedAt = 2,
+                revision = 2,
+            ),
+        )
+        val viewModel = reviewViewModel(screenshotMetadataRepository = metadataRepository)
+
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isPreservedScreenshotMissing)
+        assertEquals(ScreenshotPreservationError.LOCAL_FILE_MISSING, viewModel.uiState.value.screenshotPreservationError)
+        assertEquals(ScreenshotLocalStatus.MISSING.name, metadataRepository.metadata.value!!.localStatus)
     }
 
     @Test
@@ -691,6 +832,10 @@ class MatchReviewViewModelTest {
         localImagePreserver: LocalImagePreserver = localImagePreserver(),
         screenshotStorageUploader: ScreenshotStorageUploader =
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader(),
+        screenshotMetadataRepository: ScreenshotMetadataRepository = FakeScreenshotMetadataRepository(),
+        screenshotMetadataCloudDataSource: ScreenshotMetadataCloudDataSource =
+            com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -702,6 +847,9 @@ class MatchReviewViewModelTest {
         screenshotDuplicateDetector = screenshotDuplicateDetector,
         localImagePreserver = localImagePreserver,
         screenshotStorageUploader = screenshotStorageUploader,
+        screenshotMetadataRepository = screenshotMetadataRepository,
+        screenshotMetadataCloudDataSource = screenshotMetadataCloudDataSource,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     )
 
     private class RecordingScreenshotStorageUploader(
@@ -741,4 +889,98 @@ class MatchReviewViewModelTest {
         mimeTypeReader = ImageSourceMimeTypeReader { mimeType },
         ioDispatcher = Dispatchers.Unconfined,
     )
+
+    private class FixedScreenshotOwnerProvider(
+        private val ownerId: String?,
+    ) : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String? = ownerId
+    }
+
+    private class FakeScreenshotMetadataCloudDataSource(
+        private val upsertResult: ScreenshotMetadataCloudResult = ScreenshotMetadataCloudResult.Success,
+        private val deleteResult: ScreenshotMetadataCloudResult = ScreenshotMetadataCloudResult.Success,
+    ) : ScreenshotMetadataCloudDataSource {
+        val upserts = mutableListOf<ScreenshotMetadataCloudPayload>()
+
+        override suspend fun upsert(payload: ScreenshotMetadataCloudPayload): ScreenshotMetadataCloudResult {
+            upserts += payload
+            return upsertResult
+        }
+
+        override suspend fun deleteByMatchId(matchId: String): ScreenshotMetadataCloudResult = deleteResult
+    }
+
+    private class FakeScreenshotMetadataRepository(
+        metadata: ScreenshotMetadataEntity? = null,
+    ) : ScreenshotMetadataRepository {
+        val metadata = MutableStateFlow(metadata)
+        var failWrites = false
+
+        override fun observeByMatchId(matchId: String): Flow<ScreenshotMetadataEntity?> = metadata
+
+        override suspend fun getByMatchId(matchId: String): ScreenshotMetadataEntity? = metadata.value
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>> =
+            MutableStateFlow(metadata.value?.let(::listOf).orEmpty())
+
+        override suspend fun createOrReplace(metadata: ScreenshotMetadataEntity) {
+            if (failWrites) error("room failed")
+            this.metadata.value = metadata
+        }
+
+        override suspend fun updateUploadSuccess(
+            matchId: String,
+            storageBucket: String,
+            storageObjectPath: String,
+            uploadedAt: Long,
+            updatedAt: Long,
+        ) {
+            metadata.value = metadata.value?.copy(
+                storageBucket = storageBucket,
+                storageObjectPath = storageObjectPath,
+                uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                uploadFailureCode = null,
+                uploadedAt = uploadedAt,
+                updatedAt = updatedAt,
+                revision = metadata.value!!.revision + 1,
+            )
+        }
+
+        override suspend fun updateUploadFailure(
+            matchId: String,
+            failureCode: String,
+            updatedAt: Long,
+        ) {
+            metadata.value = metadata.value?.copy(
+                uploadStatus = ScreenshotUploadStatus.FAILED.name,
+                uploadFailureCode = failureCode,
+                updatedAt = updatedAt,
+                revision = metadata.value!!.revision + 1,
+            )
+        }
+
+        override suspend fun markLocalMissing(matchId: String, updatedAt: Long) {
+            metadata.value = metadata.value?.copy(
+                localStatus = ScreenshotLocalStatus.MISSING.name,
+                updatedAt = updatedAt,
+                revision = metadata.value!!.revision + 1,
+            )
+        }
+
+        override suspend fun markCleanupFailure(matchId: String, updatedAt: Long) {
+            metadata.value = metadata.value?.copy(
+                localStatus = ScreenshotLocalStatus.CLEANUP_FAILED.name,
+                updatedAt = updatedAt,
+                revision = metadata.value!!.revision + 1,
+            )
+        }
+
+        override suspend fun deleteByMatchId(matchId: String) {
+            metadata.value = null
+        }
+
+        override suspend fun deleteByTournamentId(tournamentId: String) {
+            metadata.value = null
+        }
+    }
 }

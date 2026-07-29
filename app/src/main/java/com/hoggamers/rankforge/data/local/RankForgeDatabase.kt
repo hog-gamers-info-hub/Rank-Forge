@@ -38,8 +38,9 @@ interface RankForgeStateDao {
         MatchCorrectionEntity::class,
         SyncQueueEntity::class,
         SyncRevisionEntity::class,
+        ScreenshotMetadataEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -54,6 +55,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchCorrectionDao(): MatchCorrectionDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncRevisionDao(): SyncRevisionDao
+    abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -186,6 +188,43 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `sync_revisions` (`tournament_id` TEXT NOT NULL, `local_revision` INTEGER NOT NULL, `base_cloud_revision` INTEGER, PRIMARY KEY(`tournament_id`))",
                 )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `screenshot_metadata` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `local_relative_path` TEXT NOT NULL,
+                        `file_extension` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `width` INTEGER NOT NULL,
+                        `height` INTEGER NOT NULL,
+                        `byte_size` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `storage_bucket` TEXT,
+                        `storage_object_path` TEXT,
+                        `local_status` TEXT NOT NULL,
+                        `upload_status` TEXT NOT NULL,
+                        `upload_failure_code` TEXT,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `preserved_at` INTEGER NOT NULL,
+                        `uploaded_at` INTEGER,
+                        `revision` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_tournament_id` ON `screenshot_metadata` (`tournament_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_owner_user_id` ON `screenshot_metadata` (`owner_user_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_sha256` ON `screenshot_metadata` (`sha256`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_upload_status` ON `screenshot_metadata` (`upload_status`)")
             }
         }
     }

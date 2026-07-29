@@ -299,6 +299,47 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun restoredUploadedAndMissingMetadataStatesAreVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        isScreenshotLinked = true,
+                        isScreenshotLocallyPreserved = true,
+                        isPreservedScreenshotMissing = true,
+                        screenshotMetadata = ScreenshotMetadataUiState(
+                            localStatus = ScreenshotMetadataLocalUiStatus.MISSING,
+                            uploadStatus = ScreenshotMetadataUploadUiStatus.UPLOADED,
+                            revision = 2,
+                        ),
+                        isScreenshotUploaded = true,
+                        screenshotUploadError = ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun finalizedMatchDoesNotExposeScreenshotLinkActions() {
         composeTestRule.setContent {
             RankForgeTheme {

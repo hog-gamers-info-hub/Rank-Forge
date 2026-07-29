@@ -296,6 +296,10 @@
     <string name="match_review_screenshot_preservation_copy_failed">The screenshot could not be copied into local app storage. Try again.</string>
     <string name="match_review_screenshot_preservation_atomic_move_failed">The local screenshot could not be installed safely. Try again.</string>
     <string name="match_review_screenshot_preservation_cleanup_failed">The screenshot was preserved, but old local screenshot cleanup failed.</string>
+    <string name="match_review_screenshot_metadata_room_write_failed">The screenshot was preserved locally, but its metadata could not be saved.</string>
+    <string name="match_review_screenshot_metadata_invalid_relative_path">The local screenshot path could not be verified.</string>
+    <string name="match_review_screenshot_metadata_restored">Screenshot metadata restored for this match.</string>
+    <string name="match_review_screenshot_local_missing">The preserved local screenshot file is missing.</string>
     <string name="match_review_screenshot_preservation_missing_tournament">The tournament context is missing. The screenshot was not preserved.</string>
     <string name="match_review_screenshot_preservation_missing_match">The match context is missing. The screenshot was not preserved.</string>
     <string name="match_review_screenshot_preservation_finalized">Finalized matches cannot preserve or replace screenshots.</string>
@@ -310,6 +314,8 @@
     <string name="match_review_screenshot_upload_network_failed">The screenshot upload could not reach cloud storage. Try again.</string>
     <string name="match_review_screenshot_upload_authorization_failed">Cloud storage denied this screenshot upload.</string>
     <string name="match_review_screenshot_upload_failed">The screenshot could not be uploaded. The local copy was kept.</string>
+    <string name="match_review_screenshot_metadata_cloud_write_failed">The screenshot uploaded, but cloud metadata could not be saved.</string>
+    <string name="match_review_screenshot_metadata_rls_denied">Cloud metadata denied this account access.</string>
     <string name="match_review_screenshot_upload_retry_action">Retry screenshot upload</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>

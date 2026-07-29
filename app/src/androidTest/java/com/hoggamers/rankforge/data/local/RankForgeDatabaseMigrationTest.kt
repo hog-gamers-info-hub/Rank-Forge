@@ -129,6 +129,53 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion5AddsScreenshotMetadataWithoutDroppingExistingMatchData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 5).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-metadata', 'Metadata Cup', '2026-07-29', 'Organizer', '123', 'CONFIRMED')")
+            database.execSQL("INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-metadata', 'tournament-metadata', 1, '2026-07-29', 'Bermuda', 'DRAFT')")
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            6,
+            true,
+            RankForgeDatabase.MIGRATION_5_6,
+        )
+
+        migrated.query("SELECT id FROM matches WHERE id = 'match-metadata'").use {
+            assertTrue(it.moveToFirst())
+        }
+        migrated.query("PRAGMA table_info(screenshot_metadata)").use { cursor ->
+            val columns = buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
+            assertTrue(
+                setOf(
+                    "match_id",
+                    "tournament_id",
+                    "owner_user_id",
+                    "local_relative_path",
+                    "file_extension",
+                    "mime_type",
+                    "width",
+                    "height",
+                    "byte_size",
+                    "sha256",
+                    "storage_bucket",
+                    "storage_object_path",
+                    "local_status",
+                    "upload_status",
+                    "upload_failure_code",
+                    "created_at",
+                    "updated_at",
+                    "preserved_at",
+                    "uploaded_at",
+                    "revision",
+                ).all(columns::contains),
+            )
+        }
+        migrated.close()
+    }
+
+    @Test
     fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(

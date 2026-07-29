@@ -178,7 +178,7 @@ select is((
     select coalesce(array_to_string(array_agg(tablename::text order by tablename), ','), '')::text
     from pg_tables
     where schemaname = 'public'
-), 'match_correction_audit_entries,match_results,matches,players,tournament_team_slots,tournaments'::text, 'no excluded public tables exist');
+), 'match_correction_audit_entries,match_results,match_screenshot_metadata,matches,players,tournament_team_slots,tournaments'::text, 'no excluded public tables exist');
 select ok(to_regclass('public.idx_tournaments_owner_id') is not null, 'owner index exists');
 select ok(to_regclass('public.idx_match_results_team_slot_id') is not null, 'match-result team-slot index exists');
 

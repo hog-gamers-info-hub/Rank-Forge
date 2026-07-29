@@ -101,6 +101,88 @@ interface MatchDao {
 }
 
 @Dao
+interface ScreenshotMetadataDao {
+    @Query("SELECT * FROM screenshot_metadata WHERE match_id = :matchId")
+    fun observeByMatchId(matchId: String): Flow<ScreenshotMetadataEntity?>
+
+    @Query("SELECT * FROM screenshot_metadata WHERE match_id = :matchId")
+    suspend fun readByMatchId(matchId: String): ScreenshotMetadataEntity?
+
+    @Query("SELECT * FROM screenshot_metadata WHERE tournament_id = :tournamentId ORDER BY updated_at DESC, match_id")
+    fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>>
+
+    @Upsert
+    suspend fun upsert(metadata: ScreenshotMetadataEntity)
+
+    @Query(
+        """
+        UPDATE screenshot_metadata
+        SET storage_bucket = :storageBucket,
+            storage_object_path = :storageObjectPath,
+            upload_status = :uploadStatus,
+            upload_failure_code = NULL,
+            uploaded_at = :uploadedAt,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+        """,
+    )
+    suspend fun updateUploadSuccess(
+        matchId: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadStatus: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE screenshot_metadata
+        SET upload_status = :uploadStatus,
+            upload_failure_code = :failureCode,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+        """,
+    )
+    suspend fun updateUploadFailure(
+        matchId: String,
+        uploadStatus: String,
+        failureCode: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE screenshot_metadata
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+        """,
+    )
+    suspend fun markLocalMissing(matchId: String, localStatus: String, updatedAt: Long)
+
+    @Query(
+        """
+        UPDATE screenshot_metadata
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+        """,
+    )
+    suspend fun markCleanupFailure(matchId: String, localStatus: String, updatedAt: Long)
+
+    @Query("DELETE FROM screenshot_metadata WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+
+    @Query("DELETE FROM screenshot_metadata WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
+}
+
+@Dao
 interface MatchPlacementDao {
     @Query(
         """
