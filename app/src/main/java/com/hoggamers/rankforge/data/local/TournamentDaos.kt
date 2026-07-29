@@ -183,6 +183,42 @@ interface ScreenshotMetadataDao {
 }
 
 @Dao
+interface RosterScreenshotMetadataDao {
+    @Query(
+        "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId ORDER BY roster_screenshot_index",
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<RosterScreenshotMetadataEntity>>
+
+    @Query(
+        "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId AND roster_screenshot_index = :index",
+    )
+    suspend fun readByTournamentAndIndex(
+        tournamentId: String,
+        index: Int,
+    ): RosterScreenshotMetadataEntity?
+
+    @Query(
+        "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId AND sha256 = :sha256 AND roster_screenshot_index != :index LIMIT 1",
+    )
+    suspend fun readDuplicateFingerprint(
+        tournamentId: String,
+        sha256: String,
+        index: Int,
+    ): RosterScreenshotMetadataEntity?
+
+    @Upsert
+    suspend fun upsert(metadata: RosterScreenshotMetadataEntity)
+
+    @Query(
+        "DELETE FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId AND roster_screenshot_index = :index",
+    )
+    suspend fun deleteByTournamentAndIndex(
+        tournamentId: String,
+        index: Int,
+    )
+}
+
+@Dao
 interface MatchPlacementDao {
     @Query(
         """

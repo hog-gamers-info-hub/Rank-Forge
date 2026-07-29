@@ -99,6 +99,44 @@ enum class ScreenshotUploadStatus {
     FAILED,
 }
 
+enum class RosterScreenshotValidationStatus {
+    VALID,
+    LOCAL_FILE_MISSING,
+}
+
+@Entity(
+    tableName = "roster_screenshot_metadata",
+    primaryKeys = ["tournament_id", "roster_screenshot_index"],
+    foreignKeys = [
+        ForeignKey(
+            entity = TournamentEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["tournament_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["tournament_id"]),
+        Index(value = ["sha256"]),
+    ],
+)
+data class RosterScreenshotMetadataEntity(
+    @ColumnInfo(name = "tournament_id") val tournamentId: String,
+    @ColumnInfo(name = "roster_screenshot_index") val rosterScreenshotIndex: Int,
+    @ColumnInfo(name = "local_relative_path") val localRelativePath: String,
+    @ColumnInfo(name = "mime_type") val mimeType: String,
+    val width: Int,
+    val height: Int,
+    val sha256: String,
+    @ColumnInfo(name = "validation_status") val validationStatus: String,
+    @ColumnInfo(name = "crop_left") val cropLeft: Double?,
+    @ColumnInfo(name = "crop_top") val cropTop: Double?,
+    @ColumnInfo(name = "crop_right") val cropRight: Double?,
+    @ColumnInfo(name = "crop_bottom") val cropBottom: Double?,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
 @Entity(
     tableName = "screenshot_metadata",
     foreignKeys = [

@@ -176,6 +176,49 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion6AddsRosterScreenshotMetadataWithoutDroppingExistingData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 6).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-roster-screenshots', 'Roster Cup', '2026-07-30', 'Organizer', '123', 'CONFIRMED')")
+            database.execSQL("INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-roster-screenshots', 'tournament-roster-screenshots', 1, '2026-07-30', 'Bermuda', 'DRAFT')")
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            7,
+            true,
+            RankForgeDatabase.MIGRATION_6_7,
+        )
+
+        migrated.query("SELECT id FROM matches WHERE id = 'match-roster-screenshots'").use {
+            assertTrue(it.moveToFirst())
+        }
+        migrated.query("PRAGMA table_info(roster_screenshot_metadata)").use { cursor ->
+            val columns = buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            assertTrue(
+                setOf(
+                    "tournament_id",
+                    "roster_screenshot_index",
+                    "local_relative_path",
+                    "mime_type",
+                    "width",
+                    "height",
+                    "sha256",
+                    "validation_status",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "created_at",
+                    "updated_at",
+                ).all(columns::contains),
+            )
+        }
+        migrated.close()
+    }
+
+    @Test
     fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(

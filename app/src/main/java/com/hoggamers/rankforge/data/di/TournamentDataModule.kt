@@ -12,6 +12,9 @@ import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
+import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataDao
+import com.hoggamers.rankforge.data.local.RoomRosterScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
@@ -70,6 +73,12 @@ abstract class TournamentDataBindingsModule {
         repository: RoomScreenshotMetadataRepository,
     ): ScreenshotMetadataRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindRosterScreenshotMetadataRepository(
+        repository: RoomRosterScreenshotMetadataRepository,
+    ): RosterScreenshotMetadataRepository
+
 }
 
 @Module
@@ -89,6 +98,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_3_4,
         RankForgeDatabase.MIGRATION_4_5,
         RankForgeDatabase.MIGRATION_5_6,
+        RankForgeDatabase.MIGRATION_6_7,
     ).build()
 
     @Provides
@@ -99,6 +109,11 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideScreenshotMetadataDao(database: RankForgeDatabase): ScreenshotMetadataDao =
         database.screenshotMetadataDao()
+
+    @Provides
+    @Singleton
+    fun provideRosterScreenshotMetadataDao(database: RankForgeDatabase): RosterScreenshotMetadataDao =
+        database.rosterScreenshotMetadataDao()
 
     @Provides
     @Singleton
