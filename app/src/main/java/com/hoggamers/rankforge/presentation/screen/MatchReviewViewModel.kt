@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchInput
@@ -16,6 +20,7 @@ import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +39,7 @@ class MatchReviewViewModel @Inject constructor(
     private val imageCandidateValidator: ImageCandidateValidator,
     private val screenshotDuplicateDetector: ScreenshotDuplicateDetector,
     private val localImagePreserver: LocalImagePreserver,
+    private val screenshotStorageUploader: ScreenshotStorageUploader = NoOpScreenshotStorageUploader(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -41,6 +47,7 @@ class MatchReviewViewModel @Inject constructor(
     private var validationJob: Job? = null
     private var duplicateDetectionJob: Job? = null
     private var preservationJob: Job? = null
+    private var uploadJob: Job? = null
     private var loadedMatchKey: String? = null
 
     fun load(tournamentId: String, matchId: String) {
@@ -51,6 +58,7 @@ class MatchReviewViewModel @Inject constructor(
         validationJob?.cancel()
         duplicateDetectionJob?.cancel()
         preservationJob?.cancel()
+        uploadJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -143,6 +151,10 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotLocallyPreserved = current.isScreenshotLocallyPreserved,
                         preservedScreenshotPath = current.preservedScreenshotPath,
                         screenshotPreservationError = current.screenshotPreservationError,
+                        isScreenshotUploadInProgress = current.isScreenshotUploadInProgress,
+                        isScreenshotUploaded = current.isScreenshotUploaded,
+                        screenshotUploadObjectPath = current.screenshotUploadObjectPath,
+                        screenshotUploadError = current.screenshotUploadError,
                     )
                 }
             }
@@ -207,6 +219,7 @@ class MatchReviewViewModel @Inject constructor(
         validationJob?.cancel()
         duplicateDetectionJob?.cancel()
         preservationJob?.cancel()
+        uploadJob?.cancel()
         if (selectedUri.isBlank()) {
             _uiState.update {
                 it.copy(
@@ -243,6 +256,10 @@ class MatchReviewViewModel @Inject constructor(
                 screenshotDuplicateInfo = null,
                 isScreenshotPreservationInProgress = false,
                 screenshotPreservationError = null,
+                isScreenshotUploadInProgress = false,
+                isScreenshotUploaded = false,
+                screenshotUploadObjectPath = null,
+                screenshotUploadError = null,
             )
         }
         validationJob = viewModelScope.launch {
@@ -305,7 +322,8 @@ class MatchReviewViewModel @Inject constructor(
         }
         if (
             current.isScreenshotDuplicateDetectionInProgress ||
-            current.isScreenshotPreservationInProgress
+            current.isScreenshotPreservationInProgress ||
+            current.isScreenshotUploadInProgress
         ) return
         _uiState.update {
             it.copy(
@@ -358,6 +376,12 @@ class MatchReviewViewModel @Inject constructor(
                         previousFingerprint = previousFingerprint,
                     )
                 }
+                val preservedFile = when (preservationResult) {
+                    is LocalImagePreservationResult.Preserved -> preservationResult.file
+                    is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservationResult.file
+                    is LocalImagePreservationResult.Failed -> null
+                }
+                val cleanupFailed = preservationResult is LocalImagePreservationResult.PreservedWithCleanupFailure
                 _uiState.update { latest ->
                     if (
                         latest.tournamentId != tournamentId ||
@@ -374,12 +398,6 @@ class MatchReviewViewModel @Inject constructor(
                             screenshotPreservationError = preservationFailure.error.toUiError(),
                         )
                     } else {
-                        val preservedFile = when (preservationResult) {
-                            is LocalImagePreservationResult.Preserved -> preservationResult.file
-                            is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservationResult.file
-                            is LocalImagePreservationResult.Failed -> error("unreachable")
-                        }
-                        val cleanupFailed = preservationResult is LocalImagePreservationResult.PreservedWithCleanupFailure
                         latest.copy(
                             linkedScreenshotUri = selectedUri,
                             linkedScreenshotFingerprint = result.fingerprint,
@@ -387,7 +405,7 @@ class MatchReviewViewModel @Inject constructor(
                             isScreenshotDuplicateDetectionInProgress = false,
                             isScreenshotPreservationInProgress = false,
                             isScreenshotLocallyPreserved = true,
-                            preservedScreenshotPath = preservedFile.absolutePath,
+                            preservedScreenshotPath = requireNotNull(preservedFile).absolutePath,
                             screenshotDuplicateError = null,
                             screenshotDuplicateInfo = null,
                             screenshotPreservationError = if (cleanupFailed) {
@@ -395,8 +413,26 @@ class MatchReviewViewModel @Inject constructor(
                             } else {
                                 null
                             },
+                            isScreenshotUploadInProgress = true,
+                            isScreenshotUploaded = false,
+                            screenshotUploadObjectPath = null,
+                            screenshotUploadError = null,
                         )
                     }
+                }
+                val uploadIsStillCurrent = _uiState.value.let { latest ->
+                    latest.tournamentId == tournamentId &&
+                        latest.matchId == matchId &&
+                        latest.selectedScreenshotUri == selectedUri &&
+                        latest.linkedScreenshotUri == selectedUri
+                }
+                if (uploadIsStillCurrent) {
+                    uploadPreservedScreenshot(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        selectedUri = selectedUri,
+                        preservedFile = preservedFile,
+                    )
                 }
             } else {
                 _uiState.update { latest ->
@@ -437,6 +473,75 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    private suspend fun uploadPreservedScreenshot(
+        tournamentId: String,
+        matchId: String,
+        selectedUri: String,
+        preservedFile: java.io.File?,
+    ) {
+        if (preservedFile == null) return
+        val result = try {
+            screenshotStorageUploader.upload(tournamentId, matchId, preservedFile)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            ScreenshotStorageUploadResult.Failed(ScreenshotStorageUploadFailure.UPLOAD_FAILED)
+        }
+        _uiState.update { latest ->
+            if (
+                latest.tournamentId != tournamentId ||
+                latest.matchId != matchId ||
+                latest.selectedScreenshotUri != selectedUri ||
+                latest.linkedScreenshotUri != selectedUri
+            ) {
+                latest
+            } else {
+                when (result) {
+                    is ScreenshotStorageUploadResult.Uploaded -> latest.copy(
+                        isScreenshotUploadInProgress = false,
+                        isScreenshotUploaded = true,
+                        screenshotUploadObjectPath = result.objectPath,
+                        screenshotUploadError = null,
+                    )
+                    is ScreenshotStorageUploadResult.Failed -> latest.copy(
+                        isScreenshotUploadInProgress = false,
+                        isScreenshotUploaded = false,
+                        screenshotUploadObjectPath = null,
+                        screenshotUploadError = result.error.toUiError(),
+                    )
+                }
+            }
+        }
+    }
+
+    fun retryScreenshotUpload() {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
+        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
+        val selectedUri = current.linkedScreenshotUri ?: return
+        val preservedPath = current.preservedScreenshotPath ?: return
+        if (
+            current.status == MatchStatus.FINALIZED ||
+            current.isScreenshotUploadInProgress ||
+            !current.isScreenshotLocallyPreserved
+        ) return
+        _uiState.update {
+            it.copy(
+                isScreenshotUploadInProgress = true,
+                screenshotUploadError = null,
+            )
+        }
+        uploadJob?.cancel()
+        uploadJob = viewModelScope.launch {
+            uploadPreservedScreenshot(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                selectedUri = selectedUri,
+                preservedFile = java.io.File(preservedPath),
+            )
+        }
+    }
+
     fun unlinkScreenshot() {
         val current = _uiState.value
         val error = when {
@@ -458,7 +563,8 @@ class MatchReviewViewModel @Inject constructor(
         }
         if (
             current.isScreenshotDuplicateDetectionInProgress ||
-            current.isScreenshotPreservationInProgress
+            current.isScreenshotPreservationInProgress ||
+            current.isScreenshotUploadInProgress
         ) return
         val result = screenshotDuplicateDetector.unlink(
             tournamentId = current.tournamentId.orEmpty(),
@@ -486,6 +592,10 @@ class MatchReviewViewModel @Inject constructor(
                 isScreenshotLocallyPreserved = false,
                 isScreenshotPreservationInProgress = preservedPath != null,
                 screenshotPreservationError = null,
+                isScreenshotUploadInProgress = false,
+                isScreenshotUploaded = false,
+                screenshotUploadObjectPath = null,
+                screenshotUploadError = null,
             )
         }
         if (preservedPath == null) return
@@ -526,7 +636,8 @@ class MatchReviewViewModel @Inject constructor(
             !current.isEditable ||
             !current.isValid ||
             current.isFinalizing ||
-            current.isScreenshotPreservationInProgress
+            current.isScreenshotPreservationInProgress ||
+            current.isScreenshotUploadInProgress
         ) return
         _uiState.update { it.copy(isFinalizing = true, finalizationError = null) }
         viewModelScope.launch {
@@ -568,4 +679,16 @@ private fun LocalImagePreservationFailure.toUiError(): ScreenshotPreservationErr
     LocalImagePreservationFailure.SOURCE_READ_FAILED -> ScreenshotPreservationError.SOURCE_READ_FAILED
     LocalImagePreservationFailure.COPY_FAILED -> ScreenshotPreservationError.COPY_FAILED
     LocalImagePreservationFailure.ATOMIC_MOVE_FAILED -> ScreenshotPreservationError.ATOMIC_MOVE_FAILED
+}
+
+private fun ScreenshotStorageUploadFailure.toUiError(): ScreenshotUploadError = when (this) {
+    ScreenshotStorageUploadFailure.MISSING_AUTH_SESSION -> ScreenshotUploadError.MISSING_AUTH_SESSION
+    ScreenshotStorageUploadFailure.MISSING_LOCAL_FILE -> ScreenshotUploadError.MISSING_LOCAL_FILE
+    ScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID -> ScreenshotUploadError.MISSING_TOURNAMENT_ID
+    ScreenshotStorageUploadFailure.MISSING_MATCH_ID -> ScreenshotUploadError.MISSING_MATCH_ID
+    ScreenshotStorageUploadFailure.UNSUPPORTED_FORMAT -> ScreenshotUploadError.UNSUPPORTED_FORMAT
+    ScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED -> ScreenshotUploadError.LOCAL_FILE_READ_FAILED
+    ScreenshotStorageUploadFailure.NETWORK -> ScreenshotUploadError.NETWORK
+    ScreenshotStorageUploadFailure.AUTHORIZATION -> ScreenshotUploadError.AUTHORIZATION
+    ScreenshotStorageUploadFailure.UPLOAD_FAILED -> ScreenshotUploadError.UPLOAD_FAILED
 }

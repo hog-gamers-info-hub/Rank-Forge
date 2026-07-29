@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
@@ -43,6 +45,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class CloudUploadDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindScreenshotStorageUploader(
+        uploader: SupabaseScreenshotStorageUploader,
+    ): ScreenshotStorageUploader
+
     @Binds
     @Singleton
     abstract fun bindTournamentCloudUploadRemoteDataSource(

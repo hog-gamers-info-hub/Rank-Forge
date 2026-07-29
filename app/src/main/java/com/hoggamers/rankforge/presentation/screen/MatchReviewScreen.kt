@@ -63,6 +63,10 @@ const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG = "match_review_screen
 const val MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG = "match_review_screenshot_preservation_in_progress"
 const val MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG = "match_review_screenshot_preserved"
 const val MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG = "match_review_screenshot_preservation_error"
+const val MATCH_REVIEW_SCREENSHOT_UPLOAD_IN_PROGRESS_TEST_TAG = "match_review_screenshot_upload_in_progress"
+const val MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG = "match_review_screenshot_uploaded"
+const val MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG = "match_review_screenshot_upload_error"
+const val MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG = "match_review_screenshot_upload_retry_action"
 
 @Composable
 fun MatchReviewRoute(
@@ -127,6 +131,7 @@ fun MatchReviewRoute(
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onLinkScreenshot = viewModel::linkScreenshot,
         onUnlinkScreenshot = viewModel::unlinkScreenshot,
+        onRetryScreenshotUpload = viewModel::retryScreenshotUpload,
     )
 }
 
@@ -141,6 +146,7 @@ fun MatchReviewScreen(
     onSelectScreenshot: () -> Unit = {},
     onLinkScreenshot: () -> Unit = {},
     onUnlinkScreenshot: () -> Unit = {},
+    onRetryScreenshotUpload: () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -157,6 +163,7 @@ fun MatchReviewScreen(
             onSelectScreenshot = onSelectScreenshot,
             onLinkScreenshot = onLinkScreenshot,
             onUnlinkScreenshot = onUnlinkScreenshot,
+            onRetryScreenshotUpload = onRetryScreenshotUpload,
         )
     }
 }
@@ -172,6 +179,7 @@ private fun MatchReviewContent(
     onSelectScreenshot: () -> Unit,
     onLinkScreenshot: () -> Unit,
     onUnlinkScreenshot: () -> Unit,
+    onRetryScreenshotUpload: () -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -279,7 +287,8 @@ private fun MatchReviewContent(
                     Button(
                         onClick = onLinkScreenshot,
                         enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                            !uiState.isScreenshotPreservationInProgress,
+                            !uiState.isScreenshotPreservationInProgress &&
+                            !uiState.isScreenshotUploadInProgress,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG),
@@ -290,7 +299,8 @@ private fun MatchReviewContent(
                 TextButton(
                     onClick = onUnlinkScreenshot,
                     enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                        !uiState.isScreenshotPreservationInProgress,
+                        !uiState.isScreenshotPreservationInProgress &&
+                        !uiState.isScreenshotUploadInProgress,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -302,7 +312,8 @@ private fun MatchReviewContent(
             Button(
                 onClick = onLinkScreenshot,
                 enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                    !uiState.isScreenshotPreservationInProgress,
+                    !uiState.isScreenshotPreservationInProgress &&
+                    !uiState.isScreenshotUploadInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -345,6 +356,36 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG),
             )
         }
+        if (uiState.isScreenshotUploadInProgress) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_uploading),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_IN_PROGRESS_TEST_TAG),
+            )
+        }
+        if (uiState.isScreenshotUploaded) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_uploaded),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG),
+            )
+        }
+        if (uiState.screenshotUploadError != null) {
+            Text(
+                text = stringResource(uiState.screenshotUploadError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG),
+            )
+            if (uiState.isEditable && uiState.linkedScreenshotUri != null) {
+                TextButton(
+                    onClick = onRetryScreenshotUpload,
+                    enabled = !uiState.isScreenshotUploadInProgress,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.match_review_screenshot_upload_retry_action))
+                }
+            }
+        }
         if (uiState.screenshotDuplicateInfo != null) {
             Text(
                 text = stringResource(uiState.screenshotDuplicateInfo.toMessageRes()),
@@ -379,7 +420,8 @@ private fun MatchReviewContent(
             Button(
                 onClick = { showFinalizeConfirmation = true },
                 enabled = uiState.isValid && !uiState.isFinalizing &&
-                    !uiState.isScreenshotPreservationInProgress,
+                    !uiState.isScreenshotPreservationInProgress &&
+                    !uiState.isScreenshotUploadInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG),
@@ -656,4 +698,25 @@ private fun ScreenshotPreservationError.toMessageRes(): Int = when (this) {
         R.string.match_review_screenshot_preservation_missing_match
     ScreenshotPreservationError.FINALIZED_MATCH ->
         R.string.match_review_screenshot_preservation_finalized
+}
+
+private fun ScreenshotUploadError.toMessageRes(): Int = when (this) {
+    ScreenshotUploadError.MISSING_AUTH_SESSION ->
+        R.string.match_review_screenshot_upload_missing_auth
+    ScreenshotUploadError.MISSING_LOCAL_FILE ->
+        R.string.match_review_screenshot_upload_missing_local_file
+    ScreenshotUploadError.MISSING_TOURNAMENT_ID ->
+        R.string.match_review_screenshot_upload_missing_tournament
+    ScreenshotUploadError.MISSING_MATCH_ID ->
+        R.string.match_review_screenshot_upload_missing_match
+    ScreenshotUploadError.UNSUPPORTED_FORMAT ->
+        R.string.match_review_screenshot_upload_unsupported_format
+    ScreenshotUploadError.LOCAL_FILE_READ_FAILED ->
+        R.string.match_review_screenshot_upload_local_file_read_failed
+    ScreenshotUploadError.NETWORK ->
+        R.string.match_review_screenshot_upload_network_failed
+    ScreenshotUploadError.AUTHORIZATION ->
+        R.string.match_review_screenshot_upload_authorization_failed
+    ScreenshotUploadError.UPLOAD_FAILED ->
+        R.string.match_review_screenshot_upload_failed
 }

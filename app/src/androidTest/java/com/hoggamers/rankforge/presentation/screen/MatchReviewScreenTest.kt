@@ -266,6 +266,39 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun uploadFailureShowsRetryActionWhileKeepingLinkedStateVisible() {
+        var retryCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        selectedScreenshotUri = "content://picker/selected",
+                        isSelectedScreenshotValidated = true,
+                        linkedScreenshotUri = "content://picker/selected",
+                        isScreenshotLocallyPreserved = true,
+                        screenshotUploadError = ScreenshotUploadError.NETWORK,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRetryScreenshotUpload = { retryCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, retryCount) }
+    }
+
+    @Test
     fun finalizedMatchDoesNotExposeScreenshotLinkActions() {
         composeTestRule.setContent {
             RankForgeTheme {
