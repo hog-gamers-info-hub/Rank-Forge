@@ -60,6 +60,9 @@ const val MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG = "match_review_screenshot
 const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG = "match_review_screenshot_duplicate_in_progress"
 const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG = "match_review_screenshot_duplicate_error"
 const val MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG = "match_review_screenshot_duplicate_info"
+const val MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG = "match_review_screenshot_preservation_in_progress"
+const val MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG = "match_review_screenshot_preserved"
+const val MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG = "match_review_screenshot_preservation_error"
 
 @Composable
 fun MatchReviewRoute(
@@ -275,7 +278,8 @@ private fun MatchReviewContent(
                 ) {
                     Button(
                         onClick = onLinkScreenshot,
-                        enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
+                        enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
+                            !uiState.isScreenshotPreservationInProgress,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG),
@@ -285,7 +289,8 @@ private fun MatchReviewContent(
                 }
                 TextButton(
                     onClick = onUnlinkScreenshot,
-                    enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
+                    enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
+                        !uiState.isScreenshotPreservationInProgress,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -296,7 +301,8 @@ private fun MatchReviewContent(
         } else if (uiState.isEditable && uiState.isSelectedScreenshotValidated) {
             Button(
                 onClick = onLinkScreenshot,
-                enabled = !uiState.isScreenshotDuplicateDetectionInProgress,
+                enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
+                    !uiState.isScreenshotPreservationInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG),
@@ -318,6 +324,25 @@ private fun MatchReviewContent(
             Text(
                 text = stringResource(R.string.match_review_screenshot_duplicate_checking),
                 modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG),
+            )
+        }
+        if (uiState.isScreenshotPreservationInProgress) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_preservation_checking),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG),
+            )
+        }
+        if (uiState.isScreenshotLocallyPreserved) {
+            Text(
+                text = stringResource(R.string.match_review_screenshot_preserved),
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG),
+            )
+        }
+        if (uiState.screenshotPreservationError != null) {
+            Text(
+                text = stringResource(uiState.screenshotPreservationError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG),
             )
         }
         if (uiState.screenshotDuplicateInfo != null) {
@@ -353,7 +378,8 @@ private fun MatchReviewContent(
             }
             Button(
                 onClick = { showFinalizeConfirmation = true },
-                enabled = uiState.isValid && !uiState.isFinalizing,
+                enabled = uiState.isValid && !uiState.isFinalizing &&
+                    !uiState.isScreenshotPreservationInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG),
@@ -613,4 +639,21 @@ private fun ScreenshotDuplicateError.toMessageRes(): Int = when (this) {
         R.string.match_review_screenshot_duplicate_other_match
     ScreenshotDuplicateError.STATE_CONFLICT ->
         R.string.match_review_screenshot_duplicate_state_conflict
+}
+
+private fun ScreenshotPreservationError.toMessageRes(): Int = when (this) {
+    ScreenshotPreservationError.SOURCE_READ_FAILED ->
+        R.string.match_review_screenshot_preservation_source_read_failed
+    ScreenshotPreservationError.COPY_FAILED ->
+        R.string.match_review_screenshot_preservation_copy_failed
+    ScreenshotPreservationError.ATOMIC_MOVE_FAILED ->
+        R.string.match_review_screenshot_preservation_atomic_move_failed
+    ScreenshotPreservationError.CLEANUP_FAILED ->
+        R.string.match_review_screenshot_preservation_cleanup_failed
+    ScreenshotPreservationError.MISSING_TOURNAMENT_ID ->
+        R.string.match_review_screenshot_preservation_missing_tournament
+    ScreenshotPreservationError.MISSING_MATCH_ID ->
+        R.string.match_review_screenshot_preservation_missing_match
+    ScreenshotPreservationError.FINALIZED_MATCH ->
+        R.string.match_review_screenshot_preservation_finalized
 }

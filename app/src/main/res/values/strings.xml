@@ -290,6 +290,15 @@
     <string name="match_review_screenshot_duplicate_fingerprint_failed">The selected screenshot could not be checked for duplicates. Try again.</string>
     <string name="match_review_screenshot_duplicate_other_match">This screenshot is already linked to another match in this tournament.</string>
     <string name="match_review_screenshot_duplicate_state_conflict">The screenshot link state could not be updated safely. Try again.</string>
+    <string name="match_review_screenshot_preservation_checking">Preserving screenshot locally.</string>
+    <string name="match_review_screenshot_preserved">Screenshot preserved locally.</string>
+    <string name="match_review_screenshot_preservation_source_read_failed">The selected screenshot could not be read for local preservation. Try again.</string>
+    <string name="match_review_screenshot_preservation_copy_failed">The screenshot could not be copied into local app storage. Try again.</string>
+    <string name="match_review_screenshot_preservation_atomic_move_failed">The local screenshot could not be installed safely. Try again.</string>
+    <string name="match_review_screenshot_preservation_cleanup_failed">The screenshot was preserved, but old local screenshot cleanup failed.</string>
+    <string name="match_review_screenshot_preservation_missing_tournament">The tournament context is missing. The screenshot was not preserved.</string>
+    <string name="match_review_screenshot_preservation_missing_match">The match context is missing. The screenshot was not preserved.</string>
+    <string name="match_review_screenshot_preservation_finalized">Finalized matches cannot preserve or replace screenshots.</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>
     <string name="start_match_correction_message">This opens an editable correction copy. The finalized result stays unchanged until you submit it.</string>

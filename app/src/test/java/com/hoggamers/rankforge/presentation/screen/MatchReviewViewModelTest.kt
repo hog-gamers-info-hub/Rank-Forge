@@ -16,6 +16,11 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.time.LocalDate
+import java.nio.file.Files
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -27,6 +32,8 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -230,8 +237,138 @@ class MatchReviewViewModelTest {
         assertEquals("content://picker/second", viewModel.uiState.value.linkedScreenshotUri)
 
         viewModel.unlinkScreenshot()
+        advanceUntilIdle()
         assertEquals(null, viewModel.uiState.value.linkedScreenshotUri)
         assertEquals(beforeMatch, repository.observeMatchById(matchId).first())
+    }
+
+    @Test
+    fun validLinkedScreenshotIsPreservedByteForByteInMatchScopedStorage() = runTest {
+        val uri = "content://picker/preserved"
+        val bytes = byteArrayOf(4, 5, 6, 7)
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to bytes)),
+            localImagePreserver = localImagePreserver(mapOf(uri to bytes), "image/jpeg"),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(uri, state.linkedScreenshotUri)
+        assertTrue(state.isScreenshotLocallyPreserved)
+        assertNotNull(state.preservedScreenshotPath)
+        assertEquals(bytes.toList(), File(state.preservedScreenshotPath!!).readBytes().toList())
+        assertTrue(state.preservedScreenshotPath!!.endsWith("original.jpg"))
+    }
+
+    @Test
+    fun preservationSourceFailureLeavesLinkUnsetAndShowsControlledError() = runTest {
+        val uri = "content://picker/unreadable"
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to byteArrayOf(1))),
+            localImagePreserver = LocalImagePreserver(
+                appPrivateRoot = Files.createTempDirectory("rank-forge-source-error").toFile(),
+                sourceStreamOpener = ImageSourceStreamOpener { null },
+                mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+                ioDispatcher = Dispatchers.Unconfined,
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(
+            ScreenshotPreservationError.SOURCE_READ_FAILED,
+            viewModel.uiState.value.screenshotPreservationError,
+        )
+    }
+
+    @Test
+    fun preservationCopyFailureShowsControlledError() = runTest {
+        val uri = "content://picker/copy-failure"
+        val operations = object : LocalImageFileOperations {
+            override fun ensureDirectory(directory: File): Boolean =
+                directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+            override fun createTempFile(directory: File): File =
+                File.createTempFile("original-", ".tmp", directory)
+            override fun openOutput(file: File): OutputStream = throw IOException("copy failed")
+            override fun atomicMove(source: File, target: File): Boolean = false
+            override fun listFiles(directory: File): List<File>? = directory.listFiles()?.toList() ?: emptyList()
+            override fun delete(file: File): Boolean = !file.exists() || file.delete()
+        }
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to byteArrayOf(1))),
+            localImagePreserver = LocalImagePreserver(
+                appPrivateRoot = Files.createTempDirectory("rank-forge-copy-error").toFile(),
+                sourceStreamOpener = ImageSourceStreamOpener { byteArrayOf(1).inputStream() },
+                mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+                fileOperations = operations,
+                ioDispatcher = Dispatchers.Unconfined,
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(
+            ScreenshotPreservationError.COPY_FAILED,
+            viewModel.uiState.value.screenshotPreservationError,
+        )
+        assertNull(viewModel.uiState.value.linkedScreenshotUri)
+    }
+
+    @Test
+    fun unlinkCleanupFailureShowsControlledErrorWithoutCrashing() = runTest {
+        val uri = "content://picker/cleanup"
+        val operations = object : LocalImageFileOperations {
+            override fun ensureDirectory(directory: File): Boolean =
+                directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+            override fun createTempFile(directory: File): File =
+                File.createTempFile("original-", ".tmp", directory)
+            override fun openOutput(file: File): OutputStream = FileOutputStream(file)
+            override fun atomicMove(source: File, target: File): Boolean {
+                if (target.exists()) target.delete()
+                return source.renameTo(target)
+            }
+            override fun listFiles(directory: File): List<File>? = directory.listFiles()?.toList() ?: emptyList()
+            override fun delete(file: File): Boolean = false
+        }
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to byteArrayOf(8))),
+            localImagePreserver = LocalImagePreserver(
+                appPrivateRoot = Files.createTempDirectory("rank-forge-cleanup-error").toFile(),
+                sourceStreamOpener = ImageSourceStreamOpener { byteArrayOf(8).inputStream() },
+                mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+                fileOperations = operations,
+                ioDispatcher = Dispatchers.Unconfined,
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+        viewModel.unlinkScreenshot()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.linkedScreenshotUri)
+        assertEquals(
+            ScreenshotPreservationError.CLEANUP_FAILED,
+            viewModel.uiState.value.screenshotPreservationError,
+        )
     }
 
     @Test
@@ -471,8 +608,9 @@ class MatchReviewViewModelTest {
         ImageCandidateMetadataReader {
             ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
         },
-    ),
+        ),
         screenshotDuplicateDetector: ScreenshotDuplicateDetector = duplicateDetector(),
+        localImagePreserver: LocalImagePreserver = localImagePreserver(),
     ) = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -482,6 +620,7 @@ class MatchReviewViewModelTest {
         finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         imageCandidateValidator = imageCandidateValidator,
         screenshotDuplicateDetector = screenshotDuplicateDetector,
+        localImagePreserver = localImagePreserver,
     )
 
     private fun duplicateDetector(
@@ -493,5 +632,17 @@ class MatchReviewViewModelTest {
             },
             Dispatchers.Unconfined,
         ),
+    )
+
+    private fun localImagePreserver(
+        bytesByUri: Map<String, ByteArray> = emptyMap(),
+        mimeType: String? = "image/png",
+    ) = LocalImagePreserver(
+        appPrivateRoot = Files.createTempDirectory("rank-forge-preserve").toFile(),
+        sourceStreamOpener = ImageSourceStreamOpener { uri ->
+            (bytesByUri[uri] ?: uri.encodeToByteArray()).inputStream()
+        },
+        mimeTypeReader = ImageSourceMimeTypeReader { mimeType },
+        ioDispatcher = Dispatchers.Unconfined,
     )
 }
