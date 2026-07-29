@@ -43,6 +43,18 @@ enum class ScreenshotPreservationError {
     FINALIZED_MATCH,
 }
 
+enum class ScreenshotUploadError {
+    MISSING_AUTH_SESSION,
+    MISSING_LOCAL_FILE,
+    MISSING_TOURNAMENT_ID,
+    MISSING_MATCH_ID,
+    UNSUPPORTED_FORMAT,
+    LOCAL_FILE_READ_FAILED,
+    NETWORK,
+    AUTHORIZATION,
+    UPLOAD_FAILED,
+}
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -73,6 +85,10 @@ data class MatchReviewUiState(
     val isScreenshotLocallyPreserved: Boolean = false,
     val preservedScreenshotPath: String? = null,
     val screenshotPreservationError: ScreenshotPreservationError? = null,
+    val isScreenshotUploadInProgress: Boolean = false,
+    val isScreenshotUploaded: Boolean = false,
+    val screenshotUploadObjectPath: String? = null,
+    val screenshotUploadError: ScreenshotUploadError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

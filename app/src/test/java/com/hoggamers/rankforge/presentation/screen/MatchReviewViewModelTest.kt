@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -264,6 +266,82 @@ class MatchReviewViewModelTest {
         assertNotNull(state.preservedScreenshotPath)
         assertEquals(bytes.toList(), File(state.preservedScreenshotPath!!).readBytes().toList())
         assertTrue(state.preservedScreenshotPath!!.endsWith("original.jpg"))
+    }
+
+    @Test
+    fun validPreservedScreenshotUploadsFromTheLocalFileAndReportsSuccess() = runTest {
+        val uri = "content://picker/upload"
+        val bytes = byteArrayOf(10, 20, 30)
+        val uploader = RecordingScreenshotStorageUploader(
+            ScreenshotStorageUploadResult.Uploaded(
+                "users/user-id/tournaments/tournament-id/matches/$matchId/original.png",
+            ),
+        )
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(uri to bytes)),
+            localImagePreserver = localImagePreserver(mapOf(uri to bytes)),
+            screenshotStorageUploader = uploader,
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertEquals(1, uploader.calls.size)
+        assertEquals(bytes.toList(), uploader.calls.single().readBytes().toList())
+        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
+        assertEquals(
+            "users/user-id/tournaments/tournament-id/matches/$matchId/original.png",
+            viewModel.uiState.value.screenshotUploadObjectPath,
+        )
+    }
+
+    @Test
+    fun uploadFailureKeepsLocalPreservedFileAndShowsControlledError() = runTest {
+        val uri = "content://picker/upload-failure"
+        val uploader = RecordingScreenshotStorageUploader(
+            ScreenshotStorageUploadResult.Failed(
+                com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure.NETWORK,
+            ),
+        )
+        val viewModel = reviewViewModel(
+            screenshotStorageUploader = uploader,
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(uri)
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertEquals(ScreenshotUploadError.NETWORK, viewModel.uiState.value.screenshotUploadError)
+    }
+
+    @Test
+    fun uploadFailureCanBeRetriedWithoutLosingTheLocalFile() = runTest {
+        val uploader = RecordingScreenshotStorageUploader(
+            ScreenshotStorageUploadResult.Failed(
+                com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure.NETWORK,
+            ),
+        )
+        val viewModel = reviewViewModel(screenshotStorageUploader = uploader)
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/retry")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        uploader.result = ScreenshotStorageUploadResult.Uploaded("users/user/tournaments/t/matches/m/original.png")
+        viewModel.retryScreenshotUpload()
+        advanceUntilIdle()
+
+        assertEquals(2, uploader.calls.size)
+        assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
     }
 
     @Test
@@ -611,6 +689,8 @@ class MatchReviewViewModelTest {
         ),
         screenshotDuplicateDetector: ScreenshotDuplicateDetector = duplicateDetector(),
         localImagePreserver: LocalImagePreserver = localImagePreserver(),
+        screenshotStorageUploader: ScreenshotStorageUploader =
+            com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader(),
     ) = MatchReviewViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -621,7 +701,23 @@ class MatchReviewViewModelTest {
         imageCandidateValidator = imageCandidateValidator,
         screenshotDuplicateDetector = screenshotDuplicateDetector,
         localImagePreserver = localImagePreserver,
+        screenshotStorageUploader = screenshotStorageUploader,
     )
+
+    private class RecordingScreenshotStorageUploader(
+        var result: ScreenshotStorageUploadResult,
+    ) : ScreenshotStorageUploader {
+        val calls = mutableListOf<File>()
+
+        override suspend fun upload(
+            tournamentId: String?,
+            matchId: String?,
+            localFile: File?,
+        ): ScreenshotStorageUploadResult {
+            localFile?.let(calls::add)
+            return result
+        }
+    }
 
     private fun duplicateDetector(
         bytesByUri: Map<String, ByteArray> = emptyMap(),
