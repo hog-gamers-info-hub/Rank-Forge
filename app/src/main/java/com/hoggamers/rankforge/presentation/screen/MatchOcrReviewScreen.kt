@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
@@ -31,6 +34,8 @@ object MatchOcrReviewTestTags {
     const val READY_CONTENT = "match_ocr_review_ready_content"
     const val ROW_LIST = "match_ocr_review_row_list"
     const val BACK_ACTION = "match_ocr_review_back_action"
+    const val CORRECTION_ROOT = "match_ocr_review_correction_root"
+    const val RESET_ALL = "match_ocr_review_reset_all"
     private const val ROW_PREFIX = "match_ocr_review_row_"
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
@@ -42,6 +47,13 @@ object MatchOcrReviewTestTags {
     fun safety(rowIndex: Int): String = "${row(rowIndex)}_safety"
     fun warning(rowIndex: Int): String = "${row(rowIndex)}_warning"
     fun blocking(rowIndex: Int): String = "${row(rowIndex)}_blocking"
+    fun placementInput(rowIndex: Int): String = "${row(rowIndex)}_placement_input"
+    fun killsInput(rowIndex: Int): String = "${row(rowIndex)}_kills_input"
+    fun teamSlotInput(rowIndex: Int): String = "${row(rowIndex)}_team_slot_input"
+    fun rowDirty(rowIndex: Int): String = "${row(rowIndex)}_dirty"
+    fun rowBlocker(rowIndex: Int): String = "${row(rowIndex)}_blocker"
+    fun rowWarning(rowIndex: Int): String = "${row(rowIndex)}_warning_label"
+    fun resetRow(rowIndex: Int): String = "${row(rowIndex)}_reset"
 }
 
 @Composable
@@ -60,6 +72,11 @@ fun MatchOcrReviewRoute(
     MatchOcrReviewScreen(
         uiState = uiState,
         onBack = onBack,
+        onPlacementChanged = viewModel::onPlacementChanged,
+        onKillsChanged = viewModel::onKillsChanged,
+        onAssignedTeamSlotChanged = viewModel::onAssignedTeamSlotChanged,
+        onResetRowCorrection = viewModel::onResetRowCorrection,
+        onResetAllCorrections = viewModel::onResetAllCorrections,
     )
 }
 
@@ -67,12 +84,25 @@ fun MatchOcrReviewRoute(
 fun MatchOcrReviewScreen(
     uiState: MatchOcrReviewUiState,
     onBack: () -> Unit,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onResetRowCorrection: (rowIndex: Int) -> Unit = {},
+    onResetAllCorrections: () -> Unit = {},
 ) {
     when (uiState) {
         MatchOcrReviewUiState.Loading -> MatchOcrReviewLoadingState()
         is MatchOcrReviewUiState.Empty -> MatchOcrReviewEmptyState(onBack)
         is MatchOcrReviewUiState.Error -> MatchOcrReviewErrorState(uiState, onBack)
-        is MatchOcrReviewUiState.Ready -> MatchOcrReviewReadyState(uiState, onBack)
+        is MatchOcrReviewUiState.Ready -> MatchOcrReviewReadyState(
+            uiState = uiState,
+            onBack = onBack,
+            onPlacementChanged = onPlacementChanged,
+            onKillsChanged = onKillsChanged,
+            onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+            onResetRowCorrection = onResetRowCorrection,
+            onResetAllCorrections = onResetAllCorrections,
+        )
     }
 }
 
@@ -128,7 +158,13 @@ private fun MatchOcrReviewErrorState(
 private fun MatchOcrReviewReadyState(
     uiState: MatchOcrReviewUiState.Ready,
     onBack: () -> Unit,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onResetRowCorrection: (rowIndex: Int) -> Unit,
+    onResetAllCorrections: () -> Unit,
 ) {
+    val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(MatchOcrReviewTestTags.SCREEN)
@@ -179,6 +215,12 @@ private fun MatchOcrReviewReadyState(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            uiState.correctionDraft?.let { correctionDraft ->
+                MatchOcrReviewCorrectionSummary(
+                    correctionDraft = correctionDraft,
+                    onResetAllCorrections = onResetAllCorrections,
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,7 +228,14 @@ private fun MatchOcrReviewReadyState(
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
             ) {
                 uiState.rows.forEach { row ->
-                    MatchOcrReviewRow(row = row)
+                    MatchOcrReviewRow(
+                        row = row,
+                        correctionDraft = correctionRowsByIndex[row.rowIndex],
+                        onPlacementChanged = onPlacementChanged,
+                        onKillsChanged = onKillsChanged,
+                        onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                        onResetRowCorrection = onResetRowCorrection,
+                    )
                 }
             }
             MatchOcrReviewBackAction(onBack)
@@ -195,7 +244,52 @@ private fun MatchOcrReviewReadyState(
 }
 
 @Composable
-private fun MatchOcrReviewRow(row: MatchOcrReviewRowUiState) {
+private fun MatchOcrReviewCorrectionSummary(
+    correctionDraft: MatchOcrReviewCorrectionDraft,
+    onResetAllCorrections: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.CORRECTION_ROOT),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(
+                R.string.match_ocr_review_correction_summary_value,
+                correctionDraft.blockerCount,
+                correctionDraft.warningCount,
+                if (correctionDraft.isDirty) {
+                    stringResource(R.string.match_ocr_review_yes)
+                } else {
+                    stringResource(R.string.match_ocr_review_no)
+                },
+                stringResource(correctionDraft.status.toMessageRes()),
+            ),
+        )
+        if (correctionDraft.isDirty) {
+            Text(text = stringResource(R.string.match_ocr_review_correction_dirty_summary))
+        }
+        Button(
+            onClick = onResetAllCorrections,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.RESET_ALL),
+        ) {
+            Text(text = stringResource(R.string.match_ocr_review_reset_all_action))
+        }
+    }
+}
+
+@Composable
+private fun MatchOcrReviewRow(
+    row: MatchOcrReviewRowUiState,
+    correctionDraft: MatchOcrReviewRowCorrectionDraft?,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onResetRowCorrection: (rowIndex: Int) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -290,6 +384,111 @@ private fun MatchOcrReviewRow(row: MatchOcrReviewRowUiState) {
                 }
             }
         }
+        if (correctionDraft != null) {
+            MatchOcrReviewCorrectionFields(
+                correctionDraft = correctionDraft,
+                onPlacementChanged = onPlacementChanged,
+                onKillsChanged = onKillsChanged,
+                onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                onResetRowCorrection = onResetRowCorrection,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchOcrReviewCorrectionFields(
+    correctionDraft: MatchOcrReviewRowCorrectionDraft,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onResetRowCorrection: (rowIndex: Int) -> Unit,
+) {
+    OutlinedTextField(
+        value = correctionDraft.placementDraftValue,
+        onValueChange = { onPlacementChanged(correctionDraft.rowIndex, it) },
+        label = { Text(text = stringResource(R.string.match_ocr_review_correction_placement_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = correctionDraft.validation.blockers.any {
+            it == MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ||
+                it == MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ||
+                it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.placementInput(correctionDraft.rowIndex)),
+    )
+    OutlinedTextField(
+        value = correctionDraft.killsDraftValue,
+        onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
+        label = { Text(text = stringResource(R.string.match_ocr_review_correction_kills_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = correctionDraft.validation.blockers.any {
+            it == MatchOcrReviewCorrectionReason.MISSING_KILLS ||
+                it == MatchOcrReviewCorrectionReason.INVALID_KILLS ||
+                it == MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.killsInput(correctionDraft.rowIndex)),
+    )
+    OutlinedTextField(
+        value = correctionDraft.assignedTeamSlotDraftValue,
+        onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
+        label = { Text(text = stringResource(R.string.match_ocr_review_correction_team_slot_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = correctionDraft.validation.blockers.any {
+            it == MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ||
+                it == MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ||
+                it == MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.teamSlotInput(correctionDraft.rowIndex)),
+    )
+    if (correctionDraft.isDirty) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_correction_dirty_row),
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.rowDirty(correctionDraft.rowIndex)),
+        )
+    }
+    if (correctionDraft.validation.blockers.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.rowBlocker(correctionDraft.rowIndex)),
+        ) {
+            Text(
+                text = stringResource(R.string.match_ocr_review_correction_blockers_title),
+                color = MaterialTheme.colorScheme.error,
+            )
+            correctionDraft.validation.blockers.sortedBy { it.ordinal }.forEach { blocker ->
+                Text(text = stringResource(R.string.match_ocr_review_blocker_value, stringResource(blocker.toMessageRes())))
+            }
+        }
+    }
+    if (correctionDraft.validation.warnings.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.rowWarning(correctionDraft.rowIndex)),
+        ) {
+            Text(
+                text = stringResource(R.string.match_ocr_review_correction_warnings_title),
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+            correctionDraft.validation.warnings.sortedBy { it.ordinal }.forEach { warning ->
+                Text(text = stringResource(R.string.match_ocr_review_warning_value, stringResource(warning.toMessageRes())))
+            }
+        }
+    }
+    Button(
+        onClick = { onResetRowCorrection(correctionDraft.rowIndex) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.resetRow(correctionDraft.rowIndex)),
+    ) {
+        Text(text = stringResource(R.string.match_ocr_review_reset_row_action))
     }
 }
 
@@ -304,4 +503,43 @@ private fun MatchOcrReviewBackAction(onBack: () -> Unit) {
     ) {
         Text(text = stringResource(R.string.back_to_match_details_action))
     }
+}
+
+private fun MatchOcrReviewCorrectionDraftStatus.toMessageRes(): Int = when (this) {
+    MatchOcrReviewCorrectionDraftStatus.VALID -> R.string.match_ocr_review_correction_status_valid
+    MatchOcrReviewCorrectionDraftStatus.WARNING -> R.string.match_ocr_review_correction_status_warning
+    MatchOcrReviewCorrectionDraftStatus.BLOCKED -> R.string.match_ocr_review_correction_status_blocked
+}
+
+private fun MatchOcrReviewCorrectionReason.toMessageRes(): Int = when (this) {
+    MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ->
+        R.string.match_ocr_review_correction_missing_placement
+    MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ->
+        R.string.match_ocr_review_correction_invalid_placement
+    MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
+        R.string.match_ocr_review_correction_duplicate_placement
+    MatchOcrReviewCorrectionReason.MISSING_KILLS ->
+        R.string.match_ocr_review_correction_missing_kills
+    MatchOcrReviewCorrectionReason.INVALID_KILLS ->
+        R.string.match_ocr_review_correction_invalid_kills
+    MatchOcrReviewCorrectionReason.NEGATIVE_KILLS ->
+        R.string.match_ocr_review_correction_negative_kills
+    MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ->
+        R.string.match_ocr_review_correction_missing_team_slot
+    MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ->
+        R.string.match_ocr_review_correction_invalid_team_slot
+    MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT ->
+        R.string.match_ocr_review_correction_duplicate_team_slot
+    MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT ->
+        R.string.match_ocr_review_correction_malformed_row_draft
+    MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR ->
+        R.string.match_ocr_review_correction_placement_changed
+    MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR ->
+        R.string.match_ocr_review_correction_kills_changed
+    MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION ->
+        R.string.match_ocr_review_correction_team_slot_changed
+    MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW ->
+        R.string.match_ocr_review_correction_row_originally_manual
+    MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE ->
+        R.string.match_ocr_review_correction_weak_evidence
 }

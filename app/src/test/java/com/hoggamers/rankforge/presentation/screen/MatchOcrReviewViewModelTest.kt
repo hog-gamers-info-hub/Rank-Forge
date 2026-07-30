@@ -59,7 +59,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun viewModelDoesNotExposeEditFinalizationOrAssignmentActions() {
+    fun viewModelExposesOnlyInMemoryCorrectionActionsWithoutSaveFinalizationOrAssignmentActions() {
         val publicMethodNames = MatchOcrReviewViewModel::class.java.methods.map { it.name }.toSet()
 
         assertFalse(publicMethodNames.contains("finalize"))
@@ -68,5 +68,10 @@ class MatchOcrReviewViewModelTest {
         assertFalse(publicMethodNames.contains("openCorrection"))
         assertFalse(publicMethodNames.contains("runOcr"))
         assertTrue(publicMethodNames.contains("load"))
+        assertTrue(publicMethodNames.contains("onPlacementChanged"))
+        assertTrue(publicMethodNames.contains("onKillsChanged"))
+        assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
+        assertTrue(publicMethodNames.contains("onResetRowCorrection"))
+        assertTrue(publicMethodNames.contains("onResetAllCorrections"))
     }
 }
