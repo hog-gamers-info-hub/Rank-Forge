@@ -1,0 +1,10 @@
+package com.hoggamers.rankforge.domain.matching
+
+enum class TeamAssignmentSafetyReason {
+    NO_SUGGESTION,
+    NOT_AUTOMATIC_TIER,
+    INSUFFICIENT_PLAYER_MATCH_COUNT,
+    INSUFFICIENT_CANDIDATE_LEAD,
+    DUPLICATE_TEAM_CANDIDATE,
+    MALFORMED_CONFIDENCE_ASSESSMENT,
+}
