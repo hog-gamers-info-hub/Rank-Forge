@@ -53,6 +53,8 @@ import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewTestTags
+import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
@@ -270,6 +272,42 @@ class RankForgeNavigationTest {
 
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_not_found_title)).assertIsDisplayed()
+    }
+
+    @Test
+    fun directMatchOcrReviewRouteDisplaysEmptyStateAndBackReturnsToList() {
+        val viewModels = createNavigationViewModels()
+        composeTestRule.setContent {
+            val navController = rememberNavController()
+            RankForgeTheme {
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    matchOcrReviewViewModelFactory = { tournamentId, matchId ->
+                        MatchOcrReviewViewModel().also {
+                            it.load(tournamentId, matchId)
+                        }
+                    },
+                )
+            }
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                navController.navigate(
+                    MatchOcrReviewDestination(
+                        tournamentId = "confirmed-id",
+                        matchId = "synthetic-match",
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.match_ocr_review_empty_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
     }
 
     @Test

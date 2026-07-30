@@ -63,6 +63,12 @@ data class MatchReviewDestination(
 )
 
 @Serializable
+data class MatchOcrReviewDestination(
+    val tournamentId: String,
+    val matchId: String,
+)
+
+@Serializable
 data class MatchCorrectionDestination(
     val tournamentId: String,
     val matchId: String,
