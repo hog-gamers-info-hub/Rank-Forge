@@ -27,6 +27,7 @@ sealed interface MatchOcrReviewUiState {
         val reviewRequiredRowCount: Int,
         val manualReviewRequired: Boolean,
         val hasUnavailableEvidence: Boolean,
+        val correctionDraft: MatchOcrReviewCorrectionDraft? = null,
     ) : MatchOcrReviewUiState
 
     data class Empty(
@@ -58,6 +59,9 @@ data class MatchOcrReviewRowUiState(
     val warningLabels: List<String>,
     val blockerLabels: List<String>,
     val severity: MatchOcrReviewSeverity,
+    val originalParsedPlacementValue: Int? = null,
+    val originalParsedKillValue: Int? = null,
+    val originalSuggestedTeamSlot: Int? = null,
 )
 
 enum class MatchOcrReviewSeverity {
@@ -169,6 +173,8 @@ object MatchOcrReviewUiStateMapper {
         val selectedSuggestion = confidenceAssessment?.selectedSuggestion
         val safetyResult = input.safetyResult
         val safetyStatus = input.safetyResult?.safetyStatus
+        val suggestedTeamSlot = input.safetyResult?.proposedTeamSlot
+            ?: selectedSuggestion?.teamCandidateScore?.candidateTeamSlot
         val blockers = mutableListOf<String>()
         val warnings = mutableListOf<String>()
 
@@ -214,9 +220,7 @@ object MatchOcrReviewUiStateMapper {
             killStatusLabel = input.fieldStatusLabel(OcrReviewFieldType.KILL),
             detectedPlayerNameEvidenceLabel = input.detectedPlayerName ?: UNAVAILABLE,
             playerNameStatusLabel = input.fieldStatusLabel(OcrReviewFieldType.PLAYER_NAME),
-            suggestedTeamSlotDisplayValue = (
-                input.safetyResult?.proposedTeamSlot ?: selectedSuggestion?.teamCandidateScore?.candidateTeamSlot
-            )?.toString() ?: UNAVAILABLE,
+            suggestedTeamSlotDisplayValue = suggestedTeamSlot?.toString() ?: UNAVAILABLE,
             confidenceScoreDisplayValue = selectedSuggestion?.teamCandidateScore?.confidenceScore?.toString()
                 ?: UNAVAILABLE,
             confidenceTierLabel = confidenceAssessment?.tier?.label() ?: UNAVAILABLE,
@@ -229,6 +233,9 @@ object MatchOcrReviewUiStateMapper {
                 warnings.isNotEmpty() -> MatchOcrReviewSeverity.WARNING
                 else -> MatchOcrReviewSeverity.INFORMATIONAL
             },
+            originalParsedPlacementValue = input.detectedPlacementValue,
+            originalParsedKillValue = input.detectedKillValue,
+            originalSuggestedTeamSlot = suggestedTeamSlot,
         )
     }
 

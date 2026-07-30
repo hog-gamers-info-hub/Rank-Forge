@@ -27,4 +27,48 @@ class MatchOcrReviewViewModel @Inject constructor() : ViewModel() {
             )
         }
     }
+
+    fun onPlacementChanged(rowIndex: Int, value: String) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, rowIndex, value)
+        }
+    }
+
+    fun onKillsChanged(rowIndex: Int, value: String) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, rowIndex, value)
+        }
+    }
+
+    fun onAssignedTeamSlotChanged(rowIndex: Int, value: String) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(draft, rowIndex, value)
+        }
+    }
+
+    fun onResetRowCorrection(rowIndex: Int) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(draft, rowIndex)
+        }
+    }
+
+    fun onResetAllCorrections() {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onResetAllCorrections(draft)
+        }
+    }
+
+    private fun updateCorrectionDraft(
+        transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft,
+    ) {
+        _uiState.update { state ->
+            if (state is MatchOcrReviewUiState.Ready) {
+                val currentDraft = state.correctionDraft
+                    ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
+                state.copy(correctionDraft = transform(currentDraft))
+            } else {
+                state
+            }
+        }
+    }
 }
