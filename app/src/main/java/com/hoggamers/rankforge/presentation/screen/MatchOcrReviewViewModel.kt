@@ -170,8 +170,9 @@ class MatchOcrReviewViewModel @Inject constructor(
                 FinalizeOcrCorrectionMatchInput(
                     tournamentId = current.tournamentId,
                     matchId = current.matchId,
-                    correctionRows = correctionDraft.toFinalizeRows(),
+                    correctionRows = correctionDraft.toFinalizeRows(current.rows),
                     warningConfirmationAccepted = warningConfirmationAccepted,
+                    sourceScreenshotId = null,
                 ),
             )
             _uiState.updateReady { ready ->
@@ -225,16 +226,32 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
-    private fun MatchOcrReviewCorrectionDraft.toFinalizeRows(): List<FinalizeOcrCorrectionRowInput> =
-        rows.map { row ->
+    private fun MatchOcrReviewCorrectionDraft.toFinalizeRows(
+        reviewRows: List<MatchOcrReviewRowUiState>,
+    ): List<FinalizeOcrCorrectionRowInput> {
+        val reviewRowsByIndex = reviewRows.associateBy { it.rowIndex }
+        return rows.map { row ->
+            val reviewRow = reviewRowsByIndex[row.rowIndex]
             FinalizeOcrCorrectionRowInput(
                 rowIndex = row.rowIndex,
                 correctedPlacement = row.placementDraftValue,
                 correctedKills = row.killsDraftValue,
                 correctedTeamSlotNumber = row.assignedTeamSlotDraftValue,
                 warnings = row.validation.warnings.mapNotNull { it.toFinalizeWarning() }.toSet(),
+                originalOcrText = reviewRow?.detectedPlayerNameEvidenceLabel,
+                originalPlacement = reviewRow?.originalParsedPlacementValue,
+                originalKills = reviewRow?.originalParsedKillValue,
+                originalSuggestedTeamSlot = reviewRow?.originalSuggestedTeamSlot,
+                confidenceSummary = reviewRow?.let {
+                    "${it.confidenceTierLabel}|${it.confidenceScoreDisplayValue}"
+                },
+                safetySummary = reviewRow?.assignmentSafetyStatusLabel,
+                manualReviewRequired = reviewRow?.let {
+                    it.blockerLabels.isNotEmpty() || it.warningLabels.isNotEmpty()
+                } ?: row.originallyRequiredManualReview,
             )
         }
+    }
 
     private fun MatchOcrReviewCorrectionReason.toFinalizeWarning(): FinalizeOcrCorrectionMatchWarning? =
         when (this) {

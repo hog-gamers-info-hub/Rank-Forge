@@ -2,12 +2,14 @@ package com.hoggamers.rankforge.domain.tournament
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import java.time.Clock
 
 data class FinalizeOcrCorrectionMatchInput(
     val tournamentId: String,
     val matchId: String,
     val correctionRows: List<FinalizeOcrCorrectionRowInput>?,
     val warningConfirmationAccepted: Boolean = false,
+    val sourceScreenshotId: String? = null,
 )
 
 data class FinalizeOcrCorrectionRowInput(
@@ -16,6 +18,13 @@ data class FinalizeOcrCorrectionRowInput(
     val correctedKills: String?,
     val correctedTeamSlotNumber: String?,
     val warnings: Set<FinalizeOcrCorrectionMatchWarning> = emptySet(),
+    val originalOcrText: String? = null,
+    val originalPlacement: Int? = null,
+    val originalKills: Int? = null,
+    val originalSuggestedTeamSlot: Int? = null,
+    val confidenceSummary: String? = null,
+    val safetySummary: String? = null,
+    val manualReviewRequired: Boolean = false,
 )
 
 enum class FinalizeOcrCorrectionMatchWarning {
@@ -68,6 +77,7 @@ sealed interface FinalizeOcrCorrectionMatchResult {
 class FinalizeOcrCorrectionMatchUseCase(
     private val repository: TournamentRepository,
     private val finalizeMatch: FinalizeMatchUseCase,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     suspend operator fun invoke(input: FinalizeOcrCorrectionMatchInput): FinalizeOcrCorrectionMatchResult =
         try {
@@ -153,6 +163,7 @@ class FinalizeOcrCorrectionMatchUseCase(
                 FinalizeMatchInput(
                     matchId = input.matchId,
                     rows = rowValidation.finalizeRows,
+                    ocrEvidence = input.toPreservedEvidence(correctionRows, rowValidation),
                 ),
             )
         ) {
@@ -231,6 +242,46 @@ class FinalizeOcrCorrectionMatchUseCase(
             failures = failures.toSet(),
             failuresByRowIndex = failuresByRowIndex.mapValues { (_, rowFailures) -> rowFailures.toSet() },
             finalizeRows = finalizeRows,
+            parsedRows = parsedRows,
+        )
+    }
+
+    private fun FinalizeOcrCorrectionMatchInput.toPreservedEvidence(
+        correctionRows: List<FinalizeOcrCorrectionRowInput>,
+        rowValidation: RowValidation,
+    ): PreservedMatchOcrEvidence {
+        val parsedRowsByIndex = rowValidation.parsedRows.associateBy { it.rowIndex }
+        val preservedAt = clock.millis()
+        return PreservedMatchOcrEvidence(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            sourceScreenshotId = sourceScreenshotId,
+            preservedAt = preservedAt,
+            provenance = OCR_REVIEW_FINALIZATION_PROVENANCE,
+            rows = correctionRows.map { row ->
+                PreservedMatchOcrRowEvidence(
+                    rowIndex = row.rowIndex,
+                    originalOcrText = row.originalOcrText,
+                    originalPlacement = row.originalPlacement,
+                    originalKills = row.originalKills,
+                    originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                    confidenceSummary = row.confidenceSummary,
+                    safetySummary = row.safetySummary,
+                    manualReviewRequired = row.manualReviewRequired,
+                )
+            },
+            correctionSnapshots = correctionRows.map { row ->
+                val parsed = parsedRowsByIndex.getValue(row.rowIndex)
+                PreservedMatchOcrCorrectionSnapshot(
+                    rowIndex = row.rowIndex,
+                    correctedPlacement = parsed.placement!!,
+                    correctedKills = parsed.kills!!,
+                    correctedTeamSlot = parsed.teamSlotNumber!!,
+                    placementChanged = row.originalPlacement != parsed.placement,
+                    killsChanged = row.originalKills != parsed.kills,
+                    teamSlotChanged = row.originalSuggestedTeamSlot != parsed.teamSlotNumber,
+                )
+            },
         )
     }
 
@@ -326,5 +377,10 @@ class FinalizeOcrCorrectionMatchUseCase(
         val failures: Set<FinalizeOcrCorrectionMatchFailure>,
         val failuresByRowIndex: Map<Int, Set<FinalizeOcrCorrectionMatchFailure>>,
         val finalizeRows: List<MatchResultRowInput>,
+        val parsedRows: List<ParsedRow>,
     )
+
+    private companion object {
+        const val OCR_REVIEW_FINALIZATION_PROVENANCE = "OCR_REVIEW_FINALIZATION"
+    }
 }

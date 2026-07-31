@@ -40,8 +40,11 @@ interface RankForgeStateDao {
         SyncRevisionEntity::class,
         ScreenshotMetadataEntity::class,
         RosterScreenshotMetadataEntity::class,
+        MatchOcrEvidenceEntity::class,
+        MatchOcrRowEvidenceEntity::class,
+        MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -58,6 +61,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun syncRevisionDao(): SyncRevisionDao
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
+    abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -256,6 +260,66 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_tournament_id` ON `roster_screenshot_metadata` (`tournament_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_sha256` ON `roster_screenshot_metadata` (`sha256`)")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_ocr_evidence` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `source_screenshot_id` TEXT,
+                        `preserved_at` INTEGER NOT NULL,
+                        `provenance` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_ocr_row_evidence` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `row_index` INTEGER NOT NULL,
+                        `original_ocr_text` TEXT,
+                        `original_placement` INTEGER,
+                        `original_kills` INTEGER,
+                        `original_suggested_team_slot` INTEGER,
+                        `confidence_summary` TEXT,
+                        `safety_summary` TEXT,
+                        `manual_review_required` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `row_index`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_ocr_correction_snapshots` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `row_index` INTEGER NOT NULL,
+                        `corrected_placement` INTEGER NOT NULL,
+                        `corrected_kills` INTEGER NOT NULL,
+                        `corrected_team_slot` INTEGER NOT NULL,
+                        `placement_changed` INTEGER NOT NULL,
+                        `kills_changed` INTEGER NOT NULL,
+                        `team_slot_changed` INTEGER NOT NULL,
+                        `preserved_at` INTEGER NOT NULL,
+                        `provenance` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`, `row_index`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_evidence_tournament_id` ON `match_ocr_evidence` (`tournament_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_row_evidence_match_id` ON `match_ocr_row_evidence` (`match_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_row_evidence_tournament_id` ON `match_ocr_row_evidence` (`tournament_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_match_id` ON `match_ocr_correction_snapshots` (`match_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_tournament_id` ON `match_ocr_correction_snapshots` (`tournament_id`)")
             }
         }
     }

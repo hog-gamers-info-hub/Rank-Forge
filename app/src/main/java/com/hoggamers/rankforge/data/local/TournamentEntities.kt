@@ -195,6 +195,110 @@ data class ScreenshotMetadataEntity(
 )
 
 @Entity(
+    tableName = "match_ocr_evidence",
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["tournament_id"])],
+)
+data class MatchOcrEvidenceEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "source_screenshot_id")
+    val sourceScreenshotId: String?,
+    @ColumnInfo(name = "preserved_at")
+    val preservedAt: Long,
+    val provenance: String,
+)
+
+@Entity(
+    tableName = "match_ocr_row_evidence",
+    primaryKeys = ["match_id", "row_index"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["match_id"]),
+        Index(value = ["tournament_id"]),
+    ],
+)
+data class MatchOcrRowEvidenceEntity(
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "row_index")
+    val rowIndex: Int,
+    @ColumnInfo(name = "original_ocr_text")
+    val originalOcrText: String?,
+    @ColumnInfo(name = "original_placement")
+    val originalPlacement: Int?,
+    @ColumnInfo(name = "original_kills")
+    val originalKills: Int?,
+    @ColumnInfo(name = "original_suggested_team_slot")
+    val originalSuggestedTeamSlot: Int?,
+    @ColumnInfo(name = "confidence_summary")
+    val confidenceSummary: String?,
+    @ColumnInfo(name = "safety_summary")
+    val safetySummary: String?,
+    @ColumnInfo(name = "manual_review_required")
+    val manualReviewRequired: Boolean,
+)
+
+@Entity(
+    tableName = "match_ocr_correction_snapshots",
+    primaryKeys = ["match_id", "row_index"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["match_id"]),
+        Index(value = ["tournament_id"]),
+    ],
+)
+data class MatchOcrCorrectionSnapshotEntity(
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "row_index")
+    val rowIndex: Int,
+    @ColumnInfo(name = "corrected_placement")
+    val correctedPlacement: Int,
+    @ColumnInfo(name = "corrected_kills")
+    val correctedKills: Int,
+    @ColumnInfo(name = "corrected_team_slot")
+    val correctedTeamSlot: Int,
+    @ColumnInfo(name = "placement_changed")
+    val placementChanged: Boolean,
+    @ColumnInfo(name = "kills_changed")
+    val killsChanged: Boolean,
+    @ColumnInfo(name = "team_slot_changed")
+    val teamSlotChanged: Boolean,
+    @ColumnInfo(name = "preserved_at")
+    val preservedAt: Long,
+    val provenance: String,
+)
+
+@Entity(
     tableName = "match_placements",
     primaryKeys = ["match_id", "team_slot_number"],
     foreignKeys = [

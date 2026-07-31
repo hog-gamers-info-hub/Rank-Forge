@@ -1,7 +1,10 @@
 package com.hoggamers.rankforge.data.local
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -216,6 +219,38 @@ interface RosterScreenshotMetadataDao {
         tournamentId: String,
         index: Int,
     )
+}
+
+@Dao
+interface MatchOcrEvidenceDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertMatchEvidence(entity: MatchOcrEvidenceEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertRowEvidence(entities: List<MatchOcrRowEvidenceEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertCorrectionSnapshots(entities: List<MatchOcrCorrectionSnapshotEntity>)
+
+    @Query("SELECT * FROM match_ocr_evidence WHERE match_id = :matchId")
+    suspend fun readMatchEvidence(matchId: String): MatchOcrEvidenceEntity?
+
+    @Query("SELECT * FROM match_ocr_row_evidence WHERE match_id = :matchId ORDER BY row_index")
+    suspend fun readRowEvidence(matchId: String): List<MatchOcrRowEvidenceEntity>
+
+    @Query("SELECT * FROM match_ocr_correction_snapshots WHERE match_id = :matchId ORDER BY row_index")
+    suspend fun readCorrectionSnapshots(matchId: String): List<MatchOcrCorrectionSnapshotEntity>
+
+    @Transaction
+    suspend fun insertSnapshot(
+        matchEvidence: MatchOcrEvidenceEntity,
+        rowEvidence: List<MatchOcrRowEvidenceEntity>,
+        correctionSnapshots: List<MatchOcrCorrectionSnapshotEntity>,
+    ) {
+        insertMatchEvidence(matchEvidence)
+        insertRowEvidence(rowEvidence)
+        insertCorrectionSnapshots(correctionSnapshots)
+    }
 }
 
 @Dao

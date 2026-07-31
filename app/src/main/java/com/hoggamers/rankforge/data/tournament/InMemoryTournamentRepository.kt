@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
@@ -39,6 +40,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
     private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
     private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
+    private val preservedOcrEvidenceByMatch = MutableStateFlow<Map<String, PreservedMatchOcrEvidence>>(emptyMap())
     private val cloudRevisions = MutableStateFlow<Map<String, Int>>(emptyMap())
 
     override suspend fun create(tournament: Tournament) {
@@ -320,6 +322,35 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         draftValuesByMatch.update { current -> current - DraftKey(match.tournamentId, matchId) }
         return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
+
+    override suspend fun finalizeDraftMatchWithOcrEvidence(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult {
+        val match = matchesByTournamentId.value.values
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND)
+        val existingEvidence = preservedOcrEvidenceByMatch.value[matchId]
+        if (
+            evidence.matchId != matchId ||
+            evidence.tournamentId != match.tournamentId ||
+            existingEvidence?.let { it != evidence } == true
+        ) {
+            return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+        }
+
+        val result = finalizeDraftMatch(matchId, placements, kills)
+        if (result is FinalizeMatchRepositoryResult.Finalized && existingEvidence == null) {
+            preservedOcrEvidenceByMatch.update { current -> current + (matchId to evidence) }
+        }
+        return result
+    }
+
+    fun readPreservedOcrEvidence(matchId: String): PreservedMatchOcrEvidence? =
+        preservedOcrEvidenceByMatch.value[matchId]
 
     override suspend fun submitMatchCorrection(
         matchId: String,

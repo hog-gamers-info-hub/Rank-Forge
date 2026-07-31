@@ -137,6 +137,49 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun finalizationPreservesReviewEvidenceAndCorrectionSnapshot() = runTest(dispatcher) {
+        val repository = createRepository()
+        val rows = correctionRows().map { row ->
+            if (row.rowIndex == 0) {
+                row.copy(
+                    confidenceScoreDisplayValue = "82",
+                    confidenceTierLabel = "Manual review",
+                    assignmentSafetyStatusLabel = "Review required",
+                    warningLabels = listOf("Weak evidence"),
+                )
+            } else {
+                row
+            }
+        }
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val warningDraft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(initialDraft, 0, "9")
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft, rows = rows))
+
+        viewModel.onFinalizeOcrCorrection()
+        viewModel.onConfirmFinalizeWarnings()
+        advanceUntilIdle()
+
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        val firstRow = evidence.rows.first { it.rowIndex == 0 }
+        val firstCorrection = evidence.correctionSnapshots.first { it.rowIndex == 0 }
+        assertEquals(12, evidence.rows.size)
+        assertEquals(12, evidence.correctionSnapshots.size)
+        assertEquals("Synthetic Unit 1", firstRow.originalOcrText)
+        assertEquals(1, firstRow.originalPlacement)
+        assertEquals(0, firstRow.originalKills)
+        assertEquals(1, firstRow.originalSuggestedTeamSlot)
+        assertEquals("Manual review|82", firstRow.confidenceSummary)
+        assertEquals("Review required", firstRow.safetySummary)
+        assertTrue(firstRow.manualReviewRequired)
+        assertEquals(1, firstCorrection.correctedPlacement)
+        assertEquals(9, firstCorrection.correctedKills)
+        assertEquals(1, firstCorrection.correctedTeamSlot)
+        assertFalse(firstCorrection.placementChanged)
+        assertTrue(firstCorrection.killsChanged)
+        assertFalse(firstCorrection.teamSlotChanged)
+    }
+
+    @Test
     fun successStateAfterValidFinalization() = runTest(dispatcher) {
         val repository = createRepository()
         val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
@@ -270,12 +313,13 @@ class MatchOcrReviewViewModelTest {
 
     private fun readyState(
         correctionDraft: MatchOcrReviewCorrectionDraft? = correctionDraft(),
+        rows: List<MatchOcrReviewRowUiState> = correctionRows(),
     ): MatchOcrReviewUiState.Ready = MatchOcrReviewUiState.Ready(
         tournamentId = TOURNAMENT_ID,
         matchId = MATCH_ID,
         matchDisplayLabel = "Synthetic Match",
         rowCount = 12,
-        rows = correctionRows(),
+        rows = rows,
         blockerCount = 0,
         warningCount = 0,
         safeRowCount = 12,

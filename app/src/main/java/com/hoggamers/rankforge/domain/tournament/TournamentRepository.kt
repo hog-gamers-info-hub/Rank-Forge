@@ -73,6 +73,14 @@ interface TournamentRepository {
     ): FinalizeMatchRepositoryResult =
         error("Match finalization is not supported by this repository.")
 
+    suspend fun finalizeDraftMatchWithOcrEvidence(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult =
+        error("OCR evidence finalization is not supported by this repository.")
+
     suspend fun submitMatchCorrection(
         matchId: String,
         placements: List<MatchPlacement>,
