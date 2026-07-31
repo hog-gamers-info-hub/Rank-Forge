@@ -28,6 +28,7 @@ sealed interface MatchOcrReviewUiState {
         val manualReviewRequired: Boolean,
         val hasUnavailableEvidence: Boolean,
         val correctionDraft: MatchOcrReviewCorrectionDraft? = null,
+        val finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
     ) : MatchOcrReviewUiState
 
     data class Empty(
@@ -68,6 +69,23 @@ enum class MatchOcrReviewSeverity {
     BLOCKING,
     WARNING,
     INFORMATIONAL,
+}
+
+data class MatchOcrReviewFinalizationUiState(
+    val isFinalizing: Boolean = false,
+    val showWarningConfirmation: Boolean = false,
+    val isFinalized: Boolean = false,
+    val error: MatchOcrReviewFinalizationError? = null,
+)
+
+enum class MatchOcrReviewFinalizationError {
+    MISSING_CORRECTION_DRAFT,
+    CORRECTION_DRAFT_BLOCKED,
+    MISSING_TOURNAMENT,
+    MISSING_MATCH,
+    ALREADY_FINALIZED,
+    FINALIZATION_FAILED,
+    UNEXPECTED_FAILURE,
 }
 
 /**

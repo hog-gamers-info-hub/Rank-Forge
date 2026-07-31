@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +38,15 @@ object MatchOcrReviewTestTags {
     const val BACK_ACTION = "match_ocr_review_back_action"
     const val CORRECTION_ROOT = "match_ocr_review_correction_root"
     const val RESET_ALL = "match_ocr_review_reset_all"
+    const val FINALIZATION_SUMMARY = "match_ocr_review_finalization_summary"
+    const val FINALIZE_ACTION = "match_ocr_review_finalize_action"
+    const val FINALIZE_BLOCKED_LABEL = "match_ocr_review_finalize_blocked_label"
+    const val FINALIZE_WARNING_COUNT = "match_ocr_review_finalize_warning_count"
+    const val FINALIZE_WARNING_DIALOG = "match_ocr_review_finalize_warning_dialog"
+    const val CONFIRM_FINALIZE_WARNINGS = "match_ocr_review_confirm_finalize_warnings"
+    const val DISMISS_FINALIZE_WARNINGS = "match_ocr_review_dismiss_finalize_warnings"
+    const val FINALIZATION_SUCCESS = "match_ocr_review_finalization_success"
+    const val FINALIZATION_ERROR = "match_ocr_review_finalization_error"
     private const val ROW_PREFIX = "match_ocr_review_row_"
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
@@ -77,6 +88,9 @@ fun MatchOcrReviewRoute(
         onAssignedTeamSlotChanged = viewModel::onAssignedTeamSlotChanged,
         onResetRowCorrection = viewModel::onResetRowCorrection,
         onResetAllCorrections = viewModel::onResetAllCorrections,
+        onFinalizeOcrCorrection = viewModel::onFinalizeOcrCorrection,
+        onConfirmFinalizeWarnings = viewModel::onConfirmFinalizeWarnings,
+        onDismissFinalizeWarnings = viewModel::onDismissFinalizeWarnings,
     )
 }
 
@@ -89,6 +103,9 @@ fun MatchOcrReviewScreen(
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onResetRowCorrection: (rowIndex: Int) -> Unit = {},
     onResetAllCorrections: () -> Unit = {},
+    onFinalizeOcrCorrection: () -> Unit = {},
+    onConfirmFinalizeWarnings: () -> Unit = {},
+    onDismissFinalizeWarnings: () -> Unit = {},
 ) {
     when (uiState) {
         MatchOcrReviewUiState.Loading -> MatchOcrReviewLoadingState()
@@ -102,6 +119,9 @@ fun MatchOcrReviewScreen(
             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
             onResetRowCorrection = onResetRowCorrection,
             onResetAllCorrections = onResetAllCorrections,
+            onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
+            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
     }
 }
@@ -163,6 +183,9 @@ private fun MatchOcrReviewReadyState(
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     onResetAllCorrections: () -> Unit,
+    onFinalizeOcrCorrection: () -> Unit,
+    onConfirmFinalizeWarnings: () -> Unit,
+    onDismissFinalizeWarnings: () -> Unit,
 ) {
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
     RankForgeScreenContainer(
@@ -218,7 +241,9 @@ private fun MatchOcrReviewReadyState(
             uiState.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewCorrectionSummary(
                     correctionDraft = correctionDraft,
+                    finalization = uiState.finalization,
                     onResetAllCorrections = onResetAllCorrections,
+                    onFinalizeOcrCorrection = onFinalizeOcrCorrection,
                 )
             }
             Column(
@@ -235,18 +260,28 @@ private fun MatchOcrReviewReadyState(
                         onKillsChanged = onKillsChanged,
                         onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                         onResetRowCorrection = onResetRowCorrection,
+                        correctionEnabled = !uiState.finalization.isFinalized,
                     )
                 }
             }
             MatchOcrReviewBackAction(onBack)
         }
     }
+    if (uiState.finalization.showWarningConfirmation) {
+        MatchOcrReviewFinalizeWarningDialog(
+            warningCount = uiState.correctionDraft?.warningCount ?: 0,
+            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
+            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+        )
+    }
 }
 
 @Composable
 private fun MatchOcrReviewCorrectionSummary(
     correctionDraft: MatchOcrReviewCorrectionDraft,
+    finalization: MatchOcrReviewFinalizationUiState,
     onResetAllCorrections: () -> Unit,
+    onFinalizeOcrCorrection: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -270,8 +305,14 @@ private fun MatchOcrReviewCorrectionSummary(
         if (correctionDraft.isDirty) {
             Text(text = stringResource(R.string.match_ocr_review_correction_dirty_summary))
         }
+        MatchOcrReviewFinalizationSummary(
+            correctionDraft = correctionDraft,
+            finalization = finalization,
+            onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+        )
         Button(
             onClick = onResetAllCorrections,
+            enabled = !finalization.isFinalized,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MatchOcrReviewTestTags.RESET_ALL),
@@ -289,6 +330,7 @@ private fun MatchOcrReviewRow(
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
+    correctionEnabled: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -391,6 +433,7 @@ private fun MatchOcrReviewRow(
                 onKillsChanged = onKillsChanged,
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onResetRowCorrection = onResetRowCorrection,
+                correctionEnabled = correctionEnabled,
             )
         }
     }
@@ -403,10 +446,12 @@ private fun MatchOcrReviewCorrectionFields(
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
+    correctionEnabled: Boolean,
 ) {
     OutlinedTextField(
         value = correctionDraft.placementDraftValue,
         onValueChange = { onPlacementChanged(correctionDraft.rowIndex, it) },
+        enabled = correctionEnabled,
         label = { Text(text = stringResource(R.string.match_ocr_review_correction_placement_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         isError = correctionDraft.validation.blockers.any {
@@ -421,6 +466,7 @@ private fun MatchOcrReviewCorrectionFields(
     OutlinedTextField(
         value = correctionDraft.killsDraftValue,
         onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
+        enabled = correctionEnabled,
         label = { Text(text = stringResource(R.string.match_ocr_review_correction_kills_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         isError = correctionDraft.validation.blockers.any {
@@ -435,6 +481,7 @@ private fun MatchOcrReviewCorrectionFields(
     OutlinedTextField(
         value = correctionDraft.assignedTeamSlotDraftValue,
         onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
+        enabled = correctionEnabled,
         label = { Text(text = stringResource(R.string.match_ocr_review_correction_team_slot_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         isError = correctionDraft.validation.blockers.any {
@@ -484,12 +531,119 @@ private fun MatchOcrReviewCorrectionFields(
     }
     Button(
         onClick = { onResetRowCorrection(correctionDraft.rowIndex) },
+        enabled = correctionEnabled,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(MatchOcrReviewTestTags.resetRow(correctionDraft.rowIndex)),
     ) {
         Text(text = stringResource(R.string.match_ocr_review_reset_row_action))
     }
+}
+
+@Composable
+private fun MatchOcrReviewFinalizationSummary(
+    correctionDraft: MatchOcrReviewCorrectionDraft,
+    finalization: MatchOcrReviewFinalizationUiState,
+    onFinalizeOcrCorrection: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.FINALIZATION_SUMMARY),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(text = stringResource(R.string.match_ocr_review_finalization_ready))
+        if (correctionDraft.blockerCount > 0) {
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_finalization_blocked,
+                    correctionDraft.blockerCount,
+                ),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_BLOCKED_LABEL),
+            )
+        }
+        if (correctionDraft.warningCount > 0) {
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_finalization_warning_count,
+                    correctionDraft.warningCount,
+                ),
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT),
+            )
+        }
+        if (finalization.isFinalized) {
+            Text(
+                text = stringResource(R.string.match_ocr_review_finalization_success),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZATION_SUCCESS),
+            )
+        }
+        finalization.error?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZATION_ERROR),
+            )
+        }
+        Button(
+            onClick = onFinalizeOcrCorrection,
+            enabled = correctionDraft.blockerCount == 0 &&
+                !finalization.isFinalizing &&
+                !finalization.isFinalized,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+        ) {
+            Text(
+                text = stringResource(
+                    if (finalization.isFinalizing) {
+                        R.string.match_ocr_review_finalization_in_progress
+                    } else {
+                        R.string.match_ocr_review_finalize_action
+                    },
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchOcrReviewFinalizeWarningDialog(
+    warningCount: Int,
+    onConfirmFinalizeWarnings: () -> Unit,
+    onDismissFinalizeWarnings: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG),
+        onDismissRequest = onDismissFinalizeWarnings,
+        title = { Text(text = stringResource(R.string.match_ocr_review_finalize_warning_title)) },
+        text = {
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_finalize_warning_message,
+                    warningCount,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirmFinalizeWarnings,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS),
+            ) {
+                Text(text = stringResource(R.string.match_ocr_review_confirm_finalize_action))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismissFinalizeWarnings,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS),
+            ) {
+                Text(text = stringResource(R.string.cancel_action))
+            }
+        },
+    )
 }
 
 @Composable
@@ -542,4 +696,21 @@ private fun MatchOcrReviewCorrectionReason.toMessageRes(): Int = when (this) {
         R.string.match_ocr_review_correction_row_originally_manual
     MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE ->
         R.string.match_ocr_review_correction_weak_evidence
+}
+
+private fun MatchOcrReviewFinalizationError.toMessageRes(): Int = when (this) {
+    MatchOcrReviewFinalizationError.MISSING_CORRECTION_DRAFT ->
+        R.string.match_ocr_review_finalization_missing_draft
+    MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED ->
+        R.string.match_ocr_review_finalization_blocked_error
+    MatchOcrReviewFinalizationError.MISSING_TOURNAMENT ->
+        R.string.match_ocr_review_finalization_missing_tournament
+    MatchOcrReviewFinalizationError.MISSING_MATCH ->
+        R.string.match_ocr_review_finalization_missing_match
+    MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
+        R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.FINALIZATION_FAILED ->
+        R.string.match_ocr_review_finalization_failed
+    MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE ->
+        R.string.match_ocr_review_finalization_failed
 }

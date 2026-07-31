@@ -39,6 +39,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepos
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.StartMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
@@ -250,6 +251,14 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
     ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult)
+
+    @Provides
+    @Singleton
+    fun provideFinalizeOcrCorrectionMatchUseCase(
+        repository: TournamentRepository,
+        finalizeMatch: FinalizeMatchUseCase,
+    ): FinalizeOcrCorrectionMatchUseCase =
+        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch)
 
     @Provides
     @Singleton
