@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.first
 data class FinalizeMatchInput(
     val matchId: String,
     val rows: List<MatchResultRowInput>,
+    val ocrEvidence: PreservedMatchOcrEvidence? = null,
 )
 
 enum class FinalizeMatchGlobalError {
@@ -57,11 +58,20 @@ class FinalizeMatchUseCase(
             )
         }
         return when (
-            val result = repository.finalizeDraftMatch(
-                matchId = input.matchId,
-                placements = placements,
-                kills = kills,
-            )
+            val result = if (input.ocrEvidence == null) {
+                repository.finalizeDraftMatch(
+                    matchId = input.matchId,
+                    placements = placements,
+                    kills = kills,
+                )
+            } else {
+                repository.finalizeDraftMatchWithOcrEvidence(
+                    matchId = input.matchId,
+                    placements = placements,
+                    kills = kills,
+                    evidence = input.ocrEvidence,
+                )
+            }
         ) {
             is FinalizeMatchRepositoryResult.Finalized -> FinalizeMatchResult.Finalized(result.match)
             is FinalizeMatchRepositoryResult.Rejected -> FinalizeMatchResult.Invalid(

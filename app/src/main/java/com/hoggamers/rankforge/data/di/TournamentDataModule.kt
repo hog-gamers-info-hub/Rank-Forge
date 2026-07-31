@@ -10,6 +10,7 @@ import androidx.room.Room
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
+import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataDao
@@ -100,6 +101,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_4_5,
         RankForgeDatabase.MIGRATION_5_6,
         RankForgeDatabase.MIGRATION_6_7,
+        RankForgeDatabase.MIGRATION_7_8,
     ).build()
 
     @Provides
@@ -115,6 +117,12 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideRosterScreenshotMetadataDao(database: RankForgeDatabase): RosterScreenshotMetadataDao =
         database.rosterScreenshotMetadataDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchOcrEvidenceDao(
+        database: RankForgeDatabase,
+    ): MatchOcrEvidenceDao = database.matchOcrEvidenceDao()
 
     @Provides
     @Singleton

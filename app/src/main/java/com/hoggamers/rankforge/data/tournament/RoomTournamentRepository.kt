@@ -1,6 +1,9 @@
 package com.hoggamers.rankforge.data.tournament
 
 import androidx.room.withTransaction
+import com.hoggamers.rankforge.data.local.MatchOcrCorrectionSnapshotEntity
+import com.hoggamers.rankforge.data.local.MatchOcrEvidenceEntity
+import com.hoggamers.rankforge.data.local.MatchOcrRowEvidenceEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
@@ -15,6 +18,9 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnapshot
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
@@ -38,6 +44,7 @@ import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -656,6 +663,32 @@ class RoomTournamentRepository @Inject constructor(
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+    ): FinalizeMatchRepositoryResult =
+        finalizeDraftMatchInternal(
+            matchId = matchId,
+            placements = placements,
+            kills = kills,
+            evidence = null,
+        )
+
+    override suspend fun finalizeDraftMatchWithOcrEvidence(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult =
+        finalizeDraftMatchInternal(
+            matchId = matchId,
+            placements = placements,
+            kills = kills,
+            evidence = evidence,
+        )
+
+    private suspend fun finalizeDraftMatchInternal(
+        matchId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        evidence: PreservedMatchOcrEvidence?,
     ): FinalizeMatchRepositoryResult {
         awaitState()
         return writeMutex.withLock {
@@ -676,6 +709,9 @@ class RoomTournamentRepository @Inject constructor(
             ) {
                 return@withLock FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
             }
+            if (evidence != null && !evidence.isValidFor(match, placements, kills)) {
+                return@withLock FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+            }
             val finalizedMatch = match.copy(
                 status = MatchStatus.FINALIZED,
                 placements = placements.toList(),
@@ -685,13 +721,31 @@ class RoomTournamentRepository @Inject constructor(
                 matches = current.matches.replaceMatch(match.tournamentId, matchId) { finalizedMatch },
                 draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
             )
-            database.withTransaction {
-                database.matchDao().upsert(finalizedMatch.toEntity())
-                replaceMatchPlacements(matchId, placements)
-                replaceMatchKills(matchId, kills)
-                database.matchDraftValueDao().deleteByMatchId(matchId)
-                saveLegacyState(next)
-                markLocalRevisionChanged(match.tournamentId)
+            try {
+                database.withTransaction {
+                    database.matchDao().upsert(finalizedMatch.toEntity())
+                    replaceMatchPlacements(matchId, placements)
+                    replaceMatchKills(matchId, kills)
+                    database.matchDraftValueDao().deleteByMatchId(matchId)
+                    saveLegacyState(next)
+                    markLocalRevisionChanged(match.tournamentId)
+                    evidence?.let { preservedEvidence ->
+                        database.matchOcrEvidenceDao().insertSnapshot(
+                            matchEvidence = preservedEvidence.toEntity(),
+                            rowEvidence = preservedEvidence.rows.map { it.toEntity(preservedEvidence) },
+                            correctionSnapshots = preservedEvidence.correctionSnapshots.map {
+                                it.toEntity(preservedEvidence)
+                            },
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                if (evidence != null) {
+                    return@withLock FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+                }
+                throw throwable
             }
             state.value = next
             FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
@@ -998,6 +1052,81 @@ class RoomTournamentRepository @Inject constructor(
             revisions.incrementLocalRevision(tournamentId)
         }
     }
+
+    private fun PreservedMatchOcrEvidence.isValidFor(
+        match: Match,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+    ): Boolean {
+        val expectedRowIndexes = (0 until TeamSlot.MAX_SLOT_NUMBER).toSet()
+        val placementsBySlot = placements.associateBy { it.teamSlotNumber }
+        val killsBySlot = kills.associateBy { it.teamSlotNumber }
+
+        return matchId == match.id &&
+            tournamentId == match.tournamentId &&
+            provenance.isNotBlank() &&
+            rows.size == TeamSlot.MAX_SLOT_NUMBER &&
+            correctionSnapshots.size == TeamSlot.MAX_SLOT_NUMBER &&
+            rows.map { it.rowIndex }.toSet() == expectedRowIndexes &&
+            correctionSnapshots.map { it.rowIndex }.toSet() == expectedRowIndexes &&
+            rows.all { row ->
+                row.originalPlacement == null || row.originalPlacement in TeamSlot.SLOT_NUMBERS
+            } &&
+            rows.all { row ->
+                row.originalKills == null || row.originalKills >= 0
+            } &&
+            rows.all { row ->
+                row.originalSuggestedTeamSlot == null || row.originalSuggestedTeamSlot in TeamSlot.SLOT_NUMBERS
+            } &&
+            correctionSnapshots.map { it.correctedPlacement }.toSet().size == TeamSlot.MAX_SLOT_NUMBER &&
+            correctionSnapshots.map { it.correctedTeamSlot }.toSet().size == TeamSlot.MAX_SLOT_NUMBER &&
+            correctionSnapshots.all { snapshot ->
+                snapshot.correctedPlacement in TeamSlot.SLOT_NUMBERS &&
+                    snapshot.correctedKills >= 0 &&
+                    snapshot.correctedTeamSlot in TeamSlot.SLOT_NUMBERS &&
+                    placementsBySlot[snapshot.correctedTeamSlot]?.position == snapshot.correctedPlacement &&
+                    killsBySlot[snapshot.correctedTeamSlot]?.kills == snapshot.correctedKills
+            }
+    }
+
+    private fun PreservedMatchOcrEvidence.toEntity() = MatchOcrEvidenceEntity(
+        matchId = matchId,
+        tournamentId = tournamentId,
+        sourceScreenshotId = sourceScreenshotId,
+        preservedAt = preservedAt,
+        provenance = provenance,
+    )
+
+    private fun PreservedMatchOcrRowEvidence.toEntity(
+        evidence: PreservedMatchOcrEvidence,
+    ) = MatchOcrRowEvidenceEntity(
+        matchId = evidence.matchId,
+        tournamentId = evidence.tournamentId,
+        rowIndex = rowIndex,
+        originalOcrText = originalOcrText,
+        originalPlacement = originalPlacement,
+        originalKills = originalKills,
+        originalSuggestedTeamSlot = originalSuggestedTeamSlot,
+        confidenceSummary = confidenceSummary,
+        safetySummary = safetySummary,
+        manualReviewRequired = manualReviewRequired,
+    )
+
+    private fun PreservedMatchOcrCorrectionSnapshot.toEntity(
+        evidence: PreservedMatchOcrEvidence,
+    ) = MatchOcrCorrectionSnapshotEntity(
+        matchId = evidence.matchId,
+        tournamentId = evidence.tournamentId,
+        rowIndex = rowIndex,
+        correctedPlacement = correctedPlacement,
+        correctedKills = correctedKills,
+        correctedTeamSlot = correctedTeamSlot,
+        placementChanged = placementChanged,
+        killsChanged = killsChanged,
+        teamSlotChanged = teamSlotChanged,
+        preservedAt = evidence.preservedAt,
+        provenance = evidence.provenance,
+    )
 
     private fun RepositoryState.replaceMatch(matchId: String, transform: (Match) -> Match): RepositoryState = copy(
         matches = matches.mapValues { (_, matches) -> matches.map { if (it.id == matchId) transform(it) else it } },

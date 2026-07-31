@@ -5,11 +5,25 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnapshot
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.Match as DomainMatch
+import com.hoggamers.rankforge.domain.tournament.Tournament as DomainTournament
 import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -219,6 +233,229 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion7AddsOcrPreservationTablesWithoutDroppingExistingMatchData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 7).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-ocr-preservation', 'OCR Cup', '2026-07-31', 'Organizer', '123', 'CONFIRMED')")
+            database.execSQL("INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-ocr-preservation', 'tournament-ocr-preservation', 1, '2026-07-31', 'Bermuda', 'DRAFT')")
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            8,
+            true,
+            RankForgeDatabase.MIGRATION_7_8,
+        )
+
+        migrated.query("SELECT id FROM matches WHERE id = 'match-ocr-preservation'").use {
+            assertTrue(it.moveToFirst())
+        }
+        listOf(
+            "match_ocr_evidence",
+            "match_ocr_row_evidence",
+            "match_ocr_correction_snapshots",
+        ).forEach { table ->
+            assertTrue(migrated.hasTable(table))
+        }
+        listOf(
+            "index_match_ocr_evidence_tournament_id",
+            "index_match_ocr_row_evidence_match_id",
+            "index_match_ocr_row_evidence_tournament_id",
+            "index_match_ocr_correction_snapshots_match_id",
+            "index_match_ocr_correction_snapshots_tournament_id",
+        ).forEach { index ->
+            assertTrue(migrated.hasIndex(index))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun ocrEvidenceSnapshotTransactionPersistsOriginalAndCorrectedRowsSeparately() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            insertTournamentAndMatch(database)
+
+            database.matchOcrEvidenceDao().insertSnapshot(
+                matchEvidence = matchOcrEvidence(),
+                rowEvidence = matchOcrRows(),
+                correctionSnapshots = matchOcrCorrectionSnapshots(),
+            )
+
+            assertEquals(matchOcrEvidence(), database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
+
+            val rows = database.matchOcrEvidenceDao().readRowEvidence("match-ocr")
+            val corrections = database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr")
+            assertEquals((0..11).toList(), rows.map { it.rowIndex })
+            assertEquals((0..11).toList(), corrections.map { it.rowIndex })
+            assertEquals(12, rows.size)
+            assertEquals(12, corrections.size)
+            assertEquals("OCR row 0", rows.first().originalOcrText)
+            assertEquals(1, rows.first().originalPlacement)
+            assertEquals(12, corrections.first().correctedPlacement)
+            assertEquals(0, rows.first().originalKills)
+            assertEquals(1, corrections.first().correctedKills)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun duplicateOcrEvidenceSnapshotIsRejectedWithoutOverwritingOriginalEvidence() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            insertTournamentAndMatch(database)
+            database.matchOcrEvidenceDao().insertSnapshot(
+                matchEvidence = matchOcrEvidence(),
+                rowEvidence = matchOcrRows(),
+                correctionSnapshots = matchOcrCorrectionSnapshots(),
+            )
+
+            assertThrows(Exception::class.java) {
+                runBlocking {
+                    database.matchOcrEvidenceDao().insertSnapshot(
+                        matchEvidence = matchOcrEvidence(provenance = "changed-provenance"),
+                        rowEvidence = matchOcrRows(ocrPrefix = "Changed OCR row"),
+                        correctionSnapshots = matchOcrCorrectionSnapshots(),
+                    )
+                }
+            }
+
+            assertEquals(matchOcrEvidence(), database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
+            assertEquals("OCR row 0", database.matchOcrEvidenceDao().readRowEvidence("match-ocr").first().originalOcrText)
+            assertEquals(12, database.matchOcrEvidenceDao().readRowEvidence("match-ocr").size)
+            assertEquals(12, database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun ocrEvidenceSnapshotTransactionRollsBackWhenOneChildInsertFails() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            insertTournamentAndMatch(database)
+            val duplicatedRowEvidence = matchOcrRows().toMutableList().also { rows ->
+                rows[1] = rows[0].copy(originalOcrText = "duplicate row key")
+            }
+
+            assertThrows(Exception::class.java) {
+                runBlocking {
+                    database.matchOcrEvidenceDao().insertSnapshot(
+                        matchEvidence = matchOcrEvidence(),
+                        rowEvidence = duplicatedRowEvidence,
+                        correctionSnapshots = matchOcrCorrectionSnapshots(),
+                    )
+                }
+            }
+
+            assertNull(database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
+            assertTrue(database.matchOcrEvidenceDao().readRowEvidence("match-ocr").isEmpty())
+            assertTrue(database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun deletingMatchCascadesOcrEvidenceAndCorrectionSnapshots() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            insertTournamentAndMatch(database)
+            database.matchOcrEvidenceDao().insertSnapshot(
+                matchEvidence = matchOcrEvidence(),
+                rowEvidence = matchOcrRows(),
+                correctionSnapshots = matchOcrCorrectionSnapshots(),
+            )
+
+            database.openHelper.writableDatabase.execSQL(
+                "DELETE FROM matches WHERE id = ?",
+                arrayOf("match-ocr"),
+            )
+
+            assertNull(database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
+            assertTrue(database.matchOcrEvidenceDao().readRowEvidence("match-ocr").isEmpty())
+            assertTrue(database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun roomRepositoryFinalizeDraftMatchWithOcrEvidenceCommitsMatchAndEvidenceAtomically() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(domainTournament())
+            repository.createDraftMatch(domainMatch())
+
+            val result = repository.finalizeDraftMatchWithOcrEvidence(
+                matchId = "match-ocr",
+                placements = finalizedPlacements(),
+                kills = finalizedKills(),
+                evidence = preservedOcrEvidence(),
+            )
+
+            val finalized = result as FinalizeMatchRepositoryResult.Finalized
+            assertEquals(MatchStatus.FINALIZED, finalized.match.status)
+            assertEquals("FINALIZED", database.matchDao().observeById("match-ocr").first()!!.status)
+            assertEquals(12, database.matchPlacementDao().observeByMatchId("match-ocr").first().size)
+            assertEquals(12, database.matchKillDao().observeByMatchId("match-ocr").first().size)
+            assertEquals("OCR_REVIEW_FINALIZATION", database.matchOcrEvidenceDao().readMatchEvidence("match-ocr")!!.provenance)
+
+            val rows = database.matchOcrEvidenceDao().readRowEvidence("match-ocr")
+            val corrections = database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr")
+            assertEquals((0..11).toList(), rows.map { it.rowIndex })
+            assertEquals((0..11).toList(), corrections.map { it.rowIndex })
+            assertEquals("Repository OCR row 0", rows.first().originalOcrText)
+            assertEquals(12, rows.first().originalPlacement)
+            assertEquals(10, rows.first().originalKills)
+            assertEquals(1, corrections.first().correctedPlacement)
+            assertEquals(0, corrections.first().correctedKills)
+            assertEquals(1, corrections.first().correctedTeamSlot)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun roomRepositoryFinalizeDraftMatchWithDuplicateOcrEvidenceRollsBackFinalization() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(domainTournament())
+            repository.createDraftMatch(domainMatch())
+            database.matchOcrEvidenceDao().insertSnapshot(
+                matchEvidence = matchOcrEvidence(),
+                rowEvidence = matchOcrRows(),
+                correctionSnapshots = matchOcrCorrectionSnapshots(),
+            )
+
+            val result = repository.finalizeDraftMatchWithOcrEvidence(
+                matchId = "match-ocr",
+                placements = finalizedPlacements(),
+                kills = finalizedKills(),
+                evidence = preservedOcrEvidence(),
+            )
+
+            val rejected = result as FinalizeMatchRepositoryResult.Rejected
+            assertEquals(FinalizeMatchFailure.INVALID_DATA, rejected.reason)
+            assertEquals("DRAFT", database.matchDao().observeById("match-ocr").first()!!.status)
+            assertTrue(database.matchPlacementDao().observeByMatchId("match-ocr").first().isEmpty())
+            assertTrue(database.matchKillDao().observeByMatchId("match-ocr").first().isEmpty())
+            assertEquals(matchOcrEvidence(), database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
+            assertEquals(12, database.matchOcrEvidenceDao().readRowEvidence("match-ocr").size)
+            assertEquals(12, database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun freshVersion3DatabaseProvidesObservableDaosAndEnforcesStructuralForeignKeys() {
         runBlocking {
             val database = Room.inMemoryDatabaseBuilder(
@@ -423,6 +660,160 @@ class RankForgeDatabaseMigrationTest {
             MIGRATION_DATABASE_NAME,
             2,
         )
+
+    private fun createInMemoryDatabase(): RankForgeDatabase =
+        Room.inMemoryDatabaseBuilder(
+            context,
+            RankForgeDatabase::class.java,
+        )
+            .allowMainThreadQueries()
+            .build()
+
+    private suspend fun insertTournamentAndMatch(database: RankForgeDatabase) {
+        database.tournamentDao().upsert(
+            TournamentEntity(
+                id = "tournament-ocr",
+                name = "OCR Cup",
+                date = LocalDate.of(2026, 7, 31).toString(),
+                organizerName = "Organizer",
+                organizerContactNumber = "1234567890",
+                status = "CONFIRMED",
+            ),
+        )
+        database.matchDao().upsert(
+            MatchEntity(
+                id = "match-ocr",
+                tournamentId = "tournament-ocr",
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 31).toString(),
+                mapName = "Bermuda",
+                status = "DRAFT",
+            ),
+        )
+    }
+
+    private fun matchOcrEvidence(
+        provenance: String = "ocr-review-finalization",
+    ) = MatchOcrEvidenceEntity(
+        matchId = "match-ocr",
+        tournamentId = "tournament-ocr",
+        sourceScreenshotId = "screenshot-ocr",
+        preservedAt = 1_800_000_000_000,
+        provenance = provenance,
+    )
+
+    private fun matchOcrRows(
+        ocrPrefix: String = "OCR row",
+    ): List<MatchOcrRowEvidenceEntity> =
+        (0..11).map { rowIndex ->
+            MatchOcrRowEvidenceEntity(
+                matchId = "match-ocr",
+                tournamentId = "tournament-ocr",
+                rowIndex = rowIndex,
+                originalOcrText = "$ocrPrefix $rowIndex",
+                originalPlacement = rowIndex + 1,
+                originalKills = rowIndex,
+                originalSuggestedTeamSlot = 12 - rowIndex,
+                confidenceSummary = "confidence-$rowIndex",
+                safetySummary = "safety-$rowIndex",
+                manualReviewRequired = rowIndex % 2 == 0,
+            )
+        }
+
+    private fun matchOcrCorrectionSnapshots(): List<MatchOcrCorrectionSnapshotEntity> =
+        (0..11).map { rowIndex ->
+            MatchOcrCorrectionSnapshotEntity(
+                matchId = "match-ocr",
+                tournamentId = "tournament-ocr",
+                rowIndex = rowIndex,
+                correctedPlacement = 12 - rowIndex,
+                correctedKills = rowIndex + 1,
+                correctedTeamSlot = rowIndex + 1,
+                placementChanged = true,
+                killsChanged = true,
+                teamSlotChanged = true,
+                preservedAt = 1_800_000_000_000,
+                provenance = "ocr-review-finalization",
+            )
+        }
+
+    private fun domainTournament(): DomainTournament =
+        DomainTournament(
+            id = "tournament-ocr",
+            name = "OCR Cup",
+            date = LocalDate.of(2026, 7, 31),
+            organizerName = "Organizer",
+            organizerContactNumber = "1234567890",
+            status = TournamentStatus.CONFIRMED,
+        )
+
+    private fun domainMatch(): DomainMatch =
+        DomainMatch(
+            id = "match-ocr",
+            tournamentId = "tournament-ocr",
+            matchNumber = 1,
+            date = LocalDate.of(2026, 7, 31),
+            mapName = "Bermuda",
+            status = MatchStatus.DRAFT,
+        )
+
+    private fun finalizedPlacements(): List<MatchPlacement> =
+        TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+            MatchPlacement(
+                teamSlotNumber = slotNumber,
+                position = slotNumber,
+            )
+        }
+
+    private fun finalizedKills(): List<MatchKill> =
+        TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+            MatchKill(
+                teamSlotNumber = slotNumber,
+                kills = slotNumber - 1,
+            )
+        }
+
+    private fun preservedOcrEvidence(): PreservedMatchOcrEvidence =
+        PreservedMatchOcrEvidence(
+            tournamentId = "tournament-ocr",
+            matchId = "match-ocr",
+            sourceScreenshotId = "screenshot-ocr",
+            preservedAt = 1_800_000_000_000,
+            provenance = "OCR_REVIEW_FINALIZATION",
+            rows = (0..11).map { rowIndex ->
+                PreservedMatchOcrRowEvidence(
+                    rowIndex = rowIndex,
+                    originalOcrText = "Repository OCR row $rowIndex",
+                    originalPlacement = 12 - rowIndex,
+                    originalKills = rowIndex + 10,
+                    originalSuggestedTeamSlot = 12 - rowIndex,
+                    confidenceSummary = "repository-confidence-$rowIndex",
+                    safetySummary = "repository-safety-$rowIndex",
+                    manualReviewRequired = rowIndex % 2 == 0,
+                )
+            },
+            correctionSnapshots = (0..11).map { rowIndex ->
+                PreservedMatchOcrCorrectionSnapshot(
+                    rowIndex = rowIndex,
+                    correctedPlacement = rowIndex + 1,
+                    correctedKills = rowIndex,
+                    correctedTeamSlot = rowIndex + 1,
+                    placementChanged = true,
+                    killsChanged = true,
+                    teamSlotChanged = true,
+                )
+            },
+        )
+
+    private fun SupportSQLiteDatabase.hasTable(tableName: String): Boolean =
+        query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(tableName)).use { cursor ->
+            cursor.moveToFirst()
+        }
+
+    private fun SupportSQLiteDatabase.hasIndex(indexName: String): Boolean =
+        query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", arrayOf(indexName)).use { cursor ->
+            cursor.moveToFirst()
+        }
 
     private fun migrationTestHelper() = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
