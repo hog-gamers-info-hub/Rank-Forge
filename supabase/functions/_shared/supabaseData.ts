@@ -262,6 +262,19 @@ export async function readVisibleMatch(
   return parseMatch(rows[0]);
 }
 
+export async function readVisibleTournamentMatches(
+  tournamentId: string,
+  context: SupabaseDataContext,
+): Promise<OfficialMatch[]> {
+  const rows = await readRows(context, "matches", {
+    select: "id,tournament_id,match_number,status,finalized_at",
+    tournament_id: `eq.${tournamentId}`,
+    order: "match_number.asc,id.asc",
+  });
+
+  return rows.map(parseMatch);
+}
+
 export async function readOfficialMatchResults(
   matchId: string,
   context: SupabaseDataContext,
@@ -270,6 +283,23 @@ export async function readOfficialMatchResults(
     select: "id,match_id,team_slot_id,placement,kills,review_status",
     match_id: `eq.${matchId}`,
     order: "placement.asc.nullslast",
+  });
+
+  return rows.map(parseMatchResult);
+}
+
+export async function readOfficialMatchResultsForMatches(
+  matchIds: readonly string[],
+  context: SupabaseDataContext,
+): Promise<OfficialMatchResult[]> {
+  if (matchIds.length === 0) {
+    return [];
+  }
+
+  const rows = await readRows(context, "match_results", {
+    select: "id,match_id,team_slot_id,placement,kills,review_status",
+    match_id: `in.(${matchIds.join(",")})`,
+    order: "match_id.asc,placement.asc.nullslast",
   });
 
   return rows.map(parseMatchResult);
