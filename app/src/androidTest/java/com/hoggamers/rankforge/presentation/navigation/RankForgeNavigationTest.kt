@@ -86,6 +86,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -288,7 +289,12 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     matchOcrReviewViewModelFactory = { tournamentId, matchId ->
-                        MatchOcrReviewViewModel().also {
+                        MatchOcrReviewViewModel(
+                            FinalizeOcrCorrectionMatchUseCase(
+                                viewModels.repository,
+                                FinalizeMatchUseCase(viewModels.repository, ValidateMatchResultUseCase()),
+                            ),
+                        ).also {
                             it.load(tournamentId, matchId)
                         }
                     },

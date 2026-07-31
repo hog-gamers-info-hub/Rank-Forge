@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -164,6 +165,8 @@ class MatchOcrReviewScreenTest {
         composeTestRule.onAllNodesWithText("Correct finalized match").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.CORRECTION_ROOT).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(0)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZATION_SUMMARY).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertCountEquals(0)
     }
 
     @Test
@@ -354,9 +357,204 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onAllNodesWithText("Save").assertCountEquals(0)
-        composeTestRule.onAllNodesWithText("Finalize match").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Assign team").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Sync").assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizationControlsAreVisibleWhenCorrectionDraftExists() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = correctionDraft()),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZATION_SUMMARY)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finalize corrected match").assertIsDisplayed()
+    }
+
+    @Test
+    fun finalizeActionCallbackFiresWhenCorrectionDraftIsAllowed() {
+        var finalizeCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = correctionDraft()),
+                    onBack = {},
+                    onFinalizeOcrCorrection = { finalizeCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, finalizeCount)
+        }
+    }
+
+    @Test
+    fun finalizationIsDisabledAndBlockerCountVisibleWhenCorrectionDraftHasBlockers() {
+        val blockedDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, 0, "")
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = blockedDraft),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_BLOCKED_LABEL)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finalization blocked: 1 blocker(s).").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertIsNotEnabled()
+    }
+
+    @Test
+    fun finalizationWarningCountIsVisibleWhenWarningsExist() {
+        val warningDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = warningDraft),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Warnings requiring confirmation: 1.").assertIsDisplayed()
+    }
+
+    @Test
+    fun warningConfirmationDialogIsVisibleAndActionsFire() {
+        var confirmCount = 0
+        var dismissCount = 0
+        val warningDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = warningDraft,
+                        finalization = MatchOcrReviewFinalizationUiState(showWarningConfirmation = true),
+                    ),
+                    onBack = {},
+                    onConfirmFinalizeWarnings = { confirmCount += 1 },
+                    onDismissFinalizeWarnings = { dismissCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS).performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, confirmCount)
+            assertEquals(0, dismissCount)
+        }
+    }
+
+    @Test
+    fun dismissWarningConfirmationActionFires() {
+        var dismissCount = 0
+        val warningDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = warningDraft,
+                        finalization = MatchOcrReviewFinalizationUiState(showWarningConfirmation = true),
+                    ),
+                    onBack = {},
+                    onDismissFinalizeWarnings = { dismissCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS).performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, dismissCount)
+        }
+    }
+
+    @Test
+    fun finalizationSuccessStateIsVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZATION_SUCCESS)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Corrected OCR match finalized.").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertIsNotEnabled()
+    }
+
+    @Test
+    fun finalizationErrorStateIsVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        finalization = MatchOcrReviewFinalizationUiState(
+                            error = MatchOcrReviewFinalizationError.FINALIZATION_FAILED,
+                        ),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZATION_ERROR)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("The corrected match could not be finalized.").assertIsDisplayed()
+    }
+
+    @Test
+    fun correctionModeDoesNotExposeOutOfScopeFinalizationAdjacentControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = correctionDraft()),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithText("Save").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Export").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Sync").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Retry OCR").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Edit roster").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Correct finalized match").assertCountEquals(0)
     }
 
     @Test
@@ -380,6 +578,7 @@ class MatchOcrReviewScreenTest {
 
     private fun readyState(
         correctionDraft: MatchOcrReviewCorrectionDraft? = null,
+        finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
     ): MatchOcrReviewUiState.Ready = MatchOcrReviewUiState.Ready(
         tournamentId = "synthetic-tournament",
         matchId = "synthetic-match",
@@ -434,6 +633,7 @@ class MatchOcrReviewScreenTest {
         manualReviewRequired = true,
         hasUnavailableEvidence = false,
         correctionDraft = correctionDraft,
+        finalization = finalization,
     )
 
     private fun correctionDraft(

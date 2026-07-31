@@ -194,14 +194,15 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
-    fun noSaveFinalizeOrPersistenceActionIsExposedByViewModel() {
+    fun noSaveOrPersistenceActionIsExposedByViewModel() {
         val publicMethodNames = MatchOcrReviewViewModel::class.java.methods.map { it.name }.toSet()
 
         assertFalse(publicMethodNames.contains("save"))
-        assertFalse(publicMethodNames.contains("finalize"))
         assertFalse(publicMethodNames.contains("persist"))
         assertFalse(publicMethodNames.contains("submit"))
         assertFalse(publicMethodNames.contains("sync"))
+        assertTrue(publicMethodNames.contains("onFinalizeOcrCorrection"))
+        assertTrue(publicMethodNames.contains("onConfirmFinalizeWarnings"))
         assertTrue(publicMethodNames.contains("onPlacementChanged"))
         assertTrue(publicMethodNames.contains("onKillsChanged"))
         assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
