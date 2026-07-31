@@ -17,4 +17,3 @@ Final verification:
 - Working tree clean
 
 The full Codex closure audit was intentionally skipped to conserve Codex credits. Phase 9 was closed through manual repository verification and completed automated testing.
-
