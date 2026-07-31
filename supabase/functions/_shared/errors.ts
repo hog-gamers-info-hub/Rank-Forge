@@ -14,6 +14,15 @@ export type ErrorCode =
   | "GOOGLE_API_RATE_LIMITED"
   | "UPSTREAM_TIMEOUT"
   | "GOOGLE_API_FAILURE"
+  | "INVALID_MATCH_EXPORT_PAYLOAD"
+  | "TOURNAMENT_NOT_FOUND_OR_FORBIDDEN"
+  | "MATCH_NOT_FOUND_OR_FORBIDDEN"
+  | "MATCH_NOT_FINALIZED"
+  | "MATCH_EXPORT_DATA_MISMATCH"
+  | "GOOGLE_SHEET_SCHEMA_MISMATCH"
+  | "GOOGLE_MATCH_EXPORT_FAILURE"
+  | "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID"
+  | "SUPABASE_DATA_FAILURE"
   | "INTERNAL_ERROR";
 
 const CLIENT_MESSAGES: Record<ErrorCode, string> = {
@@ -34,6 +43,18 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   GOOGLE_API_RATE_LIMITED: "Google API rate limit exceeded.",
   UPSTREAM_TIMEOUT: "An upstream service timed out.",
   GOOGLE_API_FAILURE: "Google Sheets could not verify spreadsheet access.",
+  INVALID_MATCH_EXPORT_PAYLOAD: "The match export payload is invalid.",
+  TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: "The tournament could not be found.",
+  MATCH_NOT_FOUND_OR_FORBIDDEN: "The match could not be found.",
+  MATCH_NOT_FINALIZED: "Only finalized matches can be exported.",
+  MATCH_EXPORT_DATA_MISMATCH:
+    "The match export data does not match finalized records.",
+  GOOGLE_SHEET_SCHEMA_MISMATCH:
+    "The Match Results worksheet header is invalid.",
+  GOOGLE_MATCH_EXPORT_FAILURE: "Google Sheets could not export the match.",
+  GOOGLE_MATCH_EXPORT_RESPONSE_INVALID:
+    "Google Sheets returned an invalid export response.",
+  SUPABASE_DATA_FAILURE: "Finalized match data could not be verified.",
   INTERNAL_ERROR: "The request could not be completed.",
 };
 
@@ -53,6 +74,15 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   GOOGLE_API_RATE_LIMITED: 429,
   UPSTREAM_TIMEOUT: 504,
   GOOGLE_API_FAILURE: 502,
+  INVALID_MATCH_EXPORT_PAYLOAD: 400,
+  TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: 404,
+  MATCH_NOT_FOUND_OR_FORBIDDEN: 404,
+  MATCH_NOT_FINALIZED: 409,
+  MATCH_EXPORT_DATA_MISMATCH: 409,
+  GOOGLE_SHEET_SCHEMA_MISMATCH: 409,
+  GOOGLE_MATCH_EXPORT_FAILURE: 502,
+  GOOGLE_MATCH_EXPORT_RESPONSE_INVALID: 502,
+  SUPABASE_DATA_FAILURE: 502,
   INTERNAL_ERROR: 500,
 };
 
