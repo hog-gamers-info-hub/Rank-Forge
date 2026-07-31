@@ -23,6 +23,12 @@ export type ErrorCode =
   | "GOOGLE_MATCH_EXPORT_FAILURE"
   | "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID"
   | "SUPABASE_DATA_FAILURE"
+  | "INVALID_STANDINGS_EXPORT_PAYLOAD"
+  | "NO_FINALIZED_MATCHES"
+  | "STANDINGS_EXPORT_DATA_MISMATCH"
+  | "GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH"
+  | "GOOGLE_STANDINGS_EXPORT_FAILURE"
+  | "GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID"
   | "INTERNAL_ERROR";
 
 const CLIENT_MESSAGES: Record<ErrorCode, string> = {
@@ -55,6 +61,16 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   GOOGLE_MATCH_EXPORT_RESPONSE_INVALID:
     "Google Sheets returned an invalid export response.",
   SUPABASE_DATA_FAILURE: "Finalized match data could not be verified.",
+  INVALID_STANDINGS_EXPORT_PAYLOAD: "The standings export payload is invalid.",
+  NO_FINALIZED_MATCHES: "The tournament has no finalized matches to export.",
+  STANDINGS_EXPORT_DATA_MISMATCH:
+    "The standings export data does not match finalized records.",
+  GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH:
+    "The Tournament Standings worksheet header is invalid.",
+  GOOGLE_STANDINGS_EXPORT_FAILURE:
+    "Google Sheets could not export the standings.",
+  GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID:
+    "Google Sheets returned an invalid standings export response.",
   INTERNAL_ERROR: "The request could not be completed.",
 };
 
@@ -83,6 +99,12 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   GOOGLE_MATCH_EXPORT_FAILURE: 502,
   GOOGLE_MATCH_EXPORT_RESPONSE_INVALID: 502,
   SUPABASE_DATA_FAILURE: 502,
+  INVALID_STANDINGS_EXPORT_PAYLOAD: 400,
+  NO_FINALIZED_MATCHES: 409,
+  STANDINGS_EXPORT_DATA_MISMATCH: 409,
+  GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH: 409,
+  GOOGLE_STANDINGS_EXPORT_FAILURE: 502,
+  GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID: 502,
   INTERNAL_ERROR: 500,
 };
 
@@ -102,6 +124,7 @@ export function errorResponse(error: unknown): Response {
   const safeError = error instanceof EdgeFunctionError
     ? error
     : new EdgeFunctionError("INTERNAL_ERROR");
+
   return jsonResponse({
     ok: false,
     error: {
