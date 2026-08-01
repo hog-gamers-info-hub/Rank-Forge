@@ -486,6 +486,9 @@ fun RankForgeNavHost(
             val onStartCorrection: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchCorrectionDestination(tournamentId, matchId))
             }
+            val onOpenOcrReview: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
+            }
             val reviewViewModel = matchReviewViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -497,6 +500,7 @@ fun RankForgeNavHost(
                     onBackToDetails = onBackToDetails,
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
+                    onOpenOcrReview = onOpenOcrReview,
                     onStartCorrection = onStartCorrection,
                 )
             } else {
@@ -506,6 +510,7 @@ fun RankForgeNavHost(
                     onBackToDetails = onBackToDetails,
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
+                    onOpenOcrReview = onOpenOcrReview,
                     onStartCorrection = onStartCorrection,
                     viewModel = reviewViewModel,
                 )
@@ -513,7 +518,16 @@ fun RankForgeNavHost(
         }
         composable<MatchOcrReviewDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchOcrReviewDestination>()
-            val onBack: () -> Unit = { navController.popBackStack() }
+            val onBack: () -> Unit = {
+                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+                if (!navController.popBackStack(reviewDestination, inclusive = false)) {
+                    navController.navigate(reviewDestination) {
+                        popUpTo(MatchOcrReviewDestination(destination.tournamentId, destination.matchId)) {
+                            inclusive = true
+                        }
+                    }
+                }
+            }
             val ocrReviewViewModel = matchOcrReviewViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,

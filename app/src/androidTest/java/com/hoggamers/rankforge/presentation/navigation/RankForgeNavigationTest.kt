@@ -75,6 +75,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SCREEN_TEST_TAG
@@ -343,8 +344,21 @@ class RankForgeNavigationTest {
     }
 
     @Test
-    fun directMatchOcrReviewRouteDisplaysEmptyStateAndBackReturnsToList() {
+    fun directMatchOcrReviewRouteDisplaysEmptyStateAndBackReturnsToReviewFallback() {
         val viewModels = createNavigationViewModels()
+        val matchId = runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            (
+                CreateMatchUseCase(viewModels.repository)(
+                    CreateMatchInput(
+                        tournamentId = "confirmed-id",
+                        matchNumber = "1",
+                        date = LocalDate.of(2026, 7, 24),
+                        mapName = "Bermuda",
+                    ),
+                ) as CreateMatchResult.Created
+            ).match.id
+        }
         composeTestRule.setContent {
             val navController = rememberNavController()
             RankForgeTheme {
@@ -355,23 +369,15 @@ class RankForgeNavigationTest {
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
-                    matchOcrReviewViewModelFactory = { tournamentId, matchId ->
-                        MatchOcrReviewViewModel(
-                            FinalizeOcrCorrectionMatchUseCase(
-                                viewModels.repository,
-                                FinalizeMatchUseCase(viewModels.repository, ValidateMatchResultUseCase()),
-                            ),
-                        ).also {
-                            it.load(tournamentId, matchId)
-                        }
-                    },
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                 )
             }
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 navController.navigate(
                     MatchOcrReviewDestination(
                         tournamentId = "confirmed-id",
-                        matchId = "synthetic-match",
+                        matchId = matchId,
                     ),
                 )
             }
@@ -380,7 +386,8 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.match_ocr_review_empty_title)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).performClick()
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -665,6 +672,91 @@ class RankForgeNavigationTest {
             .performScrollTo()
             .performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun linkedDraftScreenshotOpensOcrReviewAndReturnsToSameReviewAndDetails() {
+        val viewModels = createNavigationViewModels()
+        var activeMatchReviewViewModel: MatchReviewViewModel? = null
+        val cachedMatchReviewViewModels = mutableMapOf<String, MatchReviewViewModel>()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                    matchReviewViewModelFactory = { tournamentId, matchId ->
+                        cachedMatchReviewViewModels.getOrPut("$tournamentId:$matchId") {
+                            viewModels.matchReviewViewModel(tournamentId, matchId)
+                        }.also {
+                            activeMatchReviewViewModel = it
+                        }
+                    },
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
+                    matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule.runOnIdle {
+            activeMatchReviewViewModel?.onPhotoPickerResult("content://picker/ocr")
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            activeMatchReviewViewModel?.linkScreenshot()
+        }
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            activeMatchReviewViewModel?.uiState?.value?.canOpenOcrReview == true
+        }
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.SCREEN).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -968,6 +1060,16 @@ class RankForgeNavigationTest {
                     it.load(tournamentId, matchId)
                 }
             },
+            matchOcrReviewViewModel = { tournamentId, matchId ->
+                MatchOcrReviewViewModel(
+                    FinalizeOcrCorrectionMatchUseCase(
+                        repository,
+                        FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+                    ),
+                ).also {
+                    it.load(tournamentId, matchId)
+                }
+            },
             matchCorrectionViewModel = { tournamentId, matchId ->
                 MatchCorrectionViewModel(
                     observeMatches = ObserveMatchesUseCase(repository),
@@ -1060,6 +1162,7 @@ class RankForgeNavigationTest {
         val matchPlacementViewModel: (String, String) -> MatchPlacementViewModel,
         val matchKillViewModel: (String, String) -> MatchKillViewModel,
         val matchReviewViewModel: (String, String) -> MatchReviewViewModel,
+        val matchOcrReviewViewModel: (String, String) -> MatchOcrReviewViewModel,
         val matchCorrectionViewModel: (String, String) -> MatchCorrectionViewModel,
     )
 }
