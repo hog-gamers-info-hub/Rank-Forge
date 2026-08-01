@@ -245,6 +245,8 @@ class TournamentDetailsViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isNotFound)
+        assertEquals(null, viewModel.uiState.value.csvExportResult)
+        assertEquals(null, viewModel.uiState.value.googleSheetsExportResult)
     }
 
     private fun detailsViewModel() = TournamentDetailsViewModel(

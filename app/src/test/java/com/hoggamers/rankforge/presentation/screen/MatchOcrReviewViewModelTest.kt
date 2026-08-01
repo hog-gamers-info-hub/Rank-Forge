@@ -147,6 +147,22 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun invalidOcrDisplayInputKeepsExactContextInControlledErrorState() {
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.loadDisplayInput(
+            displayInputWithMatchingEvidence().copy(
+                rows = displayInputWithMatchingEvidence().rows.dropLast(1),
+            ),
+        )
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Error
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals("OCR review requires exactly 12 rows.", state.message)
+    }
+
+    @Test
     fun loadDisplayInputDoesNotMutateMatchData() = runTest(dispatcher) {
         val repository = createRepository()
         val beforeMatch = repository.observeMatchById(MATCH_ID).first()
