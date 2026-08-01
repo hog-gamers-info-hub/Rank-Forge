@@ -229,6 +229,12 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    fun openOcrReview() {
+        if (_uiState.value.canOpenOcrReview) {
+            _uiState.update { it.copy(navigation = MatchReviewNavigation.OCR_REVIEW) }
+        }
+    }
+
     fun onBackToDetails() {
         if (_uiState.value.isAvailable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.DETAILS) }

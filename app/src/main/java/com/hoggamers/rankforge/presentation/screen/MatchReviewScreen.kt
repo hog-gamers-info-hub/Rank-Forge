@@ -42,6 +42,7 @@ const val MATCH_REVIEW_ISSUES_STATUS_TEST_TAG = "match_review_issues_status"
 const val MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG = "match_review_placements_action"
 const val MATCH_REVIEW_KILLS_ACTION_TEST_TAG = "match_review_kills_action"
 const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
+const val MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG = "match_review_ocr_review_action"
 const val MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG = "match_review_finalize_action"
 const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize_confirm_action"
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
@@ -77,6 +78,7 @@ fun MatchReviewRoute(
     onBackToDetails: () -> Unit,
     onEnterPlacements: (String, String) -> Unit,
     onEnterKills: (String, String) -> Unit,
+    onOpenOcrReview: (String, String) -> Unit,
     onStartCorrection: (String, String) -> Unit,
     viewModel: MatchReviewViewModel = hiltViewModel(),
 ) {
@@ -110,6 +112,10 @@ fun MatchReviewRoute(
                 viewModel.onNavigationHandled()
                 onEnterKills(tournamentId, matchId)
             }
+            MatchReviewNavigation.OCR_REVIEW -> {
+                viewModel.onNavigationHandled()
+                onOpenOcrReview(tournamentId, matchId)
+            }
             MatchReviewNavigation.CORRECTION -> {
                 viewModel.onNavigationHandled()
                 onStartCorrection(tournamentId, matchId)
@@ -127,6 +133,7 @@ fun MatchReviewRoute(
         uiState = uiState,
         onEnterPlacements = viewModel::openPlacements,
         onEnterKills = viewModel::openKills,
+        onOpenOcrReview = viewModel::openOcrReview,
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onFinalize = viewModel::finalize,
@@ -142,6 +149,7 @@ fun MatchReviewScreen(
     uiState: MatchReviewUiState,
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
+    onOpenOcrReview: () -> Unit = {},
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit = {},
@@ -159,6 +167,7 @@ fun MatchReviewScreen(
             uiState = uiState,
             onEnterPlacements = onEnterPlacements,
             onEnterKills = onEnterKills,
+            onOpenOcrReview = onOpenOcrReview,
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onFinalize = onFinalize,
@@ -175,6 +184,7 @@ private fun MatchReviewContent(
     uiState: MatchReviewUiState,
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
+    onOpenOcrReview: () -> Unit,
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onFinalize: () -> Unit,
@@ -288,6 +298,16 @@ private fun MatchReviewContent(
                 )
             }
             if (uiState.isEditable) {
+                if (uiState.canOpenOcrReview) {
+                    Button(
+                        onClick = onOpenOcrReview,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
+                    ) {
+                        Text(stringResource(R.string.match_ocr_review_title))
+                    }
+                }
                 if (
                     uiState.isSelectedScreenshotValidated &&
                     uiState.selectedScreenshotUri != uiState.linkedScreenshotUri

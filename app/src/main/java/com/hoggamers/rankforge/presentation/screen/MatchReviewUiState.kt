@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 enum class MatchReviewNavigation {
     PLACEMENTS,
     KILLS,
+    OCR_REVIEW,
     CORRECTION,
     DETAILS,
 }
@@ -130,6 +131,16 @@ data class MatchReviewUiState(
 
     val hasLinkedScreenshot: Boolean
         get() = isScreenshotLinked || linkedScreenshotUri != null
+
+    val canOpenOcrReview: Boolean
+        get() = isEditable &&
+            !tournamentId.isNullOrBlank() &&
+            !matchId.isNullOrBlank() &&
+            hasLinkedScreenshot &&
+            !isScreenshotDuplicateDetectionInProgress &&
+            !isScreenshotPreservationInProgress &&
+            !isScreenshotUploadInProgress &&
+            !isPreservedScreenshotMissing
 }
 
 data class MatchReviewRowUiState(

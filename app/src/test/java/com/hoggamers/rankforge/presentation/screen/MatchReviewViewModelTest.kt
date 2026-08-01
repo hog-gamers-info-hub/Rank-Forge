@@ -256,6 +256,55 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun linkedDraftScreenshotExposesOcrReviewNavigationForSameMatch() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/ocr")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.canOpenOcrReview)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
+
+        viewModel.openOcrReview()
+
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
+
+        viewModel.onNavigationHandled()
+
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun invalidScreenshotDoesNotExposeOcrReviewNavigation() = runTest {
+        val viewModel = reviewViewModel(
+            imageCandidateValidator = ImageCandidateValidator(
+                ImageCandidateMetadataReader {
+                    ImageCandidateReadResult.Metadata("text/plain", width = 1080, height = 1920)
+                },
+            ),
+        )
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        viewModel.onPhotoPickerResult("content://picker/not-image")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+        viewModel.openOcrReview()
+
+        assertFalse(viewModel.uiState.value.canOpenOcrReview)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(ScreenshotLinkError.INVALID_IMAGE, viewModel.uiState.value.screenshotLinkError)
+    }
+
+    @Test
     fun validLinkedScreenshotIsPreservedByteForByteInMatchScopedStorage() = runTest {
         val uri = "content://picker/preserved"
         val bytes = byteArrayOf(4, 5, 6, 7)

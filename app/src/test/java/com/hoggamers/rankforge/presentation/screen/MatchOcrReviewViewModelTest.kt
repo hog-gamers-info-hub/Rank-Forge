@@ -55,6 +55,22 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun loadingEmptyOcrStateDoesNotMutateMatchData() = runTest(dispatcher) {
+        val repository = createRepository()
+        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(repository))
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+
+        val state = viewModel.uiState.value
+        assertTrue(state is MatchOcrReviewUiState.Empty)
+        state as MatchOcrReviewUiState.Empty
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
+    }
+
+    @Test
     fun initialStateIsLoadingBeforeRouteArgumentsAreLoaded() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
