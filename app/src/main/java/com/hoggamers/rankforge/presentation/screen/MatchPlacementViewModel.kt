@@ -135,6 +135,7 @@ class MatchPlacementViewModel @Inject constructor(
 
     fun save() {
         val currentState = _uiState.value
+        val tournamentId = currentState.tournamentId ?: return
         val matchId = currentState.matchId ?: return
         if (!currentState.canSave) return
         _uiState.update { it.copy(isSubmitting = true, globalError = null) }
@@ -142,7 +143,7 @@ class MatchPlacementViewModel @Inject constructor(
             currentState.rows.forEach { row ->
                 enqueueDraftWrite(
                     SaveMatchDraftValueInput(
-                        tournamentId = currentState.tournamentId ?: return@forEach,
+                        tournamentId = tournamentId,
                         matchId = matchId,
                         teamSlotNumber = row.teamSlotNumber,
                         placementInput = row.placementInput,
@@ -163,7 +164,7 @@ class MatchPlacementViewModel @Inject constructor(
                 is SaveMatchPlacementsResult.Saved -> _uiState.update {
                     it.copy(
                         isSubmitting = false,
-                        navigation = MatchPlacementNavigation.SAVED,
+                        navigation = MatchPlacementNavigation.Saved(tournamentId, matchId),
                     )
                 }
                 is SaveMatchPlacementsResult.Invalid -> _uiState.update {
@@ -198,7 +199,7 @@ class MatchPlacementViewModel @Inject constructor(
         viewModelScope.launch {
             draftWriteJob?.join()
             if (!_uiState.value.isSubmitting) {
-                _uiState.update { it.copy(navigation = MatchPlacementNavigation.BACK) }
+                _uiState.update { it.copy(navigation = MatchPlacementNavigation.Back) }
             }
         }
     }

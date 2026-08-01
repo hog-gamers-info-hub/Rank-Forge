@@ -48,6 +48,7 @@ fun MatchPlacementRoute(
     tournamentId: String,
     matchId: String,
     onBackToDetails: () -> Unit,
+    onSavedToKills: (String, String) -> Unit,
     viewModel: MatchPlacementViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
@@ -55,9 +56,18 @@ fun MatchPlacementRoute(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(uiState.navigation) {
-        if (uiState.navigation != null) {
-            viewModel.onNavigationHandled()
-            onBackToDetails()
+        when (val navigation = uiState.navigation) {
+            MatchPlacementNavigation.Back -> {
+                viewModel.onNavigationHandled()
+                onBackToDetails()
+            }
+
+            is MatchPlacementNavigation.Saved -> {
+                viewModel.onNavigationHandled()
+                onSavedToKills(navigation.tournamentId, navigation.matchId)
+            }
+
+            null -> Unit
         }
     }
     BackHandler(onBack = viewModel::onBackPressed)

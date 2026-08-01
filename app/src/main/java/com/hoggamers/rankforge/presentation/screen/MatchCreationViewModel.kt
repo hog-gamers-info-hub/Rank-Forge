@@ -84,7 +84,7 @@ class MatchCreationViewModel @Inject constructor(
                     is CreateMatchResult.Created -> _uiState.update {
                         it.copy(
                             isSubmitting = false,
-                            navigation = MatchCreationNavigation.CREATED,
+                            navigation = MatchCreationNavigation.Created(tournamentId, result.match.id),
                         )
                     }
                 }
@@ -101,7 +101,7 @@ class MatchCreationViewModel @Inject constructor(
 
     fun onBackPressed() {
         if (_uiState.value.isSubmitting) return
-        _uiState.update { it.copy(navigation = MatchCreationNavigation.BACK) }
+        _uiState.update { it.copy(navigation = MatchCreationNavigation.Back) }
     }
 
     fun onNavigationHandled() {

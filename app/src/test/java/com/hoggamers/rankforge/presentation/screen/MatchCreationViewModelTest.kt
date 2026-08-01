@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -65,10 +66,11 @@ class MatchCreationViewModelTest {
         assertEquals(MatchValidationError.REQUIRED, viewModel.uiState.value.validationErrors[MatchField.MATCH_NUMBER])
         assertEquals(MatchValidationError.REQUIRED, viewModel.uiState.value.validationErrors[MatchField.DATE])
         assertEquals(MatchValidationError.REQUIRED, viewModel.uiState.value.validationErrors[MatchField.MAP])
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
-    fun successfulCreationRecordsNavigationCompletion() = runTest {
+    fun successfulCreationRecordsNavigationWithCreatedMatchId() = runTest {
         repository.create(tournament(TournamentStatus.CONFIRMED))
         viewModel.load("stable-id")
         viewModel.onMatchNumberChanged("1")
@@ -78,9 +80,29 @@ class MatchCreationViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(MatchCreationNavigation.CREATED, viewModel.uiState.value.navigation)
         val createdMatch = repository.observeMatchesByTournamentId("stable-id").first().single()
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is MatchCreationNavigation.Created)
+        assertEquals("stable-id", (navigation as MatchCreationNavigation.Created).tournamentId)
+        assertEquals(createdMatch.id, navigation.matchId)
         assertEquals(LocalDate.of(2026, 7, 24), createdMatch.date)
+    }
+
+    @Test
+    fun successfulCreationNavigationCanBeConsumed() = runTest {
+        repository.create(tournament(TournamentStatus.CONFIRMED))
+        viewModel.load("stable-id")
+        viewModel.onMatchNumberChanged("1")
+        viewModel.onMatchDateChanged(LocalDate.of(2026, 7, 24))
+        viewModel.onMapNameChanged("Bermuda")
+
+        viewModel.submit()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.navigation is MatchCreationNavigation.Created)
+
+        viewModel.onNavigationHandled()
+
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test

@@ -3,9 +3,13 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.domain.tournament.KillGlobalError
 import com.hoggamers.rankforge.domain.tournament.KillValidationError
 
-enum class MatchKillNavigation {
-    BACK,
-    SAVED,
+sealed interface MatchKillNavigation {
+    data object Back : MatchKillNavigation
+
+    data class Saved(
+        val tournamentId: String,
+        val matchId: String,
+    ) : MatchKillNavigation
 }
 
 data class MatchKillUiState(
