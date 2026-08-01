@@ -3,6 +3,16 @@ import {
   errorResponse,
   jsonResponse,
 } from "../_shared/errors.ts";
+import { createExportPayloadFingerprint } from "../_shared/exportFingerprint.ts";
+import {
+  claimExportOperation,
+  completeExportOperationSuccess,
+  type ExportOperationContext,
+  markExportOperationOutcomeUncertain,
+  markExportOperationRetryableFailure,
+  markExportOperationWriteStarted,
+  SUPABASE_EXPORT_OPERATION_TIMEOUT_MS,
+} from "../_shared/exportOperationState.ts";
 import {
   createGoogleServiceAccountAssertion,
   exchangeGoogleToken,
@@ -79,6 +89,7 @@ export interface HandlerDependencies {
     supabasePlayers?: number;
     supabaseTournamentMatches?: number;
     supabaseStandingsMatchResults?: number;
+    supabaseExportOperation?: number;
     googleToken?: number;
     googleSheets?: number;
     googleHeader?: number;
@@ -94,6 +105,12 @@ type ParsedOperation =
   | StandingsExportRequest;
 
 const readEnvironment: EnvironmentReader = (name) => Deno.env.get(name);
+
+const DEFINITIVE_APPEND_FAILURES = new Set([
+  "GOOGLE_SHEETS_ACCESS_DENIED",
+  "GOOGLE_SHEETS_NOT_FOUND",
+  "GOOGLE_API_RATE_LIMITED",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" &&
@@ -123,6 +140,63 @@ function parseOperation(value: unknown): ParsedOperation {
   }
 
   throw new EdgeFunctionError("INVALID_OPERATION");
+}
+
+function exportFailureCode(error: unknown): string {
+  return error instanceof EdgeFunctionError ? error.code : "INTERNAL_ERROR";
+}
+
+function exportOperationContext(
+  accessToken: string,
+  supabaseConfig: ReturnType<typeof readSupabaseConfig>,
+  fetchImpl: FetchImplementation,
+  dependencies: HandlerDependencies,
+): ExportOperationContext {
+  return {
+    config: supabaseConfig,
+    accessToken,
+    fetchImpl,
+    timeoutMs: dependencies.timeouts?.supabaseExportOperation ??
+      SUPABASE_EXPORT_OPERATION_TIMEOUT_MS,
+  };
+}
+
+async function markRetryableAndRethrow(
+  operationId: string,
+  leaseToken: string,
+  error: unknown,
+  context: ExportOperationContext,
+): Promise<never> {
+  await markExportOperationRetryableFailure(
+    operationId,
+    leaseToken,
+    exportFailureCode(error),
+    context,
+  );
+
+  throw error;
+}
+
+async function markUncertainAndThrow(
+  operationId: string,
+  leaseToken: string,
+  failureCode: string,
+  context: ExportOperationContext,
+): Promise<never> {
+  try {
+    await markExportOperationOutcomeUncertain(
+      operationId,
+      leaseToken,
+      failureCode,
+      context,
+    );
+  } catch {
+    // Once a Google append may have been accepted, never surface an error that
+    // encourages an immediate blind retry. The durable write_started lease
+    // still blocks competing writes and becomes outcome_uncertain on expiry.
+  }
+
+  throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
 }
 
 async function createGoogleAccessToken(
@@ -249,32 +323,134 @@ async function handleExportMatch(
     players,
   });
 
-  const google = await createGoogleAccessToken(
-    getEnv,
+  const payloadFingerprint = await createExportPayloadFingerprint(operation);
+  const stateContext = exportOperationContext(
+    accessToken,
+    supabaseConfig,
     fetchImpl,
     dependencies,
   );
-
-  await verifyMatchResultsHeader(
-    google.accessToken,
-    google.spreadsheetId,
+  const claim = await claimExportOperation(
     {
-      fetchImpl,
-      timeoutMs: dependencies.timeouts?.googleHeader ??
-        GOOGLE_HEADER_TIMEOUT_MS,
+      operationType: "export_match",
+      tournamentId: operation.tournament_id,
+      matchId: operation.match_id,
+      payloadFingerprint,
     },
+    stateContext,
   );
 
-  const rowsWritten = await appendMatchResults(
-    google.accessToken,
-    google.spreadsheetId,
-    toGoogleSheetValues(operation),
-    {
+  if (claim.outcome === "replayed") {
+    return jsonResponse({
+      ok: true,
+      operation: "export_match",
+      tournament_id: operation.tournament_id,
+      match_id: operation.match_id,
+      rows_written: claim.rowsWritten,
+    });
+  }
+
+  if (claim.outcome === "in_progress") {
+    throw new EdgeFunctionError("EXPORT_IN_PROGRESS");
+  }
+
+  if (claim.outcome === "outcome_uncertain") {
+    throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
+  }
+
+  if (claim.leaseToken === null) {
+    throw new EdgeFunctionError("EXPORT_IDEMPOTENCY_FAILURE");
+  }
+
+  const operationId = claim.operationId;
+  const leaseToken = claim.leaseToken;
+
+  let google: {
+    accessToken: string;
+    spreadsheetId: string;
+  };
+
+  try {
+    google = await createGoogleAccessToken(
+      getEnv,
       fetchImpl,
-      timeoutMs: dependencies.timeouts?.googleAppend ??
-        GOOGLE_APPEND_TIMEOUT_MS,
-    },
+      dependencies,
+    );
+
+    await verifyMatchResultsHeader(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleHeader ??
+          GOOGLE_HEADER_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    return await markRetryableAndRethrow(
+      operationId,
+      leaseToken,
+      error,
+      stateContext,
+    );
+  }
+
+  await markExportOperationWriteStarted(
+    operationId,
+    leaseToken,
+    stateContext,
   );
+
+  let rowsWritten: number;
+
+  try {
+    rowsWritten = await appendMatchResults(
+      google.accessToken,
+      google.spreadsheetId,
+      toGoogleSheetValues(operation),
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleAppend ??
+          GOOGLE_APPEND_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    if (
+      error instanceof EdgeFunctionError &&
+      DEFINITIVE_APPEND_FAILURES.has(error.code)
+    ) {
+      return await markRetryableAndRethrow(
+        operationId,
+        leaseToken,
+        error,
+        stateContext,
+      );
+    }
+
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      exportFailureCode(error),
+      stateContext,
+    );
+  }
+
+  try {
+    await completeExportOperationSuccess(
+      operationId,
+      leaseToken,
+      rowsWritten,
+      null,
+      stateContext,
+    );
+  } catch {
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      "EXPORT_IDEMPOTENCY_FAILURE",
+      stateContext,
+    );
+  }
 
   return jsonResponse({
     ok: true,
@@ -364,32 +540,138 @@ async function handleExportStandings(
     players,
   });
 
-  const google = await createGoogleAccessToken(
-    getEnv,
+  const payloadFingerprint = await createExportPayloadFingerprint(operation);
+  const stateContext = exportOperationContext(
+    accessToken,
+    supabaseConfig,
     fetchImpl,
     dependencies,
   );
-
-  await verifyTournamentStandingsHeader(
-    google.accessToken,
-    google.spreadsheetId,
+  const claim = await claimExportOperation(
     {
-      fetchImpl,
-      timeoutMs: dependencies.timeouts?.googleStandingsHeader ??
-        GOOGLE_STANDINGS_HEADER_TIMEOUT_MS,
+      operationType: "export_standings",
+      tournamentId: operation.tournament_id,
+      matchId: null,
+      payloadFingerprint,
     },
+    stateContext,
   );
 
-  const rowsWritten = await appendTournamentStandings(
-    google.accessToken,
-    google.spreadsheetId,
-    toStandingsGoogleSheetValues(operation),
-    {
+  if (claim.outcome === "replayed") {
+    if (claim.exportedMatchCount === null) {
+      throw new EdgeFunctionError("EXPORT_IDEMPOTENCY_FAILURE");
+    }
+
+    return jsonResponse({
+      ok: true,
+      operation: "export_standings",
+      tournament_id: operation.tournament_id,
+      exported_match_count: claim.exportedMatchCount,
+      rows_written: claim.rowsWritten,
+    });
+  }
+
+  if (claim.outcome === "in_progress") {
+    throw new EdgeFunctionError("EXPORT_IN_PROGRESS");
+  }
+
+  if (claim.outcome === "outcome_uncertain") {
+    throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
+  }
+
+  if (claim.leaseToken === null) {
+    throw new EdgeFunctionError("EXPORT_IDEMPOTENCY_FAILURE");
+  }
+
+  const operationId = claim.operationId;
+  const leaseToken = claim.leaseToken;
+
+  let google: {
+    accessToken: string;
+    spreadsheetId: string;
+  };
+
+  try {
+    google = await createGoogleAccessToken(
+      getEnv,
       fetchImpl,
-      timeoutMs: dependencies.timeouts?.googleStandingsAppend ??
-        GOOGLE_STANDINGS_APPEND_TIMEOUT_MS,
-    },
+      dependencies,
+    );
+
+    await verifyTournamentStandingsHeader(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleStandingsHeader ??
+          GOOGLE_STANDINGS_HEADER_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    return await markRetryableAndRethrow(
+      operationId,
+      leaseToken,
+      error,
+      stateContext,
+    );
+  }
+
+  await markExportOperationWriteStarted(
+    operationId,
+    leaseToken,
+    stateContext,
   );
+
+  let rowsWritten: number;
+
+  try {
+    rowsWritten = await appendTournamentStandings(
+      google.accessToken,
+      google.spreadsheetId,
+      toStandingsGoogleSheetValues(operation),
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleStandingsAppend ??
+          GOOGLE_STANDINGS_APPEND_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    if (
+      error instanceof EdgeFunctionError &&
+      DEFINITIVE_APPEND_FAILURES.has(error.code)
+    ) {
+      return await markRetryableAndRethrow(
+        operationId,
+        leaseToken,
+        error,
+        stateContext,
+      );
+    }
+
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      exportFailureCode(error),
+      stateContext,
+    );
+  }
+
+  try {
+    await completeExportOperationSuccess(
+      operationId,
+      leaseToken,
+      rowsWritten,
+      official.exportedMatchCount,
+      stateContext,
+    );
+  } catch {
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      "EXPORT_IDEMPOTENCY_FAILURE",
+      stateContext,
+    );
+  }
 
   return jsonResponse({
     ok: true,
