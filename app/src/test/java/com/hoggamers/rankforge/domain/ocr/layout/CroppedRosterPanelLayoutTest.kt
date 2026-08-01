@@ -121,6 +121,140 @@ class CroppedRosterPanelLayoutTest {
     }
 
     @Test
+    fun missingScreenshotPositionIsRejected() {
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.UNSUPPORTED_SCREENSHOT_POSITION,
+            ),
+            validator.validate(
+                layout,
+                CroppedRosterPanelInput(
+                    screenshotPosition = null,
+                    isPreparedRosterCrop = true,
+                    imageWidth = 800,
+                    imageHeight = 600,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun invalidVisibleSlotStructureIsRejected() {
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.INVALID_VISIBLE_SLOT_STRUCTURE,
+            ),
+            validator.validate(
+                layout.copy(slots = layout.slots.drop(1)),
+                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
+            ),
+        )
+    }
+
+    @Test
+    fun overlappingSlotContentRegionsAreRejected() {
+        val firstContentRect = layout.slots.first().contentRect
+        val overlappingLayout = layout.copy(
+            slots = layout.slots.mapIndexed { index, slot ->
+                if (index == 1) slot.copy(contentRect = firstContentRect) else slot
+            },
+        )
+
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.OVERLAPPING_SLOT_CONTENT_REGIONS,
+            ),
+            validator.validate(
+                overlappingLayout,
+                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
+            ),
+        )
+    }
+
+    @Test
+    fun slotNumberRegionOutsideSlotIsRejected() {
+        val invalidLayout = layout.copy(
+            slots = layout.slots.mapIndexed { index, slot ->
+                if (index == 0) {
+                    slot.copy(slotNumberRect = NormalizedOcrRect(0.51, 0.01, 0.01, 0.01))
+                } else {
+                    slot
+                }
+            },
+        )
+
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.SLOT_NUMBER_REGION_OUTSIDE_SLOT,
+            ),
+            validator.validate(
+                invalidLayout,
+                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
+            ),
+        )
+    }
+
+    @Test
+    fun invalidPlayerRowIndexesAreRejected() {
+        val firstSlot = layout.slots.first()
+        val invalidLayout = layout.copy(
+            slots = layout.slots.mapIndexed { index, slot ->
+                if (index == 0) {
+                    slot.copy(
+                        playerRowRegions = firstSlot.playerRowRegions.mapIndexed { rowIndex, row ->
+                            if (rowIndex == 0) row.copy(rowIndex = 2) else row
+                        },
+                    )
+                } else {
+                    slot
+                }
+            },
+        )
+
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.INVALID_PLAYER_ROW_STRUCTURE,
+            ),
+            validator.validate(
+                invalidLayout,
+                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
+            ),
+        )
+    }
+
+    @Test
+    fun playerRowOutsideSlotIsRejected() {
+        val firstSlot = layout.slots.first()
+        val invalidLayout = layout.copy(
+            slots = layout.slots.mapIndexed { index, slot ->
+                if (index == 0) {
+                    slot.copy(
+                        playerRowRegions = firstSlot.playerRowRegions.mapIndexed { rowIndex, row ->
+                            if (rowIndex == 0) {
+                                row.copy(rect = NormalizedOcrRect(0.51, 0.01, 0.01, 0.01))
+                            } else {
+                                row
+                            }
+                        },
+                    )
+                } else {
+                    slot
+                }
+            },
+        )
+
+        assertEquals(
+            CroppedRosterLayoutValidationResult.Incompatible(
+                CroppedRosterLayoutValidationError.PLAYER_ROW_REGION_OUTSIDE_SLOT,
+            ),
+            validator.validate(
+                invalidLayout,
+                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
+            ),
+        )
+    }
+
+    @Test
     fun fiveAndSixPlayerRowsAreUnsupported() {
         (5..6).forEach { rowCount ->
             val firstSlot = layout.slots.first()

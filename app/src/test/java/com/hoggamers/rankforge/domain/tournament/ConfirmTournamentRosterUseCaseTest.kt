@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
 import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -22,6 +23,44 @@ class ConfirmTournamentRosterUseCaseTest {
 
         assertTrue(result is ConfirmTournamentRosterResult.Invalid)
         assertEquals(TournamentStatus.DRAFT, repository.observeById("stable-id").first()?.status)
+    }
+
+    @Test
+    fun missingTournamentReturnsNotFound() = runTest {
+        val repository = InMemoryTournamentRepository()
+        val useCase = ConfirmTournamentRosterUseCase(
+            repository = repository,
+            validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+        )
+
+        assertEquals(ConfirmTournamentRosterResult.NotFound, useCase("missing-id"))
+    }
+
+    @Test
+    fun repositoryConfirmationReturningFalseReportsAlreadyConfirmed() = runTest {
+        val delegate = InMemoryTournamentRepository()
+        delegate.create(tournament())
+        delegate.saveTeamNames(
+            "stable-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        (1..12).forEach { slotNumber ->
+            delegate.saveRoster(
+                tournamentId = "stable-id",
+                slotNumber = slotNumber,
+                players = (0..3).map { playerIndex ->
+                    RosterPlayer.create("stable-id", slotNumber, "Player $playerIndex")
+                },
+            )
+        }
+        val repository = ConfirmationRejectingRepository(delegate)
+        val useCase = ConfirmTournamentRosterUseCase(
+            repository = repository,
+            validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+        )
+
+        assertTrue(useCase("stable-id") is ConfirmTournamentRosterResult.AlreadyConfirmed)
+        assertEquals(TournamentStatus.DRAFT, delegate.observeById("stable-id").first()?.status)
     }
 
     @Test
@@ -59,4 +98,35 @@ class ConfirmTournamentRosterUseCaseTest {
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
     )
+
+    private class ConfirmationRejectingRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository {
+        override suspend fun create(tournament: Tournament) = delegate.create(tournament)
+
+        override fun observeAll(): Flow<List<Tournament>> = delegate.observeAll()
+
+        override fun observeById(tournamentId: String): Flow<Tournament?> = delegate.observeById(tournamentId)
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            delegate.observeSlotsByTournamentId(tournamentId)
+
+        override suspend fun saveTeamNames(
+            tournamentId: String,
+            teamNamesBySlotNumber: Map<Int, String>,
+        ) = delegate.saveTeamNames(tournamentId, teamNamesBySlotNumber)
+
+        override fun observeRosterByTournamentAndSlot(
+            tournamentId: String,
+            slotNumber: Int,
+        ): Flow<List<RosterPlayer>> = delegate.observeRosterByTournamentAndSlot(tournamentId, slotNumber)
+
+        override suspend fun saveRoster(
+            tournamentId: String,
+            slotNumber: Int,
+            players: List<RosterPlayer>,
+        ) = delegate.saveRoster(tournamentId, slotNumber, players)
+
+        override suspend fun confirmTournament(tournamentId: String): Boolean = false
+    }
 }

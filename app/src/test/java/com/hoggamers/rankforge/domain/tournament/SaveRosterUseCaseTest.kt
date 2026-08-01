@@ -26,6 +26,50 @@ class SaveRosterUseCaseTest {
         assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
     }
 
+    @Test
+    fun useCaseRejectsTournamentIdentityMismatch() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament())
+        val useCase = SaveRosterUseCase(repository)
+        val players = listOf(RosterPlayer.create("other-id", 1, "Player"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                useCase("stable-id", 1, players)
+            }
+        }
+        assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
+    }
+
+    @Test
+    fun useCaseRejectsSlotIdentityMismatch() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament())
+        val useCase = SaveRosterUseCase(repository)
+        val players = listOf(RosterPlayer.create("stable-id", 2, "Player"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                useCase("stable-id", 1, players)
+            }
+        }
+        assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
+    }
+
+    @Test
+    fun useCasePersistsAValidSixPlayerRoster() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament())
+        val useCase = SaveRosterUseCase(repository)
+        val players = (1..6).map { playerNumber ->
+            RosterPlayer.create("stable-id", 1, "Player $playerNumber")
+        }
+
+        useCase("stable-id", 1, players)
+
+        assertEquals(players, repository.observeRosterByTournamentAndSlot("stable-id", 1).first())
+    }
+
     private fun tournament() = Tournament(
         id = "stable-id",
         name = "Summer Cup",

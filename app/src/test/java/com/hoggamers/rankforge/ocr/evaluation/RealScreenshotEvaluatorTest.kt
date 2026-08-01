@@ -90,6 +90,87 @@ class RealScreenshotEvaluatorTest {
         assertTrue(first.mismatches.isEmpty())
     }
 
+    @Test
+    fun missingParserResultsProduceVisibleFieldMismatchesWithoutFalseAccepts() {
+        val result = evaluator.evaluate(
+            caseFor(expectedRows = listOf(visibleRow(1, "Alpha One", 3))),
+        )
+
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.PLACEMENT_CORRECTNESS, 0, 1),
+            result.metrics.single { it.type == OcrEvaluationMetricType.PLACEMENT_CORRECTNESS },
+        )
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.REVIEW_MARKER_CORRECTNESS, 0, 3),
+            result.metrics.single { it.type == OcrEvaluationMetricType.REVIEW_MARKER_CORRECTNESS },
+        )
+        assertEquals(0, result.falseAcceptCount)
+        assertEquals(6, result.mismatches.size)
+    }
+
+    @Test
+    fun duplicateExpectedIdsRemainDeterministicAndCountOnceForCoverage() {
+        val result = evaluator.evaluate(
+            caseFor(
+                expectedRows = listOf(
+                    visibleRow(1, "Alpha One", 1),
+                    visibleRow(1, "Alpha One", 1),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(1, 1), result.evaluatedPlacementIds)
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.ROW_COVERAGE, 1, 12),
+            result.metrics.single { it.type == OcrEvaluationMetricType.ROW_COVERAGE },
+        )
+    }
+
+    @Test
+    fun outOfRangeExpectedIdsDoNotContributeToCoverage() {
+        val result = evaluator.evaluate(
+            caseFor(
+                expectedRows = listOf(
+                    visibleRow(0, "Outside Zero", 0),
+                    visibleRow(13, "Outside Thirteen", 0),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(0, 13), result.evaluatedPlacementIds)
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.ROW_COVERAGE, 0, 12),
+            result.metrics.single { it.type == OcrEvaluationMetricType.ROW_COVERAGE },
+        )
+    }
+
+    @Test
+    fun emptyExpectedRowsPreserveMetricDenominatorBoundaries() {
+        val result = evaluator.evaluate(caseFor(expectedRows = emptyList()))
+
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.ROW_COVERAGE, 0, 12),
+            result.metrics.single { it.type == OcrEvaluationMetricType.ROW_COVERAGE },
+        )
+        assertTrue(
+            result.metrics
+                .filter { it.type != OcrEvaluationMetricType.ROW_COVERAGE }
+                .all { it.numerator == 0 && it.denominator == 0 },
+        )
+    }
+
+    @Test
+    fun coverageMetricReachesFullDenominatorForAllUniqueRows() {
+        val result = evaluator.evaluate(
+            caseFor(expectedRows = (1..12).map { visibleRow(it, "Player $it", it) }),
+        )
+
+        assertEquals(
+            OcrEvaluationMetric(OcrEvaluationMetricType.ROW_COVERAGE, 12, 12),
+            result.metrics.single { it.type == OcrEvaluationMetricType.ROW_COVERAGE },
+        )
+    }
+
     private fun caseFor(
         expectedRows: List<ExpectedScoreboardRow>,
         placement: PlacementParsingResult? = null,

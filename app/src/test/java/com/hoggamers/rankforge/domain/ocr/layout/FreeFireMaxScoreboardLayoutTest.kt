@@ -42,6 +42,34 @@ class FreeFireMaxScoreboardLayoutTest {
     }
 
     @Test
+    fun nonPositiveDimensionsAreRejectedBeforeAspectValidation() {
+        listOf(
+            0 to 720,
+            1_600 to 0,
+            -1 to 720,
+        ).forEach { (width, height) ->
+            assertEquals(
+                ScoreboardLayoutValidationResult.Incompatible(
+                    ScoreboardLayoutValidationError.INVALID_DIMENSIONS,
+                ),
+                validator.validate(layout, width, height),
+            )
+        }
+    }
+
+    @Test
+    fun exactSupportedAspectRatioBoundariesAreAccepted() {
+        assertEquals(
+            ScoreboardLayoutValidationResult.Compatible,
+            validator.validate(layout, imageWidth = 211, imageHeight = 100),
+        )
+        assertEquals(
+            ScoreboardLayoutValidationResult.Compatible,
+            validator.validate(layout, imageWidth = 233, imageHeight = 100),
+        )
+    }
+
+    @Test
     fun portraitAndUnsupportedAspectRatiosAreRejected() {
         assertEquals(
             ScoreboardLayoutValidationResult.Incompatible(

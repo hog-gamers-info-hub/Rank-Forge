@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.ocr.review
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrExtractionFailure
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.layout.FreeFireMaxScoreboardLayout
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelRect
@@ -54,6 +55,35 @@ class OcrFailureAnalyzerTest {
 
         assertTrue(result.rows.flatMap { it.fields }.all { it.status == OcrReviewStatus.UNSUPPORTED })
         assertTrue(result.rows.flatMap { it.fields }.all { it.severity == OcrReviewSeverity.BLOCKING })
+    }
+
+    @Test
+    fun rawExtractionFailureCreatesBlockingUncertainMarkersWithEvidence() {
+        val failed = RawOcrExtractionResult.Failed(candidate(), RawOcrExtractionFailure.ENGINE_FAILED)
+        val result = analyzer.analyze(OcrFailureAnalysisInput(extractionResults = listOf(failed)))
+
+        val fields = result.rows.flatMap { it.fields }
+        assertTrue(fields.all { it.status == OcrReviewStatus.UNCERTAIN })
+        assertTrue(fields.all { it.severity == OcrReviewSeverity.BLOCKING })
+        assertTrue(fields.all { it.reason == OcrReviewReason.RawExtractionFailure(RawOcrExtractionFailure.ENGINE_FAILED) })
+        assertTrue(fields.all { it.evidence.single().source == failed })
+    }
+
+    @Test
+    fun extractedRawOutputWithoutParserResultsUsesParserOutputUnavailableFallback() {
+        val result = analyzer.analyze(
+            OcrFailureAnalysisInput(
+                extractionResults = listOf(
+                    RawOcrExtractionResult.Extracted(candidate(), "raw output", emptyList()),
+                ),
+            ),
+        )
+
+        val fields = result.rows.flatMap { it.fields }
+        assertTrue(fields.all { it.status == OcrReviewStatus.UNCERTAIN })
+        assertTrue(fields.all { it.severity == OcrReviewSeverity.WARNING })
+        assertTrue(fields.all { it.reason == OcrReviewReason.ParserOutputUnavailable })
+        assertTrue(fields.all { it.manualReviewRequired })
     }
 
     @Test
