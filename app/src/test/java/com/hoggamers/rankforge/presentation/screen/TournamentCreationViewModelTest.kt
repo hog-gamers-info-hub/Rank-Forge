@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -79,10 +80,11 @@ class TournamentCreationViewModelTest {
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_NAME))
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
         assertTrue(repository.records.isEmpty())
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
-    fun validSubmitEntersSubmittingAndThenSuccess() = runTest {
+    fun validSubmitEntersSubmittingAndThenSuccessWithCreatedTournamentId() = runTest {
         repository.blockCreation = true
         fillValidForm()
 
@@ -94,8 +96,10 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isSubmitting)
-        assertEquals(TournamentCreationNavigation.CREATED, viewModel.uiState.value.navigation)
         assertEquals(1, repository.records.size)
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is TournamentCreationNavigation.Created)
+        assertEquals(repository.records.single().id, (navigation as TournamentCreationNavigation.Created).tournamentId)
     }
 
     @Test
@@ -125,6 +129,7 @@ class TournamentCreationViewModelTest {
         assertFalse(viewModel.uiState.value.isSubmitting)
         assertNotNull(viewModel.uiState.value.submissionError)
         assertEquals(0, repository.records.size)
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -147,7 +152,7 @@ class TournamentCreationViewModelTest {
 
         viewModel.discardChanges()
 
-        assertEquals(TournamentCreationNavigation.BACK, viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationNavigation.Back, viewModel.uiState.value.navigation)
     }
 
     private fun fillValidForm() {

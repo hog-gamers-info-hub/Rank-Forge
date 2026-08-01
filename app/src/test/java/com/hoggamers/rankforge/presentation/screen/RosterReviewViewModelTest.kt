@@ -68,10 +68,11 @@ class RosterReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(TournamentStatus.DRAFT, repository.observeById("stable-id").first()?.status)
+        assertEquals(null, viewModel.uiState.value.navigation)
     }
 
     @Test
-    fun validRosterConfirmsOnceAndShowsConfirmedStatus() = runTest {
+    fun validRosterConfirmsOnceAndNavigatesToTournamentDetails() = runTest {
         createValidRoster()
         val viewModel = viewModel()
         viewModel.load("stable-id")
@@ -86,6 +87,25 @@ class RosterReviewViewModelTest {
         assertTrue(viewModel.uiState.value.isConfirmed)
         assertFalse(viewModel.uiState.value.canConfirm)
         assertEquals(TournamentStatus.CONFIRMED, repository.observeById("stable-id").first()?.status)
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is RosterReviewNavigation.TournamentDetails)
+        assertEquals("stable-id", (navigation as RosterReviewNavigation.TournamentDetails).tournamentId)
+    }
+
+    @Test
+    fun successfulConfirmationNavigationCanBeConsumed() = runTest {
+        createValidRoster()
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.confirmRoster()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.navigation is RosterReviewNavigation.TournamentDetails)
+
+        viewModel.onNavigationHandled()
+
+        assertEquals(null, viewModel.uiState.value.navigation)
     }
 
     @Test

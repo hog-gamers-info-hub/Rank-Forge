@@ -35,12 +35,27 @@ fun RosterReviewRoute(
     onEditTeam: (Int) -> Unit,
     onEditRoster: (Int) -> Unit,
     onBackToTeamEntry: () -> Unit,
+    onConfirmed: (String) -> Unit,
     viewModel: RosterReviewViewModel = hiltViewModel(),
+    rosterScreenshotIntake: @Composable () -> Unit = {
+        RosterScreenshotIntakeRoute(tournamentId = tournamentId)
+    },
 ) {
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(uiState.navigation) {
+        when (val navigation = uiState.navigation) {
+            is RosterReviewNavigation.TournamentDetails -> {
+                viewModel.onNavigationHandled()
+                onConfirmed(navigation.tournamentId)
+            }
+
+            null -> Unit
+        }
+    }
 
     RosterReviewScreen(
         uiState = uiState,
@@ -48,9 +63,7 @@ fun RosterReviewRoute(
         onEditRoster = onEditRoster,
         onConfirm = viewModel::confirmRoster,
         onBackToTeamEntry = onBackToTeamEntry,
-        rosterScreenshotIntake = {
-            RosterScreenshotIntakeRoute(tournamentId = tournamentId)
-        },
+        rosterScreenshotIntake = rosterScreenshotIntake,
     )
 }
 

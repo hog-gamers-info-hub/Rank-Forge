@@ -88,6 +88,7 @@ class RosterReviewViewModel @Inject constructor(
                     state.copy(
                         isConfirming = current.isConfirming,
                         hasConfirmError = current.hasConfirmError,
+                        navigation = current.navigation,
                     )
                 }
             }
@@ -102,12 +103,23 @@ class RosterReviewViewModel @Inject constructor(
             runCatching { confirmTournamentRoster(tournamentId) }
                 .onSuccess { result ->
                     when (result) {
-                        is ConfirmTournamentRosterResult.Confirmed,
+                        is ConfirmTournamentRosterResult.Confirmed -> {
+                            _uiState.update {
+                                it.copy(
+                                    isConfirming = false,
+                                    status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED,
+                                    validationIssues = result.validation.toUiState(),
+                                    navigation = RosterReviewNavigation.TournamentDetails(tournamentId),
+                                )
+                            }
+                        }
                         is ConfirmTournamentRosterResult.AlreadyConfirmed -> {
                             _uiState.update {
                                 it.copy(
                                     isConfirming = false,
                                     status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED,
+                                    validationIssues = result.validation.toUiState(),
+                                    navigation = RosterReviewNavigation.TournamentDetails(tournamentId),
                                 )
                             }
                         }
@@ -132,6 +144,10 @@ class RosterReviewViewModel @Inject constructor(
                     }
                 }
         }
+    }
+
+    fun onNavigationHandled() {
+        _uiState.update { it.copy(navigation = null) }
     }
 
     companion object {

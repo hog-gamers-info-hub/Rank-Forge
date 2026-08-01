@@ -8,9 +8,12 @@ enum class TournamentCreationSubmissionError {
     UNKNOWN,
 }
 
-enum class TournamentCreationNavigation {
-    BACK,
-    CREATED,
+sealed interface TournamentCreationNavigation {
+    data object Back : TournamentCreationNavigation
+
+    data class Created(
+        val tournamentId: String,
+    ) : TournamentCreationNavigation
 }
 
 data class TournamentCreationUiState(

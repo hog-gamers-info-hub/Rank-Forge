@@ -2,6 +2,12 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
+sealed interface RosterReviewNavigation {
+    data class TournamentDetails(
+        val tournamentId: String,
+    ) : RosterReviewNavigation
+}
+
 data class RosterReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -11,6 +17,7 @@ data class RosterReviewUiState(
     val validationIssues: List<RosterValidationIssueUiState> = emptyList(),
     val isConfirming: Boolean = false,
     val hasConfirmError: Boolean = false,
+    val navigation: RosterReviewNavigation? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable
