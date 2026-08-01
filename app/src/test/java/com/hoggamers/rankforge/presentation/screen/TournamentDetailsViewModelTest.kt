@@ -18,6 +18,8 @@ import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -116,6 +118,38 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun finalizedMatchRefreshesSameTournamentDetailsWithoutDuplicateRows() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.setMatches(
+            "stable-id",
+            listOf(
+                Match(
+                    id = "match-id",
+                    tournamentId = "stable-id",
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                ),
+            ),
+        )
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        repository.setMatches("stable-id", listOf(finalizedMatch()))
+        advanceUntilIdle()
+
+        assertEquals("stable-id", viewModel.uiState.value.tournament?.id)
+        assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.tournament?.matches?.single()?.status)
+
+        repository.setMatches("stable-id", listOf(finalizedMatch()))
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.tournament?.matches?.size)
+    }
+
+    @Test
     fun unknownTournamentRendersNotFoundState() = runTest {
         val viewModel = detailsViewModel()
 
@@ -138,6 +172,17 @@ class TournamentDetailsViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+    )
+
+    private fun finalizedMatch() = Match(
+        id = "match-id",
+        tournamentId = "stable-id",
+        matchNumber = 1,
+        date = LocalDate.of(2026, 7, 24),
+        mapName = "Bermuda",
+        status = MatchStatus.FINALIZED,
+        placements = (1..12).map { slotNumber -> MatchPlacement(slotNumber, slotNumber) },
+        kills = (1..12).map { slotNumber -> MatchKill(slotNumber, slotNumber - 1) },
     )
 
     private class TestTournamentRepository : TournamentRepository {

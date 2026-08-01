@@ -76,6 +76,8 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTIO
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SCREEN_TEST_TAG
@@ -88,6 +90,10 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_CREATE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_MAP_FIELD_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_NUMBER_FIELD_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.OPEN_STANDINGS_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDINGS_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
@@ -102,6 +108,8 @@ import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
+import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -518,6 +526,123 @@ class RankForgeNavigationTest {
             .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun manualMatchFlowFinalizesAndOpensUpdatedSameTournamentStandings() {
+        val viewModels = createNavigationViewModels()
+        var activeMatchCreationViewModel: MatchCreationViewModel? = null
+        var cachedMatchCreationViewModel: MatchCreationViewModel? = null
+        var activeMatchReviewViewModel: MatchReviewViewModel? = null
+        var cachedMatchReviewViewModel: MatchReviewViewModel? = null
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
+                    matchCreationViewModelFactory = { tournamentId ->
+                        val viewModel = cachedMatchCreationViewModel
+                            ?: viewModels.matchCreationViewModel(tournamentId).also {
+                                cachedMatchCreationViewModel = it
+                            }
+                        activeMatchCreationViewModel = viewModel
+                        viewModel
+                    },
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                    matchReviewViewModelFactory = { tournamentId, matchId ->
+                        val viewModel = cachedMatchReviewViewModel
+                            ?: viewModels.matchReviewViewModel(tournamentId, matchId).also {
+                                cachedMatchReviewViewModel = it
+                            }
+                        activeMatchReviewViewModel = viewModel
+                        viewModel
+                    },
+                    standingsViewModelFactory = viewModels.standingsViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_NUMBER_FIELD_TEST_TAG).performTextInput("1")
+        composeTestRule.runOnIdle {
+            activeMatchCreationViewModel?.onMatchDateChanged(LocalDate.of(2026, 7, 24))
+        }
+        composeTestRule.onNodeWithTag(MATCH_MAP_FIELD_TEST_TAG).performTextInput("Bermuda")
+        composeTestRule.onNodeWithTag(MATCH_CREATE_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        (1..12).forEach { slotNumber ->
+            composeTestRule
+                .onNodeWithTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + slotNumber)
+                .performScrollTo()
+                .performTextInput(slotNumber.toString())
+        }
+        composeTestRule
+            .onNodeWithTag(MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        (1..12).forEach { slotNumber ->
+            composeTestRule
+                .onNodeWithTag(MATCH_KILL_FIELD_TEST_TAG_PREFIX + slotNumber)
+                .performScrollTo()
+                .performTextInput(if (slotNumber == 2) "10" else (slotNumber - 1).toString())
+        }
+        composeTestRule
+            .onNodeWithTag(MATCH_KILL_SAVE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
+
+        val match = runBlocking {
+            viewModels.repository.observeMatchesByTournamentId("confirmed-id").first().single()
+        }
+        assertEquals("confirmed-id", match.tournamentId)
+        assertEquals(com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED, match.status)
+        assertEquals("confirmed-id", activeMatchReviewViewModel?.uiState?.value?.tournamentId)
+        assertEquals(match.id, activeMatchReviewViewModel?.uiState?.value?.matchId)
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Status: FINALIZED").performScrollTo().assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(OPEN_STANDINGS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_STANDINGS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX + "2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Total points: 19").assertIsDisplayed()
     }
 
     @Test
@@ -956,6 +1081,15 @@ class RankForgeNavigationTest {
                     it.load(tournamentId)
                 }
             },
+            standingsViewModel = { tournamentId ->
+                TournamentStandingsViewModel(
+                    observeMatches = ObserveMatchesUseCase(repository),
+                    cumulativeStandings = CumulativeTournamentStandingsEngine(),
+                    tieBreakRules = TieBreakRules(),
+                ).also {
+                    it.load(tournamentId)
+                }
+            },
             teamEntryViewModel = { tournamentId ->
                 TeamEntryViewModel(
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -1155,6 +1289,7 @@ class RankForgeNavigationTest {
         val creationViewModel: TournamentCreationViewModel,
         val listViewModel: TournamentListViewModel,
         val detailsViewModel: (String) -> TournamentDetailsViewModel,
+        val standingsViewModel: (String) -> TournamentStandingsViewModel,
         val teamEntryViewModel: (String) -> TeamEntryViewModel,
         val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
         val rosterReviewViewModel: (String) -> RosterReviewViewModel,

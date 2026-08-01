@@ -849,7 +849,10 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
         assertFalse(viewModel.uiState.value.isEditable)
+        assertEquals(null, viewModel.uiState.value.finalizationError)
         assertTrue(repository.observeDraftMatchValues("tournament-id", matchId).first().isEmpty())
         assertEquals(
             MatchStatus.FINALIZED,
@@ -867,8 +870,66 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
         assertTrue(viewModel.uiState.value.isEditable)
         assertFalse(viewModel.uiState.value.isFinalizing)
+    }
+
+    @Test
+    fun duplicatePlacementCannotFinalizeAndKeepsReviewContext() = runTest {
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = if (slotNumber == 2) "1" else slotNumber.toString(),
+                killsInput = (slotNumber - 1).toString(),
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isValid)
+        assertTrue(
+            MatchResultValidationError.DUPLICATE_PLACEMENT in
+                viewModel.uiState.value.validationErrors.getValue(1),
+        )
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
+    }
+
+    @Test
+    fun negativeKillsCannotFinalize() = runTest {
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = if (slotNumber == 1) "-1" else (slotNumber - 1).toString(),
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isValid)
+        assertTrue(
+            MatchResultValidationError.INVALID_KILLS in
+                viewModel.uiState.value.validationErrors.getValue(1),
+        )
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
     }
 
     private fun reviewViewModel(
