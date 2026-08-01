@@ -519,18 +519,20 @@ If exactly one complete 12-row canonical export block exists and there are no co
 - return the existing canonical success response
 - do not append
 
-### 2. No candidate rows exist
+### 2. No candidate rows currently exist
 
-If the bounded complete worksheet observation proves there are zero candidate rows for the logical export:
+If a complete bounded worksheet observation finds zero candidate rows for the logical export:
 
-- resolve the uncertain operation to `retryable_failure`
-- use failure code `EXPORT_VERIFICATION_NOT_FOUND`
-- do not append in the same invocation
+- keep the ledger operation as `outcome_uncertain`
+- do not convert the operation to `retryable_failure`
+- do not append
 - return `EXPORT_VERIFICATION_NOT_FOUND`
 
-A later replay may claim the now-retryable operation and perform a normal export attempt.
+A zero-row observation proves only that no matching rows are visible at that observation time. It does not prove that an earlier ambiguous Google append cannot complete later.
 
-This preserves the rule of no blind same-invocation append after uncertain reconciliation.
+Therefore a future replay of the same canonical request must remain read-only reconciliation while the operation is `outcome_uncertain`.
+
+A zero-candidate observation alone must never make an uncertain export append-retryable.
 
 ### 3. Partial or mismatched candidate data exists
 
@@ -591,10 +593,11 @@ v0.10.8 requires one additive Supabase migration only if current v0.10.7 RPCs ca
 
 The implementation must not edit the already-merged v0.10.7 migration.
 
-The migration may add narrowly scoped authenticated RPCs for these exact responsibilities:
+The migration may add one narrowly scoped authenticated RPC for this exact responsibility:
 
 1. resolve an owned `outcome_uncertain` operation as verified `succeeded`
-2. resolve an owned `outcome_uncertain` operation as verified currently absent and therefore `retryable_failure`
+
+No RPC may convert `outcome_uncertain` to `retryable_failure` merely because a reconciliation read currently finds zero candidate rows.
 
 No broad ledger mutation RPC is allowed.
 
@@ -643,22 +646,23 @@ No verification row values, names, scores, spreadsheet IDs, or Google ranges are
 
 ---
 
-## Reconciliation-To-Retryable Rules
+## Zero-Candidate Reconciliation Rules
 
-An uncertain operation may be resolved to `retryable_failure` only after a complete bounded worksheet observation proves zero candidate rows exist.
+A complete bounded worksheet observation that currently finds zero candidate rows must not resolve an `outcome_uncertain` operation to `retryable_failure`.
 
-Required stored result:
+Required ledger behavior:
 
-- `state = retryable_failure`
-- `failure_code = EXPORT_VERIFICATION_NOT_FOUND`
-- no active lease
-- no rows-written metadata
-- no exported-match-count metadata
-- no `completed_at` success timestamp
+- preserve `state = outcome_uncertain`
+- do not create a new lease
+- do not store success metadata
+- do not append
+- do not make the operation reclaimable through the normal retry path
 
-A later invocation may reclaim it through the existing v0.10.7 retry path.
+The Edge Function may return `EXPORT_VERIFICATION_NOT_FOUND` for the current read-only reconciliation result, but the ledger remains uncertain.
 
-The reconciliation invocation itself must not append.
+A later identical invocation must perform read-only reconciliation again. If the delayed Google append later becomes visible as exactly one canonical block, that later reconciliation may resolve the operation to `succeeded`.
+
+This rule prevents a delayed ambiguous Google append from being followed by a duplicate retry append.
 
 ---
 
@@ -674,14 +678,15 @@ Suggested status:
 
 Message:
 
-`No matching exported rows were found. The export can be retried safely.`
+`No matching exported rows were found. The export outcome remains uncertain.`
 
 Meaning:
 
 - uncertain reconciliation completed over the supported bounded sheet region
-- zero candidate rows exist
-- ledger has been moved to retryable state
+- zero candidate rows are currently visible
+- the ledger remains `outcome_uncertain`
 - this invocation did not append
+- the result does not authorize a future append retry
 
 ### `EXPORT_VERIFICATION_CONFLICT`
 
@@ -855,14 +860,19 @@ The implementation must not weaken the existing unique logical-export identity.
 
 v0.10.8 does not introduce automatic append retry loops.
 
-Safe retry remains a later replay of the same canonical export request.
+Existing v0.10.7 retry behavior remains valid only for states already proven retryable by pre-write failure or a definitive no-write result.
+
+An `outcome_uncertain` operation must not become retryable merely because a reconciliation read currently finds zero candidate rows.
 
 Important distinction:
 
 - verification may perform bounded read requests needed to obtain a complete observation
-- verification must not perform another Google append
-- when an uncertain export is proven absent, the current invocation returns `EXPORT_VERIFICATION_NOT_FOUND`
-- only a later replay may reclaim and append
+- verification must not perform another Google append while the operation is `outcome_uncertain`
+- a zero-candidate uncertain reconciliation returns `EXPORT_VERIFICATION_NOT_FOUND`
+- the ledger remains `outcome_uncertain`
+- later identical requests continue read-only reconciliation
+- exactly one later-observed canonical block may resolve the operation to success
+- zero candidate rows alone never authorize another append
 
 ---
 
@@ -909,9 +919,9 @@ Required coverage includes at least:
 27. uncertain exact match block resolves to success
 28. uncertain exact standings block resolves to success
 29. uncertain successful reconciliation returns the existing success response
-30. zero match candidate rows resolves to retryable failure
-31. zero standings candidate rows resolves to retryable failure
-32. zero-candidate reconciliation does not append in the same invocation
+30. zero match candidate rows remain `outcome_uncertain`
+31. zero standings candidate rows remain `outcome_uncertain`
+32. zero-candidate reconciliation never appends and later identical uncertain replays remain read-only
 33. partial match candidate data remains blocked
 34. partial standings candidate data remains blocked
 35. mismatched candidate values remain blocked
@@ -928,23 +938,22 @@ Required coverage includes at least:
 46. official Supabase validation still occurs before Google verification
 47. stale payload mismatch blocks Google reconciliation
 48. match/standings fingerprint identity remains unchanged
-49. existing v0.10.7 retry behavior remains valid for proven retryable states
-50. no automatic same-invocation append occurs after `EXPORT_VERIFICATION_NOT_FOUND`
+49. existing v0.10.7 retry behavior remains valid for independently proven retryable states
+50. `EXPORT_VERIFICATION_NOT_FOUND` never converts an uncertain operation into an append-retryable state
 
 Database tests must cover:
 
-- reconciliation RPC existence/signatures
+- verified-success reconciliation RPC existence/signature
 - authenticated-only execution
 - no anon/public execution
 - no cross-owner reconciliation
 - direct ledger mutations remain prohibited
 - uncertain -> succeeded valid transition
-- uncertain -> retryable valid transition
+- no v0.10.8 reconciliation RPC permits uncertain -> retryable transition
 - succeeded metadata constraints
 - standings exported-match-count validation
 - match exported-match-count null requirement
 - wrong current state rejected
-- malformed failure metadata rejected
 - unrelated operation rows remain unchanged
 
 ---
@@ -1037,7 +1046,7 @@ v0.10.8 is complete when:
 - a post-write verification failure never causes a second append
 - an `outcome_uncertain` replay performs read-only Google reconciliation
 - exactly one exact block resolves the ledger to success without append
-- a complete observation with zero candidate rows resolves to retryable state without same-invocation append
+- a complete observation with zero candidate rows preserves `outcome_uncertain` and never authorizes another append
 - partial, mismatched, duplicate, or ambiguous candidate data remains blocked
 - worksheet scanning is bounded and truncation cannot be mistaken for absence
 - no hidden verification/tracking column is added
