@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -46,6 +47,8 @@ const val MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG = "match_review_ocr_review_act
 const val MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG = "match_review_finalize_action"
 const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize_confirm_action"
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
+const val MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG = "match_review_csv_export_action"
+const val MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG = "match_review_csv_export_status"
 const val MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG = "match_review_correction_action"
 const val MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG = "match_review_correction_confirm_action"
 const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_history"
@@ -136,6 +139,7 @@ fun MatchReviewRoute(
         onOpenOcrReview = viewModel::openOcrReview,
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
+        onPrepareCsvExport = viewModel::prepareCsvExport,
         onFinalize = viewModel::finalize,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onLinkScreenshot = viewModel::linkScreenshot,
@@ -152,6 +156,7 @@ fun MatchReviewScreen(
     onOpenOcrReview: () -> Unit = {},
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
+    onPrepareCsvExport: () -> Unit = {},
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
     onLinkScreenshot: () -> Unit = {},
@@ -170,6 +175,7 @@ fun MatchReviewScreen(
             onOpenOcrReview = onOpenOcrReview,
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
+            onPrepareCsvExport = onPrepareCsvExport,
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
             onLinkScreenshot = onLinkScreenshot,
@@ -187,6 +193,7 @@ private fun MatchReviewContent(
     onOpenOcrReview: () -> Unit,
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
+    onPrepareCsvExport: () -> Unit,
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
     onLinkScreenshot: () -> Unit,
@@ -227,6 +234,30 @@ private fun MatchReviewContent(
         )
         if (uiState.status == MatchStatus.FINALIZED) {
             Text(text = stringResource(R.string.match_review_finalized_read_only))
+            Button(
+                onClick = onPrepareCsvExport,
+                enabled = uiState.canPrepareMatchCsvExport,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG),
+            ) {
+                Text(text = "Prepare CSV export")
+            }
+            when (uiState.csvExportResult) {
+                is AndroidExportResult.CsvReady -> Text(
+                    text = "CSV export ready",
+                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                )
+                is AndroidExportResult.Blocked -> Text(
+                    text = "CSV export blocked",
+                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                )
+                is AndroidExportResult.Unavailable -> Text(
+                    text = "CSV export unavailable",
+                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                )
+                null -> Unit
+            }
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         if (uiState.isValid) {

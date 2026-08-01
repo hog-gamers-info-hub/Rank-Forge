@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -92,6 +93,8 @@ data class MatchReviewUiState(
     val navigation: MatchReviewNavigation? = null,
     val isFinalizing: Boolean = false,
     val finalizationError: FinalizeMatchGlobalError? = null,
+    val csvExportResult: AndroidExportResult? = null,
+    val googleSheetsExportResult: AndroidExportResult? = null,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
     val isPhotoPickerRequestActive: Boolean = false,
@@ -125,6 +128,9 @@ data class MatchReviewUiState(
 
     val isValid: Boolean
         get() = isAvailable && validationErrors.isEmpty()
+
+    val canPrepareMatchCsvExport: Boolean
+        get() = status == MatchStatus.FINALIZED && isValid
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT

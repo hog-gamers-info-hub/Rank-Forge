@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
+import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.AndroidExportType
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
@@ -26,6 +29,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
@@ -86,6 +90,60 @@ class TournamentDetailsViewModelTest {
         assertEquals("Summer Cup", detailsViewModel.uiState.value.tournament?.name)
         assertEquals("stable-id", requestedTournamentId)
         assertEquals(TournamentCloudUploadUiState.Queued, uploadViewModel.uiState.value)
+    }
+
+    @Test
+    fun finalizedStandingsCsvExportPreservesTournamentIdentity() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames(
+            "stable-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.setMatches("stable-id", listOf(finalizedMatch()))
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.prepareStandingsCsvExport()
+        advanceUntilIdle()
+
+        val result = viewModel.uiState.value.csvExportResult
+        assertTrue(result is AndroidExportResult.CsvReady)
+        assertEquals(AndroidExportType.STANDINGS_CSV, result?.request?.type)
+        assertEquals("stable-id", result?.request?.tournamentId)
+        assertEquals(null, result?.request?.matchId)
+        assertTrue((result as AndroidExportResult.CsvReady).content.contains("stable-id"))
+
+        viewModel.prepareGoogleSheetsStandingsExport()
+        assertEquals(
+            AndroidExportType.STANDINGS_GOOGLE_SHEETS,
+            viewModel.uiState.value.googleSheetsExportResult?.request?.type,
+        )
+        assertEquals("stable-id", viewModel.uiState.value.googleSheetsExportResult?.request?.tournamentId)
+        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.Unavailable)
+    }
+
+    @Test
+    fun standingsCsvExportIsBlockedWhenNoFinalizedMatchesExist() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.prepareStandingsCsvExport()
+        advanceUntilIdle()
+
+        assertEquals(
+            AndroidExportResult.Blocked(
+                request = com.hoggamers.rankforge.data.export.AndroidExportRequest(
+                    type = AndroidExportType.STANDINGS_CSV,
+                    tournamentId = "stable-id",
+                ),
+                reason = AndroidExportBlockedReason.NO_FINALIZED_STANDINGS,
+            ),
+            viewModel.uiState.value.csvExportResult,
+        )
+        assertEquals("stable-id", viewModel.uiState.value.tournament?.id)
     }
 
     @Test
@@ -193,6 +251,7 @@ class TournamentDetailsViewModelTest {
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
+        observeRoster = ObserveRosterByTournamentUseCase(repository),
     )
 
     private fun tournament(id: String) = Tournament(
@@ -264,6 +323,11 @@ class TournamentDetailsViewModelTest {
             slotNumber: Int,
         ): Flow<List<com.hoggamers.rankforge.domain.tournament.RosterPlayer>> =
             kotlinx.coroutines.flow.flowOf(emptyList())
+
+        override fun observeRosterByTournamentId(
+            tournamentId: String,
+        ): Flow<Map<Int, List<com.hoggamers.rankforge.domain.tournament.RosterPlayer>>> =
+            kotlinx.coroutines.flow.flowOf(emptyMap())
 
         override suspend fun saveRoster(
             tournamentId: String,

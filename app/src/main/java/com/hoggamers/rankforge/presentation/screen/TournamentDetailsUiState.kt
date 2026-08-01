@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.export.AndroidExportResult
 import java.time.LocalDate
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -14,6 +15,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 data class TournamentDetailsUiState(
     val isLoading: Boolean = true,
     val tournament: TournamentDetailsItemUiState? = null,
+    val csvExportResult: AndroidExportResult? = null,
+    val googleSheetsExportResult: AndroidExportResult? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null
@@ -29,6 +32,12 @@ data class TournamentDetailsItemUiState(
     val slots: List<TeamSlotUiState>,
     val matches: List<MatchUiState> = emptyList(),
 )
+
+val TournamentDetailsItemUiState.canPrepareStandingsCsvExport: Boolean
+    get() = matches.any { match ->
+        match.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED &&
+            match.validationIssues.isEmpty()
+    }
 
 data class TeamSlotUiState(
     val slotNumber: Int,
