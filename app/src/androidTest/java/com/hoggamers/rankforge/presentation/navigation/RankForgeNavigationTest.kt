@@ -16,7 +16,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,7 +36,10 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
@@ -43,6 +48,7 @@ import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
@@ -112,6 +118,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                 )
             }
         }
@@ -142,6 +149,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                 )
             }
         }
@@ -158,15 +166,19 @@ class RankForgeNavigationTest {
     }
 
     @Test
-    fun successfulCreationReturnsToListAndCreatedTournamentIsVisible() {
+    fun successfulCreationEntersSetupAndBackReturnsToCreatedTournamentDetails() {
         val viewModels = createNavigationViewModels()
+        var loadedTeamEntryTournamentId: String? = null
         composeTestRule.setContent {
             RankForgeTheme {
                 RankForgeNavHost(
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
-                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    teamEntryViewModelFactory = { tournamentId ->
+                        loadedTeamEntryTournamentId = tournamentId
+                        viewModels.teamEntryViewModel(tournamentId)
+                    },
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                 )
             }
@@ -179,11 +191,16 @@ class RankForgeNavigationTest {
         viewModels.creationViewModel.onOrganizerContactNumberChanged("123")
         viewModels.creationViewModel.submit()
         composeTestRule.waitForIdle()
+        val createdTournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
 
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
+        assertEquals(createdTournamentId, loadedTeamEntryTournamentId)
+
+        pressBackOnMainThread()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Organizer: Alex").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Contact: 123").assertIsDisplayed()
         composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
     }
 
@@ -227,6 +244,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                 )
             }
         }
@@ -249,6 +267,51 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
         pressBackOnMainThread()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun rosterConfirmationReturnsToSameTournamentDetails() {
+        val viewModels = createNavigationViewModels()
+        val tournamentId = "setup-id"
+        runBlocking {
+            createValidRoster(viewModels.repository, tournamentId)
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId).performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.review_roster_action))
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodesWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Setup Cup").assertIsDisplayed()
+        assertEquals(
+            TournamentStatus.CONFIRMED,
+            runBlocking { viewModels.repository.observeById(tournamentId).first()?.status },
+        )
     }
 
     @Test
@@ -331,6 +394,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                 )
             }
@@ -371,6 +435,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                 )
@@ -413,6 +478,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -455,6 +521,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -525,6 +592,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -587,6 +655,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -635,6 +704,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -821,13 +891,43 @@ class RankForgeNavigationTest {
         )
     }
 
-    private fun confirmedTournament() = com.hoggamers.rankforge.domain.tournament.Tournament(
+    private suspend fun createValidRoster(
+        repository: InMemoryTournamentRepository,
+        tournamentId: String,
+    ) {
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Setup Cup",
+                date = LocalDate.of(2026, 7, 24),
+                organizerName = "Alex",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+            ),
+        )
+        SaveTeamSlotNamesUseCase(repository)(
+            tournamentId,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        val saveRoster = SaveRosterUseCase(repository)
+        (1..12).forEach { slotNumber ->
+            saveRoster(
+                tournamentId = tournamentId,
+                slotNumber = slotNumber,
+                players = (0..3).map { playerIndex ->
+                    RosterPlayer.create(tournamentId, slotNumber, "Player $playerIndex")
+                },
+            )
+        }
+    }
+
+    private fun confirmedTournament() = Tournament(
         id = "confirmed-id",
         name = "Confirmed Cup",
         date = LocalDate.of(2026, 7, 24),
         organizerName = "Alex",
         organizerContactNumber = "123",
-        status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED,
+        status = TournamentStatus.CONFIRMED,
     )
 
     private fun createCreationViewModel(repository: InMemoryTournamentRepository): TournamentCreationViewModel {

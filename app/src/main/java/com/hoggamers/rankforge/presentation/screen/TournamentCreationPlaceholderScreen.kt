@@ -63,17 +63,21 @@ const val TOURNAMENT_DATE_CONFIRM_ACTION_TEST_TAG = "tournament_date_confirm_act
 @Composable
 fun TournamentCreationRoute(
     onBack: () -> Unit,
+    onCreated: (String) -> Unit,
     viewModel: TournamentCreationViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.navigation) {
-        when (uiState.navigation) {
-            TournamentCreationNavigation.BACK,
-            TournamentCreationNavigation.CREATED,
-            -> {
+        when (val navigation = uiState.navigation) {
+            TournamentCreationNavigation.Back -> {
                 viewModel.onNavigationHandled()
                 onBack()
+            }
+
+            is TournamentCreationNavigation.Created -> {
+                viewModel.onNavigationHandled()
+                onCreated(navigation.tournamentId)
             }
 
             null -> Unit

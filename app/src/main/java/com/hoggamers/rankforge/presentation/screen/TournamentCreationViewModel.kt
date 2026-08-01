@@ -88,7 +88,7 @@ class TournamentCreationViewModel @Inject constructor(
                     is CreateTournamentResult.Created -> _uiState.update {
                         it.copy(
                             isSubmitting = false,
-                            navigation = TournamentCreationNavigation.CREATED,
+                            navigation = TournamentCreationNavigation.Created(result.tournament.id),
                         )
                     }
                 }
@@ -107,7 +107,7 @@ class TournamentCreationViewModel @Inject constructor(
         if (_uiState.value.isDirty) {
             _uiState.update { it.copy(showDiscardDialog = true) }
         } else {
-            _uiState.update { it.copy(navigation = TournamentCreationNavigation.BACK) }
+            _uiState.update { it.copy(navigation = TournamentCreationNavigation.Back) }
         }
     }
 
@@ -119,7 +119,7 @@ class TournamentCreationViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 showDiscardDialog = false,
-                navigation = TournamentCreationNavigation.BACK,
+                navigation = TournamentCreationNavigation.Back,
             )
         }
     }
