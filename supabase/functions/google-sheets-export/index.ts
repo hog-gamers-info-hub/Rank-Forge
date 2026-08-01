@@ -1,5 +1,6 @@
 import {
   EdgeFunctionError,
+  type ErrorCode,
   errorResponse,
   jsonResponse,
 } from "../_shared/errors.ts";
@@ -11,8 +12,14 @@ import {
   markExportOperationOutcomeUncertain,
   markExportOperationRetryableFailure,
   markExportOperationWriteStarted,
+  resolveExportOperationVerifiedSuccess,
   SUPABASE_EXPORT_OPERATION_TIMEOUT_MS,
 } from "../_shared/exportOperationState.ts";
+import {
+  GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS,
+  reconcileUncertainExport,
+  verifyAppendedExportRows,
+} from "../_shared/exportVerification.ts";
 import {
   createGoogleServiceAccountAssertion,
   exchangeGoogleToken,
@@ -26,12 +33,14 @@ import {
   appendMatchResults,
   GOOGLE_APPEND_TIMEOUT_MS,
   GOOGLE_HEADER_TIMEOUT_MS,
+  MATCH_RESULTS_WORKSHEET,
   verifyMatchResultsHeader,
 } from "../_shared/googleMatchExport.ts";
 import {
   appendTournamentStandings,
   GOOGLE_STANDINGS_APPEND_TIMEOUT_MS,
   GOOGLE_STANDINGS_HEADER_TIMEOUT_MS,
+  TOURNAMENT_STANDINGS_WORKSHEET,
   verifyTournamentStandingsHeader,
 } from "../_shared/googleStandingsExport.ts";
 import { type FetchImplementation } from "../_shared/http.ts";
@@ -94,6 +103,7 @@ export interface HandlerDependencies {
     googleSheets?: number;
     googleHeader?: number;
     googleAppend?: number;
+    googleVerification?: number;
     googleStandingsHeader?: number;
     googleStandingsAppend?: number;
   };
@@ -142,7 +152,7 @@ function parseOperation(value: unknown): ParsedOperation {
   throw new EdgeFunctionError("INVALID_OPERATION");
 }
 
-function exportFailureCode(error: unknown): string {
+function exportFailureCode(error: unknown): ErrorCode {
   return error instanceof EdgeFunctionError ? error.code : "INTERNAL_ERROR";
 }
 
@@ -181,6 +191,7 @@ async function markUncertainAndThrow(
   operationId: string,
   leaseToken: string,
   failureCode: string,
+  responseCode: ErrorCode,
   context: ExportOperationContext,
 ): Promise<never> {
   try {
@@ -196,7 +207,7 @@ async function markUncertainAndThrow(
     // still blocks competing writes and becomes outcome_uncertain on expiry.
   }
 
-  throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
+  throw new EdgeFunctionError(responseCode);
 }
 
 async function createGoogleAccessToken(
@@ -323,6 +334,7 @@ async function handleExportMatch(
     players,
   });
 
+  const matchValues = toGoogleSheetValues(operation);
   const payloadFingerprint = await createExportPayloadFingerprint(operation);
   const stateContext = exportOperationContext(
     accessToken,
@@ -355,7 +367,54 @@ async function handleExportMatch(
   }
 
   if (claim.outcome === "outcome_uncertain") {
-    throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
+    const google = await createGoogleAccessToken(
+      getEnv,
+      fetchImpl,
+      dependencies,
+    );
+
+    await verifyMatchResultsHeader(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleHeader ??
+          GOOGLE_HEADER_TIMEOUT_MS,
+      },
+    );
+
+    const reconciliation = await reconcileUncertainExport(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        worksheetName: MATCH_RESULTS_WORKSHEET,
+        candidateIndexes: [0, 1, 2, 4],
+      },
+      matchValues,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleVerification ??
+          GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS,
+      },
+    );
+
+    if (reconciliation === "verified_success") {
+      await resolveExportOperationVerifiedSuccess(
+        claim.operationId,
+        null,
+        stateContext,
+      );
+
+      return jsonResponse({
+        ok: true,
+        operation: "export_match",
+        tournament_id: operation.tournament_id,
+        match_id: operation.match_id,
+        rows_written: 12,
+      });
+    }
+
+    throw new EdgeFunctionError("EXPORT_VERIFICATION_NOT_FOUND");
   }
 
   if (claim.leaseToken === null) {
@@ -401,13 +460,16 @@ async function handleExportMatch(
     stateContext,
   );
 
-  let rowsWritten: number;
+  let appendResult: {
+    rowsWritten: 12;
+    updatedRange: string;
+  };
 
   try {
-    rowsWritten = await appendMatchResults(
+    appendResult = await appendMatchResults(
       google.accessToken,
       google.spreadsheetId,
-      toGoogleSheetValues(operation),
+      matchValues,
       {
         fetchImpl,
         timeoutMs: dependencies.timeouts?.googleAppend ??
@@ -431,6 +493,36 @@ async function handleExportMatch(
       operationId,
       leaseToken,
       exportFailureCode(error),
+      error instanceof EdgeFunctionError &&
+        error.code === "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID"
+        ? "EXPORT_VERIFICATION_FAILURE"
+        : "EXPORT_OUTCOME_UNCERTAIN",
+      stateContext,
+    );
+  }
+
+  try {
+    await verifyAppendedExportRows(
+      google.accessToken,
+      google.spreadsheetId,
+      appendResult.updatedRange,
+      matchValues,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleVerification ??
+          GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    const failureCode = error instanceof EdgeFunctionError
+      ? error.code
+      : "EXPORT_VERIFICATION_FAILURE";
+
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      failureCode,
+      failureCode,
       stateContext,
     );
   }
@@ -439,7 +531,7 @@ async function handleExportMatch(
     await completeExportOperationSuccess(
       operationId,
       leaseToken,
-      rowsWritten,
+      appendResult.rowsWritten,
       null,
       stateContext,
     );
@@ -448,6 +540,7 @@ async function handleExportMatch(
       operationId,
       leaseToken,
       "EXPORT_IDEMPOTENCY_FAILURE",
+      "EXPORT_OUTCOME_UNCERTAIN",
       stateContext,
     );
   }
@@ -457,7 +550,7 @@ async function handleExportMatch(
     operation: "export_match",
     tournament_id: operation.tournament_id,
     match_id: operation.match_id,
-    rows_written: rowsWritten,
+    rows_written: appendResult.rowsWritten,
   });
 }
 
@@ -540,6 +633,7 @@ async function handleExportStandings(
     players,
   });
 
+  const standingsValues = toStandingsGoogleSheetValues(operation);
   const payloadFingerprint = await createExportPayloadFingerprint(operation);
   const stateContext = exportOperationContext(
     accessToken,
@@ -576,7 +670,54 @@ async function handleExportStandings(
   }
 
   if (claim.outcome === "outcome_uncertain") {
-    throw new EdgeFunctionError("EXPORT_OUTCOME_UNCERTAIN");
+    const google = await createGoogleAccessToken(
+      getEnv,
+      fetchImpl,
+      dependencies,
+    );
+
+    await verifyTournamentStandingsHeader(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleStandingsHeader ??
+          GOOGLE_STANDINGS_HEADER_TIMEOUT_MS,
+      },
+    );
+
+    const reconciliation = await reconcileUncertainExport(
+      google.accessToken,
+      google.spreadsheetId,
+      {
+        worksheetName: TOURNAMENT_STANDINGS_WORKSHEET,
+        candidateIndexes: [0, 1, 2, 4],
+      },
+      standingsValues,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleVerification ??
+          GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS,
+      },
+    );
+
+    if (reconciliation === "verified_success") {
+      await resolveExportOperationVerifiedSuccess(
+        claim.operationId,
+        official.exportedMatchCount,
+        stateContext,
+      );
+
+      return jsonResponse({
+        ok: true,
+        operation: "export_standings",
+        tournament_id: operation.tournament_id,
+        exported_match_count: official.exportedMatchCount,
+        rows_written: 12,
+      });
+    }
+
+    throw new EdgeFunctionError("EXPORT_VERIFICATION_NOT_FOUND");
   }
 
   if (claim.leaseToken === null) {
@@ -622,13 +763,16 @@ async function handleExportStandings(
     stateContext,
   );
 
-  let rowsWritten: number;
+  let appendResult: {
+    rowsWritten: 12;
+    updatedRange: string;
+  };
 
   try {
-    rowsWritten = await appendTournamentStandings(
+    appendResult = await appendTournamentStandings(
       google.accessToken,
       google.spreadsheetId,
-      toStandingsGoogleSheetValues(operation),
+      standingsValues,
       {
         fetchImpl,
         timeoutMs: dependencies.timeouts?.googleStandingsAppend ??
@@ -652,6 +796,36 @@ async function handleExportStandings(
       operationId,
       leaseToken,
       exportFailureCode(error),
+      error instanceof EdgeFunctionError &&
+        error.code === "GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID"
+        ? "EXPORT_VERIFICATION_FAILURE"
+        : "EXPORT_OUTCOME_UNCERTAIN",
+      stateContext,
+    );
+  }
+
+  try {
+    await verifyAppendedExportRows(
+      google.accessToken,
+      google.spreadsheetId,
+      appendResult.updatedRange,
+      standingsValues,
+      {
+        fetchImpl,
+        timeoutMs: dependencies.timeouts?.googleVerification ??
+          GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS,
+      },
+    );
+  } catch (error) {
+    const failureCode = error instanceof EdgeFunctionError
+      ? error.code
+      : "EXPORT_VERIFICATION_FAILURE";
+
+    return await markUncertainAndThrow(
+      operationId,
+      leaseToken,
+      failureCode,
+      failureCode,
       stateContext,
     );
   }
@@ -660,7 +834,7 @@ async function handleExportStandings(
     await completeExportOperationSuccess(
       operationId,
       leaseToken,
-      rowsWritten,
+      appendResult.rowsWritten,
       official.exportedMatchCount,
       stateContext,
     );
@@ -669,6 +843,7 @@ async function handleExportStandings(
       operationId,
       leaseToken,
       "EXPORT_IDEMPOTENCY_FAILURE",
+      "EXPORT_OUTCOME_UNCERTAIN",
       stateContext,
     );
   }
@@ -678,7 +853,7 @@ async function handleExportStandings(
     operation: "export_standings",
     tournament_id: operation.tournament_id,
     exported_match_count: official.exportedMatchCount,
-    rows_written: rowsWritten,
+    rows_written: appendResult.rowsWritten,
   });
 }
 

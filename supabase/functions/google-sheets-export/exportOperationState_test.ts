@@ -6,6 +6,7 @@ import {
   markExportOperationOutcomeUncertain,
   markExportOperationRetryableFailure,
   markExportOperationWriteStarted,
+  resolveExportOperationVerifiedSuccess,
 } from "../_shared/exportOperationState.ts";
 import type { FetchImplementation } from "../_shared/http.ts";
 
@@ -438,6 +439,42 @@ Deno.test("uncertain transition sends only safe failure code metadata", async ()
     p_lease_token: LEASE_TOKEN,
     p_failure_code: "GOOGLE_MATCH_EXPORT_FAILURE",
   });
+});
+
+Deno.test("verified-success reconciliation sends exact RPC metadata", async () => {
+  const { fetchImpl, calls } = makeFetch(() => responseJson("succeeded"));
+
+  await resolveExportOperationVerifiedSuccess(
+    OPERATION_ID,
+    3,
+    context(fetchImpl),
+  );
+
+  assertEquals(
+    calls[0].url.pathname,
+    "/rest/v1/rpc/resolve_export_operation_verified_success",
+  );
+  assertEquals(calls[0].headers.get("authorization"), "Bearer caller-token");
+  assertEquals(calls[0].headers.get("apikey"), "anon-key");
+  assertEquals(calls[0].body, {
+    p_operation_id: OPERATION_ID,
+    p_exported_match_count: 3,
+  });
+});
+
+Deno.test("unexpected reconciliation RPC result fails closed", async () => {
+  const { fetchImpl } = makeFetch(() => responseJson("wrong_state"));
+
+  await assertRejects(
+    () =>
+      resolveExportOperationVerifiedSuccess(
+        OPERATION_ID,
+        null,
+        context(fetchImpl),
+      ),
+    "EXPORT_IDEMPOTENCY_FAILURE",
+    502,
+  );
 });
 
 Deno.test("unexpected transition result fails closed", async () => {

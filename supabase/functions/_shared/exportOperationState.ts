@@ -248,6 +248,12 @@ function validateOperationIdAndLease(
   }
 }
 
+function validateOperationId(operationId: string): void {
+  if (!UUID_PATTERN.test(operationId)) {
+    invalidState();
+  }
+}
+
 function validateFailureCode(failureCode: string): void {
   if (!FAILURE_CODE_PATTERN.test(failureCode)) {
     invalidState();
@@ -380,5 +386,36 @@ export async function markExportOperationOutcomeUncertain(
       p_failure_code: failureCode,
     },
     "outcome_uncertain",
+  );
+}
+
+export async function resolveExportOperationVerifiedSuccess(
+  operationId: string,
+  exportedMatchCount: number | null,
+  context: ExportOperationContext,
+): Promise<void> {
+  validateOperationId(operationId);
+
+  if (
+    !(
+      exportedMatchCount === null ||
+      (
+        Number.isInteger(exportedMatchCount) &&
+        exportedMatchCount >= 1 &&
+        exportedMatchCount <= 10
+      )
+    )
+  ) {
+    invalidState();
+  }
+
+  await transition(
+    context,
+    "resolve_export_operation_verified_success",
+    {
+      p_operation_id: operationId,
+      p_exported_match_count: exportedMatchCount,
+    },
+    "succeeded",
   );
 }

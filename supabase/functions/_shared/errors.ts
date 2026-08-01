@@ -32,6 +32,10 @@ export type ErrorCode =
   | "EXPORT_IN_PROGRESS"
   | "EXPORT_OUTCOME_UNCERTAIN"
   | "EXPORT_IDEMPOTENCY_FAILURE"
+  | "EXPORT_VERIFICATION_NOT_FOUND"
+  | "EXPORT_VERIFICATION_CONFLICT"
+  | "EXPORT_VERIFICATION_FAILURE"
+  | "EXPORT_VERIFICATION_RANGE_EXCEEDED"
   | "INTERNAL_ERROR";
 
 const CLIENT_MESSAGES: Record<ErrorCode, string> = {
@@ -79,6 +83,13 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
     "The previous export outcome is uncertain and cannot be retried safely.",
   EXPORT_IDEMPOTENCY_FAILURE:
     "The export operation state could not be updated safely.",
+  EXPORT_VERIFICATION_NOT_FOUND:
+    "No matching exported rows were found. The export outcome remains uncertain.",
+  EXPORT_VERIFICATION_CONFLICT:
+    "The exported rows could not be reconciled safely.",
+  EXPORT_VERIFICATION_FAILURE: "The exported rows could not be verified.",
+  EXPORT_VERIFICATION_RANGE_EXCEEDED:
+    "The worksheet exceeds the supported verification range.",
   INTERNAL_ERROR: "The request could not be completed.",
 };
 
@@ -116,6 +127,10 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   EXPORT_IN_PROGRESS: 409,
   EXPORT_OUTCOME_UNCERTAIN: 409,
   EXPORT_IDEMPOTENCY_FAILURE: 502,
+  EXPORT_VERIFICATION_NOT_FOUND: 409,
+  EXPORT_VERIFICATION_CONFLICT: 409,
+  EXPORT_VERIFICATION_FAILURE: 502,
+  EXPORT_VERIFICATION_RANGE_EXCEEDED: 409,
   INTERNAL_ERROR: 500,
 };
 

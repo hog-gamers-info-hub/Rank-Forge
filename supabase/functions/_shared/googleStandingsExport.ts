@@ -20,6 +20,11 @@ export interface GoogleStandingsExportOptions {
   timeoutMs: number;
 }
 
+export interface GoogleStandingsAppendResult {
+  rowsWritten: 12;
+  updatedRange: string;
+}
+
 function mapGoogleStatus(status: number): never {
   if (status === 403) {
     throw new EdgeFunctionError("GOOGLE_SHEETS_ACCESS_DENIED");
@@ -132,12 +137,31 @@ function hasValidDimensions(
     );
 }
 
+function isValidUpdatedRange(updatedRange: unknown): updatedRange is string {
+  if (typeof updatedRange !== "string") {
+    return false;
+  }
+
+  const match = updatedRange.match(
+    /^'Tournament Standings'!A([1-9][0-9]*):T([1-9][0-9]*)$/,
+  );
+
+  if (!match) {
+    return false;
+  }
+
+  const startRow = Number(match[1]);
+  const endRow = Number(match[2]);
+
+  return startRow >= 2 && endRow === startRow + 11;
+}
+
 export async function appendTournamentStandings(
   accessToken: string,
   spreadsheetId: string,
   values: readonly (readonly StandingsExportCell[])[],
   options: GoogleStandingsExportOptions,
-): Promise<number> {
+): Promise<GoogleStandingsAppendResult> {
   if (!hasValidDimensions(values)) {
     throw new EdgeFunctionError("GOOGLE_STANDINGS_EXPORT_FAILURE");
   }
@@ -196,14 +220,22 @@ export async function appendTournamentStandings(
         payload as { updates: Record<string, unknown> }
       ).updates) ||
       (payload as { updates: { updatedRows?: unknown } }).updates
-          .updatedRows !== 12
+          .updatedRows !== 12 ||
+      !isValidUpdatedRange(
+        (payload as { updates: { updatedRange?: unknown } }).updates
+          .updatedRange,
+      )
     ) {
       throw new EdgeFunctionError(
         "GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID",
       );
     }
 
-    return 12;
+    return {
+      rowsWritten: 12,
+      updatedRange: (payload as { updates: { updatedRange: string } }).updates
+        .updatedRange,
+    };
   } catch (error) {
     if (error instanceof EdgeFunctionError) {
       throw error;

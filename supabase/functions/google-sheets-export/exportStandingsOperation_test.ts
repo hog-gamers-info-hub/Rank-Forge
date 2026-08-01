@@ -1,4 +1,8 @@
-import { STANDINGS_EXPORT_COLUMNS } from "../_shared/standingsExport.ts";
+import {
+  STANDINGS_EXPORT_COLUMNS,
+  type StandingsExportRequest,
+  toStandingsGoogleSheetValues,
+} from "../_shared/standingsExport.ts";
 import type { FetchImplementation } from "../_shared/http.ts";
 import { handleRequest } from "./index.ts";
 
@@ -33,6 +37,10 @@ interface ExportFetchOverrides {
   firstPlayerName?: string;
   header?: unknown;
   updatedRows?: number;
+  updatedRange?: string;
+  readBackValues?: unknown;
+  gridRowCount?: number;
+  scanValues?: unknown;
   claimOutcome?: "claimed" | "replayed" | "in_progress" | "outcome_uncertain";
   appendStatus?: number;
   writeStartedStatus?: number;
@@ -144,6 +152,12 @@ function validPayload(): Record<string, unknown> {
       };
     }),
   };
+}
+
+function expectedSheetValues(): unknown[][] {
+  return toStandingsGoogleSheetValues(
+    validPayload() as unknown as StandingsExportRequest,
+  );
 }
 
 function tournamentResponse(name = "Championship"): Response {
@@ -350,7 +364,32 @@ function successfulExportFetch(
       }
 
       return responseJson({
-        updates: { updatedRows: overrides.updatedRows ?? 12 },
+        updates: {
+          updatedRows: overrides.updatedRows ?? 12,
+          updatedRange: overrides.updatedRange ??
+            "'Tournament Standings'!A2:T13",
+        },
+      });
+    }
+
+    if (
+      path ===
+        "/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T13"
+    ) {
+      return responseJson({
+        values: overrides.readBackValues ?? overrides.scanValues ??
+          expectedSheetValues(),
+      });
+    }
+
+    if (path === "/v4/spreadsheets/spreadsheet-id") {
+      return responseJson({
+        sheets: [{
+          properties: {
+            title: "Tournament Standings",
+            gridProperties: { rowCount: overrides.gridRowCount ?? 13 },
+          },
+        }],
       });
     }
 
@@ -369,6 +408,10 @@ function successfulExportFetch(
 
     if (path === "/rest/v1/rpc/mark_export_operation_outcome_uncertain") {
       return responseJson("outcome_uncertain");
+    }
+
+    if (path === "/rest/v1/rpc/resolve_export_operation_verified_success") {
+      return responseJson("succeeded");
     }
 
     throw new Error(`Unexpected network request: ${call.method} ${path}`);
@@ -432,6 +475,7 @@ Deno.test("export_standings validates official data, claims, marks write, append
     "/v4/spreadsheets/spreadsheet-id/values/Tournament Standings!A1:T1",
     "/rest/v1/rpc/mark_export_operation_write_started",
     "/v4/spreadsheets/spreadsheet-id/values/Tournament Standings!A:T:append",
+    "/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T13",
     "/rest/v1/rpc/complete_export_operation_success",
   ]);
 
@@ -622,7 +666,7 @@ Deno.test("active identical standings export returns EXPORT_IN_PROGRESS without 
   assertEquals(sheetAppendCalls(calls).length, 0);
 });
 
-Deno.test("uncertain identical standings export blocks Google with EXPORT_OUTCOME_UNCERTAIN", async () => {
+Deno.test("uncertain identical standings export reconciles exact block without append", async () => {
   const { fetchImpl, calls } = successfulExportFetch({
     claimOutcome: "outcome_uncertain",
   });
@@ -633,14 +677,83 @@ Deno.test("uncertain identical standings export blocks Google with EXPORT_OUTCOM
     signer: injectedSigner,
   });
 
-  assertEquals(response.status, 409);
-  assertEquals((await jsonBody(response)).error, {
-    code: "EXPORT_OUTCOME_UNCERTAIN",
-    message:
-      "The previous export outcome is uncertain and cannot be retried safely.",
+  assertEquals(response.status, 200);
+  assertEquals(await jsonBody(response), {
+    ok: true,
+    operation: "export_standings",
+    tournament_id: TOURNAMENT_ID,
+    exported_match_count: 1,
+    rows_written: 12,
   });
-  assertEquals(calls.length, 7);
+  assertEquals(paths(calls), [
+    "/auth/v1/user",
+    "/rest/v1/tournaments",
+    "/rest/v1/matches",
+    "/rest/v1/match_results",
+    "/rest/v1/tournament_team_slots",
+    "/rest/v1/players",
+    "/rest/v1/rpc/claim_export_operation",
+    "/token",
+    "/v4/spreadsheets/spreadsheet-id/values/Tournament Standings!A1:T1",
+    "/v4/spreadsheets/spreadsheet-id",
+    "/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T13",
+    "/rest/v1/rpc/resolve_export_operation_verified_success",
+  ]);
   assertEquals(sheetAppendCalls(calls).length, 0);
+});
+
+Deno.test("uncertain standings export with zero candidates stays read-only on replay", async () => {
+  const scanValues = expectedSheetValues().map((row) => {
+    const copy = [...row];
+    copy[2] = "99999999-9999-4999-8999-999999999999";
+    return copy;
+  });
+  const { fetchImpl, calls } = successfulExportFetch({
+    claimOutcome: "outcome_uncertain",
+    scanValues,
+  });
+
+  const response = await handleRequest(request(validPayload()), {
+    env,
+    fetchImpl,
+    signer: injectedSigner,
+  });
+  const replayResponse = await handleRequest(request(validPayload()), {
+    env,
+    fetchImpl,
+    signer: injectedSigner,
+  });
+
+  assertEquals(response.status, 409);
+  assertEquals(replayResponse.status, 409);
+  assertEquals((await jsonBody(response)).error, {
+    code: "EXPORT_VERIFICATION_NOT_FOUND",
+    message:
+      "No matching exported rows were found. The export outcome remains uncertain.",
+  });
+  assertEquals((await jsonBody(replayResponse)).error, {
+    code: "EXPORT_VERIFICATION_NOT_FOUND",
+    message:
+      "No matching exported rows were found. The export outcome remains uncertain.",
+  });
+  assertEquals(sheetAppendCalls(calls).length, 0);
+  assertEquals(
+    paths(calls).filter((path) => path === "/v4/spreadsheets/spreadsheet-id")
+      .length,
+    2,
+  );
+  assertEquals(
+    paths(calls).filter((path) =>
+      path.startsWith("/rest/v1/rpc/resolve_export_operation_")
+    ).length,
+    0,
+  );
+  assertEquals(
+    paths(calls).includes(
+      "/rest/v1/rpc/mark_export_operation_retryable_failure",
+    ),
+    false,
+  );
 });
 
 Deno.test("pre-write standings header mismatch records retryable failure and never appends", async () => {
@@ -681,11 +794,10 @@ Deno.test("ambiguous standings append confirmation records uncertain state after
     signer: injectedSigner,
   });
 
-  assertEquals(response.status, 409);
+  assertEquals(response.status, 502);
   assertEquals((await jsonBody(response)).error, {
-    code: "EXPORT_OUTCOME_UNCERTAIN",
-    message:
-      "The previous export outcome is uncertain and cannot be retried safely.",
+    code: "EXPORT_VERIFICATION_FAILURE",
+    message: "The exported rows could not be verified.",
   });
   assertEquals(sheetAppendCalls(calls).length, 1);
 

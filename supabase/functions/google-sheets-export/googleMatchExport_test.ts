@@ -218,17 +218,22 @@ Deno.test("header timeout maps to upstream timeout", async () => {
 Deno.test("append sends exactly one RAW twelve-row request", async () => {
   const matchValues = values();
   const { fetchImpl, calls } = makeFetch(() =>
-    responseJson({ updates: { updatedRows: 12 } })
+    responseJson({
+      updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:T13" },
+    })
   );
 
-  const rowsWritten = await appendMatchResults(
+  const appendResult = await appendMatchResults(
     "google-token",
     "spreadsheet-id",
     matchValues,
     { fetchImpl, timeoutMs: 100 },
   );
 
-  assertEquals(rowsWritten, 12);
+  assertEquals(appendResult, {
+    rowsWritten: 12,
+    updatedRange: "'Match Results'!A2:T13",
+  });
   assertEquals(calls.length, 1);
   assertEquals(calls[0].method, "POST");
   assertEquals(
@@ -279,22 +284,32 @@ Deno.test("invalid append dimensions fail before network access", async () => {
   assertEquals(calls.length, 0);
 });
 
-Deno.test("append requires exactly twelve updated rows", async () => {
-  const { fetchImpl } = makeFetch(() =>
-    responseJson({ updates: { updatedRows: 11 } })
-  );
+Deno.test("append requires exactly twelve updated rows and a valid returned range", async () => {
+  const invalidResponses = [
+    { updates: { updatedRows: 11, updatedRange: "'Match Results'!A2:T13" } },
+    { updates: { updatedRows: 12 } },
+    { updates: { updatedRows: 12, updatedRange: "Match Results!A2:T13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Other'!A2:T13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!B2:T13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A1:T12" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:T12" } },
+  ];
 
-  await assertRejects(
-    () =>
-      appendMatchResults(
-        "google-token",
-        "spreadsheet-id",
-        values(),
-        { fetchImpl, timeoutMs: 100 },
-      ),
-    "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID",
-    502,
-  );
+  for (const payload of invalidResponses) {
+    const { fetchImpl } = makeFetch(() => responseJson(payload));
+
+    await assertRejects(
+      () =>
+        appendMatchResults(
+          "google-token",
+          "spreadsheet-id",
+          values(),
+          { fetchImpl, timeoutMs: 100 },
+        ),
+      "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID",
+      502,
+    );
+  }
 });
 
 Deno.test("malformed successful append response is rejected safely", async () => {
