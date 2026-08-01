@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,6 +28,8 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -56,6 +60,32 @@ class TournamentDetailsViewModelTest {
 
         assertEquals("Summer Cup", viewModel.uiState.value.tournament?.name)
         assertEquals("123", viewModel.uiState.value.tournament?.organizerContactNumber)
+    }
+
+    @Test
+    fun localDetailsRemainVisibleWhileExistingTournamentUploadIsQueued() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        val detailsViewModel = detailsViewModel()
+        detailsViewModel.load("stable-id")
+        advanceUntilIdle()
+
+        var requestedTournamentId: String? = null
+        val uploadViewModel = TournamentCloudUploadViewModel(
+            TournamentCloudUploadAction { tournamentId ->
+                requestedTournamentId = tournamentId
+                QueueAwareActionResult(
+                    primaryResult = TournamentCloudUploadResult.NetworkFailure,
+                    queueRecordingResult = QueueRecordingResult.RECORDED,
+                )
+            },
+        )
+        uploadViewModel.upload("stable-id")
+        advanceUntilIdle()
+
+        assertEquals("stable-id", detailsViewModel.uiState.value.tournament?.id)
+        assertEquals("Summer Cup", detailsViewModel.uiState.value.tournament?.name)
+        assertEquals("stable-id", requestedTournamentId)
+        assertEquals(TournamentCloudUploadUiState.Queued, uploadViewModel.uiState.value)
     }
 
     @Test

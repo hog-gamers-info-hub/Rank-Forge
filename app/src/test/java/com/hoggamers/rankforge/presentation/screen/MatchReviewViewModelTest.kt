@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudDataSource
@@ -16,6 +18,8 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
@@ -858,6 +862,44 @@ class MatchReviewViewModelTest {
             MatchStatus.FINALIZED,
             repository.observeMatchById(matchId).first()!!.status,
         )
+    }
+
+    @Test
+    fun queuedFinalizedSyncDoesNotReopenLocalFinalizedReview() = runTest {
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = (slotNumber - 1).toString(),
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.finalize()
+        advanceUntilIdle()
+
+        var requestedTournamentId: String? = null
+        val syncViewModel = FinalizedMatchCloudSyncViewModel(
+            FinalizedMatchCloudSyncAction { tournamentId ->
+                requestedTournamentId = tournamentId
+                QueueAwareActionResult(
+                    primaryResult = FinalizedMatchCloudSyncResult.NetworkFailure,
+                    queueRecordingResult = QueueRecordingResult.RECORDED,
+                )
+            },
+        )
+        syncViewModel.sync("tournament-id")
+        advanceUntilIdle()
+
+        assertEquals("tournament-id", requestedTournamentId)
+        assertEquals(FinalizedMatchCloudSyncUiState.Queued, syncViewModel.uiState.value)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
+        assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
+        assertFalse(viewModel.uiState.value.isEditable)
     }
 
     @Test
