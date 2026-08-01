@@ -45,6 +45,20 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Loads already-computed OCR and team-matching evidence for this exact match.
+     *
+     * The route-only load above intentionally remains the empty state because this ViewModel has
+     * no OCR evidence or roster repository input. This entry point only accepts the display input
+     * produced by existing OCR/matching boundaries and never computes or persists assignments.
+     */
+    fun loadDisplayInput(input: MatchOcrReviewDisplayInput) {
+        val matchKey = "${input.tournamentId}:${input.matchId}"
+        if (loadedMatchKey == matchKey && _uiState.value !is MatchOcrReviewUiState.Empty) return
+        loadedMatchKey = matchKey
+        _uiState.value = MatchOcrReviewUiStateMapper.map(input)
+    }
+
     fun onPlacementChanged(rowIndex: Int, value: String) {
         updateCorrectionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, rowIndex, value)
