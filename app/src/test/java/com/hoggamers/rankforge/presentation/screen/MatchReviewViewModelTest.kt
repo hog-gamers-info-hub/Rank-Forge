@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
+import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.AndroidExportType
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
@@ -20,6 +23,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
@@ -903,6 +907,64 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun finalizedMatchCsvExportPreservesTournamentAndMatchIdentity() = runTest {
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        (1..12).forEach { slotNumber ->
+            repository.saveDraftMatchValue(
+                "tournament-id",
+                matchId,
+                slotNumber,
+                placementInput = slotNumber.toString(),
+                killsInput = (slotNumber - 1).toString(),
+            )
+        }
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.finalize()
+        advanceUntilIdle()
+        viewModel.prepareCsvExport()
+        advanceUntilIdle()
+
+        val result = viewModel.uiState.value.csvExportResult
+        assertTrue(result is AndroidExportResult.CsvReady)
+        assertEquals(AndroidExportType.MATCH_CSV, result?.request?.type)
+        assertEquals("tournament-id", result?.request?.tournamentId)
+        assertEquals(matchId, result?.request?.matchId)
+        assertEquals("text/csv", (result as AndroidExportResult.CsvReady).mimeType)
+        assertTrue(result.content.contains(matchId))
+
+        viewModel.prepareGoogleSheetsExport()
+        assertEquals(
+            AndroidExportType.MATCH_GOOGLE_SHEETS,
+            viewModel.uiState.value.googleSheetsExportResult?.request?.type,
+        )
+        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.Unavailable)
+    }
+
+    @Test
+    fun draftMatchCsvExportIsBlockedWithoutFinalizing() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.prepareCsvExport()
+        advanceUntilIdle()
+
+        val result = viewModel.uiState.value.csvExportResult
+        assertEquals(AndroidExportType.MATCH_CSV, result?.request?.type)
+        assertEquals("tournament-id", result?.request?.tournamentId)
+        assertEquals(matchId, result?.request?.matchId)
+        assertEquals(
+            AndroidExportBlockedReason.MATCH_NOT_FINALIZED,
+            (result as AndroidExportResult.Blocked).reason,
+        )
+        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+    }
+
+    @Test
     fun invalidReviewDoesNotFinalize() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
@@ -989,6 +1051,7 @@ class MatchReviewViewModelTest {
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
         screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) = MatchReviewViewModel(
+        getTournamentById = GetTournamentByIdUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),

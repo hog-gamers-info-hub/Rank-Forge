@@ -1077,6 +1077,7 @@ class RankForgeNavigationTest {
                     getTournamentById = GetTournamentByIdUseCase(repository),
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     observeMatches = ObserveMatchesUseCase(repository),
+                    observeRoster = ObserveRosterByTournamentUseCase(repository),
                 ).also {
                     it.load(tournamentId)
                 }
@@ -1157,6 +1158,7 @@ class RankForgeNavigationTest {
             },
             matchReviewViewModel = { tournamentId, matchId ->
                 MatchReviewViewModel(
+                    getTournamentById = GetTournamentByIdUseCase(repository),
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     observeRoster = ObserveRosterByTournamentUseCase(repository),

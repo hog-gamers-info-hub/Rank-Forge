@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -44,6 +45,8 @@ const val FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG = "finalized_match_cloud_sy
 const val FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG = "finalized_match_cloud_sync_status"
 const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
 const val MATCH_CLOUD_RESTORE_STATUS_TEST_TAG = "match_cloud_restore_status"
+const val TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG = "tournament_standings_csv_export_action"
+const val TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG = "tournament_standings_csv_export_status"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -97,6 +100,7 @@ fun TournamentDetailsRoute(
         onEnterMatchKills = onEnterMatchKills,
         onReviewMatch = onReviewMatch,
         onOpenStandings = onOpenStandings,
+        onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
         uploadUiState = uploadUiState,
         onUpload = { id -> uploadViewModel?.upload(id) },
         draftMatchSyncUiState = draftMatchSyncUiState,
@@ -119,6 +123,7 @@ fun TournamentDetailsScreen(
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
+    onPrepareStandingsCsvExport: (String) -> Unit = {},
     uploadUiState: TournamentCloudUploadUiState = TournamentCloudUploadUiState.Idle,
     onUpload: (String) -> Unit = {},
     draftMatchSyncUiState: DraftMatchCloudSyncUiState = DraftMatchCloudSyncUiState.Idle,
@@ -145,6 +150,8 @@ fun TournamentDetailsScreen(
             onEnterMatchKills = onEnterMatchKills,
             onReviewMatch = onReviewMatch,
             onOpenStandings = onOpenStandings,
+            onPrepareStandingsCsvExport = onPrepareStandingsCsvExport,
+            csvExportResult = uiState.csvExportResult,
             uploadUiState = uploadUiState,
             onUpload = onUpload,
             draftMatchSyncUiState = draftMatchSyncUiState,
@@ -168,6 +175,8 @@ private fun TournamentDetailsContent(
     onEnterMatchKills: (String, String) -> Unit,
     onReviewMatch: (String, String) -> Unit,
     onOpenStandings: (String) -> Unit,
+    onPrepareStandingsCsvExport: (String) -> Unit,
+    csvExportResult: AndroidExportResult?,
     uploadUiState: TournamentCloudUploadUiState,
     onUpload: (String) -> Unit,
     draftMatchSyncUiState: DraftMatchCloudSyncUiState,
@@ -256,6 +265,32 @@ private fun TournamentDetailsContent(
                 .testTag(OPEN_STANDINGS_ACTION_TEST_TAG),
         ) {
             Text(text = stringResource(R.string.open_standings_action))
+        }
+        if (tournament.canPrepareStandingsCsvExport) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Button(
+                onClick = { onPrepareStandingsCsvExport(tournament.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG),
+            ) {
+                Text(text = "Prepare CSV export")
+            }
+        }
+        when (csvExportResult) {
+            is AndroidExportResult.CsvReady -> Text(
+                text = "CSV export ready",
+                modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
+            )
+            is AndroidExportResult.Blocked -> Text(
+                text = "CSV export blocked",
+                modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
+            )
+            is AndroidExportResult.Unavailable -> Text(
+                text = "CSV export unavailable",
+                modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
+            )
+            null -> Unit
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(

@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudFailure
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudPayload
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudResult
 import com.hoggamers.rankforge.data.cloud.toCloudTimestamp
+import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
+import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.local.NoOpScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
@@ -21,9 +23,14 @@ import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.export.MatchCsvExportFailure
+import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
+import com.hoggamers.rankforge.domain.export.MatchCsvExportResult
+import com.hoggamers.rankforge.domain.export.MatchCsvExporter
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
@@ -47,6 +54,7 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class MatchReviewViewModel @Inject constructor(
+    private val getTournamentById: GetTournamentByIdUseCase,
     private val observeMatches: ObserveMatchesUseCase,
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val observeRoster: ObserveRosterByTournamentUseCase,
@@ -70,6 +78,7 @@ class MatchReviewViewModel @Inject constructor(
     private var duplicateDetectionJob: Job? = null
     private var preservationJob: Job? = null
     private var uploadJob: Job? = null
+    private var exportJob: Job? = null
     private var restoredMissingMarkedForMatchId: String? = null
     private var loadedMatchKey: String? = null
 
@@ -82,6 +91,7 @@ class MatchReviewViewModel @Inject constructor(
         duplicateDetectionJob?.cancel()
         preservationJob?.cancel()
         uploadJob?.cancel()
+        exportJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -175,6 +185,8 @@ class MatchReviewViewModel @Inject constructor(
                         navigation = current.navigation,
                         isFinalizing = current.isFinalizing,
                         finalizationError = current.finalizationError,
+                        csvExportResult = current.csvExportResult,
+                        googleSheetsExportResult = current.googleSheetsExportResult,
                         selectedScreenshotUri = current.selectedScreenshotUri,
                         isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
                         isPhotoPickerRequestActive = current.isPhotoPickerRequestActive,
@@ -243,6 +255,86 @@ class MatchReviewViewModel @Inject constructor(
 
     fun onNavigationHandled() {
         _uiState.update { it.copy(navigation = null) }
+    }
+
+    fun prepareCsvExport() {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        exportJob?.cancel()
+        exportJob = viewModelScope.launch {
+            val tournament = getTournamentById(tournamentId).first()
+            val match = observeMatches(tournamentId).first().firstOrNull { it.id == matchId }
+            val result = when {
+                tournament == null || match == null -> AndroidExportCoordinator().blockMatchCsv(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    reason = AndroidExportBlockedReason.MISSING_CONTEXT,
+                )
+                match.status != MatchStatus.FINALIZED -> AndroidExportCoordinator().blockMatchCsv(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    reason = AndroidExportBlockedReason.MATCH_NOT_FINALIZED,
+                )
+                else -> {
+                    val exportResult = MatchCsvExporter().export(
+                        MatchCsvExportInput(
+                            tournament = tournament,
+                            match = match,
+                            teamSlots = observeTournamentSlots(tournamentId).first(),
+                            rosterPlayers = observeRoster(tournamentId).first().values.flatten(),
+                        ),
+                    )
+                    when (exportResult) {
+                        is MatchCsvExportResult.Success -> AndroidExportCoordinator()
+                            .prepareMatchCsv(tournamentId, matchId, exportResult.csv)
+                        is MatchCsvExportResult.Failure -> AndroidExportCoordinator()
+                            .blockMatchCsv(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                reason = if (MatchCsvExportFailure.MATCH_NOT_FINALIZED in exportResult.failures) {
+                                    AndroidExportBlockedReason.MATCH_NOT_FINALIZED
+                                } else {
+                                    AndroidExportBlockedReason.INVALID_FINALIZED_MATCH
+                                },
+                            )
+                    }
+                }
+            }
+            _uiState.update { state ->
+                if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                    state.copy(csvExportResult = result)
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
+    fun prepareGoogleSheetsExport() {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        val result = if (current.canPrepareMatchCsvExport) {
+            AndroidExportCoordinator().googleSheetsMatchUnavailable(tournamentId, matchId)
+        } else {
+            AndroidExportCoordinator().blockMatchCsv(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                reason = if (current.status == MatchStatus.FINALIZED) {
+                    AndroidExportBlockedReason.INVALID_FINALIZED_MATCH
+                } else {
+                    AndroidExportBlockedReason.MATCH_NOT_FINALIZED
+                },
+            )
+        }
+        _uiState.update { state ->
+            if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                state.copy(googleSheetsExportResult = result)
+            } else {
+                state
+            }
+        }
     }
 
     fun requestPhotoPicker() {
