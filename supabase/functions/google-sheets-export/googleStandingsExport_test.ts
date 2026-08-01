@@ -235,17 +235,25 @@ Deno.test(
   async () => {
     const standingsValues = values();
     const { fetchImpl, calls } = makeFetch(() =>
-      responseJson({ updates: { updatedRows: 12 } })
+      responseJson({
+        updates: {
+          updatedRows: 12,
+          updatedRange: "'Tournament Standings'!A2:T13",
+        },
+      })
     );
 
-    const rowsWritten = await appendTournamentStandings(
+    const appendResult = await appendTournamentStandings(
       "google-token",
       "spreadsheet-id",
       standingsValues,
       { fetchImpl, timeoutMs: 100 },
     );
 
-    assertEquals(rowsWritten, 12);
+    assertEquals(appendResult, {
+      rowsWritten: 12,
+      updatedRange: "'Tournament Standings'!A2:T13",
+    });
     assertEquals(calls.length, 1);
     assertEquals(calls[0].method, "POST");
     assertEquals(
@@ -314,11 +322,41 @@ Deno.test(
 );
 
 Deno.test(
-  "standings append requires exactly twelve updated rows",
+  "standings append requires exactly twelve updated rows and a valid returned range",
   async () => {
     const invalidResponses = [
-      { updates: { updatedRows: 11 } },
-      { updates: { updatedRows: "12" } },
+      {
+        updates: {
+          updatedRows: 11,
+          updatedRange: "'Tournament Standings'!A2:T13",
+        },
+      },
+      {
+        updates: {
+          updatedRows: "12",
+          updatedRange: "'Tournament Standings'!A2:T13",
+        },
+      },
+      { updates: { updatedRows: 12 } },
+      {
+        updates: {
+          updatedRows: 12,
+          updatedRange: "Tournament Standings!A2:T13",
+        },
+      },
+      { updates: { updatedRows: 12, updatedRange: "'Other'!A2:T13" } },
+      {
+        updates: {
+          updatedRows: 12,
+          updatedRange: "'Tournament Standings'!A1:T12",
+        },
+      },
+      {
+        updates: {
+          updatedRows: 12,
+          updatedRange: "'Tournament Standings'!A2:U13",
+        },
+      },
       { updates: {} },
       {},
     ];
