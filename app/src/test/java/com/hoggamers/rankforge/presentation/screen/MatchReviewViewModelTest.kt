@@ -936,6 +936,9 @@ class MatchReviewViewModelTest {
         assertEquals(matchId, result?.request?.matchId)
         assertEquals("text/csv", (result as AndroidExportResult.CsvReady).mimeType)
         assertTrue(result.content.contains(matchId))
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(matchId, viewModel.uiState.value.matchId)
+        assertFalse(viewModel.uiState.value.isEditable)
 
         viewModel.prepareGoogleSheetsExport()
         assertEquals(
@@ -962,6 +965,20 @@ class MatchReviewViewModelTest {
             (result as AndroidExportResult.Blocked).reason,
         )
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
+    }
+
+    @Test
+    fun missingMatchKeepsExactReviewContextInSafeNotFoundState() = runTest {
+        val viewModel = reviewViewModel()
+
+        viewModel.load("tournament-id", "missing-match")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isNotFound)
+        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals("missing-match", viewModel.uiState.value.matchId)
+        assertFalse(viewModel.uiState.value.isEditable)
+        assertEquals(null, viewModel.uiState.value.csvExportResult)
     }
 
     @Test
