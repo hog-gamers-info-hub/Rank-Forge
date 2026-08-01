@@ -29,6 +29,9 @@ export type ErrorCode =
   | "GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH"
   | "GOOGLE_STANDINGS_EXPORT_FAILURE"
   | "GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID"
+  | "EXPORT_IN_PROGRESS"
+  | "EXPORT_OUTCOME_UNCERTAIN"
+  | "EXPORT_IDEMPOTENCY_FAILURE"
   | "INTERNAL_ERROR";
 
 const CLIENT_MESSAGES: Record<ErrorCode, string> = {
@@ -71,6 +74,11 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
     "Google Sheets could not export the standings.",
   GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID:
     "Google Sheets returned an invalid standings export response.",
+  EXPORT_IN_PROGRESS: "An identical export is already in progress.",
+  EXPORT_OUTCOME_UNCERTAIN:
+    "The previous export outcome is uncertain and cannot be retried safely.",
+  EXPORT_IDEMPOTENCY_FAILURE:
+    "The export operation state could not be updated safely.",
   INTERNAL_ERROR: "The request could not be completed.",
 };
 
@@ -105,6 +113,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH: 409,
   GOOGLE_STANDINGS_EXPORT_FAILURE: 502,
   GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID: 502,
+  EXPORT_IN_PROGRESS: 409,
+  EXPORT_OUTCOME_UNCERTAIN: 409,
+  EXPORT_IDEMPOTENCY_FAILURE: 502,
   INTERNAL_ERROR: 500,
 };
 
