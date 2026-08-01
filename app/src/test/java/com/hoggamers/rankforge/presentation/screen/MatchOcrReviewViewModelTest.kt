@@ -1,6 +1,14 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
+import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
+import com.hoggamers.rankforge.domain.matching.TeamCandidateScore
+import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceAssessment
+import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceReason
+import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
+import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestion
+import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -86,6 +94,67 @@ class MatchOcrReviewViewModelTest {
         viewModel.load("synthetic-tournament", "synthetic-match")
 
         assertEquals(firstState, viewModel.uiState.value)
+    }
+
+    @Test
+    fun loadDisplayInputPreservesExactIdsAndSurfacesMatchingEvidence() {
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.loadDisplayInput(displayInputWithMatchingEvidence())
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val firstRow = state.rows.first()
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals("1", firstRow.suggestedTeamSlotDisplayValue)
+        assertEquals("96", firstRow.confidenceScoreDisplayValue)
+        assertEquals("Automatic candidate", firstRow.confidenceTierLabel)
+        assertEquals("Safe automatic assignment", firstRow.assignmentSafetyStatusLabel)
+        assertEquals(
+            listOf("Rank 1: Slot 1, confidence 96, matches 4, coverage 100"),
+            firstRow.topThreeSuggestionsSummary,
+        )
+    }
+
+    @Test
+    fun loadDisplayInputWithMissingMatchingEvidenceRequiresManualReview() {
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.loadDisplayInput(displayInputWithoutMatchingEvidence())
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(state.manualReviewRequired)
+        assertTrue(state.hasUnavailableEvidence)
+        assertTrue(state.rows.all { it.blockerLabels.isNotEmpty() })
+        assertTrue(state.rows.all { it.topThreeSuggestionsSummary == listOf("No suggestions") })
+    }
+
+    @Test
+    fun loadDisplayInputWithNoRowsKeepsEmptyStateWithoutFakeMatchingResults() {
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.loadDisplayInput(
+            MatchOcrReviewDisplayInput(
+                tournamentId = TOURNAMENT_ID,
+                matchId = MATCH_ID,
+                rows = emptyList(),
+            ),
+        )
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+    }
+
+    @Test
+    fun loadDisplayInputDoesNotMutateMatchData() = runTest(dispatcher) {
+        val repository = createRepository()
+        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(repository))
+
+        viewModel.loadDisplayInput(displayInputWithMatchingEvidence())
+
+        assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
     }
 
     @Test
@@ -377,6 +446,71 @@ class MatchOcrReviewViewModelTest {
                 originalSuggestedTeamSlot = rowIndex + 1,
             )
         }
+
+    private fun displayInputWithMatchingEvidence(): MatchOcrReviewDisplayInput =
+        MatchOcrReviewDisplayInput(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            rows = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
+                val suggestions = TopTeamCandidateSuggestions(
+                    detectedPlayerCount = 4,
+                    evaluatedCandidateCount = 1,
+                    suggestions = listOf(
+                        TopTeamCandidateSuggestion(
+                            rank = 1,
+                            teamCandidateScore = TeamCandidateScore(
+                                candidateTeamSlot = rowIndex + 1,
+                                confidenceScore = 96,
+                                detectedPlayerCount = 4,
+                                validDetectedPlayerCount = 4,
+                                rosterPlayerCount = 4,
+                                contributingMatchCount = 4,
+                                averageMatchedPlayerScore = 100,
+                                coverageScore = 100,
+                                playerMatches = emptyList(),
+                            ),
+                        ),
+                    ),
+                )
+                val confidence = TeamMatchConfidenceAssessment(
+                    tier = TeamMatchConfidenceTier.AUTOMATIC_CANDIDATE,
+                    selectedSuggestion = suggestions.suggestions.first(),
+                    suggestions = suggestions,
+                    reason = TeamMatchConfidenceReason.MEETS_AUTOMATIC_THRESHOLD,
+                )
+                MatchOcrReviewRowEvidenceInput(
+                    rowIndex = rowIndex,
+                    expectedPlacementId = rowIndex + 1,
+                    detectedPlacementValue = rowIndex + 1,
+                    detectedKillValue = rowIndex,
+                    detectedPlayerName = "Synthetic Unit ${rowIndex + 1}",
+                    suggestions = suggestions,
+                    confidenceAssessment = confidence,
+                    safetyResult = RowTeamAssignmentSafetyResult(
+                        rowIndex = rowIndex,
+                        confidenceAssessment = confidence,
+                        safetyStatus = TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT,
+                        proposedTeamSlot = rowIndex + 1,
+                        reasons = emptySet(),
+                    ),
+                )
+            },
+        )
+
+    private fun displayInputWithoutMatchingEvidence(): MatchOcrReviewDisplayInput =
+        MatchOcrReviewDisplayInput(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            rows = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
+                MatchOcrReviewRowEvidenceInput(
+                    rowIndex = rowIndex,
+                    expectedPlacementId = rowIndex + 1,
+                    detectedPlacementValue = rowIndex + 1,
+                    detectedKillValue = rowIndex,
+                    detectedPlayerName = null,
+                )
+            },
+        )
 
     private companion object {
         const val TOURNAMENT_ID = "synthetic-tournament"
