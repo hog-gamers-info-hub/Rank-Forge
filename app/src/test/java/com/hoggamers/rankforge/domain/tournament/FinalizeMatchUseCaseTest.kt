@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -57,6 +58,33 @@ class FinalizeMatchUseCaseTest {
         )
     }
 
+    @Test
+    fun missingMatchCannotBeFinalized() = runTest {
+        val repository = InMemoryTournamentRepository()
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+
+        val result = useCase(FinalizeMatchInput("missing-id", validRows()))
+
+        val invalid = result as FinalizeMatchResult.Invalid
+        assertEquals(FinalizeMatchGlobalError.MATCH_NOT_FOUND, invalid.globalError)
+        assertTrue(invalid.validation.isValid)
+    }
+
+    @Test
+    fun repositoryFinalizationRejectionIsReportedWithoutChangingTheDraft() = runTest {
+        val delegate = createRepository()
+        val repository = FinalizationRejectingRepository(delegate)
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+
+        val result = useCase(FinalizeMatchInput("match-id", validRows()))
+
+        assertEquals(
+            FinalizeMatchGlobalError.INVALID_DATA,
+            (result as FinalizeMatchResult.Invalid).globalError,
+        )
+        assertEquals(MatchStatus.DRAFT, delegate.observeMatchById("match-id").first()!!.status)
+    }
+
     private suspend fun createRepository(): InMemoryTournamentRepository {
         val repository = InMemoryTournamentRepository()
         repository.create(
@@ -88,5 +116,44 @@ class FinalizeMatchUseCaseTest {
             placement = slotNumber.toString(),
             kills = (slotNumber - 1).toString(),
         )
+    }
+
+    private class FinalizationRejectingRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository {
+        override suspend fun create(tournament: Tournament) = delegate.create(tournament)
+
+        override fun observeAll(): Flow<List<Tournament>> = delegate.observeAll()
+
+        override fun observeById(tournamentId: String): Flow<Tournament?> = delegate.observeById(tournamentId)
+
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            delegate.observeSlotsByTournamentId(tournamentId)
+
+        override suspend fun saveTeamNames(
+            tournamentId: String,
+            teamNamesBySlotNumber: Map<Int, String>,
+        ) = delegate.saveTeamNames(tournamentId, teamNamesBySlotNumber)
+
+        override fun observeRosterByTournamentAndSlot(
+            tournamentId: String,
+            slotNumber: Int,
+        ): Flow<List<RosterPlayer>> = delegate.observeRosterByTournamentAndSlot(tournamentId, slotNumber)
+
+        override suspend fun saveRoster(
+            tournamentId: String,
+            slotNumber: Int,
+            players: List<RosterPlayer>,
+        ) = delegate.saveRoster(tournamentId, slotNumber, players)
+
+        override suspend fun confirmTournament(tournamentId: String): Boolean = delegate.confirmTournament(tournamentId)
+
+        override fun observeMatchById(matchId: String): Flow<Match?> = delegate.observeMatchById(matchId)
+
+        override suspend fun finalizeDraftMatch(
+            matchId: String,
+            placements: List<MatchPlacement>,
+            kills: List<MatchKill>,
+        ): FinalizeMatchRepositoryResult = FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
     }
 }

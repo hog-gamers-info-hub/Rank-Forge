@@ -118,4 +118,48 @@ class ValidateMatchResultUseCaseTest {
             MatchResultValidationError.INVALID_KILLS in result.errorsByTeamSlot.getValue(1),
         )
     }
+
+    @Test
+    fun storedMatchMissingTypedResultDataIsDetected() {
+        val result = validate(
+            Match(
+                id = "match-id",
+                tournamentId = "tournament-id",
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+
+        assertTrue(
+            MatchResultValidationError.MISSING_PLACEMENT in result.errorsByTeamSlot.getValue(1),
+        )
+        assertTrue(
+            MatchResultValidationError.MISSING_KILLS in result.errorsByTeamSlot.getValue(1),
+        )
+    }
+
+    @Test
+    fun storedMatchInvalidTypedResultDataIsDetected() {
+        val result = validate(
+            Match(
+                id = "match-id",
+                tournamentId = "tournament-id",
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                placements = listOf(MatchPlacement(1, 13)),
+                kills = listOf(MatchKill(1, -1)),
+            ),
+        )
+
+        assertTrue(
+            MatchResultValidationError.INVALID_PLACEMENT in result.errorsByTeamSlot.getValue(1),
+        )
+        assertTrue(
+            MatchResultValidationError.INVALID_KILLS in result.errorsByTeamSlot.getValue(1),
+        )
+    }
 }

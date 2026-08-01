@@ -4,6 +4,7 @@ import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -159,6 +160,55 @@ class CumulativeTournamentStandingsTest {
         )
 
         assertEquals(standings(matches), standings(matches))
+    }
+
+    @Test
+    fun emptyFinalizedMatchInputProducesNoStandings() {
+        assertTrue(standings(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun placementWithoutConfirmedKillDataIsRejectedByTheEngineContract() {
+        val placementWithoutKill = match(id = "match-1", matchNumber = 1).copy(kills = emptyList())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            standings(listOf(placementWithoutKill))
+        }
+    }
+
+    @Test
+    fun equalMatchNumbersUseMatchIdForDeterministicLatestPlacement() {
+        val first = standings(
+            listOf(
+                match(
+                    id = "match-2",
+                    matchNumber = 1,
+                    placementsByTeamSlot = placementsWithTeamOneInFirst(),
+                ),
+                match(
+                    id = "match-1",
+                    matchNumber = 1,
+                    placementsByTeamSlot = placementsWithTeamOneInThird(),
+                ),
+            ),
+        )
+        val second = standings(
+            listOf(
+                match(
+                    id = "match-1",
+                    matchNumber = 1,
+                    placementsByTeamSlot = placementsWithTeamOneInThird(),
+                ),
+                match(
+                    id = "match-2",
+                    matchNumber = 1,
+                    placementsByTeamSlot = placementsWithTeamOneInFirst(),
+                ),
+            ),
+        )
+
+        assertEquals(first, second)
+        assertEquals(1, first.first { it.teamSlotNumber == 1 }.latestMatchPlacement)
     }
 
     @Test

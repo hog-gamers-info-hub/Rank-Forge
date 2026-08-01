@@ -52,6 +52,19 @@ class RosterValidatorTest {
     }
 
     @Test
+    fun exactlyFourAndSixPlayersAreAccepted() {
+        val result = validator.validate(
+            listOf(
+                team(1, "Alpha", List(4) { "Four $it" }),
+                team(2, "Bravo", List(6) { "Six $it" }),
+            ),
+        )
+
+        assertTrue(result.issues.isEmpty())
+        assertFalse(result.hasBlockingIssues)
+    }
+
+    @Test
     fun trimmedExactTeamAndPlayerDuplicatesAreBlocking() {
         val result = validator.validate(
             listOf(
