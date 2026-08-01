@@ -380,23 +380,39 @@ fun RankForgeNavHost(
         composable<MatchCreationDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchCreationDestination>()
             val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val onCreated: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchPlacementDestination(tournamentId, matchId)) {
+                    popUpTo(MatchCreationDestination(tournamentId)) {
+                        inclusive = true
+                    }
+                }
+            }
             val matchCreationViewModel = matchCreationViewModelFactory?.invoke(destination.tournamentId)
             if (matchCreationViewModel == null) {
                 MatchCreationRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
+                    onCreated = onCreated,
                 )
             } else {
                 MatchCreationRoute(
                     tournamentId = destination.tournamentId,
                     onBackToDetails = onBackToDetails,
+                    onCreated = onCreated,
                     viewModel = matchCreationViewModel,
-                    )
+                )
             }
         }
         composable<MatchPlacementDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchPlacementDestination>()
             val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val onSavedToKills: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchKillDestination(tournamentId, matchId)) {
+                    popUpTo(MatchPlacementDestination(tournamentId, matchId)) {
+                        inclusive = true
+                    }
+                }
+            }
             val placementViewModel = matchPlacementViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -406,12 +422,14 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     onBackToDetails = onBackToDetails,
+                    onSavedToKills = onSavedToKills,
                 )
             } else {
                 MatchPlacementRoute(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     onBackToDetails = onBackToDetails,
+                    onSavedToKills = onSavedToKills,
                     viewModel = placementViewModel,
                 )
             }
@@ -419,6 +437,13 @@ fun RankForgeNavHost(
         composable<MatchKillDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchKillDestination>()
             val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val onSavedToReview: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchReviewDestination(tournamentId, matchId)) {
+                    popUpTo(MatchKillDestination(tournamentId, matchId)) {
+                        inclusive = true
+                    }
+                }
+            }
             val killViewModel = matchKillViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -428,19 +453,30 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     onBackToDetails = onBackToDetails,
+                    onSavedToReview = onSavedToReview,
                 )
             } else {
                 MatchKillRoute(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     onBackToDetails = onBackToDetails,
+                    onSavedToReview = onSavedToReview,
                     viewModel = killViewModel,
                 )
             }
         }
         composable<MatchReviewDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchReviewDestination>()
-            val onBackToDetails: () -> Unit = { navController.popBackStack() }
+            val onBackToDetails: () -> Unit = {
+                val detailsDestination = TournamentDetailsDestination(destination.tournamentId)
+                if (!navController.popBackStack(detailsDestination, inclusive = false)) {
+                    navController.navigate(detailsDestination) {
+                        popUpTo(MatchReviewDestination(destination.tournamentId, destination.matchId)) {
+                            inclusive = true
+                        }
+                    }
+                }
+            }
             val onEnterPlacements: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchPlacementDestination(tournamentId, matchId))
             }

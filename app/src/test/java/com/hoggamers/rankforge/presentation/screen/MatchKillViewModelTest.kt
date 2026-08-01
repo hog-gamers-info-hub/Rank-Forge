@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -97,7 +98,7 @@ class MatchKillViewModelTest {
 
         assertEquals("-1", viewModel.uiState.value.rows.first().killsInput)
         assertEquals(KillValidationError.INVALID, viewModel.uiState.value.validationErrors[1])
-        assertEquals(null, viewModel.uiState.value.navigation)
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -109,11 +110,30 @@ class MatchKillViewModelTest {
         viewModel.save()
         advanceUntilIdle()
 
-        assertEquals(MatchKillNavigation.SAVED, viewModel.uiState.value.navigation)
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is MatchKillNavigation.Saved)
+        assertEquals("tournament-id", (navigation as MatchKillNavigation.Saved).tournamentId)
+        assertEquals(matchId, navigation.matchId)
         assertEquals(
             listOf(MatchKill(1, 0), MatchKill(2, 7)),
             repository.observeMatchById(matchId).first()?.kills,
         )
+    }
+
+    @Test
+    fun successfulSaveNavigationCanBeConsumed() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onKillsChanged(1, "0")
+        viewModel.onKillsChanged(2, "7")
+
+        viewModel.save()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.navigation is MatchKillNavigation.Saved)
+
+        viewModel.onNavigationHandled()
+
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -154,7 +174,7 @@ class MatchKillViewModelTest {
             MatchDraftFieldValues("", "12"),
             repository.observeDraftMatchValues("tournament-id", matchId).first()[1],
         )
-        assertEquals(MatchKillNavigation.BACK, viewModel.uiState.value.navigation)
+        assertEquals(MatchKillNavigation.Back, viewModel.uiState.value.navigation)
     }
 
     @Test

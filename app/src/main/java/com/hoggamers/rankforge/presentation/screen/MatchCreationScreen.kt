@@ -58,6 +58,7 @@ const val MATCH_BACK_ACTION_TEST_TAG = "match_back_action"
 fun MatchCreationRoute(
     tournamentId: String,
     onBackToDetails: () -> Unit,
+    onCreated: (String, String) -> Unit,
     viewModel: MatchCreationViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -65,9 +66,18 @@ fun MatchCreationRoute(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(uiState.navigation) {
-        if (uiState.navigation != null) {
-            viewModel.onNavigationHandled()
-            onBackToDetails()
+        when (val navigation = uiState.navigation) {
+            MatchCreationNavigation.Back -> {
+                viewModel.onNavigationHandled()
+                onBackToDetails()
+            }
+
+            is MatchCreationNavigation.Created -> {
+                viewModel.onNavigationHandled()
+                onCreated(navigation.tournamentId, navigation.matchId)
+            }
+
+            null -> Unit
         }
     }
     BackHandler(onBack = viewModel::onBackPressed)

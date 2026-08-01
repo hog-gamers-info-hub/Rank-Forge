@@ -3,9 +3,13 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.domain.tournament.PlacementGlobalError
 import com.hoggamers.rankforge.domain.tournament.PlacementValidationError
 
-enum class MatchPlacementNavigation {
-    BACK,
-    SAVED,
+sealed interface MatchPlacementNavigation {
+    data object Back : MatchPlacementNavigation
+
+    data class Saved(
+        val tournamentId: String,
+        val matchId: String,
+    ) : MatchPlacementNavigation
 }
 
 data class MatchPlacementUiState(

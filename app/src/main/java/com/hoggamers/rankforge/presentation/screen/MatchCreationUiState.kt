@@ -8,9 +8,13 @@ enum class MatchCreationSubmissionError {
     UNKNOWN,
 }
 
-enum class MatchCreationNavigation {
-    BACK,
-    CREATED,
+sealed interface MatchCreationNavigation {
+    data object Back : MatchCreationNavigation
+
+    data class Created(
+        val tournamentId: String,
+        val matchId: String,
+    ) : MatchCreationNavigation
 }
 
 data class MatchCreationUiState(

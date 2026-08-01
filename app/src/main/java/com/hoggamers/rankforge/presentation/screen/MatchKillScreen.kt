@@ -48,6 +48,7 @@ fun MatchKillRoute(
     tournamentId: String,
     matchId: String,
     onBackToDetails: () -> Unit,
+    onSavedToReview: (String, String) -> Unit,
     viewModel: MatchKillViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
@@ -55,9 +56,18 @@ fun MatchKillRoute(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(uiState.navigation) {
-        if (uiState.navigation != null) {
-            viewModel.onNavigationHandled()
-            onBackToDetails()
+        when (val navigation = uiState.navigation) {
+            MatchKillNavigation.Back -> {
+                viewModel.onNavigationHandled()
+                onBackToDetails()
+            }
+
+            is MatchKillNavigation.Saved -> {
+                viewModel.onNavigationHandled()
+                onSavedToReview(navigation.tournamentId, navigation.matchId)
+            }
+
+            null -> Unit
         }
     }
     BackHandler(onBack = viewModel::onBackPressed)

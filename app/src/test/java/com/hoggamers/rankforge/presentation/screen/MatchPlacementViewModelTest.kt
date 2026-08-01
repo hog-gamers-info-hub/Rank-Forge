@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -97,7 +98,7 @@ class MatchPlacementViewModelTest {
 
         assertEquals("13", viewModel.uiState.value.rows.first().placementInput)
         assertEquals(PlacementValidationError.INVALID, viewModel.uiState.value.validationErrors[1])
-        assertEquals(null, viewModel.uiState.value.navigation)
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -122,11 +123,30 @@ class MatchPlacementViewModelTest {
         viewModel.save()
         advanceUntilIdle()
 
-        assertEquals(MatchPlacementNavigation.SAVED, viewModel.uiState.value.navigation)
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is MatchPlacementNavigation.Saved)
+        assertEquals("tournament-id", (navigation as MatchPlacementNavigation.Saved).tournamentId)
+        assertEquals(matchId, navigation.matchId)
         assertEquals(
             listOf(MatchPlacement(1, 1), MatchPlacement(2, 2)),
             repository.observeMatchById(matchId).first()?.placements,
         )
+    }
+
+    @Test
+    fun successfulSaveNavigationCanBeConsumed() = runTest {
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+        viewModel.onPlacementChanged(1, "1")
+        viewModel.onPlacementChanged(2, "2")
+
+        viewModel.save()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.navigation is MatchPlacementNavigation.Saved)
+
+        viewModel.onNavigationHandled()
+
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -167,7 +187,7 @@ class MatchPlacementViewModelTest {
             MatchDraftFieldValues("12", ""),
             repository.observeDraftMatchValues("tournament-id", matchId).first()[1],
         )
-        assertEquals(MatchPlacementNavigation.BACK, viewModel.uiState.value.navigation)
+        assertEquals(MatchPlacementNavigation.Back, viewModel.uiState.value.navigation)
     }
 
     @Test
