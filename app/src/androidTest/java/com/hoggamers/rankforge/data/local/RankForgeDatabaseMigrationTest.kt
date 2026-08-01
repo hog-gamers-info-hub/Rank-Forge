@@ -269,6 +269,60 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion1ToVersion8PreservesLegacyStateAndFinalSchema() {
+        val payload = """{"tournaments":[{"id":"legacy-tournament","name":"Legacy Cup"}]}"""
+        createVersion1Database().use { database ->
+            database.execSQL(
+                "INSERT INTO rank_forge_state (id, payload) VALUES (?, ?)",
+                arrayOf<Any>(1, payload),
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            8,
+            true,
+            RankForgeDatabase.MIGRATION_1_2,
+            RankForgeDatabase.MIGRATION_2_3,
+            RankForgeDatabase.MIGRATION_3_4,
+            RankForgeDatabase.MIGRATION_4_5,
+            RankForgeDatabase.MIGRATION_5_6,
+            RankForgeDatabase.MIGRATION_6_7,
+            RankForgeDatabase.MIGRATION_7_8,
+        )
+
+        migrated.query("SELECT payload FROM rank_forge_state WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(payload, cursor.getString(0))
+        }
+        listOf(
+            "sync_queue_entries",
+            "sync_revisions",
+            "roster_screenshot_metadata",
+            "match_ocr_evidence",
+            "match_ocr_row_evidence",
+            "match_ocr_correction_snapshots",
+        ).forEach { table ->
+            assertTrue(migrated.hasTable(table))
+        }
+        listOf(
+            "index_roster_screenshot_metadata_tournament_id",
+            "index_roster_screenshot_metadata_sha256",
+            "index_match_ocr_evidence_tournament_id",
+            "index_match_ocr_row_evidence_match_id",
+            "index_match_ocr_correction_snapshots_match_id",
+        ).forEach { index ->
+            assertTrue(migrated.hasIndex(index))
+        }
+        migrated.query("PRAGMA foreign_key_list('roster_screenshot_metadata')").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("tournaments", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+            assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun ocrEvidenceSnapshotTransactionPersistsOriginalAndCorrectedRowsSeparately() = runBlocking {
         val database = createInMemoryDatabase()
 

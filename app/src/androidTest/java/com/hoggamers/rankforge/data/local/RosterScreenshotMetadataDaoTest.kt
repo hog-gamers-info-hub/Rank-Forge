@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -68,6 +69,28 @@ class RosterScreenshotMetadataDaoTest {
                 repository.saveOrReplace(first.copy(rosterScreenshotIndex = 4)),
             )
             assertEquals(listOf(first), repository.observeByTournamentId("tournament-1").first())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun deletingTournamentCascadesRosterScreenshotMetadata() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(context, RankForgeDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            database.tournamentDao().upsert(
+                TournamentEntity("tournament-1", "Cup", "2026-07-30", "Org", "123", "CONFIRMED"),
+            )
+            val dao = database.rosterScreenshotMetadataDao()
+            dao.upsert(metadata(index = 1))
+
+            database.tournamentDao().deleteById("tournament-1")
+
+            assertTrue(dao.observeByTournamentId("tournament-1").first().isEmpty())
+            assertNull(dao.readByTournamentAndIndex("tournament-1", 1))
         } finally {
             database.close()
         }
