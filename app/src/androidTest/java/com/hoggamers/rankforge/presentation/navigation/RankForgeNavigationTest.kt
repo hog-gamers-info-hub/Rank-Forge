@@ -3,12 +3,16 @@ package com.hoggamers.rankforge.presentation.navigation
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -80,7 +84,12 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_ACTION_
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_ROW_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_KILLS_FIELD_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SUBMIT_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_SUBMIT_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_DISCARD_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_CORRECTION_DISCARD_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX
@@ -952,6 +961,88 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedMatchCorrectionReturnsToCorrectedReadOnlyReview() {
+        val viewModels = createNavigationViewModels()
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            val match = (
+                CreateMatchUseCase(viewModels.repository)(
+                    CreateMatchInput(
+                        tournamentId = "confirmed-id",
+                        matchNumber = "1",
+                        date = LocalDate.of(2026, 7, 24),
+                        mapName = "Bermuda",
+                    ),
+                ) as CreateMatchResult.Created
+            ).match
+            viewModels.repository.finalizeDraftMatch(
+                matchId = match.id,
+                placements = (1..12).map { MatchPlacement(it, it) },
+                kills = (1..12).map { MatchKill(it, it - 1) },
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _ -> },
+                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchKillViewModelFactory = viewModels.matchKillViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("Start correction").performClick()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        val correctionKillsField = composeTestRule
+            .onNodeWithTag(MATCH_CORRECTION_KILLS_FIELD_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+        correctionKillsField.performTextClearance()
+        correctionKillsField.performTextInput("5")
+        composeTestRule
+            .onNodeWithTag(MATCH_CORRECTION_SUBMIT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("This replaces the current finalized result and preserves the previous result in correction history.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_SUBMIT_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNode(
+            hasText("Kills: 5", substring = false) and
+                hasAnyAncestor(hasTestTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1")),
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Corrected result — Slot 1: placement 1, kills 5").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
     }
 
     @Test
