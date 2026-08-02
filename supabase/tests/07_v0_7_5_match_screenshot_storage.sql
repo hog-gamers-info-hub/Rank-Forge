@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(21);
 
 select is((
     select public
@@ -106,6 +106,59 @@ select ok((
         and tablename = 'objects'
         and policyname = 'match_screenshots_insert_owner'
 ), 'insert policy validates deterministic path segments');
+
+insert into auth.users (id, email)
+values
+    ('91000000-0000-0000-0000-000000000001', 'storage-owner@example.test'),
+    ('91000000-0000-0000-0000-000000000002', 'storage-other@example.test');
+insert into public.tournaments (id, owner_id, name)
+values
+    ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'Storage Cup'),
+    ('92000000-0000-0000-0000-000000000002', '91000000-0000-0000-0000-000000000002', 'Other Storage Cup');
+insert into public.matches (id, tournament_id, match_number)
+values
+    ('93000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', 1),
+    ('93000000-0000-0000-0000-000000000002', '92000000-0000-0000-0000-000000000002', 1);
+
+set local role authenticated;
+set local request.jwt.claim.sub = '91000000-0000-0000-0000-000000000001';
+insert into storage.objects (id, bucket_id, name, owner_id, metadata)
+values (
+    '94000000-0000-0000-0000-000000000001',
+    'match-screenshots',
+    'users/91000000-0000-0000-0000-000000000001/tournaments/92000000-0000-0000-0000-000000000001/matches/93000000-0000-0000-0000-000000000001/original.png',
+    '91000000-0000-0000-0000-000000000001',
+    '{}'::jsonb
+);
+select is((select count(*) from storage.objects where id = '94000000-0000-0000-0000-000000000001'), 1::bigint, 'owner can insert a screenshot object');
+select is((select count(*) from storage.objects where id = '94000000-0000-0000-0000-000000000001'), 1::bigint, 'owner can read a screenshot object');
+update storage.objects
+set metadata = '{"owner": true}'::jsonb
+where id = '94000000-0000-0000-0000-000000000001';
+select is((select metadata from storage.objects where id = '94000000-0000-0000-0000-000000000001'), '{"owner": true}'::jsonb, 'owner can update a screenshot object');
+
+set local request.jwt.claim.sub = '91000000-0000-0000-0000-000000000002';
+select is((select count(*) from storage.objects where id = '94000000-0000-0000-0000-000000000001'), 0::bigint, 'another account cannot read a screenshot object');
+update storage.objects
+set metadata = '{"attacker": true}'::jsonb
+where id = '94000000-0000-0000-0000-000000000001';
+set local role authenticated;
+set local request.jwt.claim.sub = '91000000-0000-0000-0000-000000000001';
+select is((select metadata from storage.objects where id = '94000000-0000-0000-0000-000000000001'), '{"owner": true}'::jsonb, 'cross-account screenshot update is denied');
+
+set local role anon;
+set local request.jwt.claim.sub = '';
+select is((select count(*) from storage.objects where id = '94000000-0000-0000-0000-000000000001'), 0::bigint, 'anonymous callers cannot read a screenshot object');
+select throws_ok($$
+    insert into storage.objects (id, bucket_id, name, owner_id, metadata)
+    values (
+        '94000000-0000-0000-0000-000000000002',
+        'match-screenshots',
+        'users/91000000-0000-0000-0000-000000000001/tournaments/92000000-0000-0000-0000-000000000001/matches/93000000-0000-0000-0000-000000000001/original.jpg',
+        '91000000-0000-0000-0000-000000000001',
+        '{}'::jsonb
+    )
+$$, '42501', null, 'anonymous callers cannot insert a screenshot object');
 
 select * from finish();
 rollback;

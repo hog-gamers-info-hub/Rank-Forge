@@ -1,6 +1,6 @@
 begin;
 
-select plan(62);
+select plan(67);
 
 select has_table(
     'public',
@@ -979,6 +979,73 @@ select throws_ok(
     null,
     'table constraint requires active states to hold a lease'
 );
+
+select throws_ok($$
+    insert into public.export_operations (
+        owner_id, operation_type, tournament_id, match_id,
+        payload_fingerprint, state
+    ) values (
+        '81000000-0000-0000-0000-000000000099',
+        'export_match',
+        '82000000-0000-0000-0000-000000000001',
+        '83000000-0000-0000-0000-000000000001',
+        repeat('1', 64), 'retryable_failure'
+    )
+$$, '23503', null, 'export operation rejects a missing owner');
+select throws_ok($$
+    insert into public.export_operations (
+        owner_id, operation_type, tournament_id, match_id,
+        payload_fingerprint, state
+    ) values (
+        '81000000-0000-0000-0000-000000000001',
+        'export_match',
+        '82000000-0000-0000-0000-000000000099',
+        '83000000-0000-0000-0000-000000000001',
+        repeat('2', 64), 'retryable_failure'
+    )
+$$, '23503', null, 'export operation rejects a missing tournament');
+select throws_ok($$
+    insert into public.export_operations (
+        owner_id, operation_type, tournament_id, match_id,
+        payload_fingerprint, state
+    ) values (
+        '81000000-0000-0000-0000-000000000001',
+        'export_match',
+        '82000000-0000-0000-0000-000000000001',
+        '83000000-0000-0000-0000-000000000099',
+        repeat('3', 64), 'retryable_failure'
+    )
+$$, '23503', null, 'export operation rejects a missing match');
+
+insert into auth.users (id, email)
+values ('81000000-0000-0000-0000-000000000003', 'export-integrity@example.test');
+insert into public.tournaments (id, owner_id, name)
+values ('82000000-0000-0000-0000-000000000003', '81000000-0000-0000-0000-000000000003', 'Export Integrity Cup');
+insert into public.matches (id, tournament_id, match_number)
+values ('83000000-0000-0000-0000-000000000003', '82000000-0000-0000-0000-000000000003', 1);
+insert into public.export_operations (
+    id, owner_id, operation_type, tournament_id, match_id,
+    payload_fingerprint, state, failure_code
+)
+values (
+    '84000000-0000-0000-0000-000000000003',
+    '81000000-0000-0000-0000-000000000003',
+    'export_match',
+    '82000000-0000-0000-0000-000000000003',
+    '83000000-0000-0000-0000-000000000003',
+    repeat('4', 64), 'retryable_failure', 'GOOGLE_API_FAILURE'
+), (
+    '84000000-0000-0000-0000-000000000004',
+    '81000000-0000-0000-0000-000000000003',
+    'export_standings',
+    '82000000-0000-0000-0000-000000000003',
+    null,
+    repeat('5', 64), 'retryable_failure', 'GOOGLE_API_FAILURE'
+);
+delete from public.matches where id = '83000000-0000-0000-0000-000000000003';
+select is((select count(*) from public.export_operations where id = '84000000-0000-0000-0000-000000000003'), 0::bigint, 'match deletion cascades to match export operations');
+delete from public.tournaments where id = '82000000-0000-0000-0000-000000000003';
+select is((select count(*) from public.export_operations where id = '84000000-0000-0000-0000-000000000004'), 0::bigint, 'tournament deletion cascades to standings export operations');
 
 set local role anon;
 set local request.jwt.claim.sub = '';

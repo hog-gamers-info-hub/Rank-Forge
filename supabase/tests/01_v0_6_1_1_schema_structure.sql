@@ -1,6 +1,6 @@
 begin;
 
-select plan(32);
+select plan(34);
 
 select has_table('public', 'tournaments', 'tournaments table exists');
 select has_table('public', 'tournament_team_slots', 'tournament_team_slots table exists');
@@ -141,6 +141,23 @@ select ok(exists (
         and contype = 'f'
         and confrelid = 'public.tournament_team_slots'::regclass
 ), 'match_results references tournament_team_slots');
+
+select has_column('public', 'matches', 'finalized_by', 'matches retains the finalized_by column');
+select ok(exists (
+    select 1
+    from pg_constraint constraint_row
+    join pg_attribute source_column
+        on source_column.attrelid = constraint_row.conrelid
+        and source_column.attnum = any(constraint_row.conkey)
+    join pg_attribute target_column
+        on target_column.attrelid = constraint_row.confrelid
+        and target_column.attnum = any(constraint_row.confkey)
+    where constraint_row.conrelid = 'public.matches'::regclass
+        and constraint_row.contype = 'f'
+        and constraint_row.confrelid = 'auth.users'::regclass
+        and source_column.attname = 'finalized_by'
+        and target_column.attname = 'id'
+), 'matches.finalized_by references auth.users.id');
 
 select ok((select relrowsecurity from pg_class where oid = 'public.tournaments'::regclass), 'tournaments has RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.tournament_team_slots'::regclass), 'tournament_team_slots has RLS enabled');
