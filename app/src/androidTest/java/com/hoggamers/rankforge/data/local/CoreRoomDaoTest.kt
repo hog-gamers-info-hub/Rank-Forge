@@ -158,6 +158,42 @@ class CoreRoomDaoTest {
         assertEquals("completed", reread.first { it.id == "completed" }.id)
     }
 
+    @Test
+    fun retryableSyncQueueEntryPreservesIdentityAndRetryStateAcrossDatabaseReopen() = runBlocking {
+        val operationType = SyncQueueOperationType.FINALIZED_MATCH_SYNC.name
+        val entry = SyncQueueEntity(
+            id = "recovery-entry",
+            operationType = operationType,
+            tournamentId = "tournament-recovery",
+            createdAtEpochMillis = 1_234,
+            status = SyncQueueStatus.BLOCKED_NETWORK.name,
+            failureCategory = "network_unavailable",
+            attemptCount = 1,
+        )
+        val dao = database.syncQueueDao()
+
+        dao.insert(entry)
+        dao.incrementAttemptCount(entry.id)
+        dao.updateStatus(
+            id = entry.id,
+            status = SyncQueueStatus.BLOCKED_NETWORK.name,
+            failureCategory = "retry_interrupted",
+        )
+
+        database.close()
+        database = openDatabase()
+
+        val reread = database.syncQueueDao().observeAll().first().single { it.id == entry.id }
+        assertEquals(entry.id, reread.id)
+        assertEquals(operationType, reread.operationType)
+        assertEquals(entry.tournamentId, reread.tournamentId)
+        assertEquals(entry.createdAtEpochMillis, reread.createdAtEpochMillis)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK.name, reread.status)
+        assertEquals("retry_interrupted", reread.failureCategory)
+        assertEquals(2, reread.attemptCount)
+        assertEquals(entry.id, database.syncQueueDao().findOldestUnresolved(operationType, entry.tournamentId)?.id)
+    }
+
     private fun openDatabase(): RankForgeDatabase = Room.databaseBuilder(
         context,
         RankForgeDatabase::class.java,

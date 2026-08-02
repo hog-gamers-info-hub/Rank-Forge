@@ -62,6 +62,20 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
         assertEquals(1, recovery.calls)
     }
 
+    @Test fun authenticatedConnectivityTransitionRecoversOnlyWhenNetworkBecomesAvailable() = runTest {
+        val recovery = RecordingRecoveryAction()
+        val useCase = RecoverSyncQueueOnForegroundConnectivityUseCase(
+            authRepository = FakeAuthRepository(signedInState()),
+            queueRecovery = recovery,
+        )
+
+        useCase.onConnectivityChanged(isNetworkAvailable = false)
+        assertEquals(0, recovery.calls)
+
+        useCase.onConnectivityChanged(isNetworkAvailable = true)
+        assertEquals(1, recovery.calls)
+    }
+
     private fun signedInState() = AuthState.SignedIn(
         AuthUser(id = "user-id", email = "user@example.com"),
     )

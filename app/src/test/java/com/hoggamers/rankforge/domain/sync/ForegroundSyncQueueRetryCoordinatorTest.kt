@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ForegroundSyncQueueRetryCoordinatorTest {
@@ -95,6 +96,38 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(1, repository.entries.single().attemptCount)
     }
 
+    @Test fun interruptedRetryRetainsSameEntryForLaterSuccessfulRetry() = runTest {
+        val entry = entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingRepository(listOf(entry))
+        val executor = InterruptingThenSuccessExecutor()
+        val coordinator = ForegroundSyncQueueRetryCoordinator(repository, executor)
+
+        try {
+            coordinator.retryEligible(repository.entries.toList(), hasAuthenticatedSession = false)
+            fail("The interrupted retry should propagate its execution failure.")
+        } catch (_: IllegalStateException) {
+            // The interrupted execution must leave the existing entry unresolved.
+        }
+
+        assertEquals(listOf(entry.id), repository.incrementedIds)
+        assertTrue(repository.completedIds.isEmpty())
+        assertEquals(1, repository.entries.size)
+        assertEquals(entry.id, repository.entries.single().id)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK, repository.entries.single().status)
+        assertEquals(1, repository.entries.single().attemptCount)
+
+        val attempted = coordinator.retryEligible(repository.entries.toList(), hasAuthenticatedSession = false)
+
+        assertEquals(listOf(entry.id, entry.id), executor.executedEntries.map { it.id })
+        assertEquals(listOf(1, 2), executor.executedEntries.map { it.attemptCount })
+        assertEquals(listOf(entry.id, entry.id), repository.incrementedIds)
+        assertEquals(listOf(entry.id), repository.completedIds)
+        assertEquals(SyncQueueStatus.COMPLETED, repository.entries.single().status)
+        assertEquals(2, repository.entries.single().attemptCount)
+        assertEquals(entry.id, attempted.single().id)
+        assertEquals(0, repository.enqueueCalls)
+    }
+
     private fun entry(
         operationType: SyncQueueOperationType,
         status: SyncQueueStatus,
@@ -116,19 +149,35 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome = outcome.also { executedEntries += entry }
     }
 
+    private class InterruptingThenSuccessExecutor : SyncQueueEntryRetryExecutor {
+        val executedEntries = mutableListOf<SyncQueueEntry>()
+        private var executionCount = 0
+
+        override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
+            executedEntries += entry
+            executionCount += 1
+            if (executionCount == 1) throw IllegalStateException("retry interrupted")
+            return SyncQueueRetryOutcome.Success
+        }
+    }
+
     private class RecordingRepository(
         initialEntries: List<SyncQueueEntry> = emptyList(),
     ) : PersistentSyncQueueRepository {
         val entries = initialEntries.toMutableList()
         val incrementedIds = mutableListOf<String>()
         val completedIds = mutableListOf<String>()
+        var enqueueCalls = 0
         override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(entries)
         override suspend fun enqueue(
             operationType: SyncQueueOperationType,
             tournamentId: String?,
             status: SyncQueueStatus,
             failureCategory: String?,
-        ): SyncQueueEntry = error("not used")
+        ): SyncQueueEntry {
+            enqueueCalls += 1
+            error("not used")
+        }
         override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
         override suspend fun incrementAttemptCount(id: String) {
             incrementedIds += id
