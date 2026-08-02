@@ -123,44 +123,51 @@ class RosterScreenshotIntakeSectionTest {
         var clearCropIndex = 0
         composeTestRule.setContent {
             RankForgeTheme {
-                RosterScreenshotIntakeSection(
-                    uiState = RosterScreenshotIntakeUiState(
-                        tournamentId = "tournament-1",
-                        slots = listOf(
-                            RosterScreenshotSlotUiState(
-                                index = 1,
-                                selectedImageUri = "content://one",
-                                isSelectedImageValidated = true,
-                                cropError = RosterScreenshotCropError.TOO_SMALL,
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    RosterScreenshotIntakeSection(
+                        uiState = RosterScreenshotIntakeUiState(
+                            tournamentId = "tournament-1",
+                            slots = listOf(
+                                RosterScreenshotSlotUiState(
+                                    index = 1,
+                                    selectedImageUri = "content://one",
+                                    isSelectedImageValidated = true,
+                                    cropError = RosterScreenshotCropError.TOO_SMALL,
+                                ),
+                                RosterScreenshotSlotUiState(index = 2),
+                                RosterScreenshotSlotUiState(index = 3),
                             ),
-                            RosterScreenshotSlotUiState(index = 2),
-                            RosterScreenshotSlotUiState(index = 3),
                         ),
-                    ),
-                    onSelectImage = {},
-                    onRemoveImage = {},
-                    onSetCrop = { setCropIndex = it },
-                    onClearCrop = { clearCropIndex = it },
-                )
+                        onSelectImage = {},
+                        onRemoveImage = {},
+                        onSetCrop = { setCropIndex = it },
+                        onClearCrop = { clearCropIndex = it },
+                    )
+                }
             }
         }
 
         composeTestRule
             .onNodeWithTag(ROSTER_SCREENSHOT_INTAKE_CROP_STATUS_TEST_TAG_PREFIX + 1)
+            .performScrollTo()
             .assertTextContains(context.getString(R.string.roster_screenshot_crop_not_set))
         composeTestRule
             .onNodeWithTag(ROSTER_SCREENSHOT_INTAKE_ERROR_TEST_TAG_PREFIX + "crop_1")
+            .performScrollTo()
             .assertTextContains(context.getString(R.string.roster_screenshot_crop_too_small))
         (listOf("left", "top", "right", "bottom")).forEach { coordinate ->
             composeTestRule
                 .onNodeWithTag(ROSTER_SCREENSHOT_INTAKE_CROP_INPUT_TEST_TAG_PREFIX + "1_" + coordinate)
+                .performScrollTo()
                 .assertIsDisplayed()
         }
         composeTestRule
             .onNodeWithTag(ROSTER_SCREENSHOT_INTAKE_SET_CROP_BUTTON_TEST_TAG_PREFIX + 1)
+            .performScrollTo()
             .performClick()
         composeTestRule
             .onNodeWithTag(ROSTER_SCREENSHOT_INTAKE_CLEAR_CROP_BUTTON_TEST_TAG_PREFIX + 1)
+            .performScrollTo()
             .performClick()
 
         composeTestRule.runOnIdle {

@@ -12,8 +12,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -209,7 +211,9 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
             .performScrollTo()
-            .performTextInput("7")
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("7"))
+            }
 
         composeTestRule.runOnIdle {
             assertEquals(0 to "7", callbackValue)
@@ -235,7 +239,9 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
             .performScrollTo()
-            .performTextInput("5")
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("5"))
+            }
 
         composeTestRule.runOnIdle {
             assertEquals(0 to "5", callbackValue)
@@ -261,7 +267,9 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
             .performScrollTo()
-            .performTextInput("6")
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("6"))
+            }
 
         composeTestRule.runOnIdle {
             assertEquals(0 to "6", callbackValue)
@@ -311,10 +319,10 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.rowDirty(0)).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Draft changed").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Draft changed").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.rowWarning(0)).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Warning: Kills changed from OCR value.").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Correction draft has unsaved in-memory changes.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Warning: Kills changed from OCR value.").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Correction draft has unsaved in-memory changes.").performScrollTo().assertIsDisplayed()
     }
 
     @Test

@@ -191,8 +191,11 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Alpha").assertIsDisplayed()
-        composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
+        composeTestRule.onNodeWithText("Alpha").performScrollTo().assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.enter_teams_action))
+            .performScrollTo()
+            .performClick()
         composeTestRule.runOnIdle { assertEquals("stable-id", entryTournamentId) }
     }
 

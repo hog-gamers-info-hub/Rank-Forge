@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
@@ -70,9 +71,11 @@ class TournamentStandingsScreenTest {
 
         composeTestRule
             .onNodeWithTag(TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX + "2")
+            .performScrollTo()
             .assertIsDisplayed()
         composeTestRule
             .onAllNodesWithText(context.getString(R.string.tournament_standing_complete_tie_message))
