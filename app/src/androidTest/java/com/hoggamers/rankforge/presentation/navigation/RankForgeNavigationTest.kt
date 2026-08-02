@@ -958,7 +958,7 @@ class RankForgeNavigationTest {
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Status: FINALIZED").performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
     }

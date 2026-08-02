@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -139,8 +140,8 @@ class MatchCreationScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Maximum of 10 matches reached.").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Maximum of 10 matches reached.").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1").performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(10)
     }
 }
