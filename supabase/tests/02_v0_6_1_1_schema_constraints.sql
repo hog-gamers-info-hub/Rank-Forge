@@ -1,6 +1,6 @@
 begin;
 
-select plan(28);
+select plan(29);
 
 insert into auth.users (id, email)
 values ('10000000-0000-0000-0000-000000000001', 'schema-owner@example.test');
@@ -100,6 +100,11 @@ select throws_ok($$
     insert into public.match_results (id, match_id, team_slot_id, placement)
     values ('60000000-0000-0000-0000-000000000004', '50000000-0000-0000-0000-000000000099', '30000000-0000-0000-0000-000000000001', 2)
 $$, '23503', null, 'match result rejects a missing match');
+select throws_ok($$
+    update public.matches
+    set finalized_by = '10000000-0000-0000-0000-000000000099'
+    where id = '50000000-0000-0000-0000-000000000001'
+$$, '23503', null, 'match rejects an invalid finalized_by reference');
 select throws_ok($$
     delete from public.tournament_team_slots where id = '30000000-0000-0000-0000-000000000001'
 $$, '23503', null, 'referenced team slot cannot be deleted');

@@ -1,6 +1,6 @@
 begin;
 
-select plan(20);
+select plan(31);
 
 select has_table('public', 'match_screenshot_metadata', 'metadata table exists');
 select col_is_pk('public', 'match_screenshot_metadata', 'match_id', 'match_id is the primary key');
@@ -129,6 +129,98 @@ select throws_ok(
     null,
     'uploaded state requires storage fields'
 );
+
+insert into auth.users (id, email)
+values
+    ('95000000-0000-0000-0000-000000000001', 'metadata-owner@example.test'),
+    ('95000000-0000-0000-0000-000000000002', 'metadata-other@example.test');
+insert into public.tournaments (id, owner_id, name)
+values
+    ('96000000-0000-0000-0000-000000000001', '95000000-0000-0000-0000-000000000001', 'Metadata Cup'),
+    ('96000000-0000-0000-0000-000000000002', '95000000-0000-0000-0000-000000000002', 'Other Metadata Cup');
+insert into public.matches (id, tournament_id, match_number)
+values
+    ('97000000-0000-0000-0000-000000000001', '96000000-0000-0000-0000-000000000001', 1),
+    ('97000000-0000-0000-0000-000000000002', '96000000-0000-0000-0000-000000000001', 2),
+    ('97000000-0000-0000-0000-000000000003', '96000000-0000-0000-0000-000000000001', 3),
+    ('97000000-0000-0000-0000-000000000004', '96000000-0000-0000-0000-000000000002', 1);
+insert into public.match_screenshot_metadata (
+    match_id, owner_id, tournament_id, local_file_extension, mime_type, width, height,
+    byte_size, sha256, local_status, upload_status, preserved_at
+)
+values (
+    '97000000-0000-0000-0000-000000000001',
+    '95000000-0000-0000-0000-000000000001',
+    '96000000-0000-0000-0000-000000000001',
+    'png', 'image/png', 1, 1, 1, repeat('a', 64), 'PRESERVED', 'PENDING', now()
+), (
+    '97000000-0000-0000-0000-000000000003',
+    '95000000-0000-0000-0000-000000000001',
+    '96000000-0000-0000-0000-000000000001',
+    'png', 'image/png', 1, 1, 1, repeat('c', 64), 'PRESERVED', 'PENDING', now()
+);
+
+set local role authenticated;
+set local request.jwt.claim.sub = '95000000-0000-0000-0000-000000000001';
+select is((select count(*) from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000001'), 1::bigint, 'owner can read screenshot metadata');
+update public.match_screenshot_metadata
+set width = 2
+where match_id = '97000000-0000-0000-0000-000000000001';
+select is((select width from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000001'), 2, 'owner can update screenshot metadata');
+insert into public.match_screenshot_metadata (
+    match_id, owner_id, tournament_id, local_file_extension, mime_type, width, height,
+    byte_size, sha256, local_status, upload_status, preserved_at
+)
+values (
+    '97000000-0000-0000-0000-000000000002',
+    '95000000-0000-0000-0000-000000000001',
+    '96000000-0000-0000-0000-000000000001',
+    'jpg', 'image/jpeg', 1, 1, 1, repeat('b', 64), 'PRESERVED', 'PENDING', now()
+);
+select is((select count(*) from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000002'), 1::bigint, 'owner can insert screenshot metadata');
+delete from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000002';
+select is((select count(*) from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000002'), 0::bigint, 'owner can delete screenshot metadata');
+
+set local request.jwt.claim.sub = '95000000-0000-0000-0000-000000000002';
+select is((select count(*) from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000001'), 0::bigint, 'another account cannot read screenshot metadata');
+update public.match_screenshot_metadata
+set width = 99
+where match_id = '97000000-0000-0000-0000-000000000001';
+set local role authenticated;
+set local request.jwt.claim.sub = '95000000-0000-0000-0000-000000000001';
+select is((select width from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000001'), 2, 'cross-account screenshot metadata update is denied');
+
+set local role anon;
+set local request.jwt.claim.sub = '';
+select throws_ok($$
+    select count(*)
+    from public.match_screenshot_metadata
+    where match_id = '97000000-0000-0000-0000-000000000001'
+$$, '42501', null, 'anonymous callers cannot read screenshot metadata');
+select throws_ok($$
+    insert into public.match_screenshot_metadata (
+        match_id, owner_id, tournament_id, local_file_extension, mime_type, width, height,
+        byte_size, sha256, local_status, upload_status, preserved_at
+    ) values (
+        '97000000-0000-0000-0000-000000000004',
+        '95000000-0000-0000-0000-000000000002',
+        '96000000-0000-0000-0000-000000000002',
+        'png', 'image/png', 1, 1, 1, repeat('d', 64), 'PRESERVED', 'PENDING', now()
+    )
+$$, '42501', null, 'anonymous callers cannot insert screenshot metadata');
+select throws_ok($$
+    update public.match_screenshot_metadata
+    set width = 3
+    where match_id = '97000000-0000-0000-0000-000000000001'
+$$, '42501', null, 'anonymous callers cannot update screenshot metadata');
+select throws_ok($$
+    delete from public.match_screenshot_metadata
+    where match_id = '97000000-0000-0000-0000-000000000001'
+$$, '42501', null, 'anonymous callers cannot delete screenshot metadata');
+
+reset role;
+delete from public.matches where id = '97000000-0000-0000-0000-000000000003';
+select is((select count(*) from public.match_screenshot_metadata where match_id = '97000000-0000-0000-0000-000000000003'), 0::bigint, 'match deletion cascades to screenshot metadata');
 
 select * from finish();
 rollback;
