@@ -68,6 +68,36 @@ class RecoverForegroundSyncQueueUseCaseTest {
         assertTrue(repository.entries.isEmpty())
     }
 
+    @Test fun interruptedQueueRetryIsIsolatedAndLaterRecoveryCompletesSameEntry() = runTest {
+        val entry = entry("recovery-entry", SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingQueueRepository(listOf(entry))
+        val executor = InterruptingThenSuccessExecutor()
+        val recovery = RecoverForegroundSyncQueueUseCase(
+            queueRepository = repository,
+            retryCoordinator = ForegroundSyncQueueRetryCoordinator(repository, executor),
+        )
+
+        recovery.recoverAfterAuthenticatedSession()
+
+        assertEquals(listOf(entry.id), executor.executedEntries.map { it.id })
+        assertEquals(1, executor.executedEntries.single().attemptCount)
+        assertEquals(1, repository.entries.size)
+        assertEquals(entry.id, repository.entries.single().id)
+        assertEquals(SyncQueueStatus.BLOCKED_NETWORK, repository.entries.single().status)
+        assertEquals(1, repository.entries.single().attemptCount)
+        assertTrue(repository.completedIds.isEmpty())
+
+        recovery.recoverAfterAuthenticatedSession()
+
+        assertEquals(listOf(entry.id, entry.id), executor.executedEntries.map { it.id })
+        assertEquals(listOf(1, 2), executor.executedEntries.map { it.attemptCount })
+        assertEquals(entry.id, repository.entries.single().id)
+        assertEquals(SyncQueueStatus.COMPLETED, repository.entries.single().status)
+        assertEquals(2, repository.entries.single().attemptCount)
+        assertEquals(listOf(entry.id), repository.completedIds)
+        assertEquals(0, repository.enqueueCalls)
+    }
+
     private fun entry(
         id: String,
         status: SyncQueueStatus,
@@ -91,11 +121,25 @@ class RecoverForegroundSyncQueueUseCaseTest {
         }
     }
 
+    private class InterruptingThenSuccessExecutor : SyncQueueEntryRetryExecutor {
+        val executedEntries = mutableListOf<SyncQueueEntry>()
+        private var executionCount = 0
+
+        override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
+            executedEntries += entry
+            executionCount += 1
+            if (executionCount == 1) throw IllegalStateException("retry interrupted")
+            return SyncQueueRetryOutcome.Success
+        }
+    }
+
     private class RecordingQueueRepository(
         initialEntries: List<SyncQueueEntry>,
         private val failOnObserve: Boolean = false,
     ) : PersistentSyncQueueRepository {
         val entries = initialEntries.toMutableList()
+        val completedIds = mutableListOf<String>()
+        var enqueueCalls = 0
         override fun observeAll(): Flow<List<SyncQueueEntry>> = if (failOnObserve) {
             flow { throw IllegalStateException("queue unavailable") }
         } else {
@@ -106,7 +150,10 @@ class RecoverForegroundSyncQueueUseCaseTest {
             tournamentId: String?,
             status: SyncQueueStatus,
             failureCategory: String?,
-        ): SyncQueueEntry = error("not used")
+        ): SyncQueueEntry {
+            enqueueCalls += 1
+            error("not used")
+        }
         override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
         override suspend fun incrementAttemptCount(id: String) {
             replace(id) { it.copy(attemptCount = it.attemptCount + 1) }
@@ -115,6 +162,7 @@ class RecoverForegroundSyncQueueUseCaseTest {
             replace(id) { it.copy(status = status, failureCategory = failureCategory) }
         }
         override suspend fun markCompleted(id: String) {
+            completedIds += id
             replace(id) { it.copy(status = SyncQueueStatus.COMPLETED, failureCategory = null) }
         }
         override suspend fun remove(id: String) = Unit
