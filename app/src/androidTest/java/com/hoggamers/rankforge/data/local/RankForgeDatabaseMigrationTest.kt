@@ -1,10 +1,13 @@
 package com.hoggamers.rankforge.data.local
 
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.di.TournamentDataProvidersModule
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
@@ -19,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.Match as DomainMatch
 import com.hoggamers.rankforge.domain.tournament.Tournament as DomainTournament
 import java.time.LocalDate
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -60,6 +64,45 @@ class RankForgeDatabaseMigrationTest {
             assertEquals(payload, cursor.getString(0))
         }
         migrated.close()
+    }
+
+    @Test
+    fun productionDatabaseProviderRegistersCompleteMigrationChainFromVersion1() = runBlocking {
+        val payload = "{\"legacy\":true}"
+        createVersion1Database().use { database ->
+            database.execSQL(
+                "INSERT INTO rank_forge_state (id, payload) VALUES (?, ?)",
+                arrayOf<Any>(1, payload),
+            )
+        }
+
+        val redirectedContext = ProductionMigrationDatabaseContext(
+            baseContext = context,
+            redirectedDatabaseFile = context.getDatabasePath(MIGRATION_DATABASE_NAME),
+        )
+        val database = TournamentDataProvidersModule.provideRankForgeDatabase(redirectedContext)
+        try {
+            val openedDatabase = database.openHelper.writableDatabase
+
+            openedDatabase.query("PRAGMA user_version").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(8, cursor.getInt(0))
+            }
+            openedDatabase.query(
+                "SELECT payload FROM rank_forge_state WHERE id = 1",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(payload, cursor.getString(0))
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'match_ocr_correction_snapshots'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+        } finally {
+            database.close()
+        }
     }
 
     @Test
@@ -869,6 +912,20 @@ class RankForgeDatabaseMigrationTest {
             cursor.moveToFirst()
         }
 
+    private class ProductionMigrationDatabaseContext(
+        baseContext: Context,
+        private val redirectedDatabaseFile: File,
+    ) : ContextWrapper(baseContext) {
+        override fun getApplicationContext(): Context = this
+
+        override fun getDatabasePath(name: String): File =
+            if (name == PRODUCTION_DATABASE_NAME) {
+                redirectedDatabaseFile
+            } else {
+                super.getDatabasePath(name)
+            }
+    }
+
     private fun migrationTestHelper() = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
         RankForgeDatabase::class.java,
@@ -876,5 +933,6 @@ class RankForgeDatabaseMigrationTest {
 
     private companion object {
         const val MIGRATION_DATABASE_NAME = "rank-forge-migration-test.db"
+        const val PRODUCTION_DATABASE_NAME = "rank_forge.db"
     }
 }
