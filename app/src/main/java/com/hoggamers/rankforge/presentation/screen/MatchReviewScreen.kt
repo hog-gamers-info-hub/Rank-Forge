@@ -140,7 +140,7 @@ fun MatchReviewRoute(
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
-        onFinalize = viewModel::finalize,
+        onFinalize = viewModel::finalizeMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onLinkScreenshot = viewModel::linkScreenshot,
         onUnlinkScreenshot = viewModel::unlinkScreenshot,
