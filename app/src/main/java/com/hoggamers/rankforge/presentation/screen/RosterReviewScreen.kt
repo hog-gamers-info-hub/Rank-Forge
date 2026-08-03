@@ -37,6 +37,7 @@ fun RosterReviewRoute(
     onBackToTeamEntry: () -> Unit,
     onConfirmed: (String) -> Unit,
     viewModel: RosterReviewViewModel = hiltViewModel(),
+    rosterOcrViewModel: RosterOcrReviewViewModel = hiltViewModel(),
     rosterScreenshotIntake: @Composable () -> Unit = {
         RosterScreenshotIntakeRoute(tournamentId = tournamentId)
     },
@@ -45,6 +46,10 @@ fun RosterReviewRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(tournamentId) {
+        rosterOcrViewModel.load(tournamentId)
+    }
+    val rosterOcrUiState by rosterOcrViewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.navigation) {
         when (val navigation = uiState.navigation) {
@@ -64,6 +69,20 @@ fun RosterReviewRoute(
         onConfirm = viewModel::confirmRoster,
         onBackToTeamEntry = onBackToTeamEntry,
         rosterScreenshotIntake = rosterScreenshotIntake,
+        rosterOcrSection = {
+            RosterOcrReviewSection(
+                state = rosterOcrUiState,
+                onStartProcessing = rosterOcrViewModel::startProcessing,
+                onUpdatePlayerName = rosterOcrViewModel::updatePlayerName,
+                onResetPlayerCorrection = rosterOcrViewModel::resetPlayerCorrection,
+                onResetSlotCorrections = rosterOcrViewModel::resetSlotCorrections,
+                onResetAllCorrections = rosterOcrViewModel::resetAllCorrections,
+                onAbandonReview = rosterOcrViewModel::abandonReview,
+                onRequestConfirmation = rosterOcrViewModel::requestConfirmation,
+                onDismissConfirmation = rosterOcrViewModel::dismissConfirmation,
+                onConfirmReplacement = rosterOcrViewModel::confirmReplacement,
+            )
+        },
     )
 }
 
@@ -75,6 +94,7 @@ fun RosterReviewScreen(
     onConfirm: () -> Unit,
     onBackToTeamEntry: () -> Unit,
     rosterScreenshotIntake: @Composable () -> Unit = {},
+    rosterOcrSection: @Composable () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -88,6 +108,7 @@ fun RosterReviewScreen(
             onConfirm = onConfirm,
             onBackToTeamEntry = onBackToTeamEntry,
             rosterScreenshotIntake = rosterScreenshotIntake,
+            rosterOcrSection = rosterOcrSection,
         )
     }
 }
@@ -100,6 +121,7 @@ private fun RosterReviewContent(
     onConfirm: () -> Unit,
     onBackToTeamEntry: () -> Unit,
     rosterScreenshotIntake: @Composable () -> Unit,
+    rosterOcrSection: @Composable () -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -125,6 +147,8 @@ private fun RosterReviewContent(
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         rosterScreenshotIntake()
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        rosterOcrSection()
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         RosterValidationIssues(issues = uiState.validationIssues)
         if (uiState.validationIssues.isNotEmpty()) {
