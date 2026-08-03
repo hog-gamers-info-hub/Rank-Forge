@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterResult
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -40,6 +41,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
@@ -52,6 +54,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
@@ -262,6 +265,180 @@ class RoomTournamentRepositoryTest {
                 ValidateTournamentRosterUseCase(reopenedRepository, RosterValidator())(tournamentId)
                     .issues
                     .isEmpty(),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun completeConfirmedRosterReplacementIsAtomicPersistsAfterReopenAndAdvancesRevisionOnce() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-confirmed-roster-replacement.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val tournamentId = "replacement-tournament"
+            repository.create(tournament(tournamentId, TournamentStatus.DRAFT))
+            seedCompleteRoster(repository, tournamentId, "Old", playerCount = 6)
+            assertTrue(repository.confirmTournament(tournamentId))
+            assertEquals(
+                TournamentStatus.CONFIRMED,
+                repository.observeById(tournamentId).first { it != null }!!.status,
+            )
+            TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+                val oldPlayers = repository.observeRosterByTournamentAndSlot(tournamentId, slotNumber).first()
+                assertEquals(6, oldPlayers.size)
+                assertEquals(
+                    (1..6).map { "Old Player $slotNumber-$it" },
+                    oldPlayers.map { it.displayName },
+                )
+            }
+            val revisionBefore = repository.readLocalRevisionState(tournamentId)
+            val expectedRevision = checkNotNull(revisionBefore.localRevision) + 1
+
+            val result = repository.replaceConfirmedTournamentRoster(replacementCandidate(tournamentId, "Replacement"))
+
+            assertEquals(ReplaceConfirmedTournamentRosterRepositoryResult.Replaced, result)
+            assertEquals(
+                expectedRevision,
+                repository.readLocalRevisionState(tournamentId).localRevision,
+            )
+            assertEquals(
+                TournamentStatus.CONFIRMED,
+                repository.observeById(tournamentId).first { it != null }!!.status,
+            )
+            assertEquals(
+                (1..12).map { "Replacement Team $it" },
+                repository.observeSlotsByTournamentId(tournamentId).first().map { it.teamName },
+            )
+            TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+                val replacementPlayers = repository.observeRosterByTournamentAndSlot(tournamentId, slotNumber).first()
+                assertEquals(4, replacementPlayers.size)
+                assertEquals(
+                    (1..4).map { "Replacement Player $slotNumber-$it" },
+                    replacementPlayers.map { it.displayName },
+                )
+            }
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            assertEquals(
+                TournamentStatus.CONFIRMED,
+                reopenedRepository.observeById(tournamentId).first { it != null }!!.status,
+            )
+            assertEquals(
+                (1..12).map { "Replacement Team $it" },
+                reopenedRepository.observeSlotsByTournamentId(tournamentId).first().map { it.teamName },
+            )
+            TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+                val replacementPlayers =
+                    reopenedRepository.observeRosterByTournamentAndSlot(tournamentId, slotNumber).first()
+                assertEquals(4, replacementPlayers.size)
+                assertEquals(
+                    (1..4).map { "Replacement Player $slotNumber-$it" },
+                    replacementPlayers.map { it.displayName },
+                )
+            }
+            assertEquals(expectedRevision, reopenedRepository.readLocalRevisionState(tournamentId).localRevision)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun missingTournamentIsRejectedWithoutCreatingData() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-confirmed-roster-replacement-missing.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound,
+                repository.replaceConfirmedTournamentRoster(replacementCandidate("missing-tournament", "Missing")),
+            )
+            assertEquals(null, repository.observeById("missing-tournament").first())
+            assertEquals(
+                com.hoggamers.rankforge.domain.sync.LocalRevisionState.Missing,
+                repository.readLocalRevisionState("missing-tournament"),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun draftMatchBlocksReplacementAndPreservesRosterStatusAndRevision() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-confirmed-roster-replacement-draft-match.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val tournamentId = "draft-match-replacement-tournament"
+            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED))
+            seedCompleteRoster(repository, tournamentId, "Original")
+            assertTrue(repository.confirmTournament(tournamentId))
+            assertTrue(
+                repository.createDraftMatch(draftMatch(tournamentId, "draft-match", 1)) is
+                    CreateMatchRepositoryResult.Created,
+            )
+            val revisionBefore = repository.readLocalRevisionState(tournamentId)
+
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches,
+                repository.replaceConfirmedTournamentRoster(replacementCandidate(tournamentId, "Rejected")),
+            )
+            assertEquals(revisionBefore, repository.readLocalRevisionState(tournamentId))
+            assertEquals(
+                TournamentStatus.CONFIRMED,
+                repository.observeById(tournamentId).first { it != null }!!.status,
+            )
+            assertEquals(
+                "Original Team 1",
+                repository.observeSlotsByTournamentId(tournamentId).first().first().teamName,
+            )
+            assertEquals(
+                "Original Player 1-1",
+                repository.observeRosterByTournamentAndSlot(tournamentId, 1).first().first().displayName,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun finalizedMatchAlsoBlocksReplacement() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-confirmed-roster-replacement-finalized-match.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val tournamentId = "finalized-match-replacement-tournament"
+            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED))
+            assertTrue(
+                repository.createDraftMatch(draftMatch(tournamentId, "finalized-match", 1)) is
+                    CreateMatchRepositoryResult.Created,
+            )
+            assertTrue(
+                repository.finalizeDraftMatch(
+                    "finalized-match",
+                    (1..12).map { slotNumber -> MatchPlacement(slotNumber, slotNumber) },
+                    (1..12).map { slotNumber -> MatchKill(slotNumber, slotNumber - 1) },
+                ) is FinalizeMatchRepositoryResult.Finalized,
+            )
+
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches,
+                repository.replaceConfirmedTournamentRoster(replacementCandidate(tournamentId, "Rejected")),
             )
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -1690,5 +1867,39 @@ class RoomTournamentRepositoryTest {
         tournamentId: String,
     ) = CumulativeTournamentStandingsEngine()(
         repository.observeMatchesByTournamentId(tournamentId).first(),
+    )
+
+    private suspend fun seedCompleteRoster(
+        repository: RoomTournamentRepository,
+        tournamentId: String,
+        prefix: String,
+        playerCount: Int = 4,
+    ) {
+        repository.saveTeamNames(
+            tournamentId,
+            TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "$prefix Team $slotNumber" },
+        )
+        TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+            repository.saveRoster(
+                tournamentId,
+                slotNumber,
+                (1..playerCount).map { playerNumber ->
+                    RosterPlayer(tournamentId, slotNumber, "$prefix Player $slotNumber-$playerNumber")
+                },
+            )
+        }
+    }
+
+    private fun replacementCandidate(
+        tournamentId: String,
+        prefix: String,
+    ) = ConfirmedRosterReplacementCandidate(
+        tournamentId = tournamentId,
+        teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "$prefix Team $slotNumber" },
+        rosterPlayersBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+            (1..4).map { playerNumber ->
+                RosterPlayer(tournamentId, slotNumber, "$prefix Player $slotNumber-$playerNumber")
+            }
+        },
     )
 }
