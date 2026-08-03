@@ -136,6 +136,29 @@ class RosterReviewScreenTest {
         composeTestRule.onNodeWithTag(ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG).assertIsNotEnabled()
     }
 
+    @Test
+    fun injectedOcrReviewSectionRendersWithoutReplacingManualReview() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RosterReviewScreen(
+                    uiState = validState(),
+                    onEditTeam = {},
+                    onEditRoster = {},
+                    onConfirm = {},
+                    onBackToTeamEntry = {},
+                    rosterOcrSection = {
+                        androidx.compose.material3.Text("Injected OCR review section")
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Injected OCR review section").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ROSTER_REVIEW_SLOT_ITEM_TEST_TAG_PREFIX + 12)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun validState() = RosterReviewUiState(
         isLoading = false,
         isAvailable = true,
