@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.tournament.RestoreTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -46,12 +47,14 @@ object SyncQueueRetryModule {
         syncDraftMatches: SyncDraftMatchesUseCase,
         syncFinalizedMatches: SyncFinalizedMatchesUseCase,
         restoreMatches: RestoreMatchesUseCase,
+        rosterReplacement: ReplaceTournamentRosterInCloudUseCase,
     ): SyncQueueEntryRetryExecutor = QueueOperationRetryExecutor(
         tournamentUpload = uploadTournament,
         tournamentRestoration = restoreTournament,
         draftMatchSync = syncDraftMatches,
         finalizedMatchSync = syncFinalizedMatches,
         matchRestoration = restoreMatches,
+        rosterReplacement = rosterReplacement,
     )
 
     @Provides

@@ -10,6 +10,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResul
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRetryAction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -27,6 +29,7 @@ class QueueOperationRetryExecutorTest {
             draftMatchSync = DraftMatchCloudSyncRetryAction { id -> calls += "draft_sync:$id"; DraftMatchCloudSyncResult.Success },
             finalizedMatchSync = FinalizedMatchCloudSyncRetryAction { id -> calls += "finalized_sync:$id"; FinalizedMatchCloudSyncResult.Success },
             matchRestoration = MatchCloudRestorationRetryAction { id -> calls += "match_restore:$id"; MatchCloudRestorationResult.Success },
+            rosterReplacement = TournamentRosterCloudReplacementRetryAction { id -> calls += "roster_replacement:$id"; TournamentRosterCloudReplacementResult.Success(2) },
         )
 
         val outcomes = SyncQueueOperationType.entries.map { operationType ->
@@ -40,6 +43,7 @@ class QueueOperationRetryExecutorTest {
                 "draft_sync:tournament-id",
                 "finalized_sync:tournament-id",
                 "match_restore:tournament-id",
+                "roster_replacement:tournament-id",
             ),
             calls,
         )
@@ -57,6 +61,22 @@ class QueueOperationRetryExecutorTest {
             SyncQueueRetryOutcome.Failure(
                 status = SyncQueueStatus.BLOCKED_NETWORK,
                 failureCategory = SyncQueueStatus.BLOCKED_NETWORK.name,
+            ),
+            outcome,
+        )
+    }
+
+    @Test fun rosterReplacementBlockedByMatchesIsFailedAsValidationWithoutEnqueueing() = runTest {
+        val outcome = executor(
+            rosterReplacement = TournamentRosterCloudReplacementRetryAction {
+                TournamentRosterCloudReplacementResult.BlockedByExistingMatches
+            },
+        ).execute(entry(SyncQueueOperationType.ROSTER_REPLACEMENT))
+
+        assertEquals(
+            SyncQueueRetryOutcome.Failure(
+                SyncQueueStatus.FAILED_VALIDATION,
+                "ROSTER_REPLACEMENT_BLOCKED_BY_MATCHES",
             ),
             outcome,
         )
@@ -129,12 +149,14 @@ class QueueOperationRetryExecutorTest {
         draftMatchSync: DraftMatchCloudSyncRetryAction = DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success },
         finalizedMatchSync: FinalizedMatchCloudSyncRetryAction = FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success },
         matchRestoration: MatchCloudRestorationRetryAction = MatchCloudRestorationRetryAction { MatchCloudRestorationResult.Success },
+        rosterReplacement: TournamentRosterCloudReplacementRetryAction = TournamentRosterCloudReplacementRetryAction { TournamentRosterCloudReplacementResult.Success(2) },
     ) = QueueOperationRetryExecutor(
         tournamentUpload = tournamentUpload,
         tournamentRestoration = tournamentRestoration,
         draftMatchSync = draftMatchSync,
         finalizedMatchSync = finalizedMatchSync,
         matchRestoration = matchRestoration,
+        rosterReplacement = rosterReplacement,
     )
 
     private fun entry(
