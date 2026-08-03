@@ -1047,7 +1047,7 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
-    fun finalize() {
+    fun finalizeMatch() {
         val current = _uiState.value
         val matchId = current.matchId ?: return
         if (

@@ -801,7 +801,7 @@ class MatchReviewViewModelTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
-        viewModel.finalize()
+        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/validated")
@@ -853,7 +853,7 @@ class MatchReviewViewModelTest {
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
 
-        viewModel.finalize()
+       viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
@@ -882,7 +882,7 @@ class MatchReviewViewModelTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
-        viewModel.finalize()
+       viewModel.finalizeMatch()
         advanceUntilIdle()
 
         var requestedTournamentId: String? = null
@@ -924,7 +924,7 @@ class MatchReviewViewModelTest {
         val viewModel = reviewViewModel()
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
-        viewModel.finalize()
+       viewModel.finalizeMatch()
         advanceUntilIdle()
         viewModel.prepareCsvExport()
         advanceUntilIdle()
@@ -987,7 +987,7 @@ class MatchReviewViewModelTest {
         viewModel.load("tournament-id", matchId)
         advanceUntilIdle()
 
-        viewModel.finalize()
+        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
@@ -1017,7 +1017,7 @@ class MatchReviewViewModelTest {
             MatchResultValidationError.DUPLICATE_PLACEMENT in
                 viewModel.uiState.value.validationErrors.getValue(1),
         )
-        viewModel.finalize()
+        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
@@ -1045,7 +1045,7 @@ class MatchReviewViewModelTest {
             MatchResultValidationError.INVALID_KILLS in
                 viewModel.uiState.value.validationErrors.getValue(1),
         )
-        viewModel.finalize()
+        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
