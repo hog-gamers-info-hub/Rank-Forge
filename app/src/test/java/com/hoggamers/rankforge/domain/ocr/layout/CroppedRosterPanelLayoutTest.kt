@@ -52,6 +52,38 @@ class CroppedRosterPanelLayoutTest {
     }
 
     @Test
+    fun playerRowsExactlyCoverEachSlotWithApprovedRelativeGeometry() {
+        layout.slots.forEach { slot ->
+            val rows = slot.playerRowRegions
+            assertEquals((1..4).toList(), rows.map { it.rowIndex })
+
+            rows.forEachIndexed { index, row ->
+                val relativeX = (row.rect.x - slot.contentRect.x) / slot.contentRect.width
+                val relativeY = (row.rect.y - slot.contentRect.y) / slot.contentRect.height
+                val relativeWidth = row.rect.width / slot.contentRect.width
+                val relativeHeight = row.rect.height / slot.contentRect.height
+
+                assertEquals(0.15, relativeX, DOUBLE_EPSILON)
+                assertEquals(index * 0.25, relativeY, DOUBLE_EPSILON)
+                assertEquals(0.85, relativeWidth, DOUBLE_EPSILON)
+                assertEquals(0.25, relativeHeight, DOUBLE_EPSILON)
+
+                if (index > 0) {
+                    val previous = rows[index - 1].rect
+                    assertEquals(previous.y + previous.height, row.rect.y, DOUBLE_EPSILON)
+                }
+            }
+
+            assertEquals(slot.contentRect.y, rows.first().rect.y, DOUBLE_EPSILON)
+            assertEquals(
+                slot.contentRect.y + slot.contentRect.height,
+                rows.last().rect.y + rows.last().rect.height,
+                DOUBLE_EPSILON,
+            )
+        }
+    }
+
+    @Test
     fun layoutRegionsRemainWithinNormalizedCroppedPanelBounds() {
         val rectangles = layout.slots.flatMap { slot ->
             listOf(slot.contentRect, slot.slotNumberRect) + slot.playerRowRegions.map { it.rect }
@@ -296,4 +328,8 @@ class CroppedRosterPanelLayoutTest {
             y >= container.y &&
             x + width <= container.x + container.width &&
             y + height <= container.y + container.height
+
+    private companion object {
+        const val DOUBLE_EPSILON = 1.0e-9
+    }
 }

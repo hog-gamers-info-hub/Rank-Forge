@@ -89,9 +89,9 @@ object FreeFireMaxCroppedRosterPanelLayout {
                     rect = relativeToSlot(
                         contentRect = contentRect,
                         x = 0.15,
-                        y = 0.20 + (rowIndex - 1) * 0.20,
+                        y = (rowIndex - 1) * 0.25,
                         width = 0.85,
-                        height = 0.20,
+                        height = 0.25,
                     ),
                 )
             },
