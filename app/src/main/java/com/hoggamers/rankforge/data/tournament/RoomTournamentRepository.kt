@@ -22,6 +22,8 @@ import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnap
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
+import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsRepositoryResult
@@ -495,6 +497,86 @@ class RoomTournamentRepository @Inject constructor(
                 markLocalRevisionChanged(tournamentId)
             }
             state.value = next
+        }
+    }
+
+    override suspend fun replaceConfirmedTournamentRoster(
+        candidate: ConfirmedRosterReplacementCandidate,
+    ): ReplaceConfirmedTournamentRosterRepositoryResult {
+        val expectedSlots = TeamSlot.SLOT_NUMBERS.toSet()
+        if (
+            candidate.tournamentId.isBlank() ||
+            candidate.teamNamesBySlotNumber.keys != expectedSlots ||
+            candidate.rosterPlayersBySlotNumber.keys != expectedSlots ||
+            candidate.rosterPlayersBySlotNumber.any { (slotNumber, players) ->
+                players.any { player ->
+                    player.tournamentId != candidate.tournamentId || player.slotNumber != slotNumber
+                }
+            }
+        ) {
+            return ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate
+        }
+
+        awaitState()
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                val tournamentEntity = database.tournamentDao()
+                    .observeById(candidate.tournamentId)
+                    .first()
+                    ?: return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
+                if (database.matchDao().observeByTournamentId(candidate.tournamentId).first().isNotEmpty()) {
+                    return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches
+                }
+
+                val confirmedTournament = tournamentEntity.toDomain().copy(status = TournamentStatus.CONFIRMED)
+                val replacementSlots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                    TeamSlot(
+                        tournamentId = candidate.tournamentId,
+                        slotNumber = slotNumber,
+                        teamName = candidate.teamNamesBySlotNumber.getValue(slotNumber),
+                    )
+                }
+                val replacementRosters = TeamSlot.SLOT_NUMBERS.associate { slotNumber ->
+                    RosterKey(candidate.tournamentId, slotNumber) to
+                        candidate.rosterPlayersBySlotNumber.getValue(slotNumber)
+                }
+                val next = state.value.copy(
+                    tournaments = state.value.tournaments.map { tournament ->
+                        if (tournament.id == candidate.tournamentId) confirmedTournament else tournament
+                    }.let { tournaments ->
+                        if (tournaments.any { it.id == candidate.tournamentId }) {
+                            tournaments
+                        } else {
+                            tournaments + confirmedTournament
+                        }
+                    },
+                    slots = state.value.slots + (candidate.tournamentId to replacementSlots),
+                    rosters = state.value.rosters
+                        .filterKeys { it.tournamentId != candidate.tournamentId }
+                        .plus(replacementRosters),
+                )
+
+                database.teamSlotDao().upsertAll(replacementSlots.map { it.toEntity() })
+                TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+                    database.rosterPlayerDao()
+                        .deleteByTournamentAndSlot(candidate.tournamentId, slotNumber)
+                }
+                database.rosterPlayerDao().upsertAll(
+                    TeamSlot.SLOT_NUMBERS.flatMap { slotNumber ->
+                        candidate.rosterPlayersBySlotNumber.getValue(slotNumber).toEntities()
+                    },
+                )
+                persistTournamentStatusChanges(state.value, next)
+                saveLegacyState(next)
+                markLocalRevisionChanged(candidate.tournamentId)
+                updatedState = next
+                ReplaceConfirmedTournamentRosterRepositoryResult.Replaced
+            }
+            if (result is ReplaceConfirmedTournamentRosterRepositoryResult.Replaced) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
         }
     }
 

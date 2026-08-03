@@ -43,6 +43,11 @@ interface TournamentRepository {
         players: List<RosterPlayer>,
     )
 
+    suspend fun replaceConfirmedTournamentRoster(
+        candidate: ConfirmedRosterReplacementCandidate,
+    ): ReplaceConfirmedTournamentRosterRepositoryResult =
+        error("Confirmed roster replacement is not supported by this repository.")
+
     suspend fun confirmTournament(tournamentId: String): Boolean
 
     fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =

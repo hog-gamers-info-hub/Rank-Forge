@@ -34,6 +34,7 @@ import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
@@ -176,6 +177,14 @@ object TournamentDataProvidersModule {
     fun provideSaveRosterUseCase(
         repository: TournamentRepository,
     ): SaveRosterUseCase = SaveRosterUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideReplaceConfirmedTournamentRosterUseCase(
+        repository: TournamentRepository,
+        rosterValidator: RosterValidator,
+    ): ReplaceConfirmedTournamentRosterUseCase =
+        ReplaceConfirmedTournamentRosterUseCase(repository, rosterValidator)
 
     @Provides
     @Singleton
