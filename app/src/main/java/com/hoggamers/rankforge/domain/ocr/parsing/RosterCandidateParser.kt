@@ -162,15 +162,20 @@ class FixedLayoutRosterCandidateParser : RosterCandidateParser {
         )
     }
 
-    private fun List<RosterRawOcrExtractionResult>.inputFailures(): List<RosterCandidateParseFailure> =
-        buildList {
-            if (isEmpty()) {
+    private fun List<RosterRawOcrExtractionResult>.inputFailures(): List<RosterCandidateParseFailure> {
+        val extractionResults = this
+        return buildList {
+            if (extractionResults.isEmpty()) {
                 add(RosterCandidateParseFailure.MISSING_ROSTER_METADATA)
             }
-            if (any { it is RosterRawOcrExtractionResult.Failed && it.regionIdentity == null }) {
+            if (extractionResults.any {
+                    it is RosterRawOcrExtractionResult.Failed && it.regionIdentity == null
+                }
+            ) {
                 add(RosterCandidateParseFailure.RAW_EXTRACTION_FAILURE)
             }
         }
+    }
 
     private fun List<RosterRawOcrExtractionResult>.forSlot(
         metadata: RosterSlotMetadata,
