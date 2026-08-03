@@ -42,6 +42,13 @@ class RosterCandidateParserTest {
     }
 
     @Test
+    fun populatedExtractionEvidenceDoesNotReportMissingRosterMetadata() {
+        val result = parse(playerRow(1, "Player One"))
+
+        assertTrue(result.inputFailures.isEmpty())
+    }
+
+    @Test
     fun missingAndEmptyRowsRemainInTheirOriginalPositions() {
         val result = parse(
             playerRow(2, "  "),
@@ -151,6 +158,25 @@ class RosterCandidateParserTest {
         val player = result.slots.single().playerNameCandidates.first()
         assertEquals(RosterCandidateParseStatus.INPUT_FAILURE, player.status)
         assertEquals(RosterCandidateParseFailure.RAW_EXTRACTION_FAILURE, player.failure)
+        assertTrue(result.inputFailures.isEmpty())
+    }
+
+    @Test
+    fun rawExtractionFailureWithoutRegionIdentityIsGlobalInputFailureOnly() {
+        val result = parser.parse(
+            RosterCandidateParseInput(
+                listOf(
+                    RosterRawOcrExtractionResult.Failed(
+                        failure = com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrFailure.RECOGNIZER_FAILED,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(RosterCandidateParseFailure.RAW_EXTRACTION_FAILURE),
+            result.inputFailures,
+        )
     }
 
     @Test
