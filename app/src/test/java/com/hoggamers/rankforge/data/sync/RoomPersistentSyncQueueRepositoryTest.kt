@@ -67,7 +67,7 @@ class RoomPersistentSyncQueueRepositoryTest {
             val duplicate = repository.enqueue(operationType, "tournament-id", SyncQueueStatus.FAILED_UNKNOWN, "unknown")
             assertEquals(first.id, duplicate.id)
         }
-        assertEquals(5, repository.observeAll().first().size)
+        assertEquals(6, repository.observeAll().first().size)
     }
     private class FakeDao : SyncQueueDao {
         private val entries = MutableStateFlow<List<SyncQueueEntity>>(emptyList())

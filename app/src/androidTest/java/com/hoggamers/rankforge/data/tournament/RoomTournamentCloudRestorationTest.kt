@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
@@ -21,6 +22,74 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentCloudRestorationTest {
+    @Test
+    fun restorationRemovesStaleRosterPlayersAcrossDatabaseReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-stale-roster-reopen.db"
+        val expectedNames = listOf(
+            "Restored Player 1",
+            "Restored Player 2",
+            "Restored Player 3",
+            "Restored Player 4",
+        )
+        var database: RankForgeDatabase? = null
+        var reopenedDatabase: RankForgeDatabase? = null
+
+        suspend fun assertRestoredRoster(repository: RoomTournamentRepository) {
+            val players = repository.observeRosterByTournamentAndSlot(TARGET_ID, 1).first()
+            assertEquals(4, players.size)
+            assertEquals(expectedNames, players.map { it.displayName })
+            assertTrue(players.none { it.displayName == "Old Player 5" })
+            assertTrue(players.none { it.displayName == "Old Player 6" })
+        }
+
+        context.deleteDatabase(databaseName)
+        try {
+            database = Room.databaseBuilder(
+                context,
+                RankForgeDatabase::class.java,
+                databaseName,
+            ).build()
+            val repository = RoomTournamentRepository(database!!)
+            repository.create(tournament(TARGET_ID, "Restoration Target", TournamentStatus.DRAFT))
+            repository.saveTeamNames(TARGET_ID, mapOf(1 to "Initial Team"))
+            repository.saveRoster(
+                TARGET_ID,
+                1,
+                (1..6).map { playerNumber ->
+                    RosterPlayer(TARGET_ID, 1, "Old Player $playerNumber")
+                },
+            )
+
+            repository.restore(
+                TournamentCloudRestorationSnapshot(
+                    tournament = tournament(TARGET_ID, "Restored Target", TournamentStatus.DRAFT),
+                    slots = TeamSlot.fixedSlotsForTournament(TARGET_ID).map { slot ->
+                        if (slot.slotNumber == 1) slot.copy(teamName = "Restored Team") else slot
+                    },
+                    players = expectedNames.mapIndexed { index, name ->
+                        RestoredRosterPlayer(TARGET_ID, 1, index + 1, name)
+                    },
+                ),
+            )
+
+            assertRestoredRoster(repository)
+
+            database?.close()
+            database = null
+            reopenedDatabase = Room.databaseBuilder(
+                context,
+                RankForgeDatabase::class.java,
+                databaseName,
+            ).build()
+            assertRestoredRoster(RoomTournamentRepository(reopenedDatabase!!))
+        } finally {
+            database?.close()
+            reopenedDatabase?.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun restorationReplacesOnlyTargetTournamentRosterAndPreservesUnrelatedData() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -38,6 +38,12 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.RestoreMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
 import com.hoggamers.rankforge.domain.tournament.ResolveDraftConflictUseCase
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRepository
+import com.hoggamers.rankforge.data.cloud.TournamentRosterCloudReplacementRemoteDataSource
+import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementAction
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -76,6 +82,24 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentCloudUploadAction(
         useCase: UploadTournamentUseCase,
     ): TournamentCloudUploadAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentRosterCloudReplacementRemoteDataSource(
+        dataSource: SupabaseTournamentRosterCloudReplacementRemoteDataSource,
+    ): TournamentRosterCloudReplacementRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentRosterCloudReplacementRepository(
+        repository: SupabaseTournamentRosterCloudReplacementRepository,
+    ): TournamentRosterCloudReplacementRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentRosterCloudReplacementAction(
+        useCase: ReplaceTournamentRosterInCloudUseCase,
+    ): TournamentRosterCloudReplacementAction
 
     @Binds
     @Singleton

@@ -9,6 +9,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRetryActio
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 
 class QueueOperationRetryExecutor(
@@ -17,6 +19,7 @@ class QueueOperationRetryExecutor(
     private val draftMatchSync: DraftMatchCloudSyncRetryAction,
     private val finalizedMatchSync: FinalizedMatchCloudSyncRetryAction,
     private val matchRestoration: MatchCloudRestorationRetryAction,
+    private val rosterReplacement: TournamentRosterCloudReplacementRetryAction,
 ) : SyncQueueEntryRetryExecutor {
     override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
         val tournamentId = entry.tournamentId ?: return SyncQueueRetryOutcome.Failure(
@@ -29,6 +32,7 @@ class QueueOperationRetryExecutor(
             SyncQueueOperationType.DRAFT_MATCH_SYNC -> draftMatchSync.executeForRetry(tournamentId).toRetryOutcome()
             SyncQueueOperationType.FINALIZED_MATCH_SYNC -> finalizedMatchSync.executeForRetry(tournamentId).toRetryOutcome()
             SyncQueueOperationType.MATCH_RESTORATION -> matchRestoration.executeForRetry(tournamentId).toRetryOutcome()
+            SyncQueueOperationType.ROSTER_REPLACEMENT -> rosterReplacement.executeForRetry(tournamentId).toRetryOutcome()
         }
     }
 }
@@ -90,4 +94,21 @@ private fun MatchCloudRestorationResult.toRetryOutcome(): SyncQueueRetryOutcome 
     MatchCloudRestorationResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
     MatchCloudRestorationResult.LocalTransactionFailure -> retryOutcome(SyncQueueStatus.FAILED_LOCAL)
     is MatchCloudRestorationResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
+}
+
+private fun TournamentRosterCloudReplacementResult.toRetryOutcome(): SyncQueueRetryOutcome = when (this) {
+    is TournamentRosterCloudReplacementResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
+    TournamentRosterCloudReplacementResult.AuthenticationRequired -> retryOutcome(SyncQueueStatus.BLOCKED_AUTHENTICATION)
+    TournamentRosterCloudReplacementResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
+    TournamentRosterCloudReplacementResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
+    TournamentRosterCloudReplacementResult.BlockedByExistingMatches -> SyncQueueRetryOutcome.Failure(
+        SyncQueueStatus.FAILED_VALIDATION,
+        "ROSTER_REPLACEMENT_BLOCKED_BY_MATCHES",
+    )
+    TournamentRosterCloudReplacementResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
+    is TournamentRosterCloudReplacementResult.Conflict -> SyncQueueRetryOutcome.Failure(
+        SyncQueueStatus.FAILED_CONFLICT,
+        conflict.queueFailureCategory(),
+    )
+    TournamentRosterCloudReplacementResult.UnknownFailure -> retryOutcome(SyncQueueStatus.FAILED_UNKNOWN)
 }

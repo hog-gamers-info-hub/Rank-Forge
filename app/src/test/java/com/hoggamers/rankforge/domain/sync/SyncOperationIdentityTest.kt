@@ -23,4 +23,20 @@ class SyncOperationIdentityTest {
             }
         assertNotEquals(upload.stableKey, SyncOperationIdentity.from(SyncQueueOperationType.TOURNAMENT_UPLOAD, "other-tournament").stableKey)
     }
+
+    @Test fun rosterReplacementHasItsOwnTournamentScopedIdentity() {
+        val rosterReplacement = SyncOperationIdentity.from(
+            SyncQueueOperationType.ROSTER_REPLACEMENT,
+            "tournament-id",
+        )
+
+        assertNotEquals(
+            rosterReplacement.stableKey,
+            SyncOperationIdentity.from(SyncQueueOperationType.TOURNAMENT_UPLOAD, "tournament-id").stableKey,
+        )
+        assertEquals(
+            rosterReplacement.stableKey,
+            SyncOperationIdentity.from(SyncQueueOperationType.ROSTER_REPLACEMENT, "tournament-id").stableKey,
+        )
+    }
 }
