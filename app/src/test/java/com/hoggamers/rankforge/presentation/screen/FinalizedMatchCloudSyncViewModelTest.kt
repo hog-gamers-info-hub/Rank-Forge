@@ -35,7 +35,7 @@ class FinalizedMatchCloudSyncViewModelTest {
     @Test
     fun mapsSyncStates() = runTest {
         val cases = listOf(
-            FinalizedMatchCloudSyncResult.Success to FinalizedMatchCloudSyncUiState.Success,
+            FinalizedMatchCloudSyncResult.Success(8) to FinalizedMatchCloudSyncUiState.Success,
             FinalizedMatchCloudSyncResult.AuthenticationRequired to FinalizedMatchCloudSyncUiState.AuthenticationRequired,
             FinalizedMatchCloudSyncResult.AuthorizationFailure to FinalizedMatchCloudSyncUiState.AuthorizationFailure,
             FinalizedMatchCloudSyncResult.ValidationFailure to FinalizedMatchCloudSyncUiState.ValidationFailure,
@@ -82,6 +82,10 @@ class FinalizedMatchCloudSyncViewModelTest {
         assertEquals(
             FinalizedMatchCloudSyncUiState.AuthenticationRequired,
             stateFor(FinalizedMatchCloudSyncResult.AuthenticationRequired, QueueRecordingResult.NOT_REQUIRED),
+        )
+        assertEquals(
+            FinalizedMatchCloudSyncUiState.ValidationFailure,
+            stateFor(FinalizedMatchCloudSyncResult.ValidationFailure, QueueRecordingResult.NOT_REQUIRED),
         )
 
         val viewModel = FinalizedMatchCloudSyncViewModel(

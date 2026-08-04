@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SyncFinalizedMatchesUseCaseTest {
@@ -46,7 +47,7 @@ class SyncFinalizedMatchesUseCaseTest {
     fun authenticatedSyncSendsAndPreservesOnlyLocalFinalizedData() = runTest {
         val local = localRepository()
         val before = local.observeMatchesByTournamentId(TOURNAMENT_ID).first()
-        val cloud = RecordingCloudRepository()
+        val cloud = RecordingCloudRepository(FinalizedMatchCloudSyncResult.Success(9))
         val queue = RecordingTestQueueRepository()
         val useCase = SyncFinalizedMatchesUseCase(
             tournamentRepository = local,
@@ -56,11 +57,57 @@ class SyncFinalizedMatchesUseCaseTest {
         )
 
         val result = useCase(TOURNAMENT_ID)
-        assertEquals(FinalizedMatchCloudSyncResult.Success, result.primaryResult)
+        assertEquals(FinalizedMatchCloudSyncResult.Success(9), result.primaryResult)
         assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertEquals(before, cloud.snapshot?.matches)
         assertEquals(before, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
+        assertEquals(9, local.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
         assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun partialFailurePersistsOnlyItsLastConfirmedRevision() = runTest {
+        val local = localRepository()
+        val result = SyncFinalizedMatchesUseCase(
+            local,
+            FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            RecordingCloudRepository(
+                FinalizedMatchCloudSyncResult.PartialFailure(
+                    completedStage = FinalizedMatchCloudSyncStage.MATCHES,
+                    confirmedCloudRevision = 7,
+                ),
+            ),
+            testQueueRecorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(7, local.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
+        assertTrue(result.primaryResult is FinalizedMatchCloudSyncResult.PartialFailure)
+    }
+
+    @Test
+    fun failureBeforeConfirmedServerMutationLeavesBaselineAndQueueStatusUnchanged() = runTest {
+        val local = localRepository()
+        val queue = RecordingTestQueueRepository()
+        val result = SyncFinalizedMatchesUseCase(
+            local,
+            FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            RecordingCloudRepository(FinalizedMatchCloudSyncResult.ValidationFailure),
+            queue.recorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(FinalizedMatchCloudSyncResult.ValidationFailure, result.primaryResult)
+        assertEquals(1, local.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
+        assertEquals(SyncQueueStatus.FAILED_VALIDATION, queue.entries.single().status)
+    }
+
+    @Test
+    fun domainSuccessRejectsNonpositiveRevision() {
+        assertThrows(IllegalArgumentException::class.java) {
+            FinalizedMatchCloudSyncResult.Success(0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            FinalizedMatchCloudSyncResult.Success(-1)
+        }
     }
 
     @Test
@@ -141,7 +188,7 @@ class SyncFinalizedMatchesUseCaseTest {
     }
 
     private class RecordingCloudRepository(
-        private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success,
+        private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success(1),
     ) : FinalizedMatchCloudSyncRepository {
         var snapshot: FinalizedMatchCloudSyncSnapshot? = null
 

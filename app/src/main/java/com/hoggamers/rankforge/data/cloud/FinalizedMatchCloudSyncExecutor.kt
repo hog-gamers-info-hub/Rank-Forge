@@ -20,46 +20,156 @@ enum class FinalizedMatchCloudSyncFailureCategory {
 }
 
 sealed interface FinalizedMatchCloudSyncExecutionResult {
-    data object Success : FinalizedMatchCloudSyncExecutionResult
+    data class Success(
+        val confirmedCloudRevision: Int,
+    ) : FinalizedMatchCloudSyncExecutionResult {
+        init {
+            require(confirmedCloudRevision > 0) { "Confirmed cloud revisions must be positive." }
+        }
+    }
+
     data class Failure(
         val completedStage: FinalizedMatchCloudSyncCompletedStage?,
         val category: FinalizedMatchCloudSyncFailureCategory,
         val conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict? = null,
+        val confirmedCloudRevision: Int? = null,
     ) : FinalizedMatchCloudSyncExecutionResult
 }
 
 class FinalizedMatchCloudSyncExecutor(
-    private val upsertMatches: suspend (List<FinalizedMatchUploadPayload>) -> Unit,
-    private val upsertMatchResults: suspend (List<FinalizedMatchResultUploadPayload>) -> Unit,
+    private val finalizeMatch: suspend (
+        match: FinalizedMatchUploadPayload,
+        matchResults: List<FinalizedMatchResultUploadPayload>,
+        expectedRevision: Int,
+    ) -> RevisionWriteResponse,
+    private val writeDraftMatch: suspend (
+        match: FinalizedMatchUploadPayload,
+        matchResults: List<FinalizedMatchResultUploadPayload>,
+        expectedRevision: Int,
+    ) -> RevisionWriteResponse,
 ) {
-    suspend fun execute(payloads: FinalizedMatchCloudSyncPayloads): FinalizedMatchCloudSyncExecutionResult {
-        var completedStage: FinalizedMatchCloudSyncCompletedStage? = null
+    suspend fun execute(
+        payloads: FinalizedMatchCloudSyncPayloads,
+        expectedRevision: Int,
+    ): FinalizedMatchCloudSyncExecutionResult {
+        var currentRevision = expectedRevision
+        var lastConfirmedRevision: Int? = null
         return try {
-            if (payloads.matches.isNotEmpty()) {
-                upsertMatches(payloads.matches)
-                completedStage = FinalizedMatchCloudSyncCompletedStage.MATCHES
+            payloads.matches.sortedBy { it.matchNumber }.forEach { match ->
+                val matchResults = payloads.matchResults.filter { it.matchId == match.id }
+                var response = finalizeMatch(match, matchResults, currentRevision)
+                if (response.outcome == "missing_data") {
+                    val bootstrapResponse = writeDraftMatch(
+                        match.copy(status = "draft"),
+                        emptyList(),
+                        currentRevision,
+                    )
+                    val bootstrapRevision = bootstrapResponse.positiveRevisionOrNull()
+                    if (bootstrapResponse.outcome != "success" || bootstrapRevision == null) {
+                        return failureFor(
+                            response = bootstrapResponse,
+                            expectedRevision = currentRevision,
+                            lastConfirmedRevision = lastConfirmedRevision,
+                        )
+                    }
+                    currentRevision = bootstrapRevision
+                    lastConfirmedRevision = bootstrapRevision
+                    response = finalizeMatch(match, matchResults, currentRevision)
+                }
+
+                when (response.outcome) {
+                    "success" -> {
+                        val revision = response.positiveRevisionOrNull()
+                            ?: return validationFailure(lastConfirmedRevision)
+                        currentRevision = revision
+                        lastConfirmedRevision = revision
+                    }
+
+                    "already_finalized" -> {
+                        val revision = response.positiveRevisionOrNull()
+                            ?: return validationFailure(lastConfirmedRevision)
+                        currentRevision = revision
+                        lastConfirmedRevision = revision
+                    }
+
+                    else -> return failureFor(
+                        response = response,
+                        expectedRevision = currentRevision,
+                        lastConfirmedRevision = lastConfirmedRevision,
+                    )
+                }
             }
-            if (payloads.matchResults.isNotEmpty()) {
-                upsertMatchResults(payloads.matchResults)
+            val confirmedRevision = lastConfirmedRevision
+            if (confirmedRevision != null && confirmedRevision > 0) {
+                FinalizedMatchCloudSyncExecutionResult.Success(confirmedRevision)
+            } else {
+                validationFailure(null)
             }
-            FinalizedMatchCloudSyncExecutionResult.Success
         } catch (cancellation: CancellationException) {
             if (cancellation is TimeoutCancellationException) {
-                FinalizedMatchCloudSyncExecutionResult.Failure(
-                    completedStage = completedStage,
+                failure(
                     category = FinalizedMatchCloudSyncFailureCategory.NETWORK,
+                    confirmedCloudRevision = lastConfirmedRevision,
                 )
             } else {
                 throw cancellation
             }
         } catch (throwable: Throwable) {
-            FinalizedMatchCloudSyncExecutionResult.Failure(
-                completedStage = completedStage,
+            failure(
                 category = throwable.toFinalizedMatchCloudSyncFailureCategory(),
+                confirmedCloudRevision = lastConfirmedRevision,
             )
         }
     }
+
+    private fun failureFor(
+        response: RevisionWriteResponse,
+        expectedRevision: Int,
+        lastConfirmedRevision: Int?,
+    ): FinalizedMatchCloudSyncExecutionResult.Failure = when (response.outcome) {
+        "stale_write", "missing_revision", "finalized_protected" -> failure(
+            category = FinalizedMatchCloudSyncFailureCategory.CONFLICT,
+            conflict = response.toRevisionConflict(expectedRevision),
+            confirmedCloudRevision = lastConfirmedRevision,
+        )
+
+        "authentication_required" -> failure(
+            category = FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION,
+            confirmedCloudRevision = lastConfirmedRevision,
+        )
+
+        "unauthorized" -> failure(
+            category = FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION,
+            confirmedCloudRevision = lastConfirmedRevision,
+        )
+
+        else -> failure(
+            category = FinalizedMatchCloudSyncFailureCategory.VALIDATION,
+            confirmedCloudRevision = lastConfirmedRevision,
+        )
+    }
+
+    private fun validationFailure(
+        confirmedCloudRevision: Int?,
+    ) = failure(
+        category = FinalizedMatchCloudSyncFailureCategory.VALIDATION,
+        confirmedCloudRevision = confirmedCloudRevision,
+    )
+
+    private fun failure(
+        category: FinalizedMatchCloudSyncFailureCategory,
+        conflict: com.hoggamers.rankforge.domain.sync.RevisionConflict? = null,
+        confirmedCloudRevision: Int? = null,
+    ) = FinalizedMatchCloudSyncExecutionResult.Failure(
+        completedStage = confirmedCloudRevision?.let { FinalizedMatchCloudSyncCompletedStage.MATCHES },
+        category = category,
+        conflict = conflict,
+        confirmedCloudRevision = confirmedCloudRevision,
+    )
 }
+
+private fun RevisionWriteResponse.positiveRevisionOrNull(): Int? =
+    revision?.takeIf { it > 0 }
 
 internal fun Throwable.toFinalizedMatchCloudSyncFailureCategory(): FinalizedMatchCloudSyncFailureCategory {
     val description = generateSequence(this) { it.cause }

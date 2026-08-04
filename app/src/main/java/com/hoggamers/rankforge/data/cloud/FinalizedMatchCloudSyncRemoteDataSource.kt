@@ -3,7 +3,6 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import javax.inject.Inject
@@ -41,42 +40,30 @@ class SupabaseFinalizedMatchCloudSyncRemoteDataSource @Inject constructor(
                                 null,
                                 FinalizedMatchCloudSyncFailureCategory.VALIDATION,
                             )
-                        var revision = expectedRevision
-                        payloads.matches.sortedBy { it.matchNumber }.forEach { match ->
-                            val response = clientProvider.client.postgrest.rpc(
-                                "finalize_match_snapshot",
-                                ProtectedMatchFinalizationParameters(
-                                    tournamentId = tournamentId,
-                                    match = match,
-                                    matchResults = payloads.matchResults.filter { it.matchId == match.id },
-                                    expectedRevision = revision,
-                                ),
-                            ).decodeSingle<RevisionWriteResponse>()
-                            when (response.outcome) {
-                                "success" -> revision = response.revision
-                                    ?: return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
-                                        null,
-                                        FinalizedMatchCloudSyncFailureCategory.VALIDATION,
-                                    )
-                                "already_finalized" -> Unit
-                                "stale_write", "missing_revision", "finalized_protected" ->
-                                    return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
-                                        null,
-                                        FinalizedMatchCloudSyncFailureCategory.CONFLICT,
-                                        response.toRevisionConflict(revision),
-                                    )
-                                "authentication_required" -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
-                                    null, FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION,
-                                )
-                                "unauthorized" -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
-                                    null, FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION,
-                                )
-                                else -> return@withContext FinalizedMatchCloudSyncExecutionResult.Failure(
-                                    null, FinalizedMatchCloudSyncFailureCategory.VALIDATION,
-                                )
-                            }
-                        }
-                        FinalizedMatchCloudSyncExecutionResult.Success
+                        FinalizedMatchCloudSyncExecutor(
+                            finalizeMatch = { match, matchResults, revision ->
+                                clientProvider.client.postgrest.rpc(
+                                    "finalize_match_snapshot",
+                                    ProtectedMatchFinalizationParameters(
+                                        tournamentId = tournamentId,
+                                        match = match,
+                                        matchResults = matchResults,
+                                        expectedRevision = revision,
+                                    ),
+                                ).decodeSingle()
+                            },
+                            writeDraftMatch = { match, matchResults, revision ->
+                                clientProvider.client.postgrest.rpc(
+                                    "write_match_snapshot",
+                                    MatchSnapshotWriteParameters(
+                                        tournamentId = tournamentId,
+                                        matches = listOf(match),
+                                        matchResults = matchResults,
+                                        expectedRevision = revision,
+                                    ),
+                                ).decodeSingle()
+                            },
+                        ).execute(payloads, expectedRevision)
                     } catch (cancellation: kotlinx.coroutines.CancellationException) {
                         throw cancellation
                     } catch (throwable: Throwable) {

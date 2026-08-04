@@ -75,7 +75,7 @@ private fun DraftMatchCloudSyncResult.toRetryOutcome(): SyncQueueRetryOutcome = 
 }
 
 private fun FinalizedMatchCloudSyncResult.toRetryOutcome(): SyncQueueRetryOutcome = when (this) {
-    FinalizedMatchCloudSyncResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
+    is FinalizedMatchCloudSyncResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
     FinalizedMatchCloudSyncResult.AuthenticationRequired -> retryOutcome(SyncQueueStatus.BLOCKED_AUTHENTICATION)
     FinalizedMatchCloudSyncResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     FinalizedMatchCloudSyncResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)

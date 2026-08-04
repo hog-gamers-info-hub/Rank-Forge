@@ -54,10 +54,8 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         }
 
         val result = cloudSyncRepository.sync(snapshot)
-        if (result == FinalizedMatchCloudSyncResult.Success) {
-            snapshot.expectedCloudRevision?.let { expected ->
-                tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
-            }
+        result.confirmedCloudRevision()?.let { cloudRevision ->
+            tournamentRepository.confirmCloudRevision(tournamentId, cloudRevision)
         }
         return result
     }
@@ -74,5 +72,12 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         ),
     )
 }
-private fun FinalizedMatchCloudSyncResult.queueStatus() = when (this) { FinalizedMatchCloudSyncResult.Success -> SyncQueueStatus.COMPLETED; FinalizedMatchCloudSyncResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; FinalizedMatchCloudSyncResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; FinalizedMatchCloudSyncResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; FinalizedMatchCloudSyncResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; is FinalizedMatchCloudSyncResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT; is FinalizedMatchCloudSyncResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN }
+private fun FinalizedMatchCloudSyncResult.queueStatus() = when (this) { is FinalizedMatchCloudSyncResult.Success -> SyncQueueStatus.COMPLETED; FinalizedMatchCloudSyncResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; FinalizedMatchCloudSyncResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; FinalizedMatchCloudSyncResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; FinalizedMatchCloudSyncResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; is FinalizedMatchCloudSyncResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT; is FinalizedMatchCloudSyncResult.PartialFailure -> SyncQueueStatus.FAILED_UNKNOWN }
 private fun FinalizedMatchCloudSyncResult.queueFailureCategory(): String? = (this as? FinalizedMatchCloudSyncResult.Conflict)?.conflict?.queueFailureCategory()
+
+private fun FinalizedMatchCloudSyncResult.confirmedCloudRevision(): Int? = when (this) {
+    is FinalizedMatchCloudSyncResult.Success -> confirmedCloudRevision
+    is FinalizedMatchCloudSyncResult.Conflict -> confirmedCloudRevision
+    is FinalizedMatchCloudSyncResult.PartialFailure -> confirmedCloudRevision
+    else -> null
+}?.takeIf { it > 0 }
