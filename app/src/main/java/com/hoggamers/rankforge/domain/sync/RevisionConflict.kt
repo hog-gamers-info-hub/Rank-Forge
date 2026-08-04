@@ -46,7 +46,7 @@ fun LocalRevisionState.detectDivergence(cloudRevision: CloudRevision): RevisionC
 /** Zero is an explicit create expectation, never a persisted cloud revision. */
 fun LocalRevisionState.expectedRevisionForWrite(): Int? = when {
     baseCloudRevision != null -> baseCloudRevision.value
-    localRevision == 1 -> 0
+    localRevision != null && localRevision > 0 -> 0
     else -> null
 }
 
