@@ -27,7 +27,7 @@ class QueueOperationRetryExecutorTest {
             tournamentUpload = TournamentCloudUploadRetryAction { id -> calls += "upload:$id"; TournamentCloudUploadResult.Success },
             tournamentRestoration = TournamentCloudRestorationRetryAction { id -> calls += "tournament_restore:$id"; TournamentCloudRestorationResult.Success("Tournament") },
             draftMatchSync = DraftMatchCloudSyncRetryAction { id -> calls += "draft_sync:$id"; DraftMatchCloudSyncResult.Success },
-            finalizedMatchSync = FinalizedMatchCloudSyncRetryAction { id -> calls += "finalized_sync:$id"; FinalizedMatchCloudSyncResult.Success },
+            finalizedMatchSync = FinalizedMatchCloudSyncRetryAction { id -> calls += "finalized_sync:$id"; FinalizedMatchCloudSyncResult.Success(8) },
             matchRestoration = MatchCloudRestorationRetryAction { id -> calls += "match_restore:$id"; MatchCloudRestorationResult.Success },
             rosterReplacement = TournamentRosterCloudReplacementRetryAction { id -> calls += "roster_replacement:$id"; TournamentRosterCloudReplacementResult.Success(2) },
         )
@@ -98,6 +98,42 @@ class QueueOperationRetryExecutorTest {
         assertEquals(SyncQueueStatus.COMPLETED, repository.entries.single().status)
     }
 
+    @Test fun revisionCarryingFinalizedSuccessCompletesExistingQueueEntry() = runTest {
+        val queuedEntry = entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC)
+        val repository = RecordingQueueRepository(listOf(queuedEntry))
+        val coordinator = ForegroundSyncQueueRetryCoordinator(
+            repository = repository,
+            executor = executor(
+                finalizedMatchSync = FinalizedMatchCloudSyncRetryAction {
+                    FinalizedMatchCloudSyncResult.Success(8)
+                },
+            ),
+        )
+
+        coordinator.retryEligible(listOf(queuedEntry), hasAuthenticatedSession = true)
+
+        assertEquals(0, repository.enqueueCalls)
+        assertEquals(1, repository.entries.single().attemptCount)
+        assertEquals(SyncQueueStatus.COMPLETED, repository.entries.single().status)
+        assertEquals(null, repository.entries.single().failureCategory)
+    }
+
+    @Test fun finalizedValidationFailureDoesNotCompleteQueueRetry() = runTest {
+        val outcome = executor(
+            finalizedMatchSync = FinalizedMatchCloudSyncRetryAction {
+                FinalizedMatchCloudSyncResult.ValidationFailure
+            },
+        ).execute(entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC))
+
+        assertEquals(
+            SyncQueueRetryOutcome.Failure(
+                SyncQueueStatus.FAILED_VALIDATION,
+                SyncQueueStatus.FAILED_VALIDATION.name,
+            ),
+            outcome,
+        )
+    }
+
     @Test fun coordinatorWithExecutorUpdatesExistingEntryForFailureWithoutEnqueueing() = runTest {
         val queuedEntry = entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC)
         val repository = RecordingQueueRepository(listOf(queuedEntry))
@@ -147,7 +183,7 @@ class QueueOperationRetryExecutorTest {
         tournamentUpload: TournamentCloudUploadRetryAction = TournamentCloudUploadRetryAction { TournamentCloudUploadResult.Success },
         tournamentRestoration: TournamentCloudRestorationRetryAction = TournamentCloudRestorationRetryAction { TournamentCloudRestorationResult.Success("Tournament") },
         draftMatchSync: DraftMatchCloudSyncRetryAction = DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success },
-        finalizedMatchSync: FinalizedMatchCloudSyncRetryAction = FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success },
+        finalizedMatchSync: FinalizedMatchCloudSyncRetryAction = FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success(8) },
         matchRestoration: MatchCloudRestorationRetryAction = MatchCloudRestorationRetryAction { MatchCloudRestorationResult.Success },
         rosterReplacement: TournamentRosterCloudReplacementRetryAction = TournamentRosterCloudReplacementRetryAction { TournamentRosterCloudReplacementResult.Success(2) },
     ) = QueueOperationRetryExecutor(

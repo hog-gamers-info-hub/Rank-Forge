@@ -14,14 +14,24 @@ enum class FinalizedMatchCloudSyncStage {
 }
 
 sealed interface FinalizedMatchCloudSyncResult {
-    data object Success : FinalizedMatchCloudSyncResult
+    data class Success(
+        val confirmedCloudRevision: Int,
+    ) : FinalizedMatchCloudSyncResult {
+        init {
+            require(confirmedCloudRevision > 0) { "Confirmed cloud revisions must be positive." }
+        }
+    }
     data object AuthenticationRequired : FinalizedMatchCloudSyncResult
     data object ValidationFailure : FinalizedMatchCloudSyncResult
     data object AuthorizationFailure : FinalizedMatchCloudSyncResult
     data object NetworkFailure : FinalizedMatchCloudSyncResult
-    data class Conflict(val conflict: RevisionConflict) : FinalizedMatchCloudSyncResult
+    data class Conflict(
+        val conflict: RevisionConflict,
+        val confirmedCloudRevision: Int? = null,
+    ) : FinalizedMatchCloudSyncResult
     data class PartialFailure(
         val completedStage: FinalizedMatchCloudSyncStage,
+        val confirmedCloudRevision: Int? = null,
     ) : FinalizedMatchCloudSyncResult
 }
 

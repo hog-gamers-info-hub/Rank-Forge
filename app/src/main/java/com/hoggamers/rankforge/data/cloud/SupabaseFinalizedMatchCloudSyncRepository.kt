@@ -24,26 +24,25 @@ class SupabaseFinalizedMatchCloudSyncRepository @Inject constructor(
 }
 
 private fun FinalizedMatchCloudSyncExecutionResult.toDomainResult(): FinalizedMatchCloudSyncResult = when (this) {
-    FinalizedMatchCloudSyncExecutionResult.Success -> FinalizedMatchCloudSyncResult.Success
+    is FinalizedMatchCloudSyncExecutionResult.Success ->
+        FinalizedMatchCloudSyncResult.Success(confirmedCloudRevision)
     is FinalizedMatchCloudSyncExecutionResult.Failure -> {
-        if (completedStage != null) {
-            FinalizedMatchCloudSyncResult.PartialFailure(
-                completedStage = FinalizedMatchCloudSyncStage.MATCHES,
-            )
-        } else {
-            when (category) {
-                FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION ->
-                    FinalizedMatchCloudSyncResult.AuthenticationRequired
-                FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION ->
-                    FinalizedMatchCloudSyncResult.AuthorizationFailure
-                FinalizedMatchCloudSyncFailureCategory.NETWORK -> FinalizedMatchCloudSyncResult.NetworkFailure
-                FinalizedMatchCloudSyncFailureCategory.VALIDATION,
-                FinalizedMatchCloudSyncFailureCategory.UNKNOWN,
-                -> FinalizedMatchCloudSyncResult.ValidationFailure
-                FinalizedMatchCloudSyncFailureCategory.CONFLICT -> FinalizedMatchCloudSyncResult.Conflict(
-                    conflict ?: RevisionConflict.MissingRevision,
+        when {
+            category == FinalizedMatchCloudSyncFailureCategory.CONFLICT ->
+                FinalizedMatchCloudSyncResult.Conflict(
+                    conflict = conflict ?: RevisionConflict.MissingRevision,
+                    confirmedCloudRevision = confirmedCloudRevision,
                 )
-            }
+            completedStage != null -> FinalizedMatchCloudSyncResult.PartialFailure(
+                completedStage = FinalizedMatchCloudSyncStage.MATCHES,
+                confirmedCloudRevision = confirmedCloudRevision,
+            )
+            category == FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION ->
+                FinalizedMatchCloudSyncResult.AuthenticationRequired
+            category == FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION ->
+                FinalizedMatchCloudSyncResult.AuthorizationFailure
+            category == FinalizedMatchCloudSyncFailureCategory.NETWORK -> FinalizedMatchCloudSyncResult.NetworkFailure
+            else -> FinalizedMatchCloudSyncResult.ValidationFailure
         }
     }
 }

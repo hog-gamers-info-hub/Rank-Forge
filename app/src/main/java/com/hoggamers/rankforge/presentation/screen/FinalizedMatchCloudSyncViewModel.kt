@@ -61,7 +61,7 @@ class FinalizedMatchCloudSyncViewModel @Inject constructor(
 }
 
 private fun QueueAwareActionResult<FinalizedMatchCloudSyncResult>.toUiState(): FinalizedMatchCloudSyncUiState {
-    if (primaryResult == FinalizedMatchCloudSyncResult.Success) {
+    if (primaryResult is FinalizedMatchCloudSyncResult.Success) {
         return FinalizedMatchCloudSyncUiState.Success
     }
 
@@ -73,7 +73,7 @@ private fun QueueAwareActionResult<FinalizedMatchCloudSyncResult>.toUiState(): F
 }
 
 private fun FinalizedMatchCloudSyncResult.toUiState(): FinalizedMatchCloudSyncUiState = when (this) {
-    FinalizedMatchCloudSyncResult.Success -> FinalizedMatchCloudSyncUiState.Success
+    is FinalizedMatchCloudSyncResult.Success -> FinalizedMatchCloudSyncUiState.Success
     FinalizedMatchCloudSyncResult.AuthenticationRequired ->
         FinalizedMatchCloudSyncUiState.AuthenticationRequired
     FinalizedMatchCloudSyncResult.ValidationFailure -> FinalizedMatchCloudSyncUiState.ValidationFailure
