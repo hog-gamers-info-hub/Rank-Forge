@@ -30,6 +30,31 @@ class RevisionConflictTest {
     }
 
     @Test
+    fun newLocalRevisionUsesCreateExpectation() {
+        assertEquals(0, LocalRevisionState.New.expectedRevisionForWrite())
+    }
+
+    @Test
+    fun locallyEditedNeverSynchronizedRevisionStillUsesCreateExpectation() {
+        val state = LocalRevisionState(
+            localRevision = 33,
+            baseCloudRevision = null,
+        )
+
+        assertEquals(0, state.expectedRevisionForWrite())
+    }
+
+    @Test
+    fun synchronizedRevisionUsesKnownCloudRevision() {
+        val state = LocalRevisionState(
+            localRevision = 5,
+            baseCloudRevision = CloudRevision(4),
+        )
+
+        assertEquals(4, state.expectedRevisionForWrite())
+    }
+
+    @Test
     fun staleRpcResponseMapsToNonDestructiveStaleWriteConflict() {
         assertEquals(
             RevisionConflict.StaleWrite(CloudRevision(3), CloudRevision(4)),
