@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.screen
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import com.hoggamers.rankforge.data.local.NoOpScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.scopes.ActivityRetainedScoped
 import java.io.FileNotFoundException
@@ -13,6 +15,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 sealed interface ImageSourceFingerprintResult {
@@ -107,6 +110,8 @@ sealed interface ScreenshotDuplicateUnlinkResult {
 @ActivityRetainedScoped
 class ScreenshotDuplicateDetector @Inject constructor(
     private val fingerprintGenerator: ImageSourceFingerprintGenerator,
+    private val screenshotMetadataRepository: ScreenshotMetadataRepository =
+        NoOpScreenshotMetadataRepository(),
 ) {
     private val lock = Any()
     private val fingerprintOwnersByTournament = mutableMapOf<String, MutableMap<String, String>>()
@@ -122,10 +127,30 @@ class ScreenshotDuplicateDetector @Inject constructor(
             ImageSourceFingerprintResult.Failure -> return ScreenshotDuplicateLinkResult.FingerprintFailure
         }
 
+        val persistedMetadata = try {
+            screenshotMetadataRepository.observeByTournamentId(tournamentId).first()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return ScreenshotDuplicateLinkResult.StateConflict
+        }
+        val persistedOwner = persistedMetadata.firstOrNull { metadata ->
+            metadata.sha256 == fingerprint && metadata.matchId != matchId
+        }
+        if (persistedOwner != null) {
+            return ScreenshotDuplicateLinkResult.LinkedToOtherMatch(persistedOwner.matchId)
+        }
+        val persistedSameMatch = persistedMetadata.any { metadata ->
+            metadata.sha256 == fingerprint && metadata.matchId == matchId
+        }
+
         return synchronized(lock) {
             val owners = fingerprintOwnersByTournament.getOrPut(tournamentId) { mutableMapOf() }
             when (val owner = owners[fingerprint]) {
                 null -> {
+                    if (persistedSameMatch) {
+                        return@synchronized ScreenshotDuplicateLinkResult.SameMatch
+                    }
                     if (currentFingerprint == fingerprint) {
                         return@synchronized ScreenshotDuplicateLinkResult.SameMatch
                     }
@@ -156,8 +181,9 @@ class ScreenshotDuplicateDetector @Inject constructor(
             return@synchronized ScreenshotDuplicateUnlinkResult.Unlinked
         }
         val owners = fingerprintOwnersByTournament[tournamentId]
-            ?: return@synchronized ScreenshotDuplicateUnlinkResult.StateConflict
-        when (owners[fingerprint]) {
+            ?: return@synchronized ScreenshotDuplicateUnlinkResult.Unlinked
+        when (val owner = owners[fingerprint]) {
+            null -> ScreenshotDuplicateUnlinkResult.Unlinked
             matchId -> {
                 owners.remove(fingerprint)
                 if (owners.isEmpty()) {
