@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
+import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadResult
@@ -59,6 +60,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+private const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class MatchReviewViewModelTest {
     private val dispatcher = StandardTestDispatcher()
@@ -71,7 +74,7 @@ class MatchReviewViewModelTest {
         repository = InMemoryTournamentRepository()
         repository.create(
             Tournament(
-                id = "tournament-id",
+                id = TOURNAMENT_ID,
                 name = "Summer Cup",
                 date = LocalDate.of(2026, 7, 24),
                 organizerName = "Organizer",
@@ -81,7 +84,7 @@ class MatchReviewViewModelTest {
         )
         matchId = (CreateMatchUseCase(repository)(
             CreateMatchInput(
-                tournamentId = "tournament-id",
+                tournamentId = TOURNAMENT_ID,
                 matchNumber = "1",
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
@@ -97,13 +100,13 @@ class MatchReviewViewModelTest {
     @Test
     fun reviewShowsTwelveRowsAndRestoredDraftValues() = runTest {
         repository.saveRoster(
-            "tournament-id",
+            TOURNAMENT_ID,
             1,
-            listOf(RosterPlayer("tournament-id", 1, "Player One")),
+            listOf(RosterPlayer(TOURNAMENT_ID, 1, "Player One")),
         )
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -112,7 +115,7 @@ class MatchReviewViewModelTest {
         }
 
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         assertEquals((1..12).toList(), viewModel.uiState.value.rows.map { it.teamSlotNumber })
@@ -125,7 +128,7 @@ class MatchReviewViewModelTest {
     @Test
     fun reviewUsesExistingValidationForIncompleteDraft() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isValid)
@@ -142,7 +145,7 @@ class MatchReviewViewModelTest {
     @Test
     fun reviewActionsExposePlacementKillAndDetailsNavigation() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.openPlacements()
@@ -158,7 +161,7 @@ class MatchReviewViewModelTest {
     @Test
     fun validatedPhotoPickerSelectionReplacesThePreviousTemporaryState() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.requestPhotoPicker()
@@ -182,7 +185,7 @@ class MatchReviewViewModelTest {
     @Test
     fun photoPickerCancellationPreservesStateAndBlankResultIsRejected() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/selected")
         advanceUntilIdle()
@@ -218,7 +221,7 @@ class MatchReviewViewModelTest {
                 },
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/unsupported")
@@ -239,7 +242,7 @@ class MatchReviewViewModelTest {
     @Test
     fun validatedDraftScreenshotCanLinkReplaceAndUnlinkWithoutChangingMatchData() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         val beforeMatch = repository.observeMatchById(matchId).first()
 
@@ -266,7 +269,7 @@ class MatchReviewViewModelTest {
     @Test
     fun linkedDraftScreenshotExposesOcrReviewNavigationForSameMatch() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/ocr")
@@ -275,13 +278,13 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.canOpenOcrReview)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
 
         viewModel.openOcrReview()
 
         assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
 
         viewModel.onNavigationHandled()
@@ -298,7 +301,7 @@ class MatchReviewViewModelTest {
                 },
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/not-image")
@@ -320,7 +323,7 @@ class MatchReviewViewModelTest {
             screenshotDuplicateDetector = duplicateDetector(mapOf(uri to bytes)),
             localImagePreserver = localImagePreserver(mapOf(uri to bytes), "image/jpeg"),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -341,7 +344,7 @@ class MatchReviewViewModelTest {
         val bytes = byteArrayOf(10, 20, 30)
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Uploaded(
-                "users/user-id/tournaments/tournament-id/matches/$matchId/original.png",
+                screenshotObjectPath("user-id", matchId, "png"),
             ),
         )
         val viewModel = reviewViewModel(
@@ -349,7 +352,7 @@ class MatchReviewViewModelTest {
             localImagePreserver = localImagePreserver(mapOf(uri to bytes)),
             screenshotStorageUploader = uploader,
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -360,7 +363,7 @@ class MatchReviewViewModelTest {
         assertEquals(bytes.toList(), uploader.calls.single().readBytes().toList())
         assertTrue(viewModel.uiState.value.isScreenshotUploaded)
         assertEquals(
-            "users/user-id/tournaments/tournament-id/matches/$matchId/original.png",
+            screenshotObjectPath("user-id", matchId, "png"),
             viewModel.uiState.value.screenshotUploadObjectPath,
         )
     }
@@ -372,7 +375,7 @@ class MatchReviewViewModelTest {
         val metadataRepository = FakeScreenshotMetadataRepository()
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Uploaded(
-                "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+                screenshotObjectPath("owner-id", matchId, "png"),
             ),
         )
         val viewModel = reviewViewModel(
@@ -382,7 +385,7 @@ class MatchReviewViewModelTest {
             screenshotMetadataRepository = metadataRepository,
             screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -392,7 +395,7 @@ class MatchReviewViewModelTest {
 
         val metadata = metadataRepository.metadata.value!!
         assertEquals(matchId, metadata.matchId)
-        assertEquals("tournament-id", metadata.tournamentId)
+        assertEquals(TOURNAMENT_ID, metadata.tournamentId)
         assertEquals("owner-id", metadata.ownerUserId)
         assertEquals("png", metadata.fileExtension)
         assertEquals("image/png", metadata.mimeType)
@@ -415,14 +418,14 @@ class MatchReviewViewModelTest {
         val viewModel = reviewViewModel(
             screenshotStorageUploader = RecordingScreenshotStorageUploader(
                 ScreenshotStorageUploadResult.Uploaded(
-                    "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+                    screenshotObjectPath("owner-id", matchId, "png"),
                 ),
             ),
             screenshotMetadataRepository = metadataRepository,
             screenshotMetadataCloudDataSource = cloudDataSource,
             screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/cloud-metadata-failure")
         advanceUntilIdle()
@@ -447,7 +450,7 @@ class MatchReviewViewModelTest {
             screenshotStorageUploader = uploader,
             screenshotMetadataRepository = metadataRepository,
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/room-failure")
         advanceUntilIdle()
@@ -471,7 +474,7 @@ class MatchReviewViewModelTest {
         val viewModel = reviewViewModel(
             screenshotStorageUploader = uploader,
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -490,7 +493,7 @@ class MatchReviewViewModelTest {
             ),
         )
         val viewModel = reviewViewModel(screenshotStorageUploader = uploader)
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/retry")
         advanceUntilIdle()
@@ -518,7 +521,7 @@ class MatchReviewViewModelTest {
                 ioDispatcher = Dispatchers.Unconfined,
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -555,7 +558,7 @@ class MatchReviewViewModelTest {
                 ioDispatcher = Dispatchers.Unconfined,
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -595,7 +598,7 @@ class MatchReviewViewModelTest {
                 ioDispatcher = Dispatchers.Unconfined,
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult(uri)
         advanceUntilIdle()
@@ -616,7 +619,7 @@ class MatchReviewViewModelTest {
         val metadataRepository = FakeScreenshotMetadataRepository(
             metadata = ScreenshotMetadataEntity(
                 matchId = matchId,
-                tournamentId = "tournament-id",
+                tournamentId = TOURNAMENT_ID,
                 ownerUserId = "owner-id",
                 localRelativePath = "screenshots/missing/match/original.png",
                 fileExtension = "png",
@@ -626,7 +629,7 @@ class MatchReviewViewModelTest {
                 byteSize = 4,
                 sha256 = "a".repeat(64),
                 storageBucket = "match-screenshots",
-                storageObjectPath = "users/owner-id/tournaments/tournament-id/matches/$matchId/original.png",
+                storageObjectPath = screenshotObjectPath("owner-id", matchId, "png"),
                 localStatus = ScreenshotLocalStatus.PRESERVED.name,
                 uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
                 uploadFailureCode = null,
@@ -639,7 +642,7 @@ class MatchReviewViewModelTest {
         )
         val viewModel = reviewViewModel(screenshotMetadataRepository = metadataRepository)
 
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isPreservedScreenshotMissing)
@@ -651,14 +654,14 @@ class MatchReviewViewModelTest {
     fun screenshotLinkDoesNotCarryToAnotherMatchContext() = runTest {
         val secondMatchId = (CreateMatchUseCase(repository)(
             CreateMatchInput(
-                tournamentId = "tournament-id",
+                tournamentId = TOURNAMENT_ID,
                 matchNumber = "2",
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
             ),
         ) as CreateMatchResult.Created).match.id
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/first")
@@ -667,7 +670,7 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
         assertEquals("content://picker/first", viewModel.uiState.value.linkedScreenshotUri)
 
-        viewModel.load("tournament-id", secondMatchId)
+        viewModel.load(TOURNAMENT_ID, secondMatchId)
         advanceUntilIdle()
 
         assertEquals(secondMatchId, viewModel.uiState.value.matchId)
@@ -683,7 +686,7 @@ class MatchReviewViewModelTest {
                 mapOf(firstUri to "same-image".encodeToByteArray(), duplicateUri to "same-image".encodeToByteArray()),
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult(firstUri)
@@ -708,7 +711,7 @@ class MatchReviewViewModelTest {
     fun duplicateLinkedToAnotherMatchIsRejectedWithinTheTournament() = runTest {
         val secondMatchId = (CreateMatchUseCase(repository)(
             CreateMatchInput(
-                tournamentId = "tournament-id",
+                tournamentId = TOURNAMENT_ID,
                 matchNumber = "2",
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
@@ -720,7 +723,7 @@ class MatchReviewViewModelTest {
             mapOf(firstUri to "same-image".encodeToByteArray(), duplicateUri to "same-image".encodeToByteArray()),
         )
         val firstViewModel = reviewViewModel(screenshotDuplicateDetector = detector)
-        firstViewModel.load("tournament-id", matchId)
+        firstViewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         firstViewModel.onPhotoPickerResult(firstUri)
         advanceUntilIdle()
@@ -728,7 +731,7 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         val secondViewModel = reviewViewModel(screenshotDuplicateDetector = detector)
-        secondViewModel.load("tournament-id", secondMatchId)
+        secondViewModel.load(TOURNAMENT_ID, secondMatchId)
         advanceUntilIdle()
         secondViewModel.onPhotoPickerResult(duplicateUri)
         advanceUntilIdle()
@@ -752,7 +755,7 @@ class MatchReviewViewModelTest {
                 ),
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.onPhotoPickerResult("content://picker/unreadable")
         advanceUntilIdle()
@@ -776,7 +779,7 @@ class MatchReviewViewModelTest {
                 },
             ),
         )
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.onPhotoPickerResult("content://picker/unsupported")
@@ -791,7 +794,7 @@ class MatchReviewViewModelTest {
     fun finalizedMatchCannotLinkOrReplaceScreenshot() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -799,7 +802,7 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.finalizeMatch()
         advanceUntilIdle()
@@ -825,7 +828,7 @@ class MatchReviewViewModelTest {
     @Test
     fun repeatedPhotoPickerRequestsDoNotCreateConcurrentLaunchState() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.requestPhotoPicker()
@@ -842,7 +845,7 @@ class MatchReviewViewModelTest {
     fun validReviewFinalizesAndBecomesReadOnly() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -850,18 +853,18 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
         assertFalse(viewModel.uiState.value.isEditable)
         assertEquals(null, viewModel.uiState.value.finalizationError)
-        assertTrue(repository.observeDraftMatchValues("tournament-id", matchId).first().isEmpty())
+        assertTrue(repository.observeDraftMatchValues(TOURNAMENT_ID, matchId).first().isEmpty())
         assertEquals(
             MatchStatus.FINALIZED,
             repository.observeMatchById(matchId).first()!!.status,
@@ -872,7 +875,7 @@ class MatchReviewViewModelTest {
     fun queuedFinalizedSyncDoesNotReopenLocalFinalizedReview() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -880,7 +883,7 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
        viewModel.finalizeMatch()
         advanceUntilIdle()
@@ -895,12 +898,12 @@ class MatchReviewViewModelTest {
                 )
             },
         )
-        syncViewModel.sync("tournament-id")
+        syncViewModel.sync(TOURNAMENT_ID)
         advanceUntilIdle()
 
-        assertEquals("tournament-id", requestedTournamentId)
+        assertEquals(TOURNAMENT_ID, requestedTournamentId)
         assertEquals(FinalizedMatchCloudSyncUiState.Queued, syncViewModel.uiState.value)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
         assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
         assertFalse(viewModel.uiState.value.isEditable)
@@ -909,12 +912,12 @@ class MatchReviewViewModelTest {
     @Test
     fun finalizedMatchCsvExportPreservesTournamentAndMatchIdentity() = runTest {
         repository.saveTeamNames(
-            "tournament-id",
+            TOURNAMENT_ID,
             (1..12).associateWith { slotNumber -> "Team $slotNumber" },
         )
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -922,7 +925,7 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
        viewModel.finalizeMatch()
         advanceUntilIdle()
@@ -932,11 +935,11 @@ class MatchReviewViewModelTest {
         val result = viewModel.uiState.value.csvExportResult
         assertTrue(result is AndroidExportResult.CsvReady)
         assertEquals(AndroidExportType.MATCH_CSV, result?.request?.type)
-        assertEquals("tournament-id", result?.request?.tournamentId)
+        assertEquals(TOURNAMENT_ID, result?.request?.tournamentId)
         assertEquals(matchId, result?.request?.matchId)
         assertEquals("text/csv", (result as AndroidExportResult.CsvReady).mimeType)
         assertTrue(result.content.contains(matchId))
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
         assertFalse(viewModel.uiState.value.isEditable)
 
@@ -951,14 +954,14 @@ class MatchReviewViewModelTest {
     @Test
     fun draftMatchCsvExportIsBlockedWithoutFinalizing() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.prepareCsvExport()
         advanceUntilIdle()
 
         val result = viewModel.uiState.value.csvExportResult
         assertEquals(AndroidExportType.MATCH_CSV, result?.request?.type)
-        assertEquals("tournament-id", result?.request?.tournamentId)
+        assertEquals(TOURNAMENT_ID, result?.request?.tournamentId)
         assertEquals(matchId, result?.request?.matchId)
         assertEquals(
             AndroidExportBlockedReason.MATCH_NOT_FINALIZED,
@@ -971,11 +974,11 @@ class MatchReviewViewModelTest {
     fun missingMatchKeepsExactReviewContextInSafeNotFoundState() = runTest {
         val viewModel = reviewViewModel()
 
-        viewModel.load("tournament-id", "missing-match")
+        viewModel.load(TOURNAMENT_ID, "missing-match")
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isNotFound)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals("missing-match", viewModel.uiState.value.matchId)
         assertFalse(viewModel.uiState.value.isEditable)
         assertEquals(null, viewModel.uiState.value.csvExportResult)
@@ -984,14 +987,14 @@ class MatchReviewViewModelTest {
     @Test
     fun invalidReviewDoesNotFinalize() = runTest {
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
         assertTrue(viewModel.uiState.value.isEditable)
         assertFalse(viewModel.uiState.value.isFinalizing)
@@ -1001,7 +1004,7 @@ class MatchReviewViewModelTest {
     fun duplicatePlacementCannotFinalizeAndKeepsReviewContext() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = if (slotNumber == 2) "1" else slotNumber.toString(),
@@ -1009,7 +1012,7 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isValid)
@@ -1021,7 +1024,7 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
     }
 
@@ -1029,7 +1032,7 @@ class MatchReviewViewModelTest {
     fun negativeKillsCannotFinalize() = runTest {
         (1..12).forEach { slotNumber ->
             repository.saveDraftMatchValue(
-                "tournament-id",
+                TOURNAMENT_ID,
                 matchId,
                 slotNumber,
                 placementInput = slotNumber.toString(),
@@ -1037,7 +1040,7 @@ class MatchReviewViewModelTest {
             )
         }
         val viewModel = reviewViewModel()
-        viewModel.load("tournament-id", matchId)
+        viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isValid)
@@ -1049,9 +1052,17 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(MatchStatus.DRAFT, repository.observeMatchById(matchId).first()!!.status)
-        assertEquals("tournament-id", viewModel.uiState.value.tournamentId)
+        assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
     }
+
+    private fun screenshotObjectPath(
+        userId: String,
+        localMatchId: String,
+        extension: String,
+    ): String = "users/$userId/tournaments/$TOURNAMENT_ID/matches/${
+        checkNotNull(MatchCloudIdentity.matchId(TOURNAMENT_ID, localMatchId))
+    }/original.$extension"
 
     private fun reviewViewModel(
         imageCandidateValidator: ImageCandidateValidator = ImageCandidateValidator(
