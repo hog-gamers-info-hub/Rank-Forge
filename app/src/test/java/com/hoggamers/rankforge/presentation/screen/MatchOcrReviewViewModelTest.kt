@@ -9,6 +9,10 @@ import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceReason
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestion
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions
+import com.hoggamers.rankforge.domain.ocr.review.MatchOcrProcessor
+import com.hoggamers.rankforge.domain.ocr.review.MatchOcrSourceProviderResult
+import com.hoggamers.rankforge.domain.ocr.review.ProcessMatchOcrFailure
+import com.hoggamers.rankforge.domain.ocr.review.ProcessMatchOcrResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -50,88 +54,198 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun loadInitializesEmptyStateFromRouteArguments() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+    fun loadSurfacesMissingScreenshotWithExactRouteContext() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            matchOcrProcessor = missingScreenshotProcessor(),
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
 
-        viewModel.load("synthetic-tournament", "synthetic-match")
+        viewModel.load(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+        )
 
-        val state = viewModel.uiState.value
-        assertTrue(state is MatchOcrReviewUiState.Empty)
-        state as MatchOcrReviewUiState.Empty
-        assertEquals("synthetic-tournament", state.tournamentId)
-        assertEquals("synthetic-match", state.matchId)
-    }
-
-    @Test
-    fun loadingEmptyOcrStateDoesNotMutateMatchData() = runTest(dispatcher) {
-        val repository = createRepository()
-        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(repository))
-
-        viewModel.load(TOURNAMENT_ID, MATCH_ID)
-
-        val state = viewModel.uiState.value
-        assertTrue(state is MatchOcrReviewUiState.Empty)
-        state as MatchOcrReviewUiState.Empty
-        assertEquals(TOURNAMENT_ID, state.tournamentId)
-        assertEquals(MATCH_ID, state.matchId)
-        assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
-    }
-
-    @Test
-    fun initialStateIsLoadingBeforeRouteArgumentsAreLoaded() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
-
-        assertEquals(MatchOcrReviewUiState.Loading, viewModel.uiState.value)
-    }
-
-    @Test
-    fun repeatedLoadForSameRouteKeepsDeterministicEmptyState() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
-
-        viewModel.load("synthetic-tournament", "synthetic-match")
-        val firstState = viewModel.uiState.value
-        viewModel.load("synthetic-tournament", "synthetic-match")
-
-        assertEquals(firstState, viewModel.uiState.value)
-    }
-
-    @Test
-    fun loadDisplayInputPreservesExactIdsAndSurfacesMatchingEvidence() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
-
-        viewModel.loadDisplayInput(displayInputWithMatchingEvidence())
-
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        val firstRow = state.rows.first()
-        assertEquals(TOURNAMENT_ID, state.tournamentId)
-        assertEquals(MATCH_ID, state.matchId)
-        assertEquals("1", firstRow.suggestedTeamSlotDisplayValue)
-        assertEquals("96", firstRow.confidenceScoreDisplayValue)
-        assertEquals("Automatic candidate", firstRow.confidenceTierLabel)
-        assertEquals("Safe automatic assignment", firstRow.assignmentSafetyStatusLabel)
         assertEquals(
-            listOf("Rank 1: Slot 1, confidence 96, matches 4, coverage 100"),
-            firstRow.topThreeSuggestionsSummary,
+            MatchOcrReviewUiState.Loading,
+            viewModel.uiState.value,
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state is MatchOcrReviewUiState.Error)
+
+        state as MatchOcrReviewUiState.Error
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals(
+            "No preserved screenshot is available for OCR review.",
+            state.message,
         )
     }
 
     @Test
+    fun routeOcrLoadingFailureDoesNotMutateMatchData() = runTest(dispatcher) {
+        val repository = createRepository()
+        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
+
+        val viewModel = MatchOcrReviewViewModel(
+            matchOcrProcessor = missingScreenshotProcessor(),
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+        )
+
+        viewModel.load(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state is MatchOcrReviewUiState.Error)
+
+        state as MatchOcrReviewUiState.Error
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals(
+            "No preserved screenshot is available for OCR review.",
+            state.message,
+        )
+
+        assertEquals(
+            beforeMatch,
+            repository.observeMatchById(MATCH_ID).first(),
+        )
+    }
+
+    @Test
+    fun initialStateIsLoadingBeforeRouteArgumentsAreLoaded() {
+        val viewModel = MatchOcrReviewViewModel(
+            createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
+
+        assertEquals(
+            MatchOcrReviewUiState.Loading,
+            viewModel.uiState.value,
+        )
+    }
+
+    @Test
+    fun repeatedLoadForSameRouteInvokesProcessorOnlyOnce() = runTest(dispatcher) {
+        var invocationCount = 0
+
+        val processor = MatchOcrProcessor { _, _ ->
+            invocationCount += 1
+            missingScreenshotResult()
+        }
+
+        val viewModel = MatchOcrReviewViewModel(
+            matchOcrProcessor = processor,
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
+
+        viewModel.load(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+        )
+        viewModel.load(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(1, invocationCount)
+
+        val state = viewModel.uiState.value
+        assertTrue(state is MatchOcrReviewUiState.Error)
+
+        state as MatchOcrReviewUiState.Error
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+    }
+
+    @Test
+    fun loadDisplayInputPreservesExactIdsAndSurfacesMatchingEvidence() {
+        val viewModel = MatchOcrReviewViewModel(
+            createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
+
+        viewModel.loadDisplayInput(
+            displayInputWithMatchingEvidence(),
+        )
+
+        val state =
+            viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val firstRow = state.rows.first()
+
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals("1", firstRow.suggestedTeamSlotDisplayValue)
+        assertEquals("96", firstRow.confidenceScoreDisplayValue)
+        assertEquals(
+            "Automatic candidate",
+            firstRow.confidenceTierLabel,
+        )
+        assertEquals(
+            "Safe automatic assignment",
+            firstRow.assignmentSafetyStatusLabel,
+        )
+        assertEquals(
+            listOf(
+                "Rank 1: Slot 1, confidence 96, matches 4, coverage 100",
+            ),
+            firstRow.topThreeSuggestionsSummary,
+        )
+        assertTrue(state.correctionDraft != null)
+    }
+
+    @Test
     fun loadDisplayInputWithMissingMatchingEvidenceRequiresManualReview() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+        val viewModel = MatchOcrReviewViewModel(
+            createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
 
-        viewModel.loadDisplayInput(displayInputWithoutMatchingEvidence())
+        viewModel.loadDisplayInput(
+            displayInputWithoutMatchingEvidence(),
+        )
 
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val state =
+            viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
         assertTrue(state.manualReviewRequired)
         assertTrue(state.hasUnavailableEvidence)
-        assertTrue(state.rows.all { it.blockerLabels.isNotEmpty() })
-        assertTrue(state.rows.all { it.topThreeSuggestionsSummary == listOf("No suggestions") })
+        assertTrue(state.correctionDraft != null)
+        assertTrue(
+            state.rows.all {
+                it.blockerLabels.isNotEmpty()
+            },
+        )
+        assertTrue(
+            state.rows.all {
+                it.topThreeSuggestionsSummary ==
+                    listOf("No suggestions")
+            },
+        )
     }
 
     @Test
     fun loadDisplayInputWithNoRowsKeepsEmptyStateWithoutFakeMatchingResults() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+        val viewModel = MatchOcrReviewViewModel(
+            createFinalizeUseCase(
+                InMemoryTournamentRepository(),
+            ),
+        )
 
         viewModel.loadDisplayInput(
             MatchOcrReviewDisplayInput(
@@ -141,235 +255,522 @@ class MatchOcrReviewViewModelTest {
             ),
         )
 
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        val state =
+            viewModel.uiState.value as MatchOcrReviewUiState.Empty
+
         assertEquals(TOURNAMENT_ID, state.tournamentId)
         assertEquals(MATCH_ID, state.matchId)
     }
 
     @Test
     fun invalidOcrDisplayInputKeepsExactContextInControlledErrorState() {
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
-
-        viewModel.loadDisplayInput(
-            displayInputWithMatchingEvidence().copy(
-                rows = displayInputWithMatchingEvidence().rows.dropLast(1),
+        val viewModel = MatchOcrReviewViewModel(
+            createFinalizeUseCase(
+                InMemoryTournamentRepository(),
             ),
         )
 
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Error
+        viewModel.loadDisplayInput(
+            displayInputWithMatchingEvidence().copy(
+                rows = displayInputWithMatchingEvidence()
+                    .rows
+                    .dropLast(1),
+            ),
+        )
+
+        val state =
+            viewModel.uiState.value as MatchOcrReviewUiState.Error
+
         assertEquals(TOURNAMENT_ID, state.tournamentId)
         assertEquals(MATCH_ID, state.matchId)
-        assertEquals("OCR review requires exactly 12 rows.", state.message)
+        assertEquals(
+            "OCR review requires exactly 12 rows.",
+            state.message,
+        )
     }
 
     @Test
-    fun loadDisplayInputDoesNotMutateMatchData() = runTest(dispatcher) {
-        val repository = createRepository()
-        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
-        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(repository))
+    fun loadDisplayInputDoesNotMutateMatchData() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+            val beforeMatch =
+                repository.observeMatchById(MATCH_ID).first()
 
-        viewModel.loadDisplayInput(displayInputWithMatchingEvidence())
+            val viewModel = MatchOcrReviewViewModel(
+                createFinalizeUseCase(repository),
+            )
 
-        assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
-    }
+            viewModel.loadDisplayInput(
+                displayInputWithMatchingEvidence(),
+            )
 
-    @Test
-    fun finalizeUnavailableWhenNoCorrectionDraftExists() = runTest(dispatcher) {
-        val repository = createRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = null))
-
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertEquals(MatchOcrReviewFinalizationError.MISSING_CORRECTION_DRAFT, ready.finalization.error)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
-
-    @Test
-    fun finalizeBlockedWhenCorrectionDraftHasBlockers() = runTest(dispatcher) {
-        val repository = createRepository()
-        val blockedDraft = correctionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, 0, "")
+            assertEquals(
+                beforeMatch,
+                repository.observeMatchById(MATCH_ID).first(),
+            )
         }
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = blockedDraft))
-
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertEquals(MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED, ready.finalization.error)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
 
     @Test
-    fun warningsRequireConfirmationBeforeFinalization() = runTest(dispatcher) {
-        val repository = createRepository()
-        val warningDraft = correctionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
+    fun finalizeUnavailableWhenNoCorrectionDraftExists() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+            val viewModel = viewModelWith(
+                repository,
+                readyState(correctionDraft = null),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertEquals(
+                MatchOcrReviewFinalizationError.MISSING_CORRECTION_DRAFT,
+                ready.finalization.error,
+            )
+            assertEquals(
+                MatchStatus.DRAFT,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
         }
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft))
-
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(ready.finalization.showWarningConfirmation)
-        assertFalse(ready.finalization.isFinalized)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
 
     @Test
-    fun warningConfirmationCallsSafeFinalizationUseCase() = runTest(dispatcher) {
-        val repository = createRepository()
-        val warningDraft = correctionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
-        }
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft))
+    fun finalizeBlockedWhenCorrectionDraftHasBlockers() =
+        runTest(dispatcher) {
+            val repository = createRepository()
 
-        viewModel.onFinalizeOcrCorrection()
-        viewModel.onConfirmFinalizeWarnings()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(ready.finalization.isFinalized)
-        assertFalse(ready.finalization.showWarningConfirmation)
-        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
-
-    @Test
-    fun finalizationPreservesReviewEvidenceAndCorrectionSnapshot() = runTest(dispatcher) {
-        val repository = createRepository()
-        val rows = correctionRows().map { row ->
-            if (row.rowIndex == 0) {
-                row.copy(
-                    confidenceScoreDisplayValue = "82",
-                    confidenceTierLabel = "Manual review",
-                    assignmentSafetyStatusLabel = "Review required",
-                    warningLabels = listOf("Weak evidence"),
+            val blockedDraft = correctionDraft { draft ->
+                MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+                    draft,
+                    0,
+                    "",
                 )
-            } else {
-                row
             }
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = blockedDraft,
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertEquals(
+                MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED,
+                ready.finalization.error,
+            )
+            assertEquals(
+                MatchStatus.DRAFT,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
         }
-        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
-        val warningDraft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(initialDraft, 0, "9")
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft, rows = rows))
-
-        viewModel.onFinalizeOcrCorrection()
-        viewModel.onConfirmFinalizeWarnings()
-        advanceUntilIdle()
-
-        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
-        val firstRow = evidence.rows.first { it.rowIndex == 0 }
-        val firstCorrection = evidence.correctionSnapshots.first { it.rowIndex == 0 }
-        assertEquals(12, evidence.rows.size)
-        assertEquals(12, evidence.correctionSnapshots.size)
-        assertEquals("Synthetic Unit 1", firstRow.originalOcrText)
-        assertEquals(1, firstRow.originalPlacement)
-        assertEquals(0, firstRow.originalKills)
-        assertEquals(1, firstRow.originalSuggestedTeamSlot)
-        assertEquals("Manual review|82", firstRow.confidenceSummary)
-        assertEquals("Review required", firstRow.safetySummary)
-        assertTrue(firstRow.manualReviewRequired)
-        assertEquals(1, firstCorrection.correctedPlacement)
-        assertEquals(9, firstCorrection.correctedKills)
-        assertEquals(1, firstCorrection.correctedTeamSlot)
-        assertFalse(firstCorrection.placementChanged)
-        assertTrue(firstCorrection.killsChanged)
-        assertFalse(firstCorrection.teamSlotChanged)
-    }
 
     @Test
-    fun successStateAfterValidFinalization() = runTest(dispatcher) {
-        val repository = createRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
+    fun warningsRequireConfirmationBeforeFinalization() =
+        runTest(dispatcher) {
+            val repository = createRepository()
 
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
+            val warningDraft = correctionDraft { draft ->
+                MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                    draft,
+                    0,
+                    "9",
+                )
+            }
 
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(ready.finalization.isFinalized)
-        assertEquals(null, ready.finalization.error)
-        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = warningDraft,
+                ),
+            )
 
-    @Test
-    fun deterministicErrorStateOnFinalizationFailure() = runTest(dispatcher) {
-        val repository = InMemoryTournamentRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
 
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
 
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertEquals(MatchOcrReviewFinalizationError.MISSING_TOURNAMENT, ready.finalization.error)
-        assertFalse(ready.finalization.isFinalized)
-    }
-
-    @Test
-    fun repeatedFinalizeAfterSuccessIsIdempotentlyIgnoredByViewModel() = runTest(dispatcher) {
-        val repository = createRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
-
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
-        viewModel.onFinalizeOcrCorrection()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(ready.finalization.isFinalized)
-        assertEquals(null, ready.finalization.error)
-        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
-
-    @Test
-    fun dismissFinalizeWarningsHidesConfirmationWithoutFinalizing() = runTest(dispatcher) {
-        val repository = createRepository()
-        val warningDraft = correctionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
+            assertTrue(
+                ready.finalization.showWarningConfirmation,
+            )
+            assertFalse(
+                ready.finalization.isFinalized,
+            )
+            assertEquals(
+                MatchStatus.DRAFT,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
         }
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft))
 
-        viewModel.onFinalizeOcrCorrection()
-        viewModel.onDismissFinalizeWarnings()
-        advanceUntilIdle()
+    @Test
+    fun warningConfirmationCallsSafeFinalizationUseCase() =
+        runTest(dispatcher) {
+            val repository = createRepository()
 
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertFalse(ready.finalization.showWarningConfirmation)
-        assertFalse(ready.finalization.isFinalized)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
-    }
+            val warningDraft = correctionDraft { draft ->
+                MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                    draft,
+                    0,
+                    "9",
+                )
+            }
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = warningDraft,
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            viewModel.onConfirmFinalizeWarnings()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertTrue(
+                ready.finalization.isFinalized,
+            )
+            assertFalse(
+                ready.finalization.showWarningConfirmation,
+            )
+            assertEquals(
+                MatchStatus.FINALIZED,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
+        }
+
+    @Test
+    fun finalizationPreservesReviewEvidenceAndCorrectionSnapshot() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+
+            val rows = correctionRows().map { row ->
+                if (row.rowIndex == 0) {
+                    row.copy(
+                        confidenceScoreDisplayValue = "82",
+                        confidenceTierLabel = "Manual review",
+                        assignmentSafetyStatusLabel = "Review required",
+                        warningLabels = listOf("Weak evidence"),
+                    )
+                } else {
+                    row
+                }
+            }
+
+            val initialDraft =
+                MatchOcrReviewCorrectionDraftReducer
+                    .createInitialDraft(rows)
+
+            val warningDraft =
+                MatchOcrReviewCorrectionDraftReducer
+                    .onKillsChanged(
+                        initialDraft,
+                        0,
+                        "9",
+                    )
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = warningDraft,
+                    rows = rows,
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            viewModel.onConfirmFinalizeWarnings()
+            advanceUntilIdle()
+
+            val evidence =
+                repository.readPreservedOcrEvidence(MATCH_ID)!!
+
+            val firstRow =
+                evidence.rows.first {
+                    it.rowIndex == 0
+                }
+
+            val firstCorrection =
+                evidence.correctionSnapshots.first {
+                    it.rowIndex == 0
+                }
+
+            assertEquals(12, evidence.rows.size)
+            assertEquals(12, evidence.correctionSnapshots.size)
+            assertEquals(
+                "Synthetic Unit 1",
+                firstRow.originalOcrText,
+            )
+            assertEquals(
+                1,
+                firstRow.originalPlacement,
+            )
+            assertEquals(
+                0,
+                firstRow.originalKills,
+            )
+            assertEquals(
+                1,
+                firstRow.originalSuggestedTeamSlot,
+            )
+            assertEquals(
+                "Manual review|82",
+                firstRow.confidenceSummary,
+            )
+            assertEquals(
+                "Review required",
+                firstRow.safetySummary,
+            )
+            assertTrue(
+                firstRow.manualReviewRequired,
+            )
+            assertEquals(
+                1,
+                firstCorrection.correctedPlacement,
+            )
+            assertEquals(
+                9,
+                firstCorrection.correctedKills,
+            )
+            assertEquals(
+                1,
+                firstCorrection.correctedTeamSlot,
+            )
+            assertFalse(
+                firstCorrection.placementChanged,
+            )
+            assertTrue(
+                firstCorrection.killsChanged,
+            )
+            assertFalse(
+                firstCorrection.teamSlotChanged,
+            )
+        }
+
+    @Test
+    fun successStateAfterValidFinalization() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = correctionDraft(),
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertTrue(
+                ready.finalization.isFinalized,
+            )
+            assertEquals(
+                null,
+                ready.finalization.error,
+            )
+            assertEquals(
+                MatchStatus.FINALIZED,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
+        }
+
+    @Test
+    fun deterministicErrorStateOnFinalizationFailure() =
+        runTest(dispatcher) {
+            val repository =
+                InMemoryTournamentRepository()
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = correctionDraft(),
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertEquals(
+                MatchOcrReviewFinalizationError.MISSING_TOURNAMENT,
+                ready.finalization.error,
+            )
+            assertFalse(
+                ready.finalization.isFinalized,
+            )
+        }
+
+    @Test
+    fun repeatedFinalizeAfterSuccessIsIdempotentlyIgnoredByViewModel() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = correctionDraft(),
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            viewModel.onFinalizeOcrCorrection()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertTrue(
+                ready.finalization.isFinalized,
+            )
+            assertEquals(
+                null,
+                ready.finalization.error,
+            )
+            assertEquals(
+                MatchStatus.FINALIZED,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
+        }
+
+    @Test
+    fun dismissFinalizeWarningsHidesConfirmationWithoutFinalizing() =
+        runTest(dispatcher) {
+            val repository = createRepository()
+
+            val warningDraft = correctionDraft { draft ->
+                MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                    draft,
+                    0,
+                    "9",
+                )
+            }
+
+            val viewModel = viewModelWith(
+                repository,
+                readyState(
+                    correctionDraft = warningDraft,
+                ),
+            )
+
+            viewModel.onFinalizeOcrCorrection()
+            viewModel.onDismissFinalizeWarnings()
+            advanceUntilIdle()
+
+            val ready =
+                viewModel.uiState.value as MatchOcrReviewUiState.Ready
+
+            assertFalse(
+                ready.finalization.showWarningConfirmation,
+            )
+            assertFalse(
+                ready.finalization.isFinalized,
+            )
+            assertEquals(
+                MatchStatus.DRAFT,
+                repository.observeMatchById(MATCH_ID).first()!!.status,
+            )
+        }
 
     @Test
     fun viewModelExposesOnlyApprovedCorrectionAndFinalizationActions() {
-        val publicMethodNames = MatchOcrReviewViewModel::class.java.methods.map { it.name }.toSet()
+        val publicMethodNames =
+            MatchOcrReviewViewModel::class.java
+                .methods
+                .map { it.name }
+                .toSet()
 
-        assertFalse(publicMethodNames.contains("save"))
-        assertFalse(publicMethodNames.contains("export"))
-        assertFalse(publicMethodNames.contains("sync"))
-        assertFalse(publicMethodNames.contains("assign"))
-        assertFalse(publicMethodNames.contains("openCorrection"))
-        assertFalse(publicMethodNames.contains("runOcr"))
-        assertFalse(publicMethodNames.contains("retryOcr"))
-        assertFalse(publicMethodNames.contains("editRoster"))
-        assertTrue(publicMethodNames.contains("load"))
-        assertTrue(publicMethodNames.contains("onPlacementChanged"))
-        assertTrue(publicMethodNames.contains("onKillsChanged"))
-        assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
-        assertTrue(publicMethodNames.contains("onResetRowCorrection"))
-        assertTrue(publicMethodNames.contains("onResetAllCorrections"))
-        assertTrue(publicMethodNames.contains("onFinalizeOcrCorrection"))
-        assertTrue(publicMethodNames.contains("onConfirmFinalizeWarnings"))
-        assertTrue(publicMethodNames.contains("onDismissFinalizeWarnings"))
+        assertFalse(
+            publicMethodNames.contains("save"),
+        )
+        assertFalse(
+            publicMethodNames.contains("export"),
+        )
+        assertFalse(
+            publicMethodNames.contains("sync"),
+        )
+        assertFalse(
+            publicMethodNames.contains("assign"),
+        )
+        assertFalse(
+            publicMethodNames.contains("openCorrection"),
+        )
+        assertFalse(
+            publicMethodNames.contains("runOcr"),
+        )
+        assertFalse(
+            publicMethodNames.contains("retryOcr"),
+        )
+        assertFalse(
+            publicMethodNames.contains("editRoster"),
+        )
+        assertTrue(
+            publicMethodNames.contains("load"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onPlacementChanged"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onKillsChanged"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onAssignedTeamSlotChanged"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onResetRowCorrection"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onResetAllCorrections"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onFinalizeOcrCorrection"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onConfirmFinalizeWarnings"),
+        )
+        assertTrue(
+            publicMethodNames.contains("onDismissFinalizeWarnings"),
+        )
     }
 
     @Test
     fun viewModelDoesNotExposeScoringOrStandingsMutationActions() {
-        val declaredMethodNames = MatchOcrReviewViewModel::class.java.declaredMethods.map { it.name }
+        val declaredMethodNames =
+            MatchOcrReviewViewModel::class.java
+                .declaredMethods
+                .map { it.name }
 
-        assertTrue(declaredMethodNames.none { it.contains("score", ignoreCase = true) })
-        assertTrue(declaredMethodNames.none { it.contains("standing", ignoreCase = true) })
+        assertTrue(
+            declaredMethodNames.none {
+                it.contains(
+                    "score",
+                    ignoreCase = true,
+                )
+            },
+        )
+        assertTrue(
+            declaredMethodNames.none {
+                it.contains(
+                    "standing",
+                    ignoreCase = true,
+                )
+            },
+        )
     }
 
     private fun viewModelWith(
@@ -377,159 +778,262 @@ class MatchOcrReviewViewModelTest {
         initialUiState: MatchOcrReviewUiState,
     ): MatchOcrReviewViewModel =
         MatchOcrReviewViewModel(
-            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            finalizeOcrCorrectionMatch =
+                createFinalizeUseCase(repository),
             initialUiState = initialUiState,
         )
 
-    private fun createFinalizeUseCase(repository: InMemoryTournamentRepository): FinalizeOcrCorrectionMatchUseCase =
-        FinalizeOcrCorrectionMatchUseCase(
-            repository = repository,
-            finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+    private fun missingScreenshotProcessor():
+        MatchOcrProcessor =
+        MatchOcrProcessor { _, _ ->
+            missingScreenshotResult()
+        }
+
+    private fun missingScreenshotResult():
+        ProcessMatchOcrResult =
+        ProcessMatchOcrResult.Failed(
+            ProcessMatchOcrFailure.SourceLoading(
+                MatchOcrSourceProviderResult.MetadataNotFound,
+            ),
         )
 
-    private suspend fun createRepository(): InMemoryTournamentRepository {
-        val repository = InMemoryTournamentRepository()
+    private fun createFinalizeUseCase(
+        repository: InMemoryTournamentRepository,
+    ): FinalizeOcrCorrectionMatchUseCase =
+        FinalizeOcrCorrectionMatchUseCase(
+            repository = repository,
+            finalizeMatch = FinalizeMatchUseCase(
+                repository,
+                ValidateMatchResultUseCase(),
+            ),
+        )
+
+    private suspend fun createRepository():
+        InMemoryTournamentRepository {
+        val repository =
+            InMemoryTournamentRepository()
+
         repository.create(
             Tournament(
                 id = TOURNAMENT_ID,
                 name = "Synthetic Cup",
-                date = LocalDate.of(2026, 7, 24),
+                date = LocalDate.of(
+                    2026,
+                    7,
+                    24,
+                ),
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),
         )
+
         repository.createDraftMatch(
             Match(
                 id = MATCH_ID,
                 tournamentId = TOURNAMENT_ID,
                 matchNumber = 1,
-                date = LocalDate.of(2026, 7, 24),
+                date = LocalDate.of(
+                    2026,
+                    7,
+                    24,
+                ),
                 mapName = "Bermuda",
                 status = MatchStatus.DRAFT,
             ),
         )
+
         return repository
     }
 
     private fun readyState(
-        correctionDraft: MatchOcrReviewCorrectionDraft? = correctionDraft(),
-        rows: List<MatchOcrReviewRowUiState> = correctionRows(),
-    ): MatchOcrReviewUiState.Ready = MatchOcrReviewUiState.Ready(
-        tournamentId = TOURNAMENT_ID,
-        matchId = MATCH_ID,
-        matchDisplayLabel = "Synthetic Match",
-        rowCount = 12,
-        rows = rows,
-        blockerCount = 0,
-        warningCount = 0,
-        safeRowCount = 12,
-        manualRequiredRowCount = 0,
-        reviewRequiredRowCount = 0,
-        manualReviewRequired = false,
-        hasUnavailableEvidence = false,
-        correctionDraft = correctionDraft,
-    )
+        correctionDraft: MatchOcrReviewCorrectionDraft? =
+            correctionDraft(),
+        rows: List<MatchOcrReviewRowUiState> =
+            correctionRows(),
+    ): MatchOcrReviewUiState.Ready =
+        MatchOcrReviewUiState.Ready(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            matchDisplayLabel = "Synthetic Match",
+            rowCount = 12,
+            rows = rows,
+            blockerCount = 0,
+            warningCount = 0,
+            safeRowCount = 12,
+            manualRequiredRowCount = 0,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = false,
+            hasUnavailableEvidence = false,
+            correctionDraft = correctionDraft,
+        )
 
     private fun correctionDraft(
-        transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
+        transform: (
+            MatchOcrReviewCorrectionDraft,
+        ) -> MatchOcrReviewCorrectionDraft = {
+            it
+        },
     ): MatchOcrReviewCorrectionDraft =
-        transform(MatchOcrReviewCorrectionDraftReducer.createInitialDraft(correctionRows()))
+        transform(
+            MatchOcrReviewCorrectionDraftReducer
+                .createInitialDraft(
+                    correctionRows(),
+                ),
+        )
 
-    private fun correctionRows(): List<MatchOcrReviewRowUiState> =
-        (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
+    private fun correctionRows():
+        List<MatchOcrReviewRowUiState> =
+        (0 until TeamSlot.MAX_SLOT_NUMBER).map {
+            rowIndex ->
             MatchOcrReviewRowUiState(
                 rowIndex = rowIndex,
-                expectedPlacementLabel = (rowIndex + 1).toString(),
-                detectedPlacementDisplayValue = (rowIndex + 1).toString(),
+                expectedPlacementLabel =
+                    (rowIndex + 1).toString(),
+                detectedPlacementDisplayValue =
+                    (rowIndex + 1).toString(),
                 placementStatusLabel = "Accepted",
-                detectedKillDisplayValue = rowIndex.toString(),
+                detectedKillDisplayValue =
+                    rowIndex.toString(),
                 killStatusLabel = "Accepted",
-                detectedPlayerNameEvidenceLabel = "Synthetic Unit ${rowIndex + 1}",
+                detectedPlayerNameEvidenceLabel =
+                    "Synthetic Unit ${rowIndex + 1}",
                 playerNameStatusLabel = "Accepted",
-                suggestedTeamSlotDisplayValue = (rowIndex + 1).toString(),
+                suggestedTeamSlotDisplayValue =
+                    (rowIndex + 1).toString(),
                 confidenceScoreDisplayValue = "96",
-                confidenceTierLabel = "Automatic candidate",
-                assignmentSafetyStatusLabel = "Safe automatic assignment",
-                topThreeSuggestionsSummary = listOf(
-                    "Rank 1: Slot ${rowIndex + 1}, confidence 96, matches 4, coverage 100",
-                ),
+                confidenceTierLabel =
+                    "Automatic candidate",
+                assignmentSafetyStatusLabel =
+                    "Safe automatic assignment",
+                topThreeSuggestionsSummary =
+                    listOf(
+                        "Rank 1: Slot ${rowIndex + 1}, confidence 96, matches 4, coverage 100",
+                    ),
                 warningLabels = emptyList(),
                 blockerLabels = emptyList(),
-                severity = MatchOcrReviewSeverity.INFORMATIONAL,
-                originalParsedPlacementValue = rowIndex + 1,
+                severity =
+                    MatchOcrReviewSeverity.INFORMATIONAL,
+                originalParsedPlacementValue =
+                    rowIndex + 1,
                 originalParsedKillValue = rowIndex,
-                originalSuggestedTeamSlot = rowIndex + 1,
+                originalSuggestedTeamSlot =
+                    rowIndex + 1,
             )
         }
 
-    private fun displayInputWithMatchingEvidence(): MatchOcrReviewDisplayInput =
+    private fun displayInputWithMatchingEvidence():
+        MatchOcrReviewDisplayInput =
         MatchOcrReviewDisplayInput(
             tournamentId = TOURNAMENT_ID,
             matchId = MATCH_ID,
-            rows = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
-                val suggestions = TopTeamCandidateSuggestions(
-                    detectedPlayerCount = 4,
-                    evaluatedCandidateCount = 1,
-                    suggestions = listOf(
-                        TopTeamCandidateSuggestion(
-                            rank = 1,
-                            teamCandidateScore = TeamCandidateScore(
-                                candidateTeamSlot = rowIndex + 1,
-                                confidenceScore = 96,
-                                detectedPlayerCount = 4,
-                                validDetectedPlayerCount = 4,
-                                rosterPlayerCount = 4,
-                                contributingMatchCount = 4,
-                                averageMatchedPlayerScore = 100,
-                                coverageScore = 100,
-                                playerMatches = emptyList(),
-                            ),
-                        ),
-                    ),
-                )
-                val confidence = TeamMatchConfidenceAssessment(
-                    tier = TeamMatchConfidenceTier.AUTOMATIC_CANDIDATE,
-                    selectedSuggestion = suggestions.suggestions.first(),
-                    suggestions = suggestions,
-                    reason = TeamMatchConfidenceReason.MEETS_AUTOMATIC_THRESHOLD,
-                )
-                MatchOcrReviewRowEvidenceInput(
-                    rowIndex = rowIndex,
-                    expectedPlacementId = rowIndex + 1,
-                    detectedPlacementValue = rowIndex + 1,
-                    detectedKillValue = rowIndex,
-                    detectedPlayerName = "Synthetic Unit ${rowIndex + 1}",
-                    suggestions = suggestions,
-                    confidenceAssessment = confidence,
-                    safetyResult = RowTeamAssignmentSafetyResult(
+            rows =
+                (0 until TeamSlot.MAX_SLOT_NUMBER).map {
+                    rowIndex ->
+                    val suggestions =
+                        TopTeamCandidateSuggestions(
+                            detectedPlayerCount = 4,
+                            evaluatedCandidateCount = 1,
+                            suggestions =
+                                listOf(
+                                    TopTeamCandidateSuggestion(
+                                        rank = 1,
+                                        teamCandidateScore =
+                                            TeamCandidateScore(
+                                                candidateTeamSlot =
+                                                    rowIndex + 1,
+                                                confidenceScore =
+                                                    96,
+                                                detectedPlayerCount =
+                                                    4,
+                                                validDetectedPlayerCount =
+                                                    4,
+                                                rosterPlayerCount =
+                                                    4,
+                                                contributingMatchCount =
+                                                    4,
+                                                averageMatchedPlayerScore =
+                                                    100,
+                                                coverageScore =
+                                                    100,
+                                                playerMatches =
+                                                    emptyList(),
+                                            ),
+                                    ),
+                                ),
+                        )
+
+                    val confidence =
+                        TeamMatchConfidenceAssessment(
+                            tier =
+                                TeamMatchConfidenceTier
+                                    .AUTOMATIC_CANDIDATE,
+                            selectedSuggestion =
+                                suggestions
+                                    .suggestions
+                                    .first(),
+                            suggestions = suggestions,
+                            reason =
+                                TeamMatchConfidenceReason
+                                    .MEETS_AUTOMATIC_THRESHOLD,
+                        )
+
+                    MatchOcrReviewRowEvidenceInput(
                         rowIndex = rowIndex,
-                        confidenceAssessment = confidence,
-                        safetyStatus = TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT,
-                        proposedTeamSlot = rowIndex + 1,
-                        reasons = emptySet(),
-                    ),
-                )
-            },
+                        expectedPlacementId =
+                            rowIndex + 1,
+                        detectedPlacementValue =
+                            rowIndex + 1,
+                        detectedKillValue = rowIndex,
+                        detectedPlayerName =
+                            "Synthetic Unit ${rowIndex + 1}",
+                        suggestions = suggestions,
+                        confidenceAssessment =
+                            confidence,
+                        safetyResult =
+                            RowTeamAssignmentSafetyResult(
+                                rowIndex =
+                                    rowIndex,
+                                confidenceAssessment =
+                                    confidence,
+                                safetyStatus =
+                                    TeamAssignmentSafetyStatus
+                                        .SAFE_AUTOMATIC_ASSIGNMENT,
+                                proposedTeamSlot =
+                                    rowIndex + 1,
+                                reasons =
+                                    emptySet(),
+                            ),
+                    )
+                },
         )
 
-    private fun displayInputWithoutMatchingEvidence(): MatchOcrReviewDisplayInput =
+    private fun displayInputWithoutMatchingEvidence():
+        MatchOcrReviewDisplayInput =
         MatchOcrReviewDisplayInput(
             tournamentId = TOURNAMENT_ID,
             matchId = MATCH_ID,
-            rows = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
-                MatchOcrReviewRowEvidenceInput(
-                    rowIndex = rowIndex,
-                    expectedPlacementId = rowIndex + 1,
-                    detectedPlacementValue = rowIndex + 1,
-                    detectedKillValue = rowIndex,
-                    detectedPlayerName = null,
-                )
-            },
+            rows =
+                (0 until TeamSlot.MAX_SLOT_NUMBER).map {
+                    rowIndex ->
+                    MatchOcrReviewRowEvidenceInput(
+                        rowIndex = rowIndex,
+                        expectedPlacementId =
+                            rowIndex + 1,
+                        detectedPlacementValue =
+                            rowIndex + 1,
+                        detectedKillValue =
+                            rowIndex,
+                        detectedPlayerName =
+                            null,
+                    )
+                },
         )
 
     private companion object {
-        const val TOURNAMENT_ID = "synthetic-tournament"
-        const val MATCH_ID = "synthetic-match"
+        const val TOURNAMENT_ID =
+            "synthetic-tournament"
+        const val MATCH_ID =
+            "synthetic-match"
     }
 }
