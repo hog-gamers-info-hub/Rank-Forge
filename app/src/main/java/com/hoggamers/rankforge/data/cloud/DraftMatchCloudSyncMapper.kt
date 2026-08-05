@@ -120,6 +120,15 @@ object DraftMatchCloudSyncMapper {
 
 internal object MatchCloudIdentity {
     fun matchId(
+        tournamentId: String,
+        localMatchId: String,
+    ): String? {
+        val tournamentUuid = runCatching { UUID.fromString(tournamentId) }.getOrNull()
+            ?: return null
+        return matchId(tournamentUuid, localMatchId)
+    }
+
+    fun matchId(
         tournamentId: UUID,
         localMatchId: String,
     ): String {

@@ -87,7 +87,14 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
             ?: return ScreenshotStorageUploadResult.Failed(
                 ScreenshotStorageUploadFailure.UNSUPPORTED_FORMAT,
             )
-        val objectPath = objectPath(userId, normalizedTournamentId, normalizedMatchId, format.extension)
+        val objectPath = objectPath(
+            userId = userId,
+            tournamentId = normalizedTournamentId,
+            matchId = normalizedMatchId,
+            extension = format.extension,
+        ) ?: return ScreenshotStorageUploadResult.Failed(
+            ScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID,
+        )
 
         return try {
             clientProvider.client.storage.from(MATCH_SCREENSHOTS_BUCKET).upload(objectPath, file) {
@@ -108,7 +115,14 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
             tournamentId: String,
             matchId: String,
             extension: String,
-        ): String = "users/$userId/tournaments/$tournamentId/matches/$matchId/original.$extension"
+        ): String? {
+            val cloudMatchId = MatchCloudIdentity.matchId(
+                tournamentId = tournamentId,
+                localMatchId = matchId,
+            ) ?: return null
+
+            return "users/$userId/tournaments/$tournamentId/matches/$cloudMatchId/original.$extension"
+        }
 
         private fun formatFor(file: File): ScreenshotImageFormat? = when (
             file.extension.lowercase(Locale.ROOT)

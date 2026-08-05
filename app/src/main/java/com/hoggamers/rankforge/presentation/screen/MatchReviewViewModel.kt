@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
 import com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.MATCH_SCREENSHOTS_BUCKET
 import com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource
@@ -806,9 +807,10 @@ class MatchReviewViewModel @Inject constructor(
         }
         val updatedMetadata = runCatching { screenshotMetadataRepository.getByMatchId(matchId) }
             .getOrNull()
-        val cloudResult = if (updatedMetadata != null) {
+        val cloudPayload = updatedMetadata?.toCloudPayload()
+        val cloudResult = if (cloudPayload != null) {
             runCatching {
-                screenshotMetadataCloudDataSource.upsert(updatedMetadata.toCloudPayload())
+                screenshotMetadataCloudDataSource.upsert(cloudPayload)
             }.getOrElse {
                 ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.WRITE_FAILED)
             }
@@ -998,9 +1000,19 @@ class MatchReviewViewModel @Inject constructor(
             when (localImagePreserver.cleanup(tournamentId, matchId)) {
                 LocalImageCleanupResult.Cleaned -> {
                     runCatching { screenshotMetadataRepository.deleteByMatchId(matchId) }
-                    val cloudDeleteResult = runCatching {
-                        screenshotMetadataCloudDataSource.deleteByMatchId(matchId)
-                    }.getOrDefault(ScreenshotMetadataCloudResult.Success)
+                    val cloudMatchId = MatchCloudIdentity.matchId(
+                        tournamentId = tournamentId,
+                        localMatchId = matchId,
+                    )
+                    val cloudDeleteResult = if (cloudMatchId != null) {
+                        runCatching {
+                            screenshotMetadataCloudDataSource.deleteByMatchId(cloudMatchId)
+                        }.getOrDefault(ScreenshotMetadataCloudResult.Success)
+                    } else {
+                        ScreenshotMetadataCloudResult.Failed(
+                            ScreenshotMetadataCloudFailure.WRITE_FAILED,
+                        )
+                    }
                     _uiState.update { latest ->
                         if (latest.tournamentId == tournamentId && latest.matchId == matchId) {
                             latest.copy(
@@ -1173,9 +1185,14 @@ private fun ScreenshotMetadataEntity.toUiState(): ScreenshotMetadataUiState =
         revision = revision,
     )
 
-private fun ScreenshotMetadataEntity.toCloudPayload(): ScreenshotMetadataCloudPayload =
-    ScreenshotMetadataCloudPayload(
-        matchId = matchId,
+private fun ScreenshotMetadataEntity.toCloudPayload(): ScreenshotMetadataCloudPayload? {
+    val cloudMatchId = MatchCloudIdentity.matchId(
+        tournamentId = tournamentId,
+        localMatchId = matchId,
+    ) ?: return null
+
+    return ScreenshotMetadataCloudPayload(
+        matchId = cloudMatchId,
         ownerId = ownerUserId,
         tournamentId = tournamentId,
         localFileExtension = fileExtension,
@@ -1195,6 +1212,7 @@ private fun ScreenshotMetadataEntity.toCloudPayload(): ScreenshotMetadataCloudPa
         createdAt = createdAt.toCloudTimestamp(),
         updatedAt = updatedAt.toCloudTimestamp(),
     )
+}
 
 private fun ScreenshotMetadataCloudFailure.toFailureCode(): String = when (this) {
     ScreenshotMetadataCloudFailure.AUTHORIZATION -> ScreenshotMetadataFailureCode.RLS_DENIED.name
