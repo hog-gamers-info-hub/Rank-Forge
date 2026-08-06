@@ -5,6 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationError
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.CroppedRosterPanelInput
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
@@ -23,8 +29,6 @@ import java.io.InputStream
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -129,7 +133,9 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
     private suspend fun prepareOnIo(
         source: RosterOcrScreenshotSource,
     ): RosterOcrPanelPreparationResult {
-        val crop = normalizedCropOrNull(source)
+        val crop = normalizedCropOrNull(source)?.takeIf {
+            OcrCropValidator.validate(it, OcrCropValidationProfiles.Roster) is OcrCropValidationResult.Valid
+        }
             ?: return RosterOcrPanelPreparationResult.Failed(
                 RosterOcrPanelPreparationFailure.INVALID_CROP,
             )
@@ -197,7 +203,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
     private suspend fun prepareDecoded(
         source: RosterOcrScreenshotSource,
         uri: Uri,
-        crop: NormalizedCrop,
+        crop: OcrNormalizedCropRect,
         boundsWidth: Int,
         boundsHeight: Int,
     ): RosterOcrPanelPreparationResult {
@@ -207,10 +213,24 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
             )
         }
 
-        val pixelCrop = crop.toPixelCrop(boundsWidth, boundsHeight)
-            ?: return RosterOcrPanelPreparationResult.Failed(
-                RosterOcrPanelPreparationFailure.INVALID_CROP,
+        val pixelCrop = when (
+            val result = OcrCropValidator.validate(
+                crop = crop,
+                dimensions = OcrImageDimensions.from(boundsWidth, boundsHeight),
+                profile = OcrCropValidationProfiles.Roster,
             )
+        ) {
+            is OcrCropValidationResult.Valid -> result.pixelCrop
+            is OcrCropValidationResult.Invalid -> {
+                val failure = when (result.error) {
+                    OcrCropValidationError.INVALID_IMAGE_DIMENSIONS -> RosterOcrPanelPreparationFailure.UNSAFE_DIMENSIONS
+                    else -> RosterOcrPanelPreparationFailure.INVALID_CROP
+                }
+                return RosterOcrPanelPreparationResult.Failed(failure)
+            }
+        } ?: return RosterOcrPanelPreparationResult.Failed(
+            RosterOcrPanelPreparationFailure.INVALID_CROP,
+        )
         if (pixelCrop.width.toLong() * pixelCrop.height.toLong() > MAX_IMAGE_PIXELS) {
             return RosterOcrPanelPreparationResult.Failed(
                 RosterOcrPanelPreparationFailure.UNSAFE_DIMENSIONS,
@@ -319,50 +339,17 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
         }
     }
 
-    private fun normalizedCropOrNull(source: RosterOcrScreenshotSource): NormalizedCrop? {
-        val edges = listOf(source.cropLeft, source.cropTop, source.cropRight, source.cropBottom)
-        if (edges.any { !it.isFinite() || it !in 0.0..1.0 }) return null
-        if (source.cropRight <= source.cropLeft || source.cropBottom <= source.cropTop) return null
-        if (source.cropRight - source.cropLeft < MINIMUM_CROP_SIZE ||
-            source.cropBottom - source.cropTop < MINIMUM_CROP_SIZE
-        ) return null
-        return NormalizedCrop(
+    private fun normalizedCropOrNull(source: RosterOcrScreenshotSource): OcrNormalizedCropRect =
+        OcrNormalizedCropRect(
             source.cropLeft,
             source.cropTop,
             source.cropRight,
             source.cropBottom,
         )
-    }
 
     private fun recycle(bitmap: Bitmap?) {
         if (bitmap != null && !bitmap.isRecycled) bitmap.recycle()
     }
-
-    private data class NormalizedCrop(
-        val left: Double,
-        val top: Double,
-        val right: Double,
-        val bottom: Double,
-    ) {
-        fun toPixelCrop(width: Int, height: Int): PixelCrop? {
-            val leftPixel = floor(left * width).toInt()
-            val topPixel = floor(top * height).toInt()
-            val rightPixel = ceil(right * width).toInt()
-            val bottomPixel = ceil(bottom * height).toInt()
-            if (leftPixel < 0 || topPixel < 0 || rightPixel > width || bottomPixel > height) return null
-            val cropWidth = rightPixel - leftPixel
-            val cropHeight = bottomPixel - topPixel
-            if (cropWidth <= 0 || cropHeight <= 0) return null
-            return PixelCrop(leftPixel, topPixel, cropWidth, cropHeight)
-        }
-    }
-
-    private data class PixelCrop(
-        val left: Int,
-        val top: Int,
-        val width: Int,
-        val height: Int,
-    )
 
     private sealed interface BoundsResult {
         data class Valid(val width: Int, val height: Int) : BoundsResult
@@ -406,6 +393,5 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
     private companion object {
         const val MAX_IMAGE_DIMENSION = 8_192
         const val MAX_IMAGE_PIXELS = 16_000_000L
-        const val MINIMUM_CROP_SIZE = 0.10
     }
 }
