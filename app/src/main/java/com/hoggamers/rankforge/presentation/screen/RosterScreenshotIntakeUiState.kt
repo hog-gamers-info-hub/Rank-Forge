@@ -39,6 +39,7 @@ data class RosterScreenshotIntakeUiState(
     val slots: List<RosterScreenshotSlotUiState> = defaultRosterScreenshotSlots(),
     val isPhotoPickerLaunchPending: Boolean = false,
     val activePhotoPickerSlotIndex: Int? = null,
+    val pendingCropNavigationSlotIndex: Int? = null,
     val intakeError: RosterScreenshotIntakeError? = null,
 ) {
     val selectedImageCount: Int

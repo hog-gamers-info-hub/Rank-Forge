@@ -18,7 +18,9 @@ import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewRoute
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeRoute
+import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
@@ -68,9 +70,13 @@ fun RankForgeNavHost(
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
     rosterReviewViewModelFactory: ((String) -> RosterReviewViewModel)? = null,
-    rosterScreenshotIntakeContent: @Composable (String) -> Unit = { tournamentId ->
-        RosterScreenshotIntakeRoute(tournamentId = tournamentId)
+    rosterScreenshotIntakeContent: @Composable (String, (Int) -> Unit) -> Unit = { tournamentId, onOpenCropEditor ->
+        RosterScreenshotIntakeRoute(
+            tournamentId = tournamentId,
+            onOpenCropEditor = onOpenCropEditor,
+        )
     },
+    rosterScreenshotCropViewModelFactory: (() -> RosterScreenshotIntakeViewModel)? = null,
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
@@ -324,6 +330,14 @@ fun RankForgeNavHost(
         }
         composable<RosterReviewDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<RosterReviewDestination>()
+            val onOpenCropEditor: (Int) -> Unit = { screenshotIndex ->
+                navController.navigate(
+                    RosterScreenshotCropDestination(
+                        tournamentId = destination.tournamentId,
+                        screenshotIndex = screenshotIndex,
+                    ),
+                )
+            }
             val onEditTeam: (Int) -> Unit = { slotNumber ->
                 navController.navigate(
                     TeamEntryDestination(
@@ -360,7 +374,7 @@ fun RankForgeNavHost(
                     onBackToTeamEntry = onBackToTeamEntry,
                     onConfirmed = onConfirmed,
                     rosterScreenshotIntake = {
-                        rosterScreenshotIntakeContent(destination.tournamentId)
+                        rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
                     },
                 )
             } else {
@@ -372,8 +386,28 @@ fun RankForgeNavHost(
                     onConfirmed = onConfirmed,
                     viewModel = reviewViewModel,
                     rosterScreenshotIntake = {
-                        rosterScreenshotIntakeContent(destination.tournamentId)
+                        rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
                     },
+                )
+            }
+        }
+        composable<RosterScreenshotCropDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<RosterScreenshotCropDestination>()
+            val cropViewModel = rosterScreenshotCropViewModelFactory?.invoke()
+            if (cropViewModel == null) {
+                RosterScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    screenshotIndex = destination.screenshotIndex,
+                    onCancel = { navController.popBackStack() },
+                    onConfirmed = { navController.popBackStack() },
+                )
+            } else {
+                RosterScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    screenshotIndex = destination.screenshotIndex,
+                    onCancel = { navController.popBackStack() },
+                    onConfirmed = { navController.popBackStack() },
+                    viewModel = cropViewModel,
                 )
             }
         }

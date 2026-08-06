@@ -39,7 +39,10 @@ fun RosterReviewRoute(
     viewModel: RosterReviewViewModel = hiltViewModel(),
     rosterOcrViewModel: RosterOcrReviewViewModel = hiltViewModel(),
     rosterScreenshotIntake: @Composable () -> Unit = {
-        RosterScreenshotIntakeRoute(tournamentId = tournamentId)
+        RosterScreenshotIntakeRoute(
+            tournamentId = tournamentId,
+            onOpenCropEditor = {},
+        )
     },
 ) {
     LaunchedEffect(tournamentId) {

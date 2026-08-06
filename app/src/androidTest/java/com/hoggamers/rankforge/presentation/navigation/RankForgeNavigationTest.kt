@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.navigation
 
 import androidx.activity.ComponentActivity
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
@@ -14,6 +16,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -53,6 +58,13 @@ import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ImageCandidateMetadataReader
+import com.hoggamers.rankforge.presentation.screen.ImageCandidateReadResult
+import com.hoggamers.rankforge.presentation.screen.ImageCandidateValidator
+import com.hoggamers.rankforge.presentation.screen.ImageSourceFingerprintGenerator
+import com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener
+import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewModel
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
@@ -128,6 +140,10 @@ class RankForgeNavigationTest {
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    private companion object {
+        const val OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG = "open_roster_screenshot_crop"
+    }
+
     @Test
     fun navigationMovesForwardAndBackThroughVisibleDestinations() {
         val viewModels = createNavigationViewModels()
@@ -140,7 +156,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                 )
             }
         }
@@ -171,7 +187,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                 )
             }
         }
@@ -185,6 +201,53 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.discard_changes_action)).performClick()
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+    }
+
+    @Test
+    fun rosterScreenshotCropDestinationOpensAndBackReturnsToRosterReview() {
+        val viewModels = createNavigationViewModels()
+        createTournamentFromViewModel(viewModels.creationViewModel)
+        val tournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
+        lateinit var navController: NavHostController
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _, onOpenCropEditor ->
+                        Button(
+                            onClick = { onOpenCropEditor(1) },
+                            modifier = Modifier.testTag(OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG),
+                        ) {
+                            Text("Open crop")
+                        }
+                    },
+                    rosterScreenshotCropViewModelFactory = { createCropNavigationViewModel() },
+                )
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            navController.navigate(RosterReviewDestination(tournamentId))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG).performClick()
+
+        composeTestRule.onNodeWithTag(ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertCountEquals(0)
+
+        pressBackOnMainThread()
+
+        composeTestRule.onNodeWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -266,7 +329,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                 )
             }
         }
@@ -307,7 +370,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                 )
             }
         }
@@ -422,7 +485,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                 )
             }
@@ -455,7 +518,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = { tournamentId ->
                         val viewModel = cachedMatchCreationViewModel
                             ?: viewModels.matchCreationViewModel(tournamentId).also {
@@ -556,7 +619,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = { tournamentId ->
                         val viewModel = cachedMatchCreationViewModel
                             ?: viewModels.matchCreationViewModel(tournamentId).also {
@@ -679,7 +742,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                 )
@@ -722,7 +785,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -767,7 +830,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -833,7 +896,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -923,7 +986,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -993,7 +1056,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1068,7 +1131,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1117,7 +1180,7 @@ class RankForgeNavigationTest {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
-                    rosterScreenshotIntakeContent = { _ -> },
+                    rosterScreenshotIntakeContent = { _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1156,6 +1219,16 @@ class RankForgeNavigationTest {
         }
         composeTestRule.waitForIdle()
     }
+
+    private fun createCropNavigationViewModel(): RosterScreenshotIntakeViewModel =
+        RosterScreenshotIntakeViewModel(
+            imageCandidateValidator = ImageCandidateValidator(
+                ImageCandidateMetadataReader { ImageCandidateReadResult.Unreadable },
+            ),
+            fingerprintGenerator = ImageSourceFingerprintGenerator(
+                streamOpener = ImageSourceStreamOpener { null },
+            ),
+        )
 
     private fun createNavigationViewModels(): NavigationViewModels {
         val repository = InMemoryTournamentRepository()

@@ -40,6 +40,12 @@ data class RosterReviewDestination(
 )
 
 @Serializable
+data class RosterScreenshotCropDestination(
+    val tournamentId: String,
+    val screenshotIndex: Int,
+)
+
+@Serializable
 data class MatchCreationDestination(
     val tournamentId: String,
 )
