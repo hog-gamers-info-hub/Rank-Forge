@@ -8,6 +8,15 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 
 typealias NormalizedCropRect = OcrNormalizedCropRect
 
+object RosterScreenshotCropDefaults {
+    val FullImageCrop = NormalizedCropRect(
+        left = 0.0,
+        top = 0.0,
+        right = 1.0,
+        bottom = 1.0,
+    )
+}
+
 enum class NormalizedCropRectValidationError {
     NON_FINITE_VALUE,
     OUT_OF_BOUNDS,
@@ -69,7 +78,18 @@ data class RosterScreenshotCropDraft(
         val bottomValue = bottom.toDoubleOrNull() ?: return null
         return NormalizedCropRect(leftValue, topValue, rightValue, bottomValue)
     }
+
+    fun isBlank(): Boolean =
+        left.isBlank() && top.isBlank() && right.isBlank() && bottom.isBlank()
 }
+
+fun NormalizedCropRect.toRosterScreenshotCropDraft(): RosterScreenshotCropDraft =
+    RosterScreenshotCropDraft(
+        left = left.toString(),
+        top = top.toString(),
+        right = right.toString(),
+        bottom = bottom.toString(),
+    )
 
 sealed interface RosterScreenshotCropState {
     data object NotSet : RosterScreenshotCropState

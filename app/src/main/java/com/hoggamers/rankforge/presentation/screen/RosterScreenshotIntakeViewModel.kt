@@ -131,6 +131,11 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
     fun removeSelectedImage(slotIndex: Int) {
         if (slotIndex !in 1..RosterScreenshotIntakeUiState.REQUIRED_SCREENSHOT_COUNT) return
         val tournamentId = _uiState.value.tournamentId ?: return
+        _uiState.update { current ->
+            current.copy(
+                pendingCropNavigationSlotIndex = current.pendingCropNavigationSlotIndex.takeUnless { it == slotIndex },
+            )
+        }
         updateSlot(slotIndex) { RosterScreenshotSlotUiState(index = it.index) }
         viewModelScope.launch {
             rosterScreenshotMetadataRepository.deleteByTournamentAndIndex(tournamentId, slotIndex)
@@ -151,7 +156,20 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         }
     }
 
-    fun setCrop(slotIndex: Int) {
+    fun onVisualCropChanged(
+        slotIndex: Int,
+        crop: NormalizedCropRect,
+    ) {
+        updateSlotIfSelected(slotIndex) { slot ->
+            slot.copy(
+                cropDraft = crop.toRosterScreenshotCropDraft(),
+                cropError = null,
+            )
+        }
+    }
+
+    fun requestCropEditor(slotIndex: Int) {
+        if (slotIndex !in 1..RosterScreenshotIntakeUiState.REQUIRED_SCREENSHOT_COUNT) return
         val slot = _uiState.value.slots.firstOrNull { it.index == slotIndex } ?: return
         if (!slot.hasValidatedImage) {
             updateSlot(slotIndex) {
@@ -159,25 +177,56 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
             }
             return
         }
-        val crop = slot.cropDraft.toNormalizedCropRectOrNull()
-        if (crop == null) {
-            updateSlot(slotIndex) {
-                it.copy(cropError = RosterScreenshotCropError.INVALID_NUMBER)
-            }
-            return
+        _uiState.update { current ->
+            current.copy(pendingCropNavigationSlotIndex = slotIndex)
         }
-        when (val validation = NormalizedCropRectValidator.validate(crop)) {
+    }
+
+    fun onCropNavigationHandled() {
+        _uiState.update { it.copy(pendingCropNavigationSlotIndex = null) }
+    }
+
+    fun confirmCrop(slotIndex: Int): Boolean {
+        return setCropInternal(slotIndex)
+    }
+
+    fun setCrop(slotIndex: Int) {
+        confirmCrop(slotIndex)
+    }
+
+    private fun setCropInternal(slotIndex: Int): Boolean {
+        val slot = _uiState.value.slots.firstOrNull { it.index == slotIndex } ?: return false
+        if (!slot.hasValidatedImage) {
+            updateSlot(slotIndex) {
+                it.copy(cropError = RosterScreenshotCropError.MISSING_SELECTED_IMAGE)
+            }
+            return false
+        }
+        val draftCrop = slot.cropDraft.toNormalizedCropRectOrNull()
+        val crop = when {
+            draftCrop != null -> draftCrop
+            slot.cropDraft.isBlank() -> (slot.cropState as? RosterScreenshotCropState.Set)?.crop
+                ?: RosterScreenshotCropDefaults.FullImageCrop
+
+            else -> {
+                updateSlot(slotIndex) {
+                    it.copy(cropError = RosterScreenshotCropError.INVALID_NUMBER)
+                }
+                return false
+            }
+        }
+        return when (val validation = NormalizedCropRectValidator.validate(crop)) {
             is RosterScreenshotCropValidationResult.Valid -> updateSlot(slotIndex) {
                 it.copy(
                     cropState = RosterScreenshotCropState.Set(validation.crop),
                     cropError = null,
                     associationUpdatedAt = System.currentTimeMillis(),
                 )
-            }.also { persistCurrentSlot(slotIndex) }
+            }.also { persistCurrentSlot(slotIndex) }.let { true }
 
             is RosterScreenshotCropValidationResult.Invalid -> updateSlot(slotIndex) {
                 it.copy(cropError = validation.error.toRosterScreenshotCropError())
-            }
+            }.let { false }
         }
     }
 
@@ -285,10 +334,14 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
                             isValidationInProgress = false,
                             lastValidationError = null,
                             duplicateSelectionState = null,
-                            cropDraft = RosterScreenshotCropDraft(),
+                            cropDraft = RosterScreenshotCropDefaults.FullImageCrop.toRosterScreenshotCropDraft(),
                             cropState = RosterScreenshotCropState.NotSet,
                             cropError = null,
                         )
+                    }.also {
+                        _uiState.update { current ->
+                            current.copy(pendingCropNavigationSlotIndex = slotIndex)
+                        }
                     }
 
                     RosterScreenshotAssociationSaveResult.DuplicateFingerprint -> {
@@ -393,7 +446,8 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
             persistedLocalRelativePath = localRelativePath,
             associationCreatedAt = createdAt,
             associationUpdatedAt = updatedAt,
-            cropDraft = crop?.toDraft() ?: RosterScreenshotCropDraft(),
+            cropDraft = crop?.toRosterScreenshotCropDraft()
+                ?: RosterScreenshotCropDefaults.FullImageCrop.toRosterScreenshotCropDraft(),
             cropState = crop?.let(RosterScreenshotCropState::Set) ?: RosterScreenshotCropState.NotSet,
         )
     }
@@ -411,10 +465,4 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         }
     }
 
-    private fun NormalizedCropRect.toDraft(): RosterScreenshotCropDraft = RosterScreenshotCropDraft(
-        left = left.toString(),
-        top = top.toString(),
-        right = right.toString(),
-        bottom = bottom.toString(),
-    )
 }

@@ -179,6 +179,123 @@ class RosterScreenshotIntakeViewModelTest {
     }
 
     @Test
+    fun validatedSelectionInitializesDefaultCropDraftAndEmitsCropNavigation() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+
+        val selectedSlot = viewModel.uiState.value.slots[0]
+        assertTrue(selectedSlot.hasValidatedImage)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertEquals(
+            RosterScreenshotCropDefaults.FullImageCrop.toRosterScreenshotCropDraft(),
+            selectedSlot.cropDraft,
+        )
+    }
+
+    @Test
+    fun cropNavigationRequestCanBeConsumedAndDoesNotRepeat() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+
+        viewModel.onCropNavigationHandled()
+
+        assertNull(viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun confirmCropReturnsTrueForValidCropAndPersistsCropReadyState() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+
+        val confirmed = viewModel.confirmCrop(1)
+        advanceUntilIdle()
+
+        assertTrue(confirmed)
+        assertTrue(viewModel.uiState.value.slots[0].isCropReady)
+        assertEquals(
+            RosterScreenshotCropState.Set(RosterScreenshotCropDefaults.FullImageCrop),
+            viewModel.uiState.value.slots[0].cropState,
+        )
+    }
+
+    @Test
+    fun requestCropEditorEmitsNavigationWithoutMutatingConfirmedCrop() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+        viewModel.onCropNavigationHandled()
+
+        viewModel.requestCropEditor(1)
+
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+        assertEquals(RosterScreenshotCropState.NotSet, viewModel.uiState.value.slots[0].cropState)
+    }
+
+    @Test
+    fun visualCropChangeReplacesDraftWithoutConfirmingOrPersistingCrop() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository()
+        val localStore = FakeRosterScreenshotLocalImageStore(
+            mapOf("screenshots/tournament/roster/1/original.png" to "file:///one.png"),
+        )
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+            repository = repository,
+            localImageStore = localStore,
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+        val visualCrop = NormalizedCropRect(0.15, 0.20, 0.55, 0.70)
+
+        viewModel.onVisualCropChanged(1, visualCrop)
+
+        val slot = viewModel.uiState.value.slots[0]
+        assertEquals(visualCrop.toRosterScreenshotCropDraft(), slot.cropDraft)
+        assertEquals(RosterScreenshotCropState.NotSet, slot.cropState)
+        assertFalse(slot.isCropReady)
+        assertNull(repository.current("tournament-1", 1)?.cropLeft)
+        assertNull(repository.current("tournament-1", 1)?.cropTop)
+        assertNull(repository.current("tournament-1", 1)?.cropRight)
+        assertNull(repository.current("tournament-1", 1)?.cropBottom)
+    }
+
+    @Test
+    fun confirmCropReturnsFalseAndKeepsInvalidStateForTinyCrop() = runTest {
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+        )
+        viewModel.load("tournament-1")
+        select(viewModel, 1, "content://one")
+
+        viewModel.onCropCoordinateChanged(1, RosterScreenshotCropCoordinate.LEFT, "0.20")
+        viewModel.onCropCoordinateChanged(1, RosterScreenshotCropCoordinate.TOP, "0.20")
+        viewModel.onCropCoordinateChanged(1, RosterScreenshotCropCoordinate.RIGHT, "0.25")
+        viewModel.onCropCoordinateChanged(1, RosterScreenshotCropCoordinate.BOTTOM, "0.25")
+        val confirmed = viewModel.confirmCrop(1)
+
+        assertFalse(confirmed)
+        assertEquals(RosterScreenshotCropError.TOO_SMALL, viewModel.uiState.value.slots[0].cropError)
+        assertFalse(viewModel.uiState.value.slots[0].isCropReady)
+    }
+
+    @Test
     fun cropRejectsMissingImagesInvalidBoundsAndTooSmallRectangles() = runTest {
         val viewModel = viewModel(
             metadata = mapOf("content://one" to validMetadata()),
