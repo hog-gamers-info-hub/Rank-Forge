@@ -1,11 +1,12 @@
 package com.hoggamers.rankforge.presentation.screen
 
-data class NormalizedCropRect(
-    val left: Double,
-    val top: Double,
-    val right: Double,
-    val bottom: Double,
-)
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationError
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+
+typealias NormalizedCropRect = OcrNormalizedCropRect
 
 enum class NormalizedCropRectValidationError {
     NON_FINITE_VALUE,
@@ -28,39 +29,13 @@ object NormalizedCropRectValidator {
     const val MINIMUM_CROP_WIDTH = 0.10
     const val MINIMUM_CROP_HEIGHT = 0.10
 
-    fun validate(crop: NormalizedCropRect): RosterScreenshotCropValidationResult = when {
-        !crop.left.isFinite() ||
-            !crop.top.isFinite() ||
-            !crop.right.isFinite() ||
-            !crop.bottom.isFinite() -> {
-            RosterScreenshotCropValidationResult.Invalid(
-                NormalizedCropRectValidationError.NON_FINITE_VALUE,
-            )
-        }
-
-        crop.left !in 0.0..1.0 ||
-            crop.top !in 0.0..1.0 ||
-            crop.right !in 0.0..1.0 ||
-            crop.bottom !in 0.0..1.0 -> {
-            RosterScreenshotCropValidationResult.Invalid(
-                NormalizedCropRectValidationError.OUT_OF_BOUNDS,
-            )
-        }
-
-        crop.right <= crop.left || crop.bottom <= crop.top -> {
-            RosterScreenshotCropValidationResult.Invalid(
-                NormalizedCropRectValidationError.INVALID_EDGES,
-            )
-        }
-
-        crop.right - crop.left < MINIMUM_CROP_WIDTH ||
-            crop.bottom - crop.top < MINIMUM_CROP_HEIGHT -> {
-            RosterScreenshotCropValidationResult.Invalid(
-                NormalizedCropRectValidationError.TOO_SMALL,
-            )
-        }
-
-        else -> RosterScreenshotCropValidationResult.Valid(crop)
+    fun validate(crop: NormalizedCropRect): RosterScreenshotCropValidationResult = when (
+        val result = OcrCropValidator.validate(crop, OcrCropValidationProfiles.Roster)
+    ) {
+        is OcrCropValidationResult.Valid -> RosterScreenshotCropValidationResult.Valid(result.crop)
+        is OcrCropValidationResult.Invalid -> RosterScreenshotCropValidationResult.Invalid(
+            result.error.toNormalizedCropRectValidationError(),
+        )
     }
 }
 
@@ -119,3 +94,14 @@ fun NormalizedCropRectValidationError.toRosterScreenshotCropError(): RosterScree
     NormalizedCropRectValidationError.INVALID_EDGES -> RosterScreenshotCropError.INVALID_EDGES
     NormalizedCropRectValidationError.TOO_SMALL -> RosterScreenshotCropError.TOO_SMALL
 }
+
+private fun OcrCropValidationError.toNormalizedCropRectValidationError(): NormalizedCropRectValidationError =
+    when (this) {
+        OcrCropValidationError.NON_FINITE_VALUE -> NormalizedCropRectValidationError.NON_FINITE_VALUE
+        OcrCropValidationError.OUT_OF_BOUNDS -> NormalizedCropRectValidationError.OUT_OF_BOUNDS
+        OcrCropValidationError.INVALID_EDGES -> NormalizedCropRectValidationError.INVALID_EDGES
+        OcrCropValidationError.TOO_SMALL -> NormalizedCropRectValidationError.TOO_SMALL
+        OcrCropValidationError.INVALID_IMAGE_DIMENSIONS,
+        OcrCropValidationError.EMPTY_PIXEL_CROP,
+        -> NormalizedCropRectValidationError.INVALID_EDGES
+    }
