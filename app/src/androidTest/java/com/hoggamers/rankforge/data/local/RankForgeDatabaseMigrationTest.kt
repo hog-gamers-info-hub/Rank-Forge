@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(8, cursor.getInt(0))
+                assertEquals(9, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -96,7 +96,7 @@ class RankForgeDatabaseMigrationTest {
             }
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
-                    "WHERE type = 'table' AND name = 'match_ocr_correction_snapshots'",
+                    "WHERE type = 'table' AND name = 'match_result_screenshot_assets'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -312,7 +312,60 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
-    fun migrationFromVersion1ToVersion8PreservesLegacyStateAndFinalSchema() {
+    fun migrationFromVersion8AddsMatchResultScreenshotAssetsWithoutMigratingLegacyScreenshotMetadata() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 8).use { database ->
+            database.execSQL("INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) VALUES ('tournament-screenshot-identity', 'Identity Cup', '2026-08-07', 'Organizer', '123', 'CONFIRMED')")
+            database.execSQL("INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-screenshot-identity', 'tournament-screenshot-identity', 1, '2026-08-07', 'Bermuda', 'DRAFT')")
+            database.execSQL(
+                """
+                INSERT INTO screenshot_metadata (
+                    match_id, tournament_id, owner_user_id, local_relative_path, file_extension,
+                    mime_type, width, height, byte_size, sha256, storage_bucket, storage_object_path,
+                    local_status, upload_status, upload_failure_code, created_at, updated_at,
+                    preserved_at, uploaded_at, revision
+                ) VALUES (
+                    'match-screenshot-identity', 'tournament-screenshot-identity', 'owner-1',
+                    'screenshots/tournament/match/original.png', 'png', 'image/png', 1600, 720,
+                    4, '${"a".repeat(64)}', NULL, NULL, 'PRESERVED', 'PENDING', NULL, 1, 1, 1, NULL, 1
+                )
+                """.trimIndent(),
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            9,
+            true,
+            RankForgeDatabase.MIGRATION_8_9,
+        )
+
+        migrated.query("SELECT id FROM matches WHERE id = 'match-screenshot-identity'").use {
+            assertTrue(it.moveToFirst())
+        }
+        migrated.query("SELECT match_id FROM screenshot_metadata WHERE match_id = 'match-screenshot-identity'").use {
+            assertTrue(it.moveToFirst())
+        }
+        assertTrue(migrated.hasTable("match_result_screenshot_assets"))
+        listOf(
+            "index_match_result_screenshot_assets_tournament_id",
+            "index_match_result_screenshot_assets_sha256",
+        ).forEach { index ->
+            assertTrue(migrated.hasIndex(index))
+        }
+        migrated.query("SELECT COUNT(*) FROM match_result_screenshot_assets").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("PRAGMA foreign_key_list('match_result_screenshot_assets')").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("matches", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+            assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion1ToVersion9PreservesLegacyStateAndFinalSchema() {
         val payload = """{"tournaments":[{"id":"legacy-tournament","name":"Legacy Cup"}]}"""
         createVersion1Database().use { database ->
             database.execSQL(
@@ -323,7 +376,7 @@ class RankForgeDatabaseMigrationTest {
 
         val migrated = migrationTestHelper().runMigrationsAndValidate(
             MIGRATION_DATABASE_NAME,
-            8,
+            9,
             true,
             RankForgeDatabase.MIGRATION_1_2,
             RankForgeDatabase.MIGRATION_2_3,
@@ -332,6 +385,7 @@ class RankForgeDatabaseMigrationTest {
             RankForgeDatabase.MIGRATION_5_6,
             RankForgeDatabase.MIGRATION_6_7,
             RankForgeDatabase.MIGRATION_7_8,
+            RankForgeDatabase.MIGRATION_8_9,
         )
 
         migrated.query("SELECT payload FROM rank_forge_state WHERE id = 1").use { cursor ->
@@ -345,6 +399,7 @@ class RankForgeDatabaseMigrationTest {
             "match_ocr_evidence",
             "match_ocr_row_evidence",
             "match_ocr_correction_snapshots",
+            "match_result_screenshot_assets",
         ).forEach { table ->
             assertTrue(migrated.hasTable(table))
         }
@@ -354,6 +409,8 @@ class RankForgeDatabaseMigrationTest {
             "index_match_ocr_evidence_tournament_id",
             "index_match_ocr_row_evidence_match_id",
             "index_match_ocr_correction_snapshots_match_id",
+            "index_match_result_screenshot_assets_tournament_id",
+            "index_match_result_screenshot_assets_sha256",
         ).forEach { index ->
             assertTrue(migrated.hasIndex(index))
         }

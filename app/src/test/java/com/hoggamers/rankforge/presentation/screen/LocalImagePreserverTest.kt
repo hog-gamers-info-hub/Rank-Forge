@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -106,6 +107,73 @@ class LocalImagePreserverTest {
             LocalImageCleanupResult.Failed,
             preserver.cleanup("tournament", "match"),
         )
+    }
+
+    @Test
+    fun matchResultPreservationUsesRoleScopedDeterministicPaths() = runTest {
+        val bytes = byteArrayOf(4, 5, 6)
+        val preserver = preserver(bytes, "image/webp")
+
+        val result = preserver.preserveMatchResultScreenshot(
+            tournamentId = "tournament one",
+            matchId = "match/one",
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            selectedUri = "content://picked/upper",
+        )
+
+        val file = (result as LocalImagePreservationResult.Preserved).file
+        assertEquals("original.webp", file.name)
+        assertTrue(file.path.contains("${File.separator}result${File.separator}upper${File.separator}"))
+        assertArrayEquals(bytes, file.readBytes())
+        assertEquals(
+            "screenshots/746f75726e616d656e74206f6e65/6d617463682f6f6e65/result/upper/original.webp",
+            preserver.matchResultRelativePath(
+                tournamentId = "tournament one",
+                matchId = "match/one",
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                extension = "webp",
+            ),
+        )
+    }
+
+    @Test
+    fun matchResultRoleCleanupDoesNotDeleteTheOtherRole() = runTest {
+        var bytes = byteArrayOf(1)
+        var mime = "image/png"
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("rank-forge-role-cleanup").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { bytes.inputStream() },
+            mimeTypeReader = ImageSourceMimeTypeReader { mime },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val upper = preserver.preserveMatchResultScreenshot(
+            "tournament",
+            "match",
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            "upper",
+        ) as LocalImagePreservationResult.Preserved
+        bytes = byteArrayOf(2)
+        mime = "image/jpeg"
+        val lower = preserver.preserveMatchResultScreenshot(
+            "tournament",
+            "match",
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            "lower",
+        ) as LocalImagePreservationResult.Preserved
+
+        assertEquals(
+            LocalImageCleanupResult.Cleaned,
+            preserver.cleanupMatchResultScreenshot(
+                "tournament",
+                "match",
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            ),
+        )
+
+        assertFalse(upper.file.exists())
+        assertTrue(lower.file.exists())
+        assertArrayEquals(byteArrayOf(2), lower.file.readBytes())
     }
 
     private fun preserver(

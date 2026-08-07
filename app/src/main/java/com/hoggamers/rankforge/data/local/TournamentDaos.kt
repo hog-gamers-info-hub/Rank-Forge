@@ -222,6 +222,181 @@ interface RosterScreenshotMetadataDao {
 }
 
 @Dao
+interface MatchResultScreenshotAssetDao {
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE match_id = :matchId
+        ORDER BY
+            CASE screenshot_role
+                WHEN 'MATCH_RESULT_UPPER' THEN 0
+                WHEN 'MATCH_RESULT_LOWER' THEN 1
+                ELSE 2
+            END,
+            screenshot_role
+        """,
+    )
+    fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    fun observeByMatchAndRole(
+        matchId: String,
+        screenshotRole: String,
+    ): Flow<MatchResultScreenshotAssetEntity?>
+
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun readByMatchAndRole(
+        matchId: String,
+        screenshotRole: String,
+    ): MatchResultScreenshotAssetEntity?
+
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY match_id,
+            CASE screenshot_role
+                WHEN 'MATCH_RESULT_UPPER' THEN 0
+                WHEN 'MATCH_RESULT_LOWER' THEN 1
+                ELSE 2
+            END,
+            screenshot_role
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY match_id,
+            CASE screenshot_role
+                WHEN 'MATCH_RESULT_UPPER' THEN 0
+                WHEN 'MATCH_RESULT_LOWER' THEN 1
+                ELSE 2
+            END,
+            screenshot_role
+        """,
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<MatchResultScreenshotAssetEntity>
+
+    @Query(
+        """
+        SELECT * FROM match_result_screenshot_assets
+        WHERE tournament_id = :tournamentId
+            AND sha256 = :sha256
+            AND NOT (match_id = :matchId AND screenshot_role = :screenshotRole)
+        LIMIT 1
+        """,
+    )
+    suspend fun readDuplicateFingerprint(
+        tournamentId: String,
+        sha256: String,
+        matchId: String,
+        screenshotRole: String,
+    ): MatchResultScreenshotAssetEntity?
+
+    @Upsert
+    suspend fun upsert(asset: MatchResultScreenshotAssetEntity)
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun markLocalMissing(
+        matchId: String,
+        screenshotRole: String,
+        localStatus: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun markCleanupFailure(
+        matchId: String,
+        screenshotRole: String,
+        localStatus: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET crop_profile_id = :cropProfileId,
+            crop_left = :cropLeft,
+            crop_top = :cropTop,
+            crop_right = :cropRight,
+            crop_bottom = :cropBottom,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun updateConfirmedCrop(
+        matchId: String,
+        screenshotRole: String,
+        cropProfileId: String,
+        cropLeft: Double,
+        cropTop: Double,
+        cropRight: Double,
+        cropBottom: Double,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET crop_profile_id = NULL,
+            crop_left = NULL,
+            crop_top = NULL,
+            crop_right = NULL,
+            crop_bottom = NULL,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun clearConfirmedCrop(
+        matchId: String,
+        screenshotRole: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        "DELETE FROM match_result_screenshot_assets WHERE match_id = :matchId AND screenshot_role = :screenshotRole",
+    )
+    suspend fun deleteByMatchAndRole(
+        matchId: String,
+        screenshotRole: String,
+    )
+
+    @Query("DELETE FROM match_result_screenshot_assets WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+}
+
+@Dao
 interface MatchOcrEvidenceDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMatchEvidence(entity: MatchOcrEvidenceEntity)

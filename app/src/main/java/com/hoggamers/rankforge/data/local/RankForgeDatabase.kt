@@ -39,12 +39,13 @@ interface RankForgeStateDao {
         SyncQueueEntity::class,
         SyncRevisionEntity::class,
         ScreenshotMetadataEntity::class,
+        MatchResultScreenshotAssetEntity::class,
         RosterScreenshotMetadataEntity::class,
         MatchOcrEvidenceEntity::class,
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -60,6 +61,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncRevisionDao(): SyncRevisionDao
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
+    abstract fun matchResultScreenshotAssetDao(): MatchResultScreenshotAssetDao
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
     abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
 
@@ -320,6 +322,55 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_row_evidence_tournament_id` ON `match_ocr_row_evidence` (`tournament_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_match_id` ON `match_ocr_correction_snapshots` (`match_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_tournament_id` ON `match_ocr_correction_snapshots` (`tournament_id`)")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_result_screenshot_assets` (
+                        `tournament_id` TEXT NOT NULL,
+                        `match_id` TEXT NOT NULL,
+                        `screenshot_kind` TEXT NOT NULL,
+                        `screenshot_role` TEXT NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `local_relative_path` TEXT NOT NULL,
+                        `file_extension` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `original_width` INTEGER NOT NULL,
+                        `original_height` INTEGER NOT NULL,
+                        `byte_size` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `local_status` TEXT NOT NULL,
+                        `upload_status` TEXT NOT NULL,
+                        `upload_failure_code` TEXT,
+                        `storage_bucket` TEXT,
+                        `storage_object_path` TEXT,
+                        `crop_profile_id` TEXT,
+                        `crop_left` REAL,
+                        `crop_top` REAL,
+                        `crop_right` REAL,
+                        `crop_bottom` REAL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `preserved_at` INTEGER NOT NULL,
+                        `uploaded_at` INTEGER,
+                        `revision` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `screenshot_role`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_tournament_id` ON `match_result_screenshot_assets` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_sha256` ON `match_result_screenshot_assets` (`sha256`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_upload_status` ON `match_result_screenshot_assets` (`upload_status`)",
+                )
             }
         }
     }
