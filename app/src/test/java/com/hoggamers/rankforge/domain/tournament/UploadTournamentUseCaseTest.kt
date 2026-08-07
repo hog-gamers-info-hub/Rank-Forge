@@ -61,12 +61,13 @@ class UploadTournamentUseCaseTest {
 
         val result = useCase(TOURNAMENT_ID)
 
-        assertEquals(TournamentCloudUploadResult.Success, result.primaryResult)
+        assertEquals(TournamentCloudUploadResult.Success(7), result.primaryResult)
         assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertEquals(OWNER_ID, cloud.ownerId)
         assertEquals(TOURNAMENT_ID, cloud.snapshot?.tournament?.id)
         assertEquals(12, cloud.snapshot?.slots?.size)
         assertTrue(cloud.snapshot?.rosters?.get(1)?.single()?.displayName == "Player One")
+        assertEquals(7, repository.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
         assertTrue(queueRepository.entries.isEmpty())
     }
 
@@ -148,7 +149,7 @@ class UploadTournamentUseCaseTest {
     }
 
     private class RecordingCloudRepository(
-        private val result: TournamentCloudUploadResult = TournamentCloudUploadResult.Success,
+        private val result: TournamentCloudUploadResult = TournamentCloudUploadResult.Success(7),
     ) : TournamentCloudUploadRepository {
         var snapshot: TournamentCloudUploadSnapshot? = null
         var ownerId: String? = null

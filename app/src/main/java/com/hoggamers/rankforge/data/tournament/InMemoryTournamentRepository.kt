@@ -42,6 +42,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
     private val preservedOcrEvidenceByMatch = MutableStateFlow<Map<String, PreservedMatchOcrEvidence>>(emptyMap())
     private val cloudRevisions = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val baseCloudRevisions = MutableStateFlow<Map<String, Int?>>(emptyMap())
 
     override suspend fun create(tournament: Tournament) {
         tournaments.update { current ->
@@ -55,15 +56,28 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             }
         }
         cloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
+        baseCloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
     }
 
     override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState =
         cloudRevisions.value[tournamentId]?.let { revision ->
-            LocalRevisionState(localRevision = revision, baseCloudRevision = CloudRevision(revision))
+            LocalRevisionState(
+                localRevision = revision,
+                baseCloudRevision = baseCloudRevisions.value[tournamentId]?.let(::CloudRevision),
+            )
         } ?: LocalRevisionState.Missing
 
     override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {
         cloudRevisions.update { it + (tournamentId to cloudRevision) }
+        baseCloudRevisions.update { it + (tournamentId to cloudRevision) }
+    }
+
+    override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
+        require(cloudRevision > 0)
+        if (cloudRevisions.value[tournamentId] == null) {
+            cloudRevisions.update { it + (tournamentId to 1) }
+        }
+        baseCloudRevisions.update { it + (tournamentId to cloudRevision) }
     }
 
     override fun observeAll(): Flow<List<Tournament>> = tournaments

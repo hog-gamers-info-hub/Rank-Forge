@@ -24,7 +24,7 @@ class QueueOperationRetryExecutorTest {
     @Test fun dispatchesEveryOperationTypeToItsNoRecordRetryAction() = runTest {
         val calls = mutableListOf<String>()
         val executor = executor(
-            tournamentUpload = TournamentCloudUploadRetryAction { id -> calls += "upload:$id"; TournamentCloudUploadResult.Success },
+            tournamentUpload = TournamentCloudUploadRetryAction { id -> calls += "upload:$id"; TournamentCloudUploadResult.Success(1) },
             tournamentRestoration = TournamentCloudRestorationRetryAction { id -> calls += "tournament_restore:$id"; TournamentCloudRestorationResult.Success("Tournament") },
             draftMatchSync = DraftMatchCloudSyncRetryAction { id -> calls += "draft_sync:$id"; DraftMatchCloudSyncResult.Success },
             finalizedMatchSync = FinalizedMatchCloudSyncRetryAction { id -> calls += "finalized_sync:$id"; FinalizedMatchCloudSyncResult.Success(8) },
@@ -180,7 +180,7 @@ class QueueOperationRetryExecutorTest {
     }
 
     private fun executor(
-        tournamentUpload: TournamentCloudUploadRetryAction = TournamentCloudUploadRetryAction { TournamentCloudUploadResult.Success },
+        tournamentUpload: TournamentCloudUploadRetryAction = TournamentCloudUploadRetryAction { TournamentCloudUploadResult.Success(1) },
         tournamentRestoration: TournamentCloudRestorationRetryAction = TournamentCloudRestorationRetryAction { TournamentCloudRestorationResult.Success("Tournament") },
         draftMatchSync: DraftMatchCloudSyncRetryAction = DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success },
         finalizedMatchSync: FinalizedMatchCloudSyncRetryAction = FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success(8) },

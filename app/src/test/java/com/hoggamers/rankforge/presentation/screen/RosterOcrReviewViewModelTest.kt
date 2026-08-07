@@ -52,6 +52,13 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationFailureCategory
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -597,6 +604,21 @@ class RosterOcrReviewViewModelTest {
             tournamentRepository = repository,
             authRepository = FakeAuthRepository(),
             cloudReplacementRepository = cloudRepository,
+            cloudUploadRepository = object : TournamentCloudUploadRepository {
+                override suspend fun upload(
+                    snapshot: TournamentCloudUploadSnapshot,
+                    ownerId: String,
+                ) = TournamentCloudUploadResult.Success(2)
+            },
+            cloudRestorationRepository = object : TournamentCloudRestorationRepository {
+                override suspend fun listOwnedTournaments() =
+                    TournamentCloudRestorationRemoteResult.Success(emptyList<TournamentCloudRestorationSummary>())
+
+                override suspend fun readOwnedTournament(tournamentId: String) =
+                    TournamentCloudRestorationRemoteResult.Failure(
+                        TournamentCloudRestorationFailureCategory.NOT_FOUND,
+                    )
+            },
             queueRecorder = RecordSyncQueueOutcome(queueRepository),
         )
         return Fixture(

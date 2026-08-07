@@ -20,14 +20,18 @@ class SupabaseTournamentCloudUploadRepository @Inject constructor(
             ?: return TournamentCloudUploadResult.Conflict(RevisionConflict.MissingRevision)
         return when (val mapping = TournamentCloudUploadMapper.map(snapshot, ownerId)) {
             TournamentCloudUploadMappingResult.Invalid -> TournamentCloudUploadResult.ValidationFailure
-            is TournamentCloudUploadMappingResult.Success ->
-                remoteDataSource.upload(mapping.payloads, expectedRevision).toDomainResult()
+            is TournamentCloudUploadMappingResult.Success -> remoteDataSource
+                .upload(mapping.payloads, expectedRevision)
+                .toDomainResult()
         }
     }
 }
 
 private fun CloudUploadExecutionResult.toDomainResult(): TournamentCloudUploadResult = when (this) {
-    CloudUploadExecutionResult.Success -> TournamentCloudUploadResult.Success
+    is CloudUploadExecutionResult.Success -> confirmedCloudRevision
+        ?.takeIf { it > 0 }
+        ?.let(TournamentCloudUploadResult::Success)
+        ?: TournamentCloudUploadResult.ValidationFailure
     is CloudUploadExecutionResult.Failure -> {
         if (completedStage != null) {
             TournamentCloudUploadResult.PartialFailure(

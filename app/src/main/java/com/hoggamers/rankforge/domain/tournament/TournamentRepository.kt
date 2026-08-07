@@ -9,6 +9,9 @@ interface TournamentRepository {
 
     suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) = Unit
 
+    /** Records an authoritative cloud baseline without discarding local unsynchronized changes. */
+    suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) = Unit
+
     /** Updates the cloud base only after an explicit, draft-only conflict action. */
     suspend fun rebaseCloudRevisionForConflictResolution(
         tournamentId: String,

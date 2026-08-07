@@ -23,6 +23,7 @@ import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.review.ProcessRosterOcrFailure
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationFailure
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrSourceProviderResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
@@ -614,8 +615,12 @@ private fun cloudResultMessage(result: TournamentRosterCloudReplacementResult): 
             R.string.roster_ocr_review_cloud_validation_failure
         TournamentRosterCloudReplacementResult.AuthorizationFailure ->
             R.string.roster_ocr_review_cloud_authorization_failure
-        is TournamentRosterCloudReplacementResult.Conflict ->
-            R.string.roster_ocr_review_cloud_conflict
+        is TournamentRosterCloudReplacementResult.Conflict -> when (result.conflict) {
+            RevisionConflict.MissingRevision -> R.string.roster_ocr_review_cloud_network_failure
+            is RevisionConflict.StaleWrite,
+            is RevisionConflict.LocalCloudDivergence,
+            -> R.string.roster_ocr_review_cloud_conflict
+        }
         TournamentRosterCloudReplacementResult.BlockedByExistingMatches ->
             R.string.roster_ocr_review_cloud_blocked_by_matches
         TournamentRosterCloudReplacementResult.UnknownFailure ->

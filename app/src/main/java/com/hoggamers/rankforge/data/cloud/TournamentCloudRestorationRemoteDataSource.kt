@@ -87,7 +87,7 @@ class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
                 .decodeList<TournamentCloudRestorePayload>()
             val tournament = tournaments.singleOrNull()
                 ?: return TournamentCloudRestorationRemoteResult.Failure(
-                    TournamentCloudRestorationFailureCategory.AUTHORIZATION,
+                    TournamentCloudRestorationFailureCategory.NOT_FOUND,
                 )
             val slots = client
                 .from("tournament_team_slots")
