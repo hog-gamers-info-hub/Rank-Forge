@@ -195,6 +195,78 @@ data class ScreenshotMetadataEntity(
 )
 
 @Entity(
+    tableName = "match_result_screenshot_assets",
+    primaryKeys = ["match_id", "screenshot_role"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["tournament_id"]),
+        Index(value = ["sha256"]),
+        Index(value = ["upload_status"]),
+    ],
+)
+data class MatchResultScreenshotAssetEntity(
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "screenshot_kind")
+    val screenshotKind: String,
+    @ColumnInfo(name = "screenshot_role")
+    val screenshotRole: String,
+    @ColumnInfo(name = "owner_user_id")
+    val ownerUserId: String,
+    @ColumnInfo(name = "local_relative_path")
+    val localRelativePath: String,
+    @ColumnInfo(name = "file_extension")
+    val fileExtension: String,
+    @ColumnInfo(name = "mime_type")
+    val mimeType: String,
+    @ColumnInfo(name = "original_width")
+    val originalWidth: Int,
+    @ColumnInfo(name = "original_height")
+    val originalHeight: Int,
+    @ColumnInfo(name = "byte_size")
+    val byteSize: Long,
+    val sha256: String,
+    @ColumnInfo(name = "local_status")
+    val localStatus: String,
+    @ColumnInfo(name = "upload_status")
+    val uploadStatus: String,
+    @ColumnInfo(name = "upload_failure_code")
+    val uploadFailureCode: String?,
+    @ColumnInfo(name = "storage_bucket")
+    val storageBucket: String?,
+    @ColumnInfo(name = "storage_object_path")
+    val storageObjectPath: String?,
+    @ColumnInfo(name = "crop_profile_id")
+    val cropProfileId: String?,
+    @ColumnInfo(name = "crop_left")
+    val cropLeft: Double?,
+    @ColumnInfo(name = "crop_top")
+    val cropTop: Double?,
+    @ColumnInfo(name = "crop_right")
+    val cropRight: Double?,
+    @ColumnInfo(name = "crop_bottom")
+    val cropBottom: Double?,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+    @ColumnInfo(name = "preserved_at")
+    val preservedAt: Long,
+    @ColumnInfo(name = "uploaded_at")
+    val uploadedAt: Long?,
+    val revision: Long,
+)
+
+@Entity(
     tableName = "match_ocr_evidence",
     foreignKeys = [
         ForeignKey(

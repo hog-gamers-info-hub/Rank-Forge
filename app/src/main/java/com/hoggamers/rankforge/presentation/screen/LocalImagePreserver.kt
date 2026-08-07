@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.content.Context
 import android.net.Uri
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileNotFoundException
@@ -104,6 +105,16 @@ class LocalImagePreserver(
             selectedUri = selectedUri,
         )
     }
+
+    suspend fun preserveMatchResultScreenshot(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+        selectedUri: String,
+    ): LocalImagePreservationResult = preserveToDirectory(
+        directory = matchResultScreenshotDirectory(tournamentId, matchId, role),
+        selectedUri = selectedUri,
+    )
 
     private suspend fun preserveToDirectory(
         directory: File,
@@ -244,6 +255,24 @@ class LocalImagePreserver(
         }
     }
 
+    suspend fun cleanupMatchResultScreenshot(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        val directory = matchResultScreenshotDirectory(tournamentId, matchId, role)
+        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+            ?: return@withContext LocalImageCleanupResult.Failed
+        val ownedFiles = files.filter { file ->
+            file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
+        }
+        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+            LocalImageCleanupResult.Cleaned
+        } else {
+            LocalImageCleanupResult.Failed
+        }
+    }
+
     fun preservedFile(
         tournamentId: String,
         matchId: String,
@@ -261,6 +290,22 @@ class LocalImagePreserver(
         rosterScreenshotIndex: Int,
         extension: String,
     ): String = "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/roster/$rosterScreenshotIndex/original.$extension"
+
+    fun matchResultRelativePath(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+        extension: String,
+    ): String =
+        "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/result/" +
+            "${roleDirectoryName(role)}/original.$extension"
+
+    fun matchResultPreservedFile(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+        extension: String,
+    ): File = File(matchResultScreenshotDirectory(tournamentId, matchId, role), "original.$extension")
 
     fun relativePathFor(file: File): String? {
         val rootPath = runCatching { File(appPrivateRoot, SCREENSHOTS_DIRECTORY).canonicalFile.toPath() }
@@ -289,6 +334,20 @@ class LocalImagePreserver(
 
     private fun rosterScreenshotDirectory(tournamentId: String, rosterScreenshotIndex: Int): File =
         File(File(appPrivateRoot, SCREENSHOTS_DIRECTORY), "${encodeSegment(tournamentId)}/roster/$rosterScreenshotIndex")
+
+    private fun matchResultScreenshotDirectory(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+    ): File = File(
+        File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
+        "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/result/${roleDirectoryName(role)}",
+    )
+
+    private fun roleDirectoryName(role: MatchResultScreenshotRole): String = when (role) {
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER -> "upper"
+        MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "lower"
+    }
 
     private fun cleanupStaleFiles(directory: File, targetFile: File): Boolean {
         val files = runCatching { fileOperations.listFiles(directory) }.getOrNull() ?: return false

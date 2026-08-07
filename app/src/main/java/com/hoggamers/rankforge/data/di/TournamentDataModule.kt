@@ -11,10 +11,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetDao
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RoomRosterScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.RoomMatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
@@ -82,6 +85,11 @@ abstract class TournamentDataBindingsModule {
         repository: RoomRosterScreenshotMetadataRepository,
     ): RosterScreenshotMetadataRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindMatchResultScreenshotAssetRepository(
+        repository: RoomMatchResultScreenshotAssetRepository,
+    ): MatchResultScreenshotAssetRepository
 }
 
 @Module
@@ -103,6 +111,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_5_6,
         RankForgeDatabase.MIGRATION_6_7,
         RankForgeDatabase.MIGRATION_7_8,
+        RankForgeDatabase.MIGRATION_8_9,
     ).build()
 
     @Provides
@@ -118,6 +127,11 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideRosterScreenshotMetadataDao(database: RankForgeDatabase): RosterScreenshotMetadataDao =
         database.rosterScreenshotMetadataDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchResultScreenshotAssetDao(database: RankForgeDatabase): MatchResultScreenshotAssetDao =
+        database.matchResultScreenshotAssetDao()
 
     @Provides
     @Singleton
