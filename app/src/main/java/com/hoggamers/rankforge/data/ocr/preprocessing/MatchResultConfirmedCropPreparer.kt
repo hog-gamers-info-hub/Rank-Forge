@@ -163,6 +163,8 @@ class MatchResultConfirmedCropPreparer(
             imageOperations.readDimensions(file)
         } catch (cancellation: CancellationException) {
             throw cancellation
+        } catch (_: OutOfMemoryError) {
+            null
         } catch (_: RuntimeException) {
             null
         } ?: return@withContext failed(MatchResultConfirmedCropPreparationFailure.IMAGE_UNREADABLE)
@@ -174,6 +176,8 @@ class MatchResultConfirmedCropPreparer(
             imageOperations.decode(file)
         } catch (cancellation: CancellationException) {
             throw cancellation
+        } catch (_: OutOfMemoryError) {
+            null
         } catch (_: RuntimeException) {
             null
         } ?: return@withContext failed(MatchResultConfirmedCropPreparationFailure.IMAGE_UNREADABLE)
@@ -217,6 +221,10 @@ class MatchResultConfirmedCropPreparer(
         )
     }
 
+    fun release(preparedCrop: PreparedMatchResultConfirmedCrop) {
+        imageOperations.release(preparedCrop.image)
+    }
+
     private fun failed(
         failure: MatchResultConfirmedCropPreparationFailure,
     ): MatchResultConfirmedCropPreparationResult.Failed =
@@ -251,15 +259,20 @@ private object AndroidMatchResultConfirmedCropImageOperations : MatchResultConfi
             ?.bitmap
             ?.takeIf { !it.isRecycled }
             ?: return null
-        return AndroidMatchResultPreparedCropImage(
-            Bitmap.createBitmap(
-                bitmap,
-                cropRect.left,
-                cropRect.top,
-                cropRect.width,
-                cropRect.height,
-            ),
+        val cropped = Bitmap.createBitmap(
+            bitmap,
+            cropRect.left,
+            cropRect.top,
+            cropRect.width,
+            cropRect.height,
         )
+        val independentlyOwned = if (cropped === bitmap) {
+            cropped.copy(cropped.config ?: Bitmap.Config.ARGB_8888, false)
+                ?: return null
+        } else {
+            cropped
+        }
+        return AndroidMatchResultPreparedCropImage(independentlyOwned)
     }
 
     override fun release(image: MatchResultPreparedCropImage) {
