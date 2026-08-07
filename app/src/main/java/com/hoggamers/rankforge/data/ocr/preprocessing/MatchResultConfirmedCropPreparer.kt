@@ -83,13 +83,23 @@ interface MatchResultConfirmedCropImageOperations {
 }
 
 @Singleton
-class MatchResultConfirmedCropPreparer @Inject constructor(
+class MatchResultConfirmedCropPreparer(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
-    private val imageOperations: MatchResultConfirmedCropImageOperations =
-        AndroidMatchResultConfirmedCropImageOperations,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val imageOperations: MatchResultConfirmedCropImageOperations,
+    private val ioDispatcher: CoroutineDispatcher,
 ) {
+    @Inject
+    constructor(
+        assetRepository: MatchResultScreenshotAssetRepository,
+        localImagePreserver: LocalImagePreserver,
+    ) : this(
+        assetRepository = assetRepository,
+        localImagePreserver = localImagePreserver,
+        imageOperations = AndroidMatchResultConfirmedCropImageOperations,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     suspend fun prepare(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultConfirmedCropPreparationResult = withContext(ioDispatcher) {
