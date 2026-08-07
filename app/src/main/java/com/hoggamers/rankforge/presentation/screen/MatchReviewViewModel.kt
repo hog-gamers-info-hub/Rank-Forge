@@ -3,7 +3,16 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.OCR_SCREENSHOTS_BUCKET
 import com.hoggamers.rankforge.data.cloud.MATCH_SCREENSHOTS_BUCKET
 import com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure
@@ -17,6 +26,10 @@ import com.hoggamers.rankforge.data.cloud.toCloudTimestamp
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.local.NoOpScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
+import com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataFailureCode
@@ -24,6 +37,9 @@ import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.export.MatchCsvExportFailure
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchCsvExportResult
@@ -38,6 +54,10 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.time.Clock
@@ -64,11 +84,21 @@ class MatchReviewViewModel @Inject constructor(
     private val finalizeMatch: FinalizeMatchUseCase,
     private val imageCandidateValidator: ImageCandidateValidator,
     private val screenshotDuplicateDetector: ScreenshotDuplicateDetector,
+    private val matchResultScreenshotDuplicateDetector: MatchResultScreenshotDuplicateDetector =
+        MatchResultScreenshotDuplicateDetector(
+            ImageSourceFingerprintGenerator(ImageSourceStreamOpener { null }),
+        ),
     private val localImagePreserver: LocalImagePreserver,
     private val screenshotStorageUploader: ScreenshotStorageUploader = NoOpScreenshotStorageUploader(),
+    private val matchResultScreenshotStorageUploader: MatchResultScreenshotStorageUploader =
+        NoOpMatchResultScreenshotStorageUploader(),
     private val screenshotMetadataRepository: ScreenshotMetadataRepository = NoOpScreenshotMetadataRepository(),
+    private val matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
+        NoOpMatchResultScreenshotAssetRepository(),
     private val screenshotMetadataCloudDataSource: ScreenshotMetadataCloudDataSource =
         NoOpScreenshotMetadataCloudDataSource(),
+    private val matchResultScreenshotAssetCloudDataSource: MatchResultScreenshotAssetCloudDataSource =
+        NoOpMatchResultScreenshotAssetCloudDataSource(),
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val clock: Clock = Clock.systemUTC(),
 ) : ViewModel() {
@@ -79,8 +109,10 @@ class MatchReviewViewModel @Inject constructor(
     private var duplicateDetectionJob: Job? = null
     private var preservationJob: Job? = null
     private var uploadJob: Job? = null
+    private val resultScreenshotJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
     private var exportJob: Job? = null
     private var restoredMissingMarkedForMatchId: String? = null
+    private val restoredResultMissingMarked = mutableSetOf<String>()
     private var loadedMatchKey: String? = null
 
     fun load(tournamentId: String, matchId: String) {
@@ -92,6 +124,8 @@ class MatchReviewViewModel @Inject constructor(
         duplicateDetectionJob?.cancel()
         preservationJob?.cancel()
         uploadJob?.cancel()
+        resultScreenshotJobs.values.forEach { it.cancel() }
+        resultScreenshotJobs.clear()
         exportJob?.cancel()
         _uiState.update {
             MatchReviewUiState(
@@ -101,14 +135,30 @@ class MatchReviewViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch {
-            combine(
+            val baseInputs = combine(
                 observeMatches(tournamentId),
                 observeTournamentSlots(tournamentId),
                 observeRoster(tournamentId),
                 observeDraftValues(tournamentId, matchId),
+            ) { matches, slots, rosters, draftValues ->
+                MatchReviewLoadInputs(
+                    matches = matches,
+                    slots = slots,
+                    rosters = rosters,
+                    draftValues = draftValues,
+                )
+            }
+            combine(
+                baseInputs,
                 runCatching { screenshotMetadataRepository.observeByMatchId(matchId) }
                     .getOrElse { flowOf(null) },
-            ) { matches, slots, rosters, draftValues, screenshotMetadata ->
+                runCatching { matchResultScreenshotAssetRepository.observeByMatchId(matchId) }
+                    .getOrElse { flowOf(emptyList()) },
+            ) { inputs, screenshotMetadata, resultScreenshotAssets ->
+                val matches = inputs.matches
+                val slots = inputs.slots
+                val rosters = inputs.rosters
+                val draftValues = inputs.draftValues
                 val match = matches.firstOrNull { it.id == matchId }
                 if (match == null) {
                     MatchReviewUiState(
@@ -151,6 +201,8 @@ class MatchReviewViewModel @Inject constructor(
                         )
                     }
                     val restoredScreenshot = screenshotMetadata?.toRestoredUiState(localImagePreserver)
+                    val resultScreenshotSlots =
+                        resultScreenshotAssets.toResultScreenshotSlots(localImagePreserver)
                     MatchReviewUiState(
                         isLoading = false,
                         isAvailable = true,
@@ -177,10 +229,12 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotUploaded = restoredScreenshot?.isUploaded == true,
                         screenshotUploadObjectPath = screenshotMetadata?.storageObjectPath,
                         screenshotUploadError = restoredScreenshot?.uploadError,
+                        resultScreenshots = resultScreenshotSlots,
                     )
                 }
             }.collect { state ->
                 markRestoredMissingIfNeeded(state)
+                markRestoredResultMissingIfNeeded(state)
                 _uiState.update { current ->
                     state.copy(
                         navigation = current.navigation,
@@ -218,6 +272,10 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotUploaded = current.isScreenshotUploaded || state.isScreenshotUploaded,
                         screenshotUploadObjectPath = current.screenshotUploadObjectPath ?: state.screenshotUploadObjectPath,
                         screenshotUploadError = current.screenshotUploadError ?: state.screenshotUploadError,
+                        resultScreenshots = mergeResultScreenshotSlots(
+                            restored = state.resultScreenshots,
+                            current = current.resultScreenshots,
+                        ),
                     )
                 }
             }
@@ -335,6 +393,618 @@ class MatchReviewViewModel @Inject constructor(
             } else {
                 state
             }
+        }
+    }
+
+    fun requestPhotoPicker(role: MatchResultScreenshotRole) {
+        val current = _uiState.value
+        val slot = current.resultScreenshots.slot(role)
+        if (!current.isAvailable || current.resultScreenshots.any { it.isPhotoPickerRequestActive }) return
+        if (current.status == MatchStatus.FINALIZED) {
+            _uiState.updateSlot(role) {
+                it.copy(preservationError = ScreenshotPreservationError.FINALIZED_MATCH)
+            }
+            return
+        }
+        if (slot.isBusy) return
+        _uiState.updateSlot(role) {
+            it.copy(
+                isPhotoPickerLaunchPending = true,
+                isPhotoPickerRequestActive = true,
+                photoPickerError = null,
+                imageValidationError = null,
+                duplicateError = null,
+                duplicateInfo = null,
+                preservationError = null,
+            )
+        }
+    }
+
+    fun onPhotoPickerLaunchHandled(role: MatchResultScreenshotRole) {
+        _uiState.updateSlot(role) {
+            it.copy(isPhotoPickerLaunchPending = false)
+        }
+    }
+
+    fun onPhotoPickerLaunchFailed(role: MatchResultScreenshotRole) {
+        _uiState.updateSlot(role) {
+            it.copy(
+                isPhotoPickerLaunchPending = false,
+                isPhotoPickerRequestActive = false,
+                photoPickerError = PhotoPickerError.LAUNCH_FAILED,
+            )
+        }
+    }
+
+    fun onPhotoPickerResult(role: MatchResultScreenshotRole, selectedUri: String?) {
+        if (selectedUri == null) {
+            _uiState.updateSlot(role) {
+                it.copy(
+                    isPhotoPickerLaunchPending = false,
+                    isPhotoPickerRequestActive = false,
+                )
+            }
+            return
+        }
+        resultScreenshotJobs.remove(role)?.cancel()
+        if (selectedUri.isBlank()) {
+            _uiState.updateSlot(role) {
+                it.copy(
+                    selectedScreenshotUri = null,
+                    selectedScreenshotMimeType = null,
+                    selectedScreenshotWidth = null,
+                    selectedScreenshotHeight = null,
+                    isPhotoPickerLaunchPending = false,
+                    isPhotoPickerRequestActive = false,
+                    isValidationInProgress = false,
+                    isSelectedScreenshotValidated = false,
+                    imageValidationError = ImageValidationError.EMPTY_URI,
+                    isDuplicateDetectionInProgress = false,
+                    duplicateError = null,
+                    duplicateInfo = null,
+                    isPreservationInProgress = false,
+                    preservationError = null,
+                )
+            }
+            return
+        }
+        _uiState.updateSlot(role) {
+            it.copy(
+                selectedScreenshotUri = selectedUri,
+                selectedScreenshotMimeType = null,
+                selectedScreenshotWidth = null,
+                selectedScreenshotHeight = null,
+                isPhotoPickerLaunchPending = false,
+                isPhotoPickerRequestActive = false,
+                photoPickerError = null,
+                isValidationInProgress = true,
+                isSelectedScreenshotValidated = false,
+                imageValidationError = null,
+                isDuplicateDetectionInProgress = false,
+                duplicateError = null,
+                duplicateInfo = null,
+                isPreservationInProgress = false,
+                preservationError = null,
+            )
+        }
+        resultScreenshotJobs[role] = viewModelScope.launch {
+            val validation = runCatching { imageCandidateValidator.validate(selectedUri) }
+                .getOrElse { ImageCandidateValidationResult.Invalid(ImageValidationError.DECODE_FAILED) }
+            val metadata = if (validation == ImageCandidateValidationResult.Valid) {
+                runCatching { imageCandidateValidator.readValidMetadata(selectedUri) }.getOrNull()
+            } else {
+                null
+            }
+            if (validation is ImageCandidateValidationResult.Invalid || metadata == null) {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isValidationInProgress = false,
+                        isSelectedScreenshotValidated = false,
+                        selectedScreenshotMimeType = null,
+                        selectedScreenshotWidth = null,
+                        selectedScreenshotHeight = null,
+                        imageValidationError = (validation as? ImageCandidateValidationResult.Invalid)?.error
+                            ?: ImageValidationError.DECODE_FAILED,
+                    )
+                }
+                return@launch
+            }
+            _uiState.updateSlotIfCurrent(role, selectedUri) {
+                it.copy(
+                    isValidationInProgress = false,
+                    isSelectedScreenshotValidated = true,
+                    selectedScreenshotMimeType = metadata.mimeType,
+                    selectedScreenshotWidth = metadata.width,
+                    selectedScreenshotHeight = metadata.height,
+                    imageValidationError = null,
+                )
+            }
+            preserveValidatedResultScreenshot(role, selectedUri, metadata)
+        }
+    }
+
+    private suspend fun preserveValidatedResultScreenshot(
+        role: MatchResultScreenshotRole,
+        selectedUri: String,
+        metadata: ImageCandidateReadResult.Metadata,
+    ) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() }
+        val matchId = current.matchId?.takeIf { it.isNotBlank() }
+        val identity = if (tournamentId != null && matchId != null) {
+            MatchResultScreenshotIdentity(tournamentId = tournamentId, matchId = matchId, role = role)
+        } else {
+            null
+        }
+        val setupError = when {
+            tournamentId == null -> ScreenshotPreservationError.MISSING_TOURNAMENT_ID
+            matchId == null -> ScreenshotPreservationError.MISSING_MATCH_ID
+            current.status == MatchStatus.FINALIZED -> ScreenshotPreservationError.FINALIZED_MATCH
+            identity == null -> ScreenshotPreservationError.ROOM_WRITE_FAILED
+            else -> null
+        }
+        if (setupError != null || identity == null) {
+            _uiState.updateSlotIfCurrent(role, selectedUri) {
+                it.copy(preservationError = setupError)
+            }
+            return
+        }
+        val previousFingerprint = current.resultScreenshots.slot(role).fingerprint
+        _uiState.updateSlotIfCurrent(role, selectedUri) {
+            it.copy(
+                isDuplicateDetectionInProgress = true,
+                duplicateError = null,
+                duplicateInfo = null,
+                preservationError = null,
+            )
+        }
+        when (
+            val duplicateResult = matchResultScreenshotDuplicateDetector.link(
+                identity = identity,
+                selectedUri = selectedUri,
+                currentFingerprint = previousFingerprint,
+            )
+        ) {
+            is MatchResultScreenshotDuplicateLinkResult.Linked -> {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        isPreservationInProgress = true,
+                    )
+                }
+                val preservation = localImagePreserver.preserveMatchResultScreenshot(
+                    tournamentId = identity.tournamentId,
+                    matchId = identity.matchId,
+                    role = role,
+                    selectedUri = selectedUri,
+                )
+                val preservedFile = when (preservation) {
+                    is LocalImagePreservationResult.Preserved -> preservation.file
+                    is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservation.file
+                    is LocalImagePreservationResult.Failed -> null
+                }
+                if (preservedFile == null) {
+                    matchResultScreenshotDuplicateDetector.rollback(
+                        identity = identity,
+                        newFingerprint = duplicateResult.fingerprint,
+                        previousFingerprint = previousFingerprint,
+                    )
+                    _uiState.updateSlotIfCurrent(role, selectedUri) {
+                        it.copy(
+                            isPreservationInProgress = false,
+                            preservationError = (preservation as LocalImagePreservationResult.Failed).error.toUiError(),
+                        )
+                    }
+                    return
+                }
+                val assetResult = saveMatchResultScreenshotAsset(
+                    identity = identity,
+                    metadata = metadata,
+                    preservedFile = preservedFile,
+                    fingerprint = duplicateResult.fingerprint,
+                    cleanupFailed = preservation is LocalImagePreservationResult.PreservedWithCleanupFailure,
+                )
+                if (assetResult !is MatchResultAssetWriteResult.Written) {
+                    matchResultScreenshotDuplicateDetector.rollback(
+                        identity = identity,
+                        newFingerprint = duplicateResult.fingerprint,
+                        previousFingerprint = previousFingerprint,
+                    )
+                    _uiState.updateSlotIfCurrent(role, selectedUri) {
+                        it.copy(
+                            isPreservationInProgress = false,
+                            preservationError = ScreenshotPreservationError.ROOM_WRITE_FAILED,
+                        )
+                    }
+                    return
+                }
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    (assetResult.asset.toSlotUiState(localImagePreserver) ?: it).copy(
+                        selectedScreenshotUri = selectedUri,
+                        linkedScreenshotUri = selectedUri,
+                        selectedScreenshotMimeType = metadata.mimeType,
+                        selectedScreenshotWidth = metadata.width,
+                        selectedScreenshotHeight = metadata.height,
+                        isSelectedScreenshotValidated = true,
+                        isPreservationInProgress = false,
+                        preservationError = if (
+                            preservation is LocalImagePreservationResult.PreservedWithCleanupFailure
+                        ) {
+                            ScreenshotPreservationError.CLEANUP_FAILED
+                        } else {
+                            null
+                        },
+                        isUploadInProgress = true,
+                        uploadError = null,
+                    )
+                }
+                uploadMatchResultScreenshot(
+                    identity = identity,
+                    selectedUri = selectedUri,
+                    preservedFile = preservedFile,
+                )
+                requestResultScreenshotCropNavigationIfReady(
+                    identity = identity,
+                    selectedUri = selectedUri,
+                )
+            }
+
+            MatchResultScreenshotDuplicateLinkResult.SameIdentity -> {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        duplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+                        duplicateError = null,
+                    )
+                }
+            }
+
+            is MatchResultScreenshotDuplicateLinkResult.LinkedToOtherIdentity -> {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        duplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                        duplicateInfo = null,
+                    )
+                }
+            }
+
+            MatchResultScreenshotDuplicateLinkResult.FingerprintFailure -> {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        duplicateError = ScreenshotDuplicateError.FINGERPRINT_FAILED,
+                        duplicateInfo = null,
+                    )
+                }
+            }
+
+            MatchResultScreenshotDuplicateLinkResult.StateConflict -> {
+                _uiState.updateSlotIfCurrent(role, selectedUri) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        duplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
+                        duplicateInfo = null,
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun saveMatchResultScreenshotAsset(
+        identity: MatchResultScreenshotIdentity,
+        metadata: ImageCandidateReadResult.Metadata,
+        preservedFile: File,
+        fingerprint: String,
+        cleanupFailed: Boolean,
+    ): MatchResultAssetWriteResult {
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
+            ?: return MatchResultAssetWriteResult.Failed
+        val relativePath = localImagePreserver.relativePathFor(preservedFile)
+            ?: return MatchResultAssetWriteResult.Failed
+        val extension = preservedFile.extension.lowercase()
+        val mimeType = metadata.mimeType ?: mimeTypeForExtension(extension)
+            ?: return MatchResultAssetWriteResult.Failed
+        val byteSize = runCatching { preservedFile.length() }.getOrDefault(0L)
+        if (byteSize <= 0L || fingerprint.length != 64 || fingerprint.any { it !in '0'..'9' && it !in 'a'..'f' }) {
+            return MatchResultAssetWriteResult.Failed
+        }
+        val now = nowMillis()
+        val previous = runCatching { matchResultScreenshotAssetRepository.getByIdentity(identity) }.getOrNull()
+        val sameBytes = previous?.sha256 == fingerprint
+        val asset = MatchResultScreenshotAssetEntity(
+            tournamentId = identity.tournamentId,
+            matchId = identity.matchId,
+            screenshotKind = OcrScreenshotKind.MATCH_RESULT.name,
+            screenshotRole = identity.role.name,
+            ownerUserId = ownerUserId,
+            localRelativePath = relativePath,
+            fileExtension = extension,
+            mimeType = mimeType,
+            originalWidth = metadata.width,
+            originalHeight = metadata.height,
+            byteSize = byteSize,
+            sha256 = fingerprint,
+            localStatus = if (cleanupFailed) {
+                ScreenshotLocalStatus.CLEANUP_FAILED.name
+            } else {
+                ScreenshotLocalStatus.PRESERVED.name
+            },
+            uploadStatus = ScreenshotUploadStatus.PENDING.name,
+            uploadFailureCode = null,
+            storageBucket = null,
+            storageObjectPath = null,
+            cropProfileId = previous?.cropProfileId.takeIf { sameBytes },
+            cropLeft = previous?.cropLeft.takeIf { sameBytes },
+            cropTop = previous?.cropTop.takeIf { sameBytes },
+            cropRight = previous?.cropRight.takeIf { sameBytes },
+            cropBottom = previous?.cropBottom.takeIf { sameBytes },
+            createdAt = previous?.createdAt ?: now,
+            updatedAt = now,
+            preservedAt = now,
+            uploadedAt = null,
+            revision = previous?.revision?.plus(1) ?: 1L,
+        )
+        return when (matchResultScreenshotAssetRepository.saveOrReplace(asset)) {
+            MatchResultScreenshotAssetSaveResult.Saved -> MatchResultAssetWriteResult.Written(asset)
+            else -> MatchResultAssetWriteResult.Failed
+        }
+    }
+
+    private fun requestResultScreenshotCropNavigationIfReady(
+        identity: MatchResultScreenshotIdentity,
+        selectedUri: String,
+    ) {
+        _uiState.update { state ->
+            val slot = state.resultScreenshots.slot(identity.role)
+            val isCurrentSelection =
+                slot.selectedScreenshotUri == selectedUri || slot.linkedScreenshotUri == selectedUri
+            if (
+                state.tournamentId != identity.tournamentId ||
+                state.matchId != identity.matchId ||
+                !state.isEditable ||
+                !isCurrentSelection ||
+                !slot.hasLinkedAsset ||
+                slot.isBusy ||
+                slot.isLocalFileMissing
+            ) {
+                state
+            } else {
+                state.copy(
+                    navigation = when (identity.role) {
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER ->
+                            MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP
+                        MatchResultScreenshotRole.MATCH_RESULT_LOWER ->
+                            MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP
+                    },
+                )
+            }
+        }
+    }
+
+    private suspend fun uploadMatchResultScreenshot(
+        identity: MatchResultScreenshotIdentity,
+        selectedUri: String,
+        preservedFile: File,
+    ) {
+        val result = try {
+            matchResultScreenshotStorageUploader.upload(
+                tournamentId = identity.tournamentId,
+                matchId = identity.matchId,
+                role = identity.role,
+                localFile = preservedFile,
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchResultScreenshotStorageUploadResult.Failed(
+                MatchResultScreenshotStorageUploadFailure.UPLOAD_FAILED,
+            )
+        }
+        when (result) {
+            is MatchResultScreenshotStorageUploadResult.Uploaded -> {
+                val uploadedAt = nowMillis()
+                val updatedAsset = runCatching {
+                    matchResultScreenshotAssetRepository.getByIdentity(identity)?.copy(
+                        storageBucket = OCR_SCREENSHOTS_BUCKET,
+                        storageObjectPath = result.objectPath,
+                        uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                        uploadFailureCode = null,
+                        uploadedAt = uploadedAt,
+                        updatedAt = uploadedAt,
+                    )?.let { asset ->
+                        asset.copy(revision = asset.revision + 1)
+                    }
+                }.getOrNull()
+                if (updatedAsset == null ||
+                    matchResultScreenshotAssetRepository.saveOrReplace(updatedAsset) !is
+                    MatchResultScreenshotAssetSaveResult.Saved
+                ) {
+                    setResultUploadError(identity, ScreenshotUploadError.UPLOAD_FAILED)
+                    return
+                }
+                val cloudResult = runCatching {
+                    matchResultScreenshotAssetCloudDataSource.upsert(updatedAsset)
+                }.getOrElse {
+                    MatchResultScreenshotAssetCloudResult.Failed(
+                        MatchResultScreenshotAssetCloudFailure.WRITE_FAILED,
+                    )
+                }
+                if (cloudResult is MatchResultScreenshotAssetCloudResult.Failed) {
+                    val failureError = cloudResult.failure.toUiError()
+                    updateResultUploadFailure(identity, failureError)
+                    return
+                }
+                _uiState.updateSlotIfCurrentOrLinked(identity.role, selectedUri) {
+                    (updatedAsset.toSlotUiState(localImagePreserver) ?: it).copy(
+                        selectedScreenshotUri = it.selectedScreenshotUri,
+                        selectedScreenshotMimeType = it.selectedScreenshotMimeType,
+                        selectedScreenshotWidth = it.selectedScreenshotWidth,
+                        selectedScreenshotHeight = it.selectedScreenshotHeight,
+                        isSelectedScreenshotValidated = it.isSelectedScreenshotValidated,
+                        linkedScreenshotUri = it.linkedScreenshotUri,
+                        isUploadInProgress = false,
+                        uploadError = null,
+                    )
+                }
+            }
+
+            is MatchResultScreenshotStorageUploadResult.Failed -> {
+                updateResultUploadFailure(identity, result.failure.toUiError())
+            }
+        }
+    }
+
+    private suspend fun updateResultUploadFailure(
+        identity: MatchResultScreenshotIdentity,
+        error: ScreenshotUploadError,
+    ) {
+        val updatedAt = nowMillis()
+        val updatedAsset = runCatching {
+            matchResultScreenshotAssetRepository.getByIdentity(identity)?.copy(
+                uploadStatus = ScreenshotUploadStatus.FAILED.name,
+                uploadFailureCode = error.name,
+                updatedAt = updatedAt,
+            )?.let { it.copy(revision = it.revision + 1) }
+        }.getOrNull()
+        if (updatedAsset != null) {
+            runCatching { matchResultScreenshotAssetRepository.saveOrReplace(updatedAsset) }
+        }
+        setResultUploadError(identity, error)
+    }
+
+    private fun setResultUploadError(
+        identity: MatchResultScreenshotIdentity,
+        error: ScreenshotUploadError,
+    ) {
+        _uiState.updateSlot(identity.role) {
+            it.copy(
+                isUploadInProgress = false,
+                uploadStatus = ScreenshotMetadataUploadUiStatus.FAILED,
+                uploadError = error,
+            )
+        }
+    }
+
+    fun removeResultScreenshot(role: MatchResultScreenshotRole) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
+        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
+        val slot = current.resultScreenshots.slot(role)
+
+        if (!current.isEditable || !slot.hasLinkedAsset || slot.isBusy) return
+
+        val identity = MatchResultScreenshotIdentity(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = role,
+        )
+        val fingerprint = slot.fingerprint
+        val activeJob = resultScreenshotJobs.remove(role)
+
+        _uiState.updateSlot(role) {
+            it.copy(
+                isPreservationInProgress = true,
+                preservationError = null,
+                isUploadInProgress = false,
+                uploadError = null,
+            )
+        }
+
+        resultScreenshotJobs[role] = viewModelScope.launch {
+            activeJob?.cancel()
+            activeJob?.join()
+
+            when (
+                localImagePreserver.cleanupMatchResultScreenshot(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    role = role,
+                )
+            ) {
+                LocalImageCleanupResult.Cleaned -> {
+                    try {
+                        matchResultScreenshotAssetRepository.deleteByIdentity(identity)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        _uiState.updateSlot(role) {
+                            it.copy(
+                                isPreservationInProgress = false,
+                                preservationError = ScreenshotPreservationError.ROOM_WRITE_FAILED,
+                            )
+                        }
+                        return@launch
+                    }
+
+                    matchResultScreenshotDuplicateDetector.unlink(
+                        identity = identity,
+                        fingerprint = fingerprint,
+                    )
+
+                    restoredResultMissingMarked.remove(
+                        "$tournamentId:$matchId:${role.name}",
+                    )
+
+                    _uiState.updateSlot(role) {
+                        MatchResultScreenshotSlotUiState(role = role)
+                    }
+
+                    try {
+                        matchResultScreenshotAssetCloudDataSource.deleteByIdentity(identity)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        // Local unlink remains authoritative. Cloud cleanup is best-effort.
+                    }
+                }
+
+                LocalImageCleanupResult.Failed -> {
+                    try {
+                        matchResultScreenshotAssetRepository.markCleanupFailure(
+                            identity = identity,
+                            updatedAt = nowMillis(),
+                        )
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        Unit
+                    }
+
+                    _uiState.updateSlot(role) {
+                        it.copy(
+                            isPreservationInProgress = false,
+                            localStatus = ScreenshotMetadataLocalUiStatus.CLEANUP_FAILED,
+                            preservationError = ScreenshotPreservationError.CLEANUP_FAILED,
+                        )
+                    }
+                }
+            }
+        }
+    }
+    fun retryResultScreenshotUpload(role: MatchResultScreenshotRole) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
+        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
+        val slot = current.resultScreenshots.slot(role)
+        val relativePath = slot.localRelativePath ?: return
+        val file = localImagePreserver.resolveRelativePath(relativePath) ?: return
+        if (!current.isEditable || slot.isUploadInProgress || !slot.hasLinkedAsset) return
+        resultScreenshotJobs.remove(role)?.cancel()
+        _uiState.updateSlot(role) {
+            it.copy(isUploadInProgress = true, uploadError = null)
+        }
+        val identity = MatchResultScreenshotIdentity(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = role,
+        )
+        resultScreenshotJobs[role] = viewModelScope.launch {
+            uploadMatchResultScreenshot(
+                identity = identity,
+                selectedUri = slot.linkedScreenshotUri ?: slot.selectedScreenshotUri.orEmpty(),
+                preservedFile = file,
+            )
         }
     }
 
@@ -911,6 +1581,29 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    private fun markRestoredResultMissingIfNeeded(state: MatchReviewUiState) {
+        state.resultScreenshots
+            .filter { it.isLocalFileMissing }
+            .forEach { slot ->
+                val tournamentId = state.tournamentId ?: return@forEach
+                val matchId = state.matchId ?: return@forEach
+                val key = "$tournamentId:$matchId:${slot.role.name}"
+                if (!restoredResultMissingMarked.add(key)) return@forEach
+                viewModelScope.launch {
+                    runCatching {
+                        matchResultScreenshotAssetRepository.markLocalMissing(
+                            MatchResultScreenshotIdentity(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                role = slot.role,
+                            ),
+                            nowMillis(),
+                        )
+                    }
+                }
+            }
+    }
+
     private fun nowMillis(): Long = clock.millis()
 
     fun retryScreenshotUpload() {
@@ -1105,6 +1798,186 @@ class MatchReviewViewModel @Inject constructor(
     }
 }
 
+private data class MatchReviewLoadInputs(
+    val matches: List<Match>,
+    val slots: List<TeamSlot>,
+    val rosters: Map<Int, List<RosterPlayer>>,
+    val draftValues: Map<Int, MatchDraftFieldValues>,
+)
+
+private sealed interface MatchResultAssetWriteResult {
+    data class Written(val asset: MatchResultScreenshotAssetEntity) : MatchResultAssetWriteResult
+    data object Failed : MatchResultAssetWriteResult
+}
+
+private fun MutableStateFlow<MatchReviewUiState>.updateSlot(
+    role: MatchResultScreenshotRole,
+    transform: (MatchResultScreenshotSlotUiState) -> MatchResultScreenshotSlotUiState,
+) {
+    update { state ->
+        state.copy(
+            resultScreenshots = state.resultScreenshots.replaceSlot(role, transform),
+        )
+    }
+}
+
+private fun MutableStateFlow<MatchReviewUiState>.updateSlotIfCurrent(
+    role: MatchResultScreenshotRole,
+    selectedUri: String,
+    transform: (MatchResultScreenshotSlotUiState) -> MatchResultScreenshotSlotUiState,
+) {
+    update { state ->
+        if (state.resultScreenshots.slot(role).selectedScreenshotUri != selectedUri) {
+            state
+        } else {
+            state.copy(
+                resultScreenshots = state.resultScreenshots.replaceSlot(role, transform),
+            )
+        }
+    }
+}
+
+private fun MutableStateFlow<MatchReviewUiState>.updateSlotIfCurrentOrLinked(
+    role: MatchResultScreenshotRole,
+    selectedUri: String,
+    transform: (MatchResultScreenshotSlotUiState) -> MatchResultScreenshotSlotUiState,
+) {
+    update { state ->
+        val slot = state.resultScreenshots.slot(role)
+        if (
+            selectedUri.isNotBlank() &&
+            slot.selectedScreenshotUri != selectedUri &&
+            slot.linkedScreenshotUri != selectedUri
+        ) {
+            state
+        } else {
+            state.copy(
+                resultScreenshots = state.resultScreenshots.replaceSlot(role, transform),
+            )
+        }
+    }
+}
+
+private fun List<MatchResultScreenshotAssetEntity>.toResultScreenshotSlots(
+    localImagePreserver: LocalImagePreserver,
+): List<MatchResultScreenshotSlotUiState> =
+    defaultMatchResultScreenshotSlots().map { emptySlot ->
+        firstOrNull { asset ->
+            asset.screenshotRole == emptySlot.role.name &&
+                asset.screenshotKind == OcrScreenshotKind.MATCH_RESULT.name
+        }?.toSlotUiState(localImagePreserver) ?: emptySlot
+    }
+
+private fun MatchResultScreenshotAssetEntity.toSlotUiState(
+    localImagePreserver: LocalImagePreserver,
+): MatchResultScreenshotSlotUiState? {
+    val role = runCatching { MatchResultScreenshotRole.valueOf(screenshotRole) }
+        .getOrNull()
+        ?: return null
+    val local = runCatching { ScreenshotLocalStatus.valueOf(localStatus) }
+        .getOrDefault(ScreenshotLocalStatus.MISSING)
+    val upload = runCatching { ScreenshotUploadStatus.valueOf(uploadStatus) }
+        .getOrDefault(ScreenshotUploadStatus.FAILED)
+    val fileIsPresent = localImagePreserver.resolveRelativePath(localRelativePath)?.let { file ->
+        runCatching { file.isFile && file.length() > 0L }.getOrDefault(false)
+    } == true
+    val effectiveLocal = if (fileIsPresent) local else ScreenshotLocalStatus.MISSING
+    return MatchResultScreenshotSlotUiState(
+        role = role,
+        hasLinkedAsset = effectiveLocal != ScreenshotLocalStatus.MISSING,
+        localRelativePath = localRelativePath,
+        fingerprint = sha256,
+        originalWidth = originalWidth,
+        originalHeight = originalHeight,
+        metadata = toMetadataUiState(),
+        localStatus = when (effectiveLocal) {
+            ScreenshotLocalStatus.PRESERVED -> ScreenshotMetadataLocalUiStatus.PRESERVED
+            ScreenshotLocalStatus.CLEANUP_FAILED -> ScreenshotMetadataLocalUiStatus.CLEANUP_FAILED
+            ScreenshotLocalStatus.MISSING -> ScreenshotMetadataLocalUiStatus.MISSING
+        },
+        uploadStatus = when (upload) {
+            ScreenshotUploadStatus.PENDING -> ScreenshotMetadataUploadUiStatus.PENDING
+            ScreenshotUploadStatus.UPLOADED -> ScreenshotMetadataUploadUiStatus.UPLOADED
+            ScreenshotUploadStatus.FAILED -> ScreenshotMetadataUploadUiStatus.FAILED
+        },
+        uploadObjectPath = storageObjectPath,
+        isLocalFileMissing = effectiveLocal == ScreenshotLocalStatus.MISSING,
+        preservationError = if (effectiveLocal == ScreenshotLocalStatus.MISSING) {
+            ScreenshotPreservationError.LOCAL_FILE_MISSING
+        } else if (effectiveLocal == ScreenshotLocalStatus.CLEANUP_FAILED) {
+            ScreenshotPreservationError.CLEANUP_FAILED
+        } else {
+            null
+        },
+        uploadError = if (upload == ScreenshotUploadStatus.FAILED) {
+            uploadFailureCode?.toUploadUiError()
+        } else {
+            null
+        },
+        confirmedCrop = confirmedCropOrNull(),
+        cropProfileId = cropProfileId,
+    )
+}
+
+private fun MatchResultScreenshotAssetEntity.confirmedCropOrNull(): OcrNormalizedCropRect? {
+    val left = cropLeft ?: return null
+    val top = cropTop ?: return null
+    val right = cropRight ?: return null
+    val bottom = cropBottom ?: return null
+    return runCatching {
+        OcrNormalizedCropRect(
+            left = left,
+            top = top,
+            right = right,
+            bottom = bottom,
+        )
+    }.getOrNull()
+}
+
+private fun MatchResultScreenshotAssetEntity.toMetadataUiState(): ScreenshotMetadataUiState =
+    ScreenshotMetadataUiState(
+        localStatus = when (runCatching { ScreenshotLocalStatus.valueOf(localStatus) }.getOrNull()) {
+            ScreenshotLocalStatus.PRESERVED -> ScreenshotMetadataLocalUiStatus.PRESERVED
+            ScreenshotLocalStatus.CLEANUP_FAILED -> ScreenshotMetadataLocalUiStatus.CLEANUP_FAILED
+            else -> ScreenshotMetadataLocalUiStatus.MISSING
+        },
+        uploadStatus = when (runCatching { ScreenshotUploadStatus.valueOf(uploadStatus) }.getOrNull()) {
+            ScreenshotUploadStatus.PENDING -> ScreenshotMetadataUploadUiStatus.PENDING
+            ScreenshotUploadStatus.UPLOADED -> ScreenshotMetadataUploadUiStatus.UPLOADED
+            else -> ScreenshotMetadataUploadUiStatus.FAILED
+        },
+        revision = revision,
+    )
+
+private fun mergeResultScreenshotSlots(
+    restored: List<MatchResultScreenshotSlotUiState>,
+    current: List<MatchResultScreenshotSlotUiState>,
+): List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots().map { ordered ->
+    val restoredSlot = restored.slot(ordered.role)
+    val currentSlot = current.slot(ordered.role)
+    if (currentSlot.isBusy || currentSlot.selectedScreenshotUri != null || currentSlot.imageValidationError != null) {
+        restoredSlot.copy(
+            selectedScreenshotUri = currentSlot.selectedScreenshotUri,
+            selectedScreenshotMimeType = currentSlot.selectedScreenshotMimeType,
+            selectedScreenshotWidth = currentSlot.selectedScreenshotWidth,
+            selectedScreenshotHeight = currentSlot.selectedScreenshotHeight,
+            isPhotoPickerLaunchPending = currentSlot.isPhotoPickerLaunchPending,
+            isPhotoPickerRequestActive = currentSlot.isPhotoPickerRequestActive,
+            photoPickerError = currentSlot.photoPickerError,
+            isValidationInProgress = currentSlot.isValidationInProgress,
+            isSelectedScreenshotValidated = currentSlot.isSelectedScreenshotValidated,
+            imageValidationError = currentSlot.imageValidationError,
+            isDuplicateDetectionInProgress = currentSlot.isDuplicateDetectionInProgress,
+            duplicateError = currentSlot.duplicateError,
+            duplicateInfo = currentSlot.duplicateInfo,
+            isPreservationInProgress = currentSlot.isPreservationInProgress,
+            preservationError = currentSlot.preservationError ?: restoredSlot.preservationError,
+        )
+    } else {
+        restoredSlot
+    }
+}
+
 private fun LocalImagePreservationFailure.toUiError(): ScreenshotPreservationError = when (this) {
     LocalImagePreservationFailure.SOURCE_READ_FAILED -> ScreenshotPreservationError.SOURCE_READ_FAILED
     LocalImagePreservationFailure.COPY_FAILED -> ScreenshotPreservationError.COPY_FAILED
@@ -1121,6 +1994,26 @@ private fun ScreenshotStorageUploadFailure.toUiError(): ScreenshotUploadError = 
     ScreenshotStorageUploadFailure.NETWORK -> ScreenshotUploadError.NETWORK
     ScreenshotStorageUploadFailure.AUTHORIZATION -> ScreenshotUploadError.AUTHORIZATION
     ScreenshotStorageUploadFailure.UPLOAD_FAILED -> ScreenshotUploadError.UPLOAD_FAILED
+}
+
+private fun MatchResultScreenshotStorageUploadFailure.toUiError(): ScreenshotUploadError = when (this) {
+    MatchResultScreenshotStorageUploadFailure.MISSING_AUTH_SESSION -> ScreenshotUploadError.MISSING_AUTH_SESSION
+    MatchResultScreenshotStorageUploadFailure.MISSING_LOCAL_FILE -> ScreenshotUploadError.MISSING_LOCAL_FILE
+    MatchResultScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID -> ScreenshotUploadError.MISSING_TOURNAMENT_ID
+    MatchResultScreenshotStorageUploadFailure.MISSING_MATCH_ID -> ScreenshotUploadError.MISSING_MATCH_ID
+    MatchResultScreenshotStorageUploadFailure.INVALID_ROLE -> ScreenshotUploadError.UPLOAD_FAILED
+    MatchResultScreenshotStorageUploadFailure.CLOUD_MATCH_ID_UNAVAILABLE -> ScreenshotUploadError.UPLOAD_FAILED
+    MatchResultScreenshotStorageUploadFailure.UNSUPPORTED_FORMAT -> ScreenshotUploadError.UNSUPPORTED_FORMAT
+    MatchResultScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED -> ScreenshotUploadError.LOCAL_FILE_READ_FAILED
+    MatchResultScreenshotStorageUploadFailure.NETWORK -> ScreenshotUploadError.NETWORK
+    MatchResultScreenshotStorageUploadFailure.AUTHORIZATION -> ScreenshotUploadError.AUTHORIZATION
+    MatchResultScreenshotStorageUploadFailure.UPLOAD_FAILED -> ScreenshotUploadError.UPLOAD_FAILED
+}
+
+private fun MatchResultScreenshotAssetCloudFailure.toUiError(): ScreenshotUploadError = when (this) {
+    MatchResultScreenshotAssetCloudFailure.MISSING_AUTH_SESSION -> ScreenshotUploadError.MISSING_AUTH_SESSION
+    MatchResultScreenshotAssetCloudFailure.AUTHORIZATION -> ScreenshotUploadError.RLS_DENIED
+    else -> ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED
 }
 
 private sealed interface MetadataWriteResult {

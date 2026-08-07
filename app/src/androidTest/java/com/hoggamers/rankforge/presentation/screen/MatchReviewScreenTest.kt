@@ -10,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -105,23 +107,29 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                selectedScreenshotUri = "content://picker/selected",
+                                isSelectedScreenshotValidated = true,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onSelectScreenshot = { photoPickerActionCount++ },
+                    onSelectResultScreenshot = {
+                        if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) photoPickerActionCount++
+                    },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG)
-            .performScrollTo()
-            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.runOnIdle { assertEquals(1, photoPickerActionCount) }
     }
 
@@ -130,7 +138,15 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState().copy(isPhotoPickerRequestActive = true),
+                    uiState = availableState().copy(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                isPhotoPickerRequestActive = true,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -138,7 +154,7 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()
     }
@@ -149,8 +165,14 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/unsupported",
-                        imageValidationError = ImageValidationError.UNSUPPORTED_FORMAT,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                selectedScreenshotUri = "content://picker/unsupported",
+                                imageValidationError = ImageValidationError.UNSUPPORTED_FORMAT,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -159,11 +181,10 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG)
+        composeTestRule.onNodeWithText("Select a PNG, JPEG, or WebP image.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -172,11 +193,17 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
-                        isScreenshotDuplicateDetectionInProgress = true,
-                        screenshotDuplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
-                        screenshotDuplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                selectedScreenshotUri = "content://picker/selected",
+                                isSelectedScreenshotValidated = true,
+                                isDuplicateDetectionInProgress = true,
+                                duplicateInfo = ScreenshotDuplicateInfo.ALREADY_LINKED_TO_THIS_MATCH,
+                                duplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -185,16 +212,16 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG)
+        composeTestRule.onNodeWithText("Checking the selected screenshot for duplicates.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG)
+        composeTestRule.onNodeWithText("This screenshot is already linked to this match.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG)
+        composeTestRule.onNodeWithText("This screenshot is already linked to another match in this tournament.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()
     }
@@ -205,11 +232,17 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
-                        isScreenshotPreservationInProgress = true,
-                        isScreenshotLocallyPreserved = true,
-                        screenshotPreservationError = ScreenshotPreservationError.CLEANUP_FAILED,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                selectedScreenshotUri = "content://picker/selected",
+                                isSelectedScreenshotValidated = true,
+                                hasLinkedAsset = true,
+                                isPreservationInProgress = true,
+                                preservationError = ScreenshotPreservationError.CLEANUP_FAILED,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -218,53 +251,104 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG)
+        composeTestRule.onNodeWithText("Preserving screenshot locally.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG)
+        composeTestRule.onNodeWithText("Screenshot ready.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG)
+        composeTestRule.onNodeWithText("The screenshot was preserved, but old local screenshot cleanup failed.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()
     }
 
     @Test
-    fun validatedScreenshotCanLinkAndLinkedStateShowsUnlinkAction() {
-        var linkCount = 0
-        var unlinkCount = 0
+    fun linkedScreenshotShowsCropActionAndCropReadyState() {
+        var cropCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
-                        linkedScreenshotUri = "content://picker/selected",
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onLinkScreenshot = { linkCount++ },
-                    onUnlinkScreenshot = { unlinkCount++ },
+                    onOpenResultScreenshotCrop = {
+                        if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) cropCount++
+                    },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.runOnIdle {
-            assertEquals(0, linkCount)
-            assertEquals(1, unlinkCount)
-        }
+        composeTestRule.runOnIdle { assertEquals(1, cropCount) }
     }
 
+    @Test
+    fun linkedResultScreenshotsExposeRoleSpecificRemoveActions() {
+        var upperRemoveCount = 0
+        var lowerRemoveCount = 0
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                            ),
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRemoveResultScreenshot = { role ->
+                        when (role) {
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> upperRemoveCount++
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> lowerRemoveCount++
+                        }
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(1, upperRemoveCount)
+            assertEquals(1, lowerRemoveCount)
+        }
+    }
     @Test
     fun uploadFailureShowsRetryActionWhileKeepingLinkedStateVisible() {
         var retryCount = 0
@@ -272,27 +356,32 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
-                        linkedScreenshotUri = "content://picker/selected",
-                        isScreenshotLocallyPreserved = true,
-                        screenshotUploadError = ScreenshotUploadError.NETWORK,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                uploadError = ScreenshotUploadError.NETWORK,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onRetryScreenshotUpload = { retryCount++ },
+                    onRetryResultScreenshotUpload = {
+                        if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) retryCount++
+                    },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+        composeTestRule.onNodeWithText("Screenshot ready.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG)
+        composeTestRule.onNodeWithText("The screenshot upload could not reach cloud storage. Try again.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithText("Retry screenshot upload")
             .performScrollTo()
             .performClick()
         composeTestRule.runOnIdle { assertEquals(1, retryCount) }
@@ -304,16 +393,17 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
-                        isScreenshotLinked = true,
-                        isScreenshotLocallyPreserved = true,
-                        isPreservedScreenshotMissing = true,
-                        screenshotMetadata = ScreenshotMetadataUiState(
-                            localStatus = ScreenshotMetadataLocalUiStatus.MISSING,
-                            uploadStatus = ScreenshotMetadataUploadUiStatus.UPLOADED,
-                            revision = 2,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                isLocalFileMissing = true,
+                                uploadStatus = ScreenshotMetadataUploadUiStatus.UPLOADED,
+                                uploadError = ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED,
+                                preservationError = ScreenshotPreservationError.LOCAL_FILE_MISSING,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
                         ),
-                        isScreenshotUploaded = true,
-                        screenshotUploadError = ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED,
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -322,19 +412,13 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG)
+        composeTestRule.onNodeWithText("Screenshot ready.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG)
+        composeTestRule.onNodeWithText("The preserved local screenshot file is missing.")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG)
+        composeTestRule.onNodeWithText("The screenshot uploaded, but cloud metadata could not be saved.")
             .performScrollTo()
             .assertIsDisplayed()
     }
@@ -346,8 +430,13 @@ class MatchReviewScreenTest {
                 MatchReviewScreen(
                     uiState = availableState().copy(
                         status = MatchStatus.FINALIZED,
-                        selectedScreenshotUri = "content://picker/selected",
-                        isSelectedScreenshotValidated = true,
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -356,12 +445,11 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Finalized matches cannot link or replace screenshots.")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG).assertCountEquals(0)
     }
 
     @Test
@@ -490,5 +578,41 @@ class MatchReviewScreenTest {
             )
         },
         validationErrors = validationErrors,
+    )
+
+    private fun resultSlot(
+        role: MatchResultScreenshotRole,
+        selectedScreenshotUri: String? = null,
+        isPhotoPickerRequestActive: Boolean = false,
+        isSelectedScreenshotValidated: Boolean = false,
+        imageValidationError: ImageValidationError? = null,
+        hasLinkedAsset: Boolean = false,
+        isDuplicateDetectionInProgress: Boolean = false,
+        duplicateInfo: ScreenshotDuplicateInfo? = null,
+        duplicateError: ScreenshotDuplicateError? = null,
+        isPreservationInProgress: Boolean = false,
+        preservationError: ScreenshotPreservationError? = null,
+        isLocalFileMissing: Boolean = false,
+        uploadStatus: ScreenshotMetadataUploadUiStatus? = null,
+        uploadError: ScreenshotUploadError? = null,
+        confirmedCrop: OcrNormalizedCropRect? = null,
+        cropProfileId: String? = null,
+    ) = MatchResultScreenshotSlotUiState(
+        role = role,
+        selectedScreenshotUri = selectedScreenshotUri,
+        isPhotoPickerRequestActive = isPhotoPickerRequestActive,
+        isSelectedScreenshotValidated = isSelectedScreenshotValidated,
+        imageValidationError = imageValidationError,
+        hasLinkedAsset = hasLinkedAsset,
+        isDuplicateDetectionInProgress = isDuplicateDetectionInProgress,
+        duplicateInfo = duplicateInfo,
+        duplicateError = duplicateError,
+        isPreservationInProgress = isPreservationInProgress,
+        preservationError = preservationError,
+        isLocalFileMissing = isLocalFileMissing,
+        uploadStatus = uploadStatus,
+        uploadError = uploadError,
+        confirmedCrop = confirmedCrop,
+        cropProfileId = cropProfileId,
     )
 }

@@ -5,6 +5,9 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 
 enum class MatchReviewNavigation {
     PLACEMENTS,
@@ -12,6 +15,8 @@ enum class MatchReviewNavigation {
     OCR_REVIEW,
     CORRECTION,
     DETAILS,
+    RESULT_SCREENSHOT_1_CROP,
+    RESULT_SCREENSHOT_2_CROP,
 }
 
 enum class PhotoPickerError {
@@ -80,6 +85,50 @@ data class ScreenshotMetadataUiState(
     val revision: Long,
 )
 
+data class MatchResultScreenshotSlotUiState(
+    val role: MatchResultScreenshotRole,
+    val selectedScreenshotUri: String? = null,
+    val selectedScreenshotMimeType: String? = null,
+    val selectedScreenshotWidth: Int? = null,
+    val selectedScreenshotHeight: Int? = null,
+    val isPhotoPickerLaunchPending: Boolean = false,
+    val isPhotoPickerRequestActive: Boolean = false,
+    val photoPickerError: PhotoPickerError? = null,
+    val isValidationInProgress: Boolean = false,
+    val isSelectedScreenshotValidated: Boolean = false,
+    val imageValidationError: ImageValidationError? = null,
+    val hasLinkedAsset: Boolean = false,
+    val linkedScreenshotUri: String? = null,
+    val localRelativePath: String? = null,
+    val fingerprint: String? = null,
+    val originalWidth: Int? = null,
+    val originalHeight: Int? = null,
+    val metadata: ScreenshotMetadataUiState? = null,
+    val localStatus: ScreenshotMetadataLocalUiStatus? = null,
+    val uploadStatus: ScreenshotMetadataUploadUiStatus? = null,
+    val uploadObjectPath: String? = null,
+    val isLocalFileMissing: Boolean = false,
+    val isDuplicateDetectionInProgress: Boolean = false,
+    val duplicateError: ScreenshotDuplicateError? = null,
+    val duplicateInfo: ScreenshotDuplicateInfo? = null,
+    val isPreservationInProgress: Boolean = false,
+    val preservationError: ScreenshotPreservationError? = null,
+    val isUploadInProgress: Boolean = false,
+    val uploadError: ScreenshotUploadError? = null,
+    val confirmedCrop: OcrNormalizedCropRect? = null,
+    val cropProfileId: String? = null,
+) {
+    val hasConfirmedCrop: Boolean
+        get() = confirmedCrop != null && cropProfileId == OcrCropValidationProfiles.MatchResult.id
+
+    val isBusy: Boolean
+        get() = isPhotoPickerRequestActive ||
+            isValidationInProgress ||
+            isDuplicateDetectionInProgress ||
+            isPreservationInProgress ||
+            isUploadInProgress
+}
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -122,6 +171,7 @@ data class MatchReviewUiState(
     val isScreenshotUploaded: Boolean = false,
     val screenshotUploadObjectPath: String? = null,
     val screenshotUploadError: ScreenshotUploadError? = null,
+    val resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable
@@ -147,6 +197,23 @@ data class MatchReviewUiState(
             !isScreenshotPreservationInProgress &&
             !isScreenshotUploadInProgress &&
             !isPreservedScreenshotMissing
+}
+
+fun defaultMatchResultScreenshotSlots(): List<MatchResultScreenshotSlotUiState> = listOf(
+    MatchResultScreenshotSlotUiState(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+    MatchResultScreenshotSlotUiState(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+)
+
+fun List<MatchResultScreenshotSlotUiState>.slot(
+    role: MatchResultScreenshotRole,
+): MatchResultScreenshotSlotUiState = firstOrNull { it.role == role }
+    ?: MatchResultScreenshotSlotUiState(role)
+
+fun List<MatchResultScreenshotSlotUiState>.replaceSlot(
+    role: MatchResultScreenshotRole,
+    transform: (MatchResultScreenshotSlotUiState) -> MatchResultScreenshotSlotUiState,
+): List<MatchResultScreenshotSlotUiState> = map { slot ->
+    if (slot.role == role) transform(slot) else slot
 }
 
 data class MatchReviewRowUiState(
