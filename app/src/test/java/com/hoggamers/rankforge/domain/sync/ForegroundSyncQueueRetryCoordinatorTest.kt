@@ -25,6 +25,25 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertTrue(policy.isEligible(entry, hasAuthenticatedSession = true))
     }
 
+    @Test fun missingRevisionConflictIsRetryableForRecovery() {
+        val entry = entry(
+            SyncQueueOperationType.ROSTER_REPLACEMENT,
+            SyncQueueStatus.FAILED_CONFLICT,
+        ).copy(failureCategory = "MISSING_REVISION")
+
+        assertTrue(policy.isEligible(entry, hasAuthenticatedSession = false))
+    }
+
+    @Test fun otherConflictCategoriesRemainNonRetryable() {
+        listOf("STALE_WRITE_CONFLICT", "LOCAL_CLOUD_DIVERGENCE", "AUTHORIZATION").forEach { category ->
+            val entry = entry(
+                SyncQueueOperationType.ROSTER_REPLACEMENT,
+                SyncQueueStatus.FAILED_CONFLICT,
+            ).copy(failureCategory = category)
+            assertFalse(policy.isEligible(entry, hasAuthenticatedSession = true))
+        }
+    }
+
     @Test fun nonRetryableStatusesAreSkipped() = runTest {
         val repository = RecordingRepository()
         val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)

@@ -35,7 +35,7 @@ class TournamentCloudUploadViewModelTest {
     fun successWithNoQueueRequirementMapsToSuccessAndPassesTournamentId() = runTest {
         val action = RecordingAction(
             QueueAwareActionResult(
-                TournamentCloudUploadResult.Success,
+                TournamentCloudUploadResult.Success(1),
                 QueueRecordingResult.NOT_REQUIRED,
             ),
         )

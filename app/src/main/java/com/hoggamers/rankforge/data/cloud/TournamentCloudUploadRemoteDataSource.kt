@@ -43,7 +43,7 @@ class SupabaseTournamentCloudUploadRemoteDataSource @Inject constructor(
                 ),
             ).decodeSingle<RevisionWriteResponse>()
             if (response.outcome == "success") {
-                CloudUploadExecutionResult.Success
+                CloudUploadExecutionResult.Success(response.revision)
             } else {
                 CloudUploadExecutionResult.Failure(
                     completedStage = null,

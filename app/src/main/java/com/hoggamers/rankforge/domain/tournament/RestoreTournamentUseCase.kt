@@ -85,6 +85,8 @@ private fun TournamentCloudRestorationRemoteResult.Failure.toDomainResult(): Tou
         TournamentCloudRestorationResult.AuthenticationRequired
     TournamentCloudRestorationFailureCategory.AUTHORIZATION ->
         TournamentCloudRestorationResult.AuthorizationFailure
+    TournamentCloudRestorationFailureCategory.NOT_FOUND ->
+        TournamentCloudRestorationResult.AuthorizationFailure
     TournamentCloudRestorationFailureCategory.NETWORK ->
         TournamentCloudRestorationResult.NetworkFailure
     TournamentCloudRestorationFailureCategory.VALIDATION ->

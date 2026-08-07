@@ -43,7 +43,7 @@ private fun retryOutcome(status: SyncQueueStatus): SyncQueueRetryOutcome = when 
 }
 
 private fun TournamentCloudUploadResult.toRetryOutcome(): SyncQueueRetryOutcome = when (this) {
-    TournamentCloudUploadResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
+    is TournamentCloudUploadResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
     TournamentCloudUploadResult.AuthenticationRequired -> retryOutcome(SyncQueueStatus.BLOCKED_AUTHENTICATION)
     TournamentCloudUploadResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     TournamentCloudUploadResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)

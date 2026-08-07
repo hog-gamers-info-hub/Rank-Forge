@@ -58,10 +58,8 @@ class UploadTournamentUseCase @Inject constructor(
         }
 
         val result = cloudUploadRepository.upload(snapshot, ownerId)
-        if (result == TournamentCloudUploadResult.Success) {
-            snapshot.expectedCloudRevision?.let { expected ->
-                tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
-            }
+        if (result is TournamentCloudUploadResult.Success) {
+            tournamentRepository.confirmCloudRevision(tournamentId, result.confirmedCloudRevision)
         }
         return result
     }
@@ -81,7 +79,7 @@ class UploadTournamentUseCase @Inject constructor(
 }
 
 private fun TournamentCloudUploadResult.queueStatus() = when (this) {
-    TournamentCloudUploadResult.Success -> SyncQueueStatus.COMPLETED
+    is TournamentCloudUploadResult.Success -> SyncQueueStatus.COMPLETED
     TournamentCloudUploadResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION
     TournamentCloudUploadResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK
     TournamentCloudUploadResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION

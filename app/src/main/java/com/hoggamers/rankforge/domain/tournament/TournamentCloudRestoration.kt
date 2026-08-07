@@ -29,6 +29,7 @@ data class TournamentCloudRestorationSnapshot(
 enum class TournamentCloudRestorationFailureCategory {
     AUTHENTICATION,
     AUTHORIZATION,
+    NOT_FOUND,
     NETWORK,
     VALIDATION,
 }

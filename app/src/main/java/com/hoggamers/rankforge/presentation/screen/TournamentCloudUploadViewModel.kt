@@ -59,7 +59,7 @@ class TournamentCloudUploadViewModel @Inject constructor(
 }
 
 private fun QueueAwareActionResult<TournamentCloudUploadResult>.toUiState(): TournamentCloudUploadUiState {
-    if (primaryResult == TournamentCloudUploadResult.Success) {
+    if (primaryResult is TournamentCloudUploadResult.Success) {
         return TournamentCloudUploadUiState.Success
     }
 
@@ -71,7 +71,7 @@ private fun QueueAwareActionResult<TournamentCloudUploadResult>.toUiState(): Tou
 }
 
 private fun TournamentCloudUploadResult.toUiState(): TournamentCloudUploadUiState = when (this) {
-    TournamentCloudUploadResult.Success -> TournamentCloudUploadUiState.Success
+    is TournamentCloudUploadResult.Success -> TournamentCloudUploadUiState.Success
     TournamentCloudUploadResult.AuthenticationRequired ->
         TournamentCloudUploadUiState.AuthenticationRequired
     TournamentCloudUploadResult.ValidationFailure ->

@@ -16,6 +16,8 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
     private val authRepository: AuthRepository,
     private val cloudReplacementRepository: TournamentRosterCloudReplacementRepository,
+    private val cloudUploadRepository: TournamentCloudUploadRepository,
+    private val cloudRestorationRepository: TournamentCloudRestorationRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
 ) : TournamentRosterCloudReplacementAction, TournamentRosterCloudReplacementRetryAction {
     override suspend operator fun invoke(
@@ -50,7 +52,6 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite()
-                    ?.takeIf { it > 0 },
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -59,7 +60,11 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         }
 
         val result = try {
-            cloudReplacementRepository.replace(snapshot, ownerId)
+            if (snapshot.expectedCloudRevision == 0) {
+                synchronizeFirstCloud(snapshot, ownerId)
+            } else {
+                cloudReplacementRepository.replace(snapshot, ownerId)
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -69,6 +74,45 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
             tournamentRepository.confirmCloudRevision(tournamentId, result.newCloudRevision)
         }
         return result
+    }
+
+    private suspend fun synchronizeFirstCloud(
+        snapshot: TournamentRosterCloudReplacement,
+        ownerId: String,
+    ): TournamentRosterCloudReplacementResult = when (
+        val cloud = cloudRestorationRepository.readOwnedTournament(snapshot.tournament.id)
+    ) {
+        is TournamentCloudRestorationRemoteResult.Success -> {
+            val cloudRevision = cloud.value.cloudRevision?.value
+                ?: return TournamentRosterCloudReplacementResult.Conflict(
+                    com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
+                )
+            tournamentRepository.establishCloudBaseline(snapshot.tournament.id, cloudRevision)
+            cloudReplacementRepository.replace(
+                snapshot.copy(expectedCloudRevision = cloudRevision),
+                ownerId,
+            )
+        }
+        is TournamentCloudRestorationRemoteResult.Failure -> when (cloud.category) {
+            TournamentCloudRestorationFailureCategory.NOT_FOUND ->
+                cloudUploadRepository.upload(
+                    TournamentCloudUploadSnapshot(
+                        tournament = snapshot.tournament,
+                        slots = snapshot.slots,
+                        rosters = snapshot.rosters,
+                        expectedCloudRevision = 0,
+                    ),
+                    ownerId,
+                ).toRosterResult()
+            TournamentCloudRestorationFailureCategory.AUTHENTICATION ->
+                TournamentRosterCloudReplacementResult.AuthenticationRequired
+            TournamentCloudRestorationFailureCategory.AUTHORIZATION ->
+                TournamentRosterCloudReplacementResult.AuthorizationFailure
+            TournamentCloudRestorationFailureCategory.NETWORK ->
+                TournamentRosterCloudReplacementResult.NetworkFailure
+            TournamentCloudRestorationFailureCategory.VALIDATION ->
+                TournamentRosterCloudReplacementResult.ValidationFailure
+        }
     }
 
     private suspend fun record(
@@ -101,4 +145,20 @@ private fun TournamentRosterCloudReplacementResult.queueFailureCategory(): Strin
     TournamentRosterCloudReplacementResult.BlockedByExistingMatches -> "ROSTER_REPLACEMENT_BLOCKED_BY_MATCHES"
     is TournamentRosterCloudReplacementResult.Conflict -> conflict.queueFailureCategory()
     else -> null
+}
+
+private fun TournamentCloudUploadResult.toRosterResult(): TournamentRosterCloudReplacementResult = when (this) {
+    is TournamentCloudUploadResult.Success ->
+        TournamentRosterCloudReplacementResult.Success(confirmedCloudRevision)
+    TournamentCloudUploadResult.AuthenticationRequired ->
+        TournamentRosterCloudReplacementResult.AuthenticationRequired
+    TournamentCloudUploadResult.ValidationFailure ->
+        TournamentRosterCloudReplacementResult.ValidationFailure
+    TournamentCloudUploadResult.AuthorizationFailure ->
+        TournamentRosterCloudReplacementResult.AuthorizationFailure
+    TournamentCloudUploadResult.NetworkFailure,
+    is TournamentCloudUploadResult.PartialFailure,
+    -> TournamentRosterCloudReplacementResult.NetworkFailure
+    is TournamentCloudUploadResult.Conflict ->
+        TournamentRosterCloudReplacementResult.Conflict(conflict)
 }

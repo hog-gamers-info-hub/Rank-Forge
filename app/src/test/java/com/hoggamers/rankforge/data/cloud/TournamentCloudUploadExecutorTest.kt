@@ -17,7 +17,7 @@ class TournamentCloudUploadExecutorTest {
 
         val result = executor.execute(payloads())
 
-        assertEquals(CloudUploadExecutionResult.Success, result)
+        assertTrue(result is CloudUploadExecutionResult.Success)
         assertEquals(listOf("tournament", "team_slots", "players"), calls)
     }
 

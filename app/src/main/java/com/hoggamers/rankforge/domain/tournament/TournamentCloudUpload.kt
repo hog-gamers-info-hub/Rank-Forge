@@ -16,7 +16,15 @@ enum class TournamentCloudUploadStage {
 }
 
 sealed interface TournamentCloudUploadResult {
-    data object Success : TournamentCloudUploadResult
+    data class Success(
+        val confirmedCloudRevision: Int,
+    ) : TournamentCloudUploadResult {
+        init {
+            require(confirmedCloudRevision > 0) {
+                "Confirmed cloud revisions must be positive."
+            }
+        }
+    }
     data object AuthenticationRequired : TournamentCloudUploadResult
     data object ValidationFailure : TournamentCloudUploadResult
     data object AuthorizationFailure : TournamentCloudUploadResult

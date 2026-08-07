@@ -2,7 +2,11 @@ package com.hoggamers.rankforge.domain.sync
 
 class SyncQueueRetryEligibilityPolicy {
     fun isEligible(entry: SyncQueueEntry, hasAuthenticatedSession: Boolean): Boolean =
-        isRetryable(entry.status, hasAuthenticatedSession)
+        if (entry.status == SyncQueueStatus.FAILED_CONFLICT) {
+            entry.failureCategory == RevisionConflict.MissingRevision.queueFailureCategory()
+        } else {
+            isRetryable(entry.status, hasAuthenticatedSession)
+        }
 
     fun isRetryable(status: SyncQueueStatus, hasAuthenticatedSession: Boolean): Boolean = when (status) {
         SyncQueueStatus.BLOCKED_NETWORK -> true

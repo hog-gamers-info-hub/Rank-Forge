@@ -21,7 +21,9 @@ enum class CloudUploadFailureCategory {
 }
 
 sealed interface CloudUploadExecutionResult {
-    data object Success : CloudUploadExecutionResult
+    data class Success(
+        val confirmedCloudRevision: Int? = null,
+    ) : CloudUploadExecutionResult
     data class Failure(
         val completedStage: CloudUploadCompletedStage?,
         val category: CloudUploadFailureCategory,
@@ -42,7 +44,7 @@ class TournamentCloudUploadExecutor(
             upsertTeamSlots(payloads.teamSlots)
             completedStage = CloudUploadCompletedStage.TEAM_SLOTS
             upsertPlayers(payloads.players)
-            CloudUploadExecutionResult.Success
+            CloudUploadExecutionResult.Success()
         } catch (cancellation: CancellationException) {
             if (cancellation is TimeoutCancellationException) {
                 CloudUploadExecutionResult.Failure(

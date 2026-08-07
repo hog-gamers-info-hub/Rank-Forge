@@ -205,6 +205,19 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
+        require(cloudRevision > 0)
+        awaitState()
+        val existing = database.syncRevisionDao().readByTournamentId(tournamentId)
+        database.syncRevisionDao().upsert(
+            com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                tournamentId = tournamentId,
+                localRevision = existing?.localRevision ?: 1,
+                baseCloudRevision = cloudRevision,
+            ),
+        )
+    }
+
     override suspend fun rebaseCloudRevisionForConflictResolution(
         tournamentId: String,
         cloudRevision: Int,
