@@ -43,6 +43,9 @@ import com.hoggamers.rankforge.presentation.screen.MatchKillRoute
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropRoute
+import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
@@ -81,6 +84,7 @@ fun RankForgeNavHost(
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
     matchReviewViewModelFactory: ((String, String) -> MatchReviewViewModel)? = null,
+    matchResultScreenshotCropViewModelFactory: (() -> MatchResultScreenshotCropViewModel)? = null,
     matchOcrReviewViewModelFactory: ((String, String) -> MatchOcrReviewViewModel)? = null,
     matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
 ) {
@@ -523,6 +527,19 @@ fun RankForgeNavHost(
             val onOpenOcrReview: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
             }
+            val onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit = {
+                    tournamentId,
+                    matchId,
+                    role,
+                ->
+                navController.navigate(
+                    MatchResultScreenshotCropDestination(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        screenshotRole = role.name,
+                    ),
+                )
+            }
             val reviewViewModel = matchReviewViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -535,6 +552,7 @@ fun RankForgeNavHost(
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
                     onOpenOcrReview = onOpenOcrReview,
+                    onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
                 )
             } else {
@@ -545,8 +563,47 @@ fun RankForgeNavHost(
                     onEnterPlacements = onEnterPlacements,
                     onEnterKills = onEnterKills,
                     onOpenOcrReview = onOpenOcrReview,
+                    onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
                     viewModel = reviewViewModel,
+                )
+            }
+        }
+        composable<MatchResultScreenshotCropDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<MatchResultScreenshotCropDestination>()
+            val cropViewModel = matchResultScreenshotCropViewModelFactory?.invoke()
+            val onBackToReview: () -> Unit = {
+                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+                if (!navController.popBackStack(reviewDestination, inclusive = false)) {
+                    navController.navigate(reviewDestination) {
+                        popUpTo(
+                            MatchResultScreenshotCropDestination(
+                                destination.tournamentId,
+                                destination.matchId,
+                                destination.screenshotRole,
+                            ),
+                        ) {
+                            inclusive = true
+                        }
+                    }
+                }
+            }
+            if (cropViewModel == null) {
+                MatchResultScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    screenshotRole = destination.screenshotRole,
+                    onCancel = onBackToReview,
+                    onConfirmed = onBackToReview,
+                )
+            } else {
+                MatchResultScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    screenshotRole = destination.screenshotRole,
+                    onCancel = onBackToReview,
+                    onConfirmed = onBackToReview,
+                    viewModel = cropViewModel,
                 )
             }
         }

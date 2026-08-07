@@ -12,7 +12,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 
 sealed interface MatchResultScreenshotAssetSaveResult {
     data object Saved : MatchResultScreenshotAssetSaveResult
@@ -207,18 +207,18 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
 }
 
 class NoOpMatchResultScreenshotAssetRepository : MatchResultScreenshotAssetRepository {
-    override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = emptyFlow()
+    override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(emptyList())
 
     override fun observeByIdentity(
         identity: MatchResultScreenshotIdentity,
-    ): Flow<MatchResultScreenshotAssetEntity?> = emptyFlow()
+    ): Flow<MatchResultScreenshotAssetEntity?> = flowOf(null)
 
     override suspend fun getByIdentity(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultScreenshotAssetEntity? = null
 
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
-        emptyFlow()
+        flowOf(emptyList())
 
     override suspend fun findDuplicateFingerprint(
         identity: MatchResultScreenshotIdentity,

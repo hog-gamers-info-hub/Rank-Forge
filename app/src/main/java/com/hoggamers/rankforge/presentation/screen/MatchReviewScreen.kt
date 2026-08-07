@@ -29,6 +29,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -73,6 +74,18 @@ const val MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG = "match_review_screensh
 const val MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG = "match_review_screenshot_upload_retry_action"
 const val MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG = "match_review_screenshot_metadata_restored"
 const val MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG = "match_review_screenshot_local_missing"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG = "match_review_result_screenshot_1_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_SECTION_TEST_TAG = "match_review_result_screenshot_2_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG = "match_review_result_screenshot_1_select"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG = "match_review_result_screenshot_2_select"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG = "match_review_result_screenshot_1_replace"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG = "match_review_result_screenshot_2_replace"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG = "match_review_result_screenshot_1_crop"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG = "match_review_result_screenshot_2_crop"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG = "match_review_result_screenshot_1_remove"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG = "match_review_result_screenshot_2_remove"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_result_screenshot_1_crop_ready"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
 
 @Composable
 fun MatchReviewRoute(
@@ -82,6 +95,7 @@ fun MatchReviewRoute(
     onEnterPlacements: (String, String) -> Unit,
     onEnterKills: (String, String) -> Unit,
     onOpenOcrReview: (String, String) -> Unit,
+    onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
     onStartCorrection: (String, String) -> Unit,
     viewModel: MatchReviewViewModel = hiltViewModel(),
 ) {
@@ -89,19 +103,63 @@ fun MatchReviewRoute(
         viewModel.load(tournamentId, matchId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val photoPickerLauncher = rememberLauncherForActivityResult(
+    val legacyPhotoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { selectedUri -> viewModel.onPhotoPickerResult(selectedUri?.toString()) },
+    )
+    val resultScreenshot1PickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { selectedUri ->
+            viewModel.onPhotoPickerResult(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                selectedUri?.toString(),
+            )
+        },
+    )
+    val resultScreenshot2PickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { selectedUri ->
+            viewModel.onPhotoPickerResult(
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                selectedUri?.toString(),
+            )
+        },
     )
     LaunchedEffect(uiState.isPhotoPickerLaunchPending) {
         if (uiState.isPhotoPickerLaunchPending) {
             viewModel.onPhotoPickerLaunchHandled()
             try {
-                photoPickerLauncher.launch(
+                legacyPhotoPickerLauncher.launch(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                 )
             } catch (_: Exception) {
                 viewModel.onPhotoPickerLaunchFailed()
+            }
+        }
+    }
+    val screenshot1 = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+    LaunchedEffect(screenshot1.isPhotoPickerLaunchPending) {
+        if (screenshot1.isPhotoPickerLaunchPending) {
+            viewModel.onPhotoPickerLaunchHandled(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            try {
+                resultScreenshot1PickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            } catch (_: Exception) {
+                viewModel.onPhotoPickerLaunchFailed(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            }
+        }
+    }
+    val screenshot2 = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+    LaunchedEffect(screenshot2.isPhotoPickerLaunchPending) {
+        if (screenshot2.isPhotoPickerLaunchPending) {
+            viewModel.onPhotoPickerLaunchHandled(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            try {
+                resultScreenshot2PickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            } catch (_: Exception) {
+                viewModel.onPhotoPickerLaunchFailed(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
             }
         }
     }
@@ -127,6 +185,22 @@ fun MatchReviewRoute(
                 viewModel.onNavigationHandled()
                 onBackToDetails()
             }
+            MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP -> {
+                viewModel.onNavigationHandled()
+                onOpenResultScreenshotCrop(
+                    tournamentId,
+                    matchId,
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                )
+            }
+            MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP -> {
+                viewModel.onNavigationHandled()
+                onOpenResultScreenshotCrop(
+                    tournamentId,
+                    matchId,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                )
+            }
             null -> Unit
         }
     }
@@ -142,9 +216,15 @@ fun MatchReviewRoute(
         onPrepareCsvExport = viewModel::prepareCsvExport,
         onFinalize = viewModel::finalizeMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
+        onSelectResultScreenshot = viewModel::requestPhotoPicker,
+        onOpenResultScreenshotCrop = { role ->
+            onOpenResultScreenshotCrop(tournamentId, matchId, role)
+        },
         onLinkScreenshot = viewModel::linkScreenshot,
         onUnlinkScreenshot = viewModel::unlinkScreenshot,
         onRetryScreenshotUpload = viewModel::retryScreenshotUpload,
+        onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
+        onRemoveResultScreenshot = viewModel::removeResultScreenshot,
     )
 }
 
@@ -159,9 +239,13 @@ fun MatchReviewScreen(
     onPrepareCsvExport: () -> Unit = {},
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
+    onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit = {},
     onLinkScreenshot: () -> Unit = {},
     onUnlinkScreenshot: () -> Unit = {},
     onRetryScreenshotUpload: () -> Unit = {},
+    onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit = {},
+    onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -178,9 +262,13 @@ fun MatchReviewScreen(
             onPrepareCsvExport = onPrepareCsvExport,
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
+            onSelectResultScreenshot = onSelectResultScreenshot,
+            onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
             onLinkScreenshot = onLinkScreenshot,
             onUnlinkScreenshot = onUnlinkScreenshot,
             onRetryScreenshotUpload = onRetryScreenshotUpload,
+            onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
+            onRemoveResultScreenshot = onRemoveResultScreenshot,
         )
     }
 }
@@ -196,9 +284,13 @@ private fun MatchReviewContent(
     onPrepareCsvExport: () -> Unit,
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
+    onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit,
     onLinkScreenshot: () -> Unit,
     onUnlinkScreenshot: () -> Unit,
     onRetryScreenshotUpload: () -> Unit,
+    onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit,
+    onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -282,190 +374,41 @@ private fun MatchReviewContent(
             MatchCorrectionHistory(uiState.correctionHistory)
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         }
-        Button(
-            onClick = onSelectScreenshot,
-            enabled = !uiState.isPhotoPickerRequestActive,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_REVIEW_PHOTO_PICKER_ACTION_TEST_TAG),
-        ) {
-            Text(stringResource(R.string.match_review_select_screenshot_action))
-        }
-        if (uiState.isScreenshotValidationInProgress) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_validating),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_VALIDATION_IN_PROGRESS_TEST_TAG),
-            )
-        }
-        if (uiState.isSelectedScreenshotValidated) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_selected_and_validated),
-                modifier = Modifier.testTag(MATCH_REVIEW_SELECTED_SCREENSHOT_TEST_TAG),
-            )
-        }
-        if (uiState.photoPickerError != null) {
-            Text(
-                text = stringResource(uiState.photoPickerError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
-            )
-        }
-        if (uiState.imageValidationError != null) {
-            Text(
-                text = stringResource(uiState.imageValidationError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_PHOTO_PICKER_ERROR_TEST_TAG),
-            )
-        }
-        if (uiState.hasLinkedScreenshot) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_linked),
-                modifier = Modifier.testTag(MATCH_REVIEW_LINKED_SCREENSHOT_TEST_TAG),
-            )
-            if (uiState.screenshotMetadata != null) {
-                Text(
-                    text = stringResource(R.string.match_review_screenshot_metadata_restored),
-                    modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG),
-                )
-            }
-            if (uiState.isEditable) {
-                if (uiState.canOpenOcrReview) {
-                    Button(
-                        onClick = onOpenOcrReview,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
-                    ) {
-                        Text(stringResource(R.string.match_ocr_review_title))
-                    }
-                }
-                if (
-                    uiState.isSelectedScreenshotValidated &&
-                    uiState.selectedScreenshotUri != uiState.linkedScreenshotUri
-                ) {
-                    Button(
-                        onClick = onLinkScreenshot,
-                        enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                            !uiState.isScreenshotPreservationInProgress &&
-                            !uiState.isScreenshotUploadInProgress,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(MATCH_REVIEW_REPLACE_SCREENSHOT_ACTION_TEST_TAG),
-                    ) {
-                        Text(stringResource(R.string.match_review_replace_screenshot_action))
-                    }
-                }
-                TextButton(
-                    onClick = onUnlinkScreenshot,
-                    enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                        !uiState.isScreenshotPreservationInProgress &&
-                        !uiState.isScreenshotUploadInProgress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_REVIEW_UNLINK_SCREENSHOT_ACTION_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.match_review_unlink_screenshot_action))
-                }
-            }
-        } else if (uiState.isEditable && uiState.isSelectedScreenshotValidated) {
-            Button(
-                onClick = onLinkScreenshot,
-                enabled = !uiState.isScreenshotDuplicateDetectionInProgress &&
-                    !uiState.isScreenshotPreservationInProgress &&
-                    !uiState.isScreenshotUploadInProgress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_LINK_SCREENSHOT_ACTION_TEST_TAG),
-            ) {
-                Text(stringResource(R.string.match_review_screenshot_link_action))
-            }
-        }
-        if (uiState.status == MatchStatus.FINALIZED && uiState.isSelectedScreenshotValidated) {
-            Text(text = stringResource(R.string.match_review_screenshot_link_finalized_protected))
-        }
-        if (uiState.screenshotLinkError != null) {
-            Text(
-                text = stringResource(uiState.screenshotLinkError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_LINK_ERROR_TEST_TAG),
-            )
-        }
-        if (uiState.isScreenshotDuplicateDetectionInProgress) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_duplicate_checking),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_IN_PROGRESS_TEST_TAG),
-            )
-        }
-        if (uiState.isScreenshotPreservationInProgress) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_preservation_checking),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_IN_PROGRESS_TEST_TAG),
-            )
-        }
-        if (uiState.isScreenshotLocallyPreserved) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_preserved),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVED_TEST_TAG),
-            )
-        }
-        if (uiState.isPreservedScreenshotMissing) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_local_missing),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG),
-            )
-        }
-        if (uiState.screenshotPreservationError != null) {
-            Text(
-                text = stringResource(uiState.screenshotPreservationError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_PRESERVATION_ERROR_TEST_TAG),
-            )
-        }
-        if (uiState.isScreenshotUploadInProgress) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_uploading),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_IN_PROGRESS_TEST_TAG),
-            )
-        }
-        if (uiState.isScreenshotUploaded) {
-            Text(
-                text = stringResource(R.string.match_review_screenshot_uploaded),
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOADED_TEST_TAG),
-            )
-        }
-        if (uiState.screenshotUploadError != null) {
-            Text(
-                text = stringResource(uiState.screenshotUploadError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_ERROR_TEST_TAG),
-            )
-            if (uiState.isEditable && uiState.hasLinkedScreenshot) {
-                TextButton(
-                    onClick = onRetryScreenshotUpload,
-                    enabled = !uiState.isScreenshotUploadInProgress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.match_review_screenshot_upload_retry_action))
-                }
-            }
-        }
-        if (uiState.screenshotDuplicateInfo != null) {
-            Text(
-                text = stringResource(uiState.screenshotDuplicateInfo.toMessageRes()),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_INFO_TEST_TAG),
-            )
-        }
-        if (uiState.screenshotDuplicateError != null) {
-            Text(
-                text = stringResource(uiState.screenshotDuplicateError.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_SCREENSHOT_DUPLICATE_ERROR_TEST_TAG),
-            )
-        }
+        MatchResultScreenshotSlotSection(
+            screenshotNumber = 1,
+            slot = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            isEditable = uiState.isEditable,
+            onSelectScreenshot = {
+                onSelectResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            },
+            onOpenCrop = {
+                onOpenResultScreenshotCrop(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            },
+            onRetryUpload = {
+                onRetryResultScreenshotUpload(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            },
+            onRemoveScreenshot = {
+                onRemoveResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            },
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        MatchResultScreenshotSlotSection(
+            screenshotNumber = 2,
+            slot = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            isEditable = uiState.isEditable,
+            onSelectScreenshot = {
+                onSelectResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            },
+            onOpenCrop = {
+                onOpenResultScreenshotCrop(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            },
+            onRetryUpload = {
+                onRetryResultScreenshotUpload(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            },
+            onRemoveScreenshot = {
+                onRemoveResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            },
+        )
         if (uiState.isEditable) {
             Button(
                 onClick = onEnterPlacements,
@@ -580,6 +523,192 @@ private fun MatchReviewContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun MatchResultScreenshotSlotSection(
+    screenshotNumber: Int,
+    slot: MatchResultScreenshotSlotUiState,
+    isEditable: Boolean,
+    onSelectScreenshot: () -> Unit,
+    onOpenCrop: () -> Unit,
+    onRetryUpload: () -> Unit,
+    onRemoveScreenshot: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(
+                if (screenshotNumber == 1) {
+                    MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG
+                } else {
+                    MATCH_REVIEW_RESULT_SCREENSHOT_2_SECTION_TEST_TAG
+                },
+            ),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.match_review_result_screenshot_title, screenshotNumber),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(
+                if (screenshotNumber == 1) {
+                    R.string.match_review_result_screenshot_1_guidance
+                } else {
+                    R.string.match_review_result_screenshot_2_guidance
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (slot.isValidationInProgress) {
+            Text(text = stringResource(R.string.match_review_screenshot_validating))
+        }
+        if (slot.isSelectedScreenshotValidated) {
+            Text(text = stringResource(R.string.match_review_screenshot_selected_and_validated))
+        }
+        if (slot.hasLinkedAsset) {
+            Text(text = stringResource(R.string.match_review_result_screenshot_ready))
+            if (slot.hasConfirmedCrop) {
+                Text(
+                    text = stringResource(R.string.match_review_result_screenshot_crop_ready),
+                    modifier = Modifier.testTag(
+                        if (screenshotNumber == 1) {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG
+                        } else {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG
+                        },
+                    ),
+                )
+            } else {
+                Text(text = stringResource(R.string.match_review_result_screenshot_crop_required))
+            }
+        }
+        slot.photoPickerError?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        slot.imageValidationError?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (slot.isDuplicateDetectionInProgress) {
+            Text(text = stringResource(R.string.match_review_screenshot_duplicate_checking))
+        }
+        slot.duplicateInfo?.let { info ->
+            Text(
+                text = stringResource(info.toMessageRes()),
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        slot.duplicateError?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (slot.isPreservationInProgress) {
+            Text(text = stringResource(R.string.match_review_screenshot_preservation_checking))
+        }
+        slot.preservationError?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (slot.isUploadInProgress) {
+            Text(text = stringResource(R.string.match_review_screenshot_uploading))
+        }
+        slot.uploadError?.let { error ->
+            Text(
+                text = stringResource(error.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+            )
+            if (isEditable && slot.hasLinkedAsset) {
+                TextButton(
+                    onClick = onRetryUpload,
+                    enabled = !slot.isUploadInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.match_review_screenshot_upload_retry_action))
+                }
+            }
+        }
+        if (isEditable) {
+            Button(
+                onClick = onSelectScreenshot,
+                enabled = !slot.isBusy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(
+                        when {
+                            screenshotNumber == 1 && slot.hasLinkedAsset ->
+                                MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG
+                            screenshotNumber == 1 -> MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG
+                            screenshotNumber == 2 && slot.hasLinkedAsset ->
+                                MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG
+                            else -> MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG
+                        },
+                    ),
+            ) {
+                Text(
+                    stringResource(
+                        if (slot.hasLinkedAsset) {
+                            R.string.match_review_result_screenshot_replace_action
+                        } else {
+                            R.string.match_review_result_screenshot_select_action
+                        },
+                        screenshotNumber,
+                    ),
+                )
+            }
+            if (slot.hasLinkedAsset) {
+                TextButton(
+                    onClick = onOpenCrop,
+                    enabled = !slot.isBusy && !slot.isLocalFileMissing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(
+                            if (screenshotNumber == 1) {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG
+                            } else {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG
+                            },
+                        ),
+                ) {
+                    Text(
+                        stringResource(
+                            if (slot.hasConfirmedCrop) {
+                                R.string.match_review_result_screenshot_edit_crop_action
+                            } else {
+                                R.string.match_review_result_screenshot_crop_action
+                            },
+                        ),
+                    )
+                }
+
+                TextButton(
+                    onClick = onRemoveScreenshot,
+                    enabled = !slot.isBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(
+                            if (screenshotNumber == 1) {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG
+                            } else {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG
+                            },
+                        ),
+                ) {
+                    Text(stringResource(R.string.match_review_unlink_screenshot_action))
+                }
+            }
+        }
     }
 }
 
