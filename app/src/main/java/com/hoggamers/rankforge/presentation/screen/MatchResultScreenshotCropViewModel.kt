@@ -194,6 +194,11 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             }
             when (result) {
                 MatchResultScreenshotCropSaveResult.Saved -> {
+                    MlKitScreenshot1RawDiagnostic.run(
+                        identity = identity,
+                        assetRepository = assetRepository,
+                        localImagePreserver = localImagePreserver,
+                    )
                     syncConfirmedCropMetadata(identity)
                     draftEdited = false
                     _uiState.update {
