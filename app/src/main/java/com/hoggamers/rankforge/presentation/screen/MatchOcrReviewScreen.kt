@@ -244,6 +244,15 @@ private fun MatchOcrReviewReadyState(
                 )
             }
             MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
+            if (
+                uiState.correctionDraft != null &&
+                uiState.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready
+            ) {
+                Text(
+                    text = "OCR preview is editable below. Team slots still require manual confirmation.",
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
             uiState.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewCorrectionSummary(
                     correctionDraft = correctionDraft,
@@ -289,7 +298,7 @@ private fun MatchResultOcrPreviewSection(
     when (preview) {
         MatchResultOcrPreviewUiState.NotRequested -> Unit
         MatchResultOcrPreviewUiState.Processing -> Text(
-            text = "OCR Preview: processing…",
+            text = "OCR Preview: processing...",
             modifier = Modifier.testTag(MatchOcrReviewTestTags.PREVIEW),
         )
         MatchResultOcrPreviewUiState.Empty -> Text(

@@ -83,7 +83,11 @@ class MatchOcrReviewViewModel @Inject constructor(
                 when (state) {
                     is MatchOcrReviewUiState.Empty -> {
                         if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                            state.copy(matchResultOcrPreview = preview)
+                            completeReviewStateFromPreview(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                preview = preview,
+                            ) ?: state.copy(matchResultOcrPreview = preview)
                         } else {
                             state
                         }
@@ -365,6 +369,33 @@ class MatchOcrReviewViewModel @Inject constructor(
                 MatchResultOcrPreviewUiState.Error("The confirmed screenshot crop is invalid.")
             else -> MatchResultOcrPreviewUiState.Error("OCR preview could not be processed.")
         }
+    }
+
+    private fun completeReviewStateFromPreview(
+        tournamentId: String,
+        matchId: String,
+        preview: MatchResultOcrPreviewUiState,
+    ): MatchOcrReviewUiState.Ready? {
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
+            rows = rows,
+            assignmentRequired = true,
+        )
+        return MatchOcrReviewUiState.Ready(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            rowCount = rows.size,
+            rows = rows,
+            blockerCount = correctionDraft.blockerCount,
+            warningCount = correctionDraft.warningCount,
+            safeRowCount = 0,
+            manualRequiredRowCount = correctionDraft.blockerCount,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = true,
+            hasUnavailableEvidence = true,
+            correctionDraft = correctionDraft,
+            matchResultOcrPreview = preview,
+        )
     }
 }
 

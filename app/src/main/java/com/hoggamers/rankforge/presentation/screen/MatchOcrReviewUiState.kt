@@ -142,6 +142,71 @@ object MatchResultOcrPreviewUiStateMapper {
         }
     }
 
+    fun toReviewRows(
+        preview: MatchResultOcrPreviewUiState,
+    ): List<MatchOcrReviewRowUiState>? {
+        val ready = preview as? MatchResultOcrPreviewUiState.Ready ?: return null
+        val positions = ready.rows.map { it.position }
+        if (positions.size != 12 || positions.toSet() != (1..12).toSet()) return null
+
+        return ready.rows
+            .sortedBy { it.position }
+            .map { row ->
+                val placement = row.placementText.trim()
+                val killValues = row.slots.mapNotNull { it.killText.trim().toIntOrNull() }
+                val allKillsNumeric = row.slots.isNotEmpty() &&
+                    row.slots.all { it.killText.trim().toIntOrNull() != null }
+                val playerNames = row.slots
+                    .sortedBy { it.slot }
+                    .mapNotNull { slot ->
+                        slot.playerText.trim().takeIf { it.isNotBlank() }?.let {
+                            "P${slot.slot} $it"
+                        }
+                    }
+                MatchOcrReviewRowUiState(
+                    rowIndex = row.position - 1,
+                    expectedPlacementLabel = row.position.toString(),
+                    detectedPlacementDisplayValue = placement.ifBlank { row.position.toString() },
+                    placementStatusLabel = "From match-result OCR preview",
+                    detectedKillDisplayValue = if (killValues.isEmpty()) {
+                        "Unavailable"
+                    } else {
+                        killValues.sum().toString()
+                    },
+                    killStatusLabel = row.slots.map { it.killStatusLabel }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(", ")
+                        .ifBlank { "From match-result OCR preview" },
+                    detectedPlayerNameEvidenceLabel = playerNames
+                        .joinToString(", ")
+                        .ifBlank { "Unavailable" },
+                    playerNameStatusLabel = row.slots.map { it.playerStatusLabel }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(", ")
+                        .ifBlank { "From match-result OCR preview" },
+                    suggestedTeamSlotDisplayValue = "Unavailable",
+                    confidenceScoreDisplayValue = "Unavailable",
+                    confidenceTierLabel = "Unavailable",
+                    assignmentSafetyStatusLabel = "Unavailable",
+                    topThreeSuggestionsSummary = listOf("No suggestions"),
+                    warningLabels = listOf("OCR preview requires manual confirmation"),
+                    blockerLabels = listOf("Team assignment: manual team slot required"),
+                    severity = MatchOcrReviewSeverity.BLOCKING,
+                    originalParsedPlacementValue = placement.toIntOrNull() ?: row.position,
+                    originalParsedKillValue = totalKillsOrNull(row, allKillsNumeric, killValues),
+                    originalSuggestedTeamSlot = null,
+                )
+            }
+    }
+
+    private fun totalKillsOrNull(
+        row: MatchResultOcrPreviewRowUiState,
+        allKillsNumeric: Boolean,
+        killValues: List<Int>,
+    ): Int? = killValues.sum().takeIf { allKillsNumeric && row.slots.isNotEmpty() }
+
     private fun MatchResultOcrRow.toUiState(
         role: MatchResultScreenshotRole,
     ): MatchResultOcrPreviewRowUiState = MatchResultOcrPreviewRowUiState(
