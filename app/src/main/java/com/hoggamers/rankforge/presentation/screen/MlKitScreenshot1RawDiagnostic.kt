@@ -12,19 +12,70 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 private const val RAW_MLKIT_TAG = "RF_MLKIT_RAW"
+private const val LOWER_RAW_MLKIT_TAG = "RF_MLKIT_RAW_LOWER"
 
 object MlKitScreenshot1RawDiagnostic {
     suspend fun run(
         identity: MatchResultScreenshotIdentity,
         assetRepository: MatchResultScreenshotAssetRepository,
         localImagePreserver: LocalImagePreserver,
+        tournamentRepository: TournamentRepository?,
     ) {
-        if (identity.role != MatchResultScreenshotRole.MATCH_RESULT_UPPER) return
+        // This temporary diagnostic uses Android Bitmap/ML Kit APIs and must not
+        // participate in JVM unit-test execution. Keeping the guard here also
+        // prevents the diagnostic's Dispatchers.IO work from delaying the normal
+        // crop-save/cloud-sync sequence under kotlinx-coroutines-test.
+        if (!isAndroidRuntime()) return
+
+        try {
+            runInternal(
+                identity = identity,
+                assetRepository = assetRepository,
+                localImagePreserver = localImagePreserver,
+                tournamentRepository = tournamentRepository,
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // Diagnostic-only code must never alter the normal crop/save/sync workflow.
+            runCatching {
+                Log.e(RAW_MLKIT_TAG, "ERROR diagnostic unavailable", throwable)
+            }
+        }
+    }
+
+    private suspend fun runInternal(
+        identity: MatchResultScreenshotIdentity,
+        assetRepository: MatchResultScreenshotAssetRepository,
+        localImagePreserver: LocalImagePreserver,
+        tournamentRepository: TournamentRepository?,
+    ) {
+        if (
+            identity.role != MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
+            identity.role != MatchResultScreenshotRole.MATCH_RESULT_LOWER
+        ) return
+
+        val candidateTeams = tournamentRepository
+            ?.observeRosterByTournamentId(identity.tournamentId)
+            ?.first()
+            .orEmpty()
+            .toSortedMap()
+            .map { (teamSlot, players) ->
+                TeamCandidateRosterInput(
+                    teamSlot = teamSlot,
+                    rosterPlayerNames = players
+                        .map { it.displayName.trim() }
+                        .filter { it.isNotEmpty() },
+                )
+            }
 
         val asset = assetRepository.getByIdentity(identity)
         if (asset == null) {
@@ -84,18 +135,27 @@ object MlKitScreenshot1RawDiagnostic {
         }
 
         if (prepared == null) {
-            Log.e(RAW_MLKIT_TAG, "ERROR could not create confirmed Screenshot 1 crop")
+            val errorTag = if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                LOWER_RAW_MLKIT_TAG
+            } else {
+                RAW_MLKIT_TAG
+            }
+            Log.e(errorTag, "ERROR could not create confirmed crop")
             return
         }
 
         try {
-            Log.i(RAW_MLKIT_TAG, "===== SCREENSHOT_1_MLKIT_BEGIN =====")
+            val isLower = identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER
+            val tag = if (isLower) LOWER_RAW_MLKIT_TAG else RAW_MLKIT_TAG
+            val screenshotLabel = if (isLower) "SCREENSHOT_2" else "SCREENSHOT_1"
+
+            Log.i(tag, "===== ${screenshotLabel}_MLKIT_BEGIN =====")
             Log.i(
-                RAW_MLKIT_TAG,
+                tag,
                 "ORIGINAL size=${prepared.original.width}x${prepared.original.height}",
             )
             Log.i(
-                RAW_MLKIT_TAG,
+                tag,
                 "CROP rect=(${prepared.cropLeft},${prepared.cropTop})-" +
                     "(${prepared.cropRight},${prepared.cropBottom}) " +
                     "size=${prepared.cropped.width}x${prepared.cropped.height}",
@@ -105,18 +165,43 @@ object MlKitScreenshot1RawDiagnostic {
                 DefaultMlKitTextRecognizerFactory(),
             )
             when (val result = recognizer.recognize(prepared.cropped)) {
-                is PreparedCropMlKitRecognitionResult.Recognized -> dumpText(result.text)
+                is PreparedCropMlKitRecognitionResult.Recognized -> {
+                    dumpText(
+                        text = result.text,
+                        tag = tag,
+                    )
+                    if (isLower) {
+                        MlKitScreenshot2LowerRoiDiagnostic.dump(
+                            text = result.text,
+                            cropWidth = prepared.cropped.width,
+                            cropHeight = prepared.cropped.height,
+                            candidateTeams = candidateTeams,
+                        )
+                    } else {
+                        MlKitScreenshot1RoiDiagnostic.dump(
+                            text = result.text,
+                            cropWidth = prepared.cropped.width,
+                            cropHeight = prepared.cropped.height,
+                            candidateTeams = candidateTeams,
+                        )
+                    }
+                }
                 PreparedCropMlKitRecognitionResult.InvalidBitmap ->
-                    Log.e(RAW_MLKIT_TAG, "RESULT InvalidBitmap")
+                    Log.e(tag, "RESULT InvalidBitmap")
                 PreparedCropMlKitRecognitionResult.RecognitionFailed ->
-                    Log.e(RAW_MLKIT_TAG, "RESULT RecognitionFailed")
+                    Log.e(tag, "RESULT RecognitionFailed")
             }
 
-            Log.i(RAW_MLKIT_TAG, "===== SCREENSHOT_1_MLKIT_END =====")
+            Log.i(tag, "===== ${screenshotLabel}_MLKIT_END =====")
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
-            Log.e(RAW_MLKIT_TAG, "ERROR diagnostic failed", throwable)
+            val tag = if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                LOWER_RAW_MLKIT_TAG
+            } else {
+                RAW_MLKIT_TAG
+            }
+            Log.e(tag, "ERROR diagnostic failed", throwable)
         } finally {
             if (prepared.cropped !== prepared.original && !prepared.cropped.isRecycled) {
                 prepared.cropped.recycle()
@@ -127,13 +212,20 @@ object MlKitScreenshot1RawDiagnostic {
         }
     }
 
-    private fun dumpText(text: Text) {
-        Log.i(RAW_MLKIT_TAG, "FULL_TEXT_BEGIN")
+    private fun isAndroidRuntime(): Boolean =
+        System.getProperty("java.runtime.name") == "Android Runtime" ||
+            System.getProperty("java.vm.name") == "Dalvik"
+
+    private fun dumpText(
+        text: Text,
+        tag: String,
+    ) {
+        Log.i(tag, "FULL_TEXT_BEGIN")
         text.text.lineSequence().forEachIndexed { index, line ->
-            Log.i(RAW_MLKIT_TAG, "FULL_TEXT[$index]=$line")
+            Log.i(tag, "FULL_TEXT[$index]=$line")
         }
-        Log.i(RAW_MLKIT_TAG, "FULL_TEXT_END")
-        Log.i(RAW_MLKIT_TAG, "BLOCK_COUNT=${text.textBlocks.size}")
+        Log.i(tag, "FULL_TEXT_END")
+        Log.i(tag, "BLOCK_COUNT=${text.textBlocks.size}")
 
         text.textBlocks.forEachIndexed { blockIndex, block ->
             Log.i(

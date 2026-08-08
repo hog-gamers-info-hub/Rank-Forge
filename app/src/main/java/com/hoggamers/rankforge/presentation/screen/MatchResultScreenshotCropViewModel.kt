@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.presentation.screen
+﻿package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdenti
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
 import javax.inject.Inject
@@ -32,6 +33,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class MatchResultScreenshotCropViewModel @Inject constructor(
     private val observeMatches: ObserveMatchesUseCase,
+    private val tournamentRepository: TournamentRepository? = null,
     private val assetRepository: MatchResultScreenshotAssetRepository = NoOpMatchResultScreenshotAssetRepository(),
     private val cloudDataSource: MatchResultScreenshotAssetCloudDataSource =
         NoOpMatchResultScreenshotAssetCloudDataSource(),
@@ -194,12 +196,13 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             }
             when (result) {
                 MatchResultScreenshotCropSaveResult.Saved -> {
+                    syncConfirmedCropMetadata(identity)
                     MlKitScreenshot1RawDiagnostic.run(
                         identity = identity,
                         assetRepository = assetRepository,
                         localImagePreserver = localImagePreserver,
+                        tournamentRepository = tournamentRepository,
                     )
-                    syncConfirmedCropMetadata(identity)
                     draftEdited = false
                     _uiState.update {
                         it.copy(
@@ -300,7 +303,6 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         }
     }
 }
-
 private fun MatchResultScreenshotAssetEntity.confirmedCropOrNull():
     com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect? {
     val left = cropLeft ?: return null
