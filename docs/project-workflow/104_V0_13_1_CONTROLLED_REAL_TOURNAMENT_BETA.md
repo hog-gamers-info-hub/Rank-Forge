@@ -1,0 +1,153 @@
+﻿# v0.13.1 — Controlled Real-Tournament Beta
+
+## Objective
+
+Validate Rank-Forge using genuine tournament rosters, screenshots, match data, corrections, scoring, synchronization, and export under the normal application workflow.
+
+This version is primarily a validation and defect-discovery milestone.
+
+Non-blocking defects should be recorded for v0.13.2 — Beta Defect Resolution rather than fixed immediately.
+
+---
+
+## Beta Tournament
+
+- Tournament:
+- Date:
+- Device:
+- App branch: beta/v0.13.1-controlled-real-tournament
+- App build:
+- Number of teams:
+- Number of matches tested:
+
+---
+
+## Workflow Checklist
+
+### Tournament Setup
+
+- [ ] Tournament created successfully
+- [ ] Tournament reopened successfully
+- [ ] Correct tournament state restored
+
+### Roster Workflow
+
+- [ ] Genuine roster screenshots selected
+- [ ] Manual crop completed
+- [ ] Roster OCR completed
+- [ ] Team/player parsing reviewed
+- [ ] Manual corrections completed where required
+- [ ] Final roster data is correct
+
+### Match Result Workflow
+
+For every tested match:
+
+- [ ] MATCH_RESULT_UPPER screenshot selected
+- [ ] MATCH_RESULT_LOWER screenshot selected when required
+- [ ] Both result crops confirmed
+- [ ] OCR preview completed
+- [ ] Positions 1–10 sourced from upper screenshot only
+- [ ] Positions 11–12 sourced from lower screenshot only
+- [ ] Player evidence reviewed
+- [ ] Kill values reviewed
+- [ ] Team suggestions reviewed
+- [ ] Unsafe/manual assignments handled correctly
+- [ ] Correction draft completed
+- [ ] Match finalized successfully
+
+### Scoring
+
+- [ ] Placement points correct
+- [ ] Kill totals correct
+- [ ] Kill points correct
+- [ ] Match totals correct
+- [ ] Tournament standings correct
+- [ ] Tie-break behavior correct where applicable
+
+### Persistence / Recovery
+
+- [ ] Data survives normal screen navigation
+- [ ] Data survives app restart
+- [ ] Finalized data remains protected
+- [ ] Corrections behave correctly
+
+### Synchronization
+
+- [ ] Expected cloud synchronization succeeds
+- [ ] Offline/retry behavior remains functional where tested
+- [ ] No duplicate records created
+- [ ] Finalized protection preserved
+
+### Export
+
+- [ ] Match CSV export works
+- [ ] Tournament CSV export works
+- [ ] Google Sheets export works where configured
+- [ ] Exported values match final tournament data
+
+---
+
+## Defect Register
+
+| ID | Area | Match / Context | Expected | Actual | Severity | Blocks Beta? | Target |
+|---|---|---|---|---|---|---|---|
+| BETA-001 |  |  |  |  |  | No | v0.13.2 |
+
+### Defect Areas
+
+Use one of:
+
+- OCR
+- Roster OCR
+- Team Matching
+- Scoring
+- Persistence
+- Synchronization
+- Export
+- UI / Usability
+- Error Handling
+- Crash
+- Performance
+
+### Severity
+
+- Critical — data loss, crash, corruption, or workflow cannot continue
+- High — major result is wrong or important workflow fails
+- Medium — incorrect behavior with available workaround
+- Low — cosmetic/usability/minor issue
+
+---
+
+## Performance Observations
+
+Record observations only. Dedicated optimization belongs to v0.13.3.
+
+| Area | Observation |
+|---|---|
+| Screenshot processing | |
+| OCR processing | |
+| Roster matching | |
+| Database operations | |
+| Synchronization | |
+| UI responsiveness | |
+| Export | |
+
+---
+
+## v0.13.1 Exit Criteria
+
+v0.13.1 may be considered complete when:
+
+- At least one genuine tournament workflow has been exercised.
+- Genuine roster screenshots have been processed.
+- Genuine match-result screenshots have been processed.
+- Complete match review/correction/finalization has been exercised.
+- Scoring and standings have been checked.
+- Persistence/synchronization have been exercised where applicable.
+- Export has been exercised.
+- All discovered defects are recorded.
+- Any blocker preventing completion of the beta is resolved or explicitly documented.
+- Remaining defects are ready to move into v0.13.2.
+
+No Phase 13 closure audit is created at this stage.
