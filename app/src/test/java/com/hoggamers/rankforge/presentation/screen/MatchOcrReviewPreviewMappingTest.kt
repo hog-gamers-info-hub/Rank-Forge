@@ -1,0 +1,428 @@
+package com.hoggamers.rankforge.presentation.screen
+
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
+import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrIgnoredLowerVisualRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrIgnoredLowerVisualRowReason
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrManualReviewReason
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrManualReviewRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrVisualRow
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MatchOcrReviewPreviewMappingTest {
+    private val scheduler = TestCoroutineScheduler()
+    private val dispatcher = StandardTestDispatcher(scheduler)
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun upperPreviewMapsOnlyPositionsOneThroughTen() {
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        rows = (1..10).map { row(it, MatchResultOcrRowSource.UPPER_TEMPLATE) },
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals((1..10).toList(), result.rows.map { it.position })
+    }
+
+    @Test
+    fun lowerPreviewMapsEmittedPositionsElevenAndTwelveAndNotesIgnoredManualRows() {
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        rows = listOf(
+                            row(11, MatchResultOcrRowSource.LOWER_ROW_A, MatchResultOcrVisualRow.A),
+                            row(12, MatchResultOcrRowSource.LOWER_ROW_B, MatchResultOcrVisualRow.B),
+                        ),
+                        ignored = listOf(
+                            MatchResultOcrIgnoredLowerVisualRow(
+                                visualRow = MatchResultOcrVisualRow.A,
+                                detectedPlacement = 10,
+                                reason = MatchResultOcrIgnoredLowerVisualRowReason.UPPER_OWNS_POSITION,
+                            ),
+                        ),
+                        manual = listOf(
+                            MatchResultOcrManualReviewRow(
+                                visualRow = MatchResultOcrVisualRow.B,
+                                detectedPlacementText = "?",
+                                reason = MatchResultOcrManualReviewReason.INVALID_PLACEMENT,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals(listOf(11, 12), result.rows.map { it.position })
+        assertEquals(1, result.ignoredLowerRows.size)
+        assertEquals(1, result.manualReviewRows.size)
+    }
+
+    @Test
+    fun completePreviewSeedsTwelveEditableReviewRowsAndDraft() = runTest(dispatcher) {
+        val viewModel = viewModelWithPreview(completePreview())
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, state.rowCount)
+        assertEquals((0..11).toList(), state.rows.map { it.rowIndex })
+        assertEquals(12, state.correctionDraft?.rows?.size)
+        assertEquals(12, state.correctionDraft?.blockerCount)
+    }
+
+    @Test
+    fun previewRowMappingUsesPositionIndexAndSumsNumericKills() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = (1..12).map { position ->
+                if (position == 1) {
+                    previewRow(
+                        position = position,
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        slots = listOf(
+                            previewSlot(1, "Alpha", "2"),
+                            previewSlot(2, "Bravo", "3"),
+                        ),
+                    )
+                } else {
+                    previewRow(
+                        position = position,
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        slots = listOf(previewSlot(1, "Player $position", "0")),
+                    )
+                }
+            },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!
+        val first = rows.first()
+
+        assertEquals(0, first.rowIndex)
+        assertEquals("P1 Alpha, P2 Bravo", first.detectedPlayerNameEvidenceLabel)
+        assertEquals("5", first.detectedKillDisplayValue)
+        assertEquals(5, first.originalParsedKillValue)
+        assertEquals("Unavailable", first.suggestedTeamSlotDisplayValue)
+        assertEquals(MatchOcrReviewSeverity.BLOCKING, first.severity)
+        assertTrue(first.blockerLabels.any { it.contains("Team assignment") })
+    }
+
+    @Test
+    fun incompletePreviewRemainsReadOnlyWithoutCorrectionDraft() = runTest(dispatcher) {
+        val viewModel = viewModelWithPreview(
+            MatchResultOcrPreviewUiStateMapper.map(
+                listOf(
+                    roleResult(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        rows = (1..10).map { row(it, MatchResultOcrRowSource.UPPER_TEMPLATE) },
+                    ),
+                ),
+            ),
+        )
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready)
+    }
+
+    @Test
+    fun duplicatePreviewPositionDoesNotCreateCorrectionDraft() = runTest(dispatcher) {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = (listOf(1, 1) + (2..11).toList()).map { position ->
+                previewRow(
+                    position = position,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    slots = listOf(previewSlot(1, "Player $position", "0")),
+                )
+            },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        val viewModel = viewModelWithPreview(preview)
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Empty)
+    }
+
+    @Test
+    fun outOfRangePreviewPositionDoesNotCreateCorrectionDraft() = runTest(dispatcher) {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = (1..11).map { position ->
+                previewRow(
+                    position = position,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    slots = listOf(previewSlot(1, "Player $position", "0")),
+                )
+            } + previewRow(
+                position = 13,
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                slots = listOf(previewSlot(1, "Player 13", "0")),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        val viewModel = viewModelWithPreview(preview)
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Empty)
+    }
+
+    @Test
+    fun seededCorrectionDraftStillBlocksFinalizationWithoutTeamSlots() = runTest(dispatcher) {
+        val viewModel = viewModelWithPreview(completePreview())
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+        viewModel.onFinalizeOcrCorrection()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(
+            MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED,
+            state.finalization.error,
+        )
+        assertTrue(!state.finalization.isFinalized)
+    }
+
+    @Test
+    fun missingConfirmedCropIsSafeAndUsesReviewMessage() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                MatchResultOcrPreviewProcessingResult.MissingConfirmedCrop
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load("tournament", "match")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Error)
+        assertEquals(
+            "Confirm the screenshot crop before running OCR preview.",
+            (state.matchResultOcrPreview as MatchResultOcrPreviewUiState.Error).message,
+        )
+    }
+
+    private fun processed(
+        role: MatchResultScreenshotRole,
+        rows: List<MatchResultOcrRow>,
+        ignored: List<MatchResultOcrIgnoredLowerVisualRow> = emptyList(),
+        manual: List<MatchResultOcrManualReviewRow> = emptyList(),
+    ): MatchResultOcrPreviewProcessingResult.Processed =
+        MatchResultOcrPreviewProcessingResult.Processed(
+            extraction = MatchResultOcrExtractionResult(
+                role = role,
+                fields = emptyList(),
+                rows = rows,
+                ignoredLowerRows = ignored,
+                manualReviewRows = manual,
+            ),
+            pixelCrop = OcrPixelCropRect(0, 0, 1, 1),
+            cropWidth = 1,
+            cropHeight = 1,
+        )
+
+    private fun roleResult(
+        role: MatchResultScreenshotRole,
+        rows: List<MatchResultOcrRow>,
+    ): MatchResultOcrPreviewRoleResult = MatchResultOcrPreviewRoleResult(
+        role = role,
+        result = processed(role = role, rows = rows),
+    )
+
+    private fun completePreview(): MatchResultOcrPreviewUiState =
+        MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                roleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    rows = (1..10).map { row(it, MatchResultOcrRowSource.UPPER_TEMPLATE) },
+                ),
+                roleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    rows = listOf(
+                        row(11, MatchResultOcrRowSource.LOWER_ROW_A, MatchResultOcrVisualRow.A),
+                        row(12, MatchResultOcrRowSource.LOWER_ROW_B, MatchResultOcrVisualRow.B),
+                    ),
+                ),
+            ),
+        )
+
+    private fun viewModelWithPreview(
+        preview: MatchResultOcrPreviewUiState,
+    ): MatchOcrReviewViewModel {
+        val roleResults = when (preview) {
+            is MatchResultOcrPreviewUiState.Ready -> listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        rows = preview.rows
+                            .filter { it.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER }
+                            .map { row(it.position, MatchResultOcrRowSource.UPPER_TEMPLATE) },
+                    ),
+                ),
+            )
+            else -> emptyList()
+        }
+        val runnerResults = if (preview is MatchResultOcrPreviewUiState.Ready && preview.rows.any { it.position > 10 }) {
+            roleResults + MatchResultOcrPreviewRoleResult(
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                result = processed(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    rows = preview.rows
+                        .filter { it.position > 10 }
+                        .map {
+                            row(
+                                it.position,
+                                if (it.position == 11) MatchResultOcrRowSource.LOWER_ROW_A
+                                else MatchResultOcrRowSource.LOWER_ROW_B,
+                                if (it.position == 11) MatchResultOcrVisualRow.A else MatchResultOcrVisualRow.B,
+                            )
+                        },
+                ),
+            )
+        } else {
+            roleResults
+        }
+        return MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                runnerResults.firstOrNull { it.role == identity.role }?.result
+                    ?: MatchResultOcrPreviewProcessingResult.MissingConfirmedCrop
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+    }
+
+    private fun previewRow(
+        position: Int,
+        role: MatchResultScreenshotRole,
+        slots: List<MatchResultOcrPreviewSlotUiState>,
+    ): MatchResultOcrPreviewRowUiState = MatchResultOcrPreviewRowUiState(
+        position = position,
+        role = role,
+        sourceLabel = "PREVIEW",
+        placementText = position.toString(),
+        slots = slots,
+    )
+
+    private fun previewSlot(
+        slot: Int,
+        player: String,
+        kill: String,
+    ): MatchResultOcrPreviewSlotUiState = MatchResultOcrPreviewSlotUiState(
+        slot = slot,
+        playerText = player,
+        playerOcrText = player,
+        playerStatusLabel = "DIRECT_TEXT",
+        killText = kill,
+        killOcrText = kill,
+        killStatusLabel = "DIRECT_NUMERIC",
+    )
+
+    private fun row(
+        position: Int,
+        source: MatchResultOcrRowSource,
+        visualRow: MatchResultOcrVisualRow? = null,
+    ): MatchResultOcrRow {
+        val placement = field("placement", MatchResultOcrFieldType.PLACEMENT, position, visualRow, null, position.toString())
+        val player = field("player", MatchResultOcrFieldType.PLAYER, position, visualRow, 1, "Player $position")
+        val kill = field("kill", MatchResultOcrFieldType.KILL, position, visualRow, 1, "0")
+        return MatchResultOcrRow(
+            position = position,
+            source = source,
+            placement = placement,
+            playerSlots = listOf(MatchResultOcrPlayerSlot(1, player, kill)),
+        )
+    }
+
+    private fun field(
+        id: String,
+        type: MatchResultOcrFieldType,
+        position: Int,
+        visualRow: MatchResultOcrVisualRow?,
+        slot: Int?,
+        text: String,
+    ): MatchResultOcrField = MatchResultOcrField(
+        id = id,
+        type = type,
+        position = position,
+        visualRow = visualRow,
+        slot = slot,
+        canonicalRect = MatchResultOcrRect(0.0, 0.0, 1.0, 1.0),
+        mappedRect = MatchResultOcrRect(0.0, 0.0, 1.0, 1.0),
+        ocrText = text,
+        resolvedText = text,
+        status = if (type == MatchResultOcrFieldType.KILL) {
+            MatchResultOcrFieldStatus.DIRECT_NUMERIC
+        } else {
+            MatchResultOcrFieldStatus.DIRECT_TEXT
+        },
+    )
+
+    private fun createFinalizeUseCase(): FinalizeOcrCorrectionMatchUseCase {
+        val repository = InMemoryTournamentRepository()
+        return FinalizeOcrCorrectionMatchUseCase(
+            repository = repository,
+            finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+        )
+    }
+}

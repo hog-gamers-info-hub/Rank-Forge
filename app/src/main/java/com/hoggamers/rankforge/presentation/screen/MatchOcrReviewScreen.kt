@@ -34,6 +34,7 @@ object MatchOcrReviewTestTags {
     const val EMPTY = "match_ocr_review_empty"
     const val ERROR = "match_ocr_review_error"
     const val READY_CONTENT = "match_ocr_review_ready_content"
+    const val PREVIEW = "match_ocr_review_match_result_preview"
     const val ROW_LIST = "match_ocr_review_row_list"
     const val BACK_ACTION = "match_ocr_review_back_action"
     const val CORRECTION_ROOT = "match_ocr_review_correction_root"
@@ -109,7 +110,7 @@ fun MatchOcrReviewScreen(
 ) {
     when (uiState) {
         MatchOcrReviewUiState.Loading -> MatchOcrReviewLoadingState()
-        is MatchOcrReviewUiState.Empty -> MatchOcrReviewEmptyState(onBack)
+        is MatchOcrReviewUiState.Empty -> MatchOcrReviewEmptyState(uiState, onBack)
         is MatchOcrReviewUiState.Error -> MatchOcrReviewErrorState(uiState, onBack)
         is MatchOcrReviewUiState.Ready -> MatchOcrReviewReadyState(
             uiState = uiState,
@@ -140,7 +141,10 @@ private fun MatchOcrReviewLoadingState() {
 }
 
 @Composable
-private fun MatchOcrReviewEmptyState(onBack: () -> Unit) {
+private fun MatchOcrReviewEmptyState(
+    uiState: MatchOcrReviewUiState.Empty,
+    onBack: () -> Unit,
+) {
     RankForgeScreenContainer(
         modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
     ) {
@@ -151,6 +155,7 @@ private fun MatchOcrReviewEmptyState(onBack: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Text(text = stringResource(R.string.match_ocr_review_empty_message))
+        MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
         MatchOcrReviewBackAction(onBack)
     }
 }
@@ -238,6 +243,16 @@ private fun MatchOcrReviewReadyState(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
+            if (
+                uiState.correctionDraft != null &&
+                uiState.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready
+            ) {
+                Text(
+                    text = "OCR preview is editable below. Team slots still require manual confirmation.",
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
             uiState.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewCorrectionSummary(
                     correctionDraft = correctionDraft,
@@ -273,6 +288,73 @@ private fun MatchOcrReviewReadyState(
             onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
+    }
+}
+
+@Composable
+private fun MatchResultOcrPreviewSection(
+    preview: MatchResultOcrPreviewUiState,
+) {
+    when (preview) {
+        MatchResultOcrPreviewUiState.NotRequested -> Unit
+        MatchResultOcrPreviewUiState.Processing -> Text(
+            text = "OCR Preview: processing...",
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.PREVIEW),
+        )
+        MatchResultOcrPreviewUiState.Empty -> Text(
+            text = "OCR Preview: no rows extracted.",
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.PREVIEW),
+        )
+        is MatchResultOcrPreviewUiState.Error -> Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.PREVIEW),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            Text(text = "OCR Preview unavailable", style = MaterialTheme.typography.titleMedium)
+            Text(text = preview.message, color = MaterialTheme.colorScheme.error)
+        }
+        is MatchResultOcrPreviewUiState.Ready -> Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.PREVIEW),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            Text(text = "OCR Preview", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Roles: ${preview.roles.joinToString { it.name }} | Rows: ${preview.rows.size}")
+            preview.rows.forEach { row ->
+                Text(
+                    text = "Position ${row.position} (${row.sourceLabel}, ${row.role.name}) " +
+                        "placement=${row.placementText}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                (1..4).forEach { slot ->
+                    val playerSlot = row.slots.firstOrNull { it.slot == slot }
+                    Text(
+                        text = if (playerSlot == null) {
+                            "P$slot: absent"
+                        } else {
+                            "P$slot: ${playerSlot.playerText.ifBlank { "[blank]" }} | " +
+                                "K$slot: ${playerSlot.killText.ifBlank { "[blank]" }} " +
+                                "(${playerSlot.killStatusLabel})"
+                        },
+                    )
+                }
+            }
+            preview.ignoredLowerRows.forEach { ignored ->
+                Text(
+                    text = "Ignored lower row ${ignored.visualRow}: placement=" +
+                        "${ignored.detectedPlacement ?: "blank"} (${ignored.reason})",
+                )
+            }
+            preview.manualReviewRows.forEach { manual ->
+                Text(
+                    text = "Lower row ${manual.visualRow} requires manual review: " +
+                        "placement=${manual.detectedPlacementText.ifBlank { "blank" }} (${manual.reason})",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
 
