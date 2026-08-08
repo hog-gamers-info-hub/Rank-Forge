@@ -12,6 +12,8 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -203,6 +205,14 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                         localImagePreserver = localImagePreserver,
                         tournamentRepository = tournamentRepository,
                     )
+                    viewModelScope.launch {
+                        AndroidMatchResultOcrPreviewProcessor(
+                            assetRepository = assetRepository,
+                            localFileResolver = MatchResultOcrPreviewLocalFileResolver(
+                                localImagePreserver::resolveRelativePath,
+                            ),
+                        ).processAndLog(identity)
+                    }
                     draftEdited = false
                     _uiState.update {
                         it.copy(

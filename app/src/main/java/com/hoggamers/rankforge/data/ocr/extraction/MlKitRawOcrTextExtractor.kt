@@ -1,24 +1,16 @@
 package com.hoggamers.rankforge.data.ocr.extraction
 
-import android.graphics.Point
-import android.graphics.Rect
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognizer
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
+import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidBitmapOcrImage
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrEngineOutput
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrExtractionFailure
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrExtractionInput
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrExtractionResult
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrGeometry
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrPoint
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrTextExtractor
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingCandidate
 import java.util.concurrent.CancellationException
@@ -61,19 +53,7 @@ class MlKitRawOcrTextExtractor @Inject constructor(
 
 class RawOcrInputException : Exception()
 
-private fun Text.toRawOutput() = RawOcrEngineOutput(text, textBlocks.map { block ->
-    RawOcrBlock(block.text, geometry(block.boundingBox, block.cornerPoints), block.recognizedLanguage, RawOcrConfidence.Unavailable, block.lines.map { line ->
-        RawOcrLine(line.text, geometry(line.boundingBox, line.cornerPoints), line.recognizedLanguage, RawOcrConfidence.Unavailable, line.elements.map { element ->
-            RawOcrElement(element.text, geometry(element.boundingBox, element.cornerPoints), element.recognizedLanguage, RawOcrConfidence.Unavailable)
-        })
-    })
-})
-
-private fun geometry(boundingBox: Rect?, cornerPoints: Array<Point>?): RawOcrGeometry? =
-    if (boundingBox == null && cornerPoints == null) null else RawOcrGeometry(boundingBox.toRawBox(), cornerPoints?.map(Point::toRawPoint))
-
-private fun Rect?.toRawBox() = this?.let { RawOcrBoundingBox(left, top, right, bottom) }
-private fun Point.toRawPoint() = RawOcrPoint(x, y)
+private fun Text.toRawOutput() = RawOcrEngineOutput(text, toRawOcrBlocks())
 
 private suspend fun Task<Text>.awaitText(): Text = suspendCancellableCoroutine { continuation ->
     addOnSuccessListener { if (continuation.isActive) continuation.resume(it) }
