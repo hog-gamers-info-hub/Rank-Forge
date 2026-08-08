@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrGeometry
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrPoint
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrSymbol
 
 internal fun Text.toRawOcrBlocks(): List<RawOcrBlock> = textBlocks.map { block ->
     RawOcrBlock(
@@ -29,6 +30,14 @@ internal fun Text.toRawOcrBlocks(): List<RawOcrBlock> = textBlocks.map { block -
                         geometry = geometry(element.boundingBox, element.cornerPoints),
                         recognizedLanguage = element.recognizedLanguage,
                         confidence = RawOcrConfidence.Unavailable,
+                        symbols = element.symbols.map { symbol ->
+                            RawOcrSymbol(
+                                text = symbol.text,
+                                geometry = geometry(symbol.boundingBox, symbol.cornerPoints),
+                                recognizedLanguage = symbol.recognizedLanguage,
+                                confidence = RawOcrConfidence.Unavailable,
+                            )
+                        },
                     )
                 },
             )

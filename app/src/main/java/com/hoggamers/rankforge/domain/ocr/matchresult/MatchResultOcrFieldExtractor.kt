@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.domain.ocr.matchresult
+﻿package com.hoggamers.rankforge.domain.ocr.matchresult
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
@@ -132,36 +132,41 @@ class MatchResultOcrFieldExtractor {
             MatchResultOcrFieldType.PLACEMENT -> 3.0 to 3.0
             MatchResultOcrFieldType.PLAYER -> 0.0 to 3.0
             MatchResultOcrFieldType.KILL -> {
-                if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 12.0 to 3.0 else 0.0 to 3.0
+                if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 12.0 to 3.0 else 2.0 to 3.0
             }
         }
-        val selected = elements
-            .filter { it.box.intersects(mapped.expanded(padding.first, padding.second)) }
+        val evidenceRect = mapped.expanded(padding.first, padding.second)
+        val selectedByGeometry = elements
+            .filter { it.box.intersects(evidenceRect) }
             .sortedWith(compareBy<ElementObservation> { it.box.left }.thenBy { it.box.top })
 
-        return when (field.type) {
-            MatchResultOcrFieldType.PLACEMENT -> mapPlacementField(field, mapped, selected, role)
-            MatchResultOcrFieldType.PLAYER -> {
-                val rendered = renderPlayer(selected)
-                MatchResultOcrField(
-                    id = field.id,
-                    type = field.type,
-                    position = field.position,
-                    visualRow = field.visualRow,
-                    slot = field.slot,
-                    canonicalRect = field.rect,
-                    mappedRect = mapped,
-                    ocrText = rendered,
-                    resolvedText = rendered,
-                    status = if (rendered.isBlank()) {
-                        MatchResultOcrFieldStatus.EMPTY
-                    } else {
-                        MatchResultOcrFieldStatus.DIRECT_TEXT
-                    },
-                )
+        val selectedInReadingOrder = elements
+            .filter { element ->
+                if (field.type == MatchResultOcrFieldType.PLAYER) {
+                    element.isPlayerEvidenceFor(mapped)
+                } else {
+                    element.box.intersects(evidenceRect)
+                }
             }
+            .sortedWith(
+                compareBy<ElementObservation> { it.blockIndex }
+                    .thenBy { it.lineIndex }
+                    .thenBy { it.elementIndex },
+            )
 
-            MatchResultOcrFieldType.KILL -> mapKillField(field, mapped, selected)
+        val symbolGeometryAvailable = selectedByGeometry.any { it.symbols.isNotEmpty() }
+        val selectedSymbols = selectedByGeometry
+            .flatMap { it.symbols }
+            .filter { it.box.intersects(evidenceRect) }
+
+        return when (field.type) {
+            MatchResultOcrFieldType.PLACEMENT ->
+                mapPlacementField(field, mapped, selectedByGeometry, selectedSymbols, symbolGeometryAvailable, role)
+            MatchResultOcrFieldType.PLAYER ->
+                mapPlayerField(field, mapped, selectedInReadingOrder, selectedSymbols)
+
+            MatchResultOcrFieldType.KILL ->
+                mapKillField(field, mapped, selectedByGeometry, selectedSymbols, symbolGeometryAvailable)
         }
     }
 
@@ -169,12 +174,24 @@ class MatchResultOcrFieldExtractor {
         field: MatchResultOcrCanonicalField,
         mapped: MatchResultOcrRect,
         selected: List<ElementObservation>,
+        selectedSymbols: List<SymbolObservation>,
+        symbolGeometryAvailable: Boolean,
         role: MatchResultScreenshotRole,
     ): MatchResultOcrField {
-        val rawText = renderRawText(selected)
-        val numericText = selected
-            .flatMap { it.text.filter(Char::isDigit).map(Char::toString) }
-            .joinToString(separator = "")
+        val rawText = if (symbolGeometryAvailable) {
+            renderSymbols(selectedSymbols)
+        } else {
+            renderRawText(selected)
+        }
+        val numericText = if (symbolGeometryAvailable) {
+            selectedSymbols
+                .flatMap { it.text.filter(Char::isDigit).map(Char::toString) }
+                .joinToString(separator = "")
+        } else {
+            selected
+                .flatMap { it.text.filter(Char::isDigit).map(Char::toString) }
+                .joinToString(separator = "")
+        }
         val expected = field.position
         val resolvedText = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
             expected?.toString().orEmpty()
@@ -206,17 +223,58 @@ class MatchResultOcrFieldExtractor {
         )
     }
 
+    private fun mapPlayerField(
+        field: MatchResultOcrCanonicalField,
+        mapped: MatchResultOcrRect,
+        selectedInReadingOrder: List<ElementObservation>,
+        selectedSymbols: List<SymbolObservation>,
+    ): MatchResultOcrField {
+        val rendered = renderPlayerInReadingOrder(
+            elements = selectedInReadingOrder,
+            fallbackSymbols = selectedSymbols,
+        )
+
+        return MatchResultOcrField(
+            id = field.id,
+            type = field.type,
+            position = field.position,
+            visualRow = field.visualRow,
+            slot = field.slot,
+            canonicalRect = field.rect,
+            mappedRect = mapped,
+            ocrText = rendered,
+            resolvedText = rendered,
+            status = if (rendered.isBlank()) {
+                MatchResultOcrFieldStatus.EMPTY
+            } else {
+                MatchResultOcrFieldStatus.DIRECT_TEXT
+            },
+        )
+    }
     private fun mapKillField(
         field: MatchResultOcrCanonicalField,
         mapped: MatchResultOcrRect,
         selected: List<ElementObservation>,
+        selectedSymbols: List<SymbolObservation>,
+        symbolGeometryAvailable: Boolean,
     ): MatchResultOcrField {
-        val killTokens = selected.flatMap { element ->
-            val text = element.text.trim()
-            if (text.isNotEmpty() && text.all { it.isDigit() || it == 'O' || it == 'o' }) {
-                text.map { it.toString() }
-            } else {
-                emptyList()
+        val killTokens = if (symbolGeometryAvailable) {
+            selectedSymbols.flatMap { symbol ->
+                val text = symbol.text.trim()
+                if (text.isNotEmpty() && text.all { it.isDigit() || it == 'O' || it == 'o' }) {
+                    text.map { it.toString() }
+                } else {
+                    emptyList()
+                }
+            }
+        } else {
+            selected.flatMap { element ->
+                val text = element.text.trim()
+                if (text.isNotEmpty() && text.all { it.isDigit() || it == 'O' || it == 'o' }) {
+                    text.map { it.toString() }
+                } else {
+                    emptyList()
+                }
             }
         }
         val rawText = killTokens.joinToString(separator = "")
@@ -242,8 +300,61 @@ class MatchResultOcrFieldExtractor {
         )
     }
 
-    private fun renderPlayer(elements: List<ElementObservation>): String =
-        elements.joinToString(separator = " ") { it.text.trim() }.trim()
+    private fun renderPlayerInReadingOrder(
+        elements: List<ElementObservation>,
+        fallbackSymbols: List<SymbolObservation>,
+    ): String {
+        val elementText = elements
+            .map { it.text.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString(separator = " ")
+            .cleanPlayerPrefixContamination()
+
+        if (elementText.isNotBlank()) {
+            return elementText
+        }
+
+        return renderPlayerSymbols(fallbackSymbols)
+            .cleanPlayerPrefixContamination()
+    }
+
+    private fun renderPlayerSymbols(symbols: List<SymbolObservation>): String {
+        if (symbols.isEmpty()) return ""
+        val ordered = symbols.sortedWith(
+            compareBy<SymbolObservation> { it.box.top }
+                .thenBy { it.box.left }
+                .thenBy { it.blockIndex }
+                .thenBy { it.lineIndex }
+                .thenBy { it.elementIndex },
+        )
+        return buildString {
+            ordered.forEachIndexed { index, symbol ->
+                if (index > 0) {
+                    val previous = ordered[index - 1]
+                    if (
+                        previous.blockIndex != symbol.blockIndex ||
+                        previous.lineIndex != symbol.lineIndex ||
+                        previous.elementIndex != symbol.elementIndex
+                    ) {
+                        append(' ')
+                    }
+                }
+                append(symbol.text)
+            }
+        }.trim()
+    }
+
+    private fun renderSymbols(symbols: List<SymbolObservation>): String =
+        renderPlayerSymbols(symbols)
+
+    private fun String.cleanPlayerPrefixContamination(): String =
+        trim()
+            .replace(Regex("^\\d+\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^Eliminati\\s+o(?=[A-Z0-9])", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^Eliminations?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^Eliminatio\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^Eliminatio(?=[A-Z0-9])", RegexOption.IGNORE_CASE), "")
+            .trim()
 
     private fun renderRawText(elements: List<ElementObservation>): String =
         elements.joinToString(separator = " ") { it.text.trim() }.trim()
@@ -273,14 +384,27 @@ class MatchResultOcrFieldExtractor {
         blocks.forEachIndexed { blockIndex, block ->
             block.lines.forEachIndexed { lineIndex, line ->
                 line.elements.forEachIndexed { elementIndex, element ->
-                    element.geometry.boundingBoxOrCorners()?.let { box ->
-                        add(
-                            ElementObservation(
-                                text = element.text,
-                                box = box,
+                    val symbols = element.symbols.mapNotNull { symbol ->
+                        symbol.geometry.boundingBoxOrCorners()?.let { symbolBox ->
+                            SymbolObservation(
+                                text = symbol.text,
+                                box = symbolBox,
                                 blockIndex = blockIndex,
                                 lineIndex = lineIndex,
                                 elementIndex = elementIndex,
+                            )
+                        }
+                    }
+                    val box = element.geometry.boundingBoxOrCorners() ?: symbols.boundingBoxOrNull()
+                    box?.let {
+                        add(
+                            ElementObservation(
+                                text = element.text,
+                                box = it,
+                                blockIndex = blockIndex,
+                                lineIndex = lineIndex,
+                                elementIndex = elementIndex,
+                                symbols = symbols,
                             ),
                         )
                     }
@@ -289,6 +413,13 @@ class MatchResultOcrFieldExtractor {
         }
     }
 
+    private fun ElementObservation.isPlayerEvidenceFor(roi: MatchResultOcrRect): Boolean {
+        val centerInside =
+            box.centerX() in roi.left..roi.right &&
+                box.centerY() in roi.top..roi.bottom
+
+        return centerInside || box.overlapAreaRatio(roi) >= 0.35
+    }
     private fun fitLayoutTransform(
         role: MatchResultScreenshotRole,
         layout: MatchResultOcrCanonicalLayout,
@@ -421,6 +552,15 @@ class MatchResultOcrFieldExtractor {
         val blockIndex: Int,
         val lineIndex: Int,
         val elementIndex: Int,
+        val symbols: List<SymbolObservation>,
+    )
+
+    private data class SymbolObservation(
+        val text: String,
+        val box: MatchResultOcrRect,
+        val blockIndex: Int,
+        val lineIndex: Int,
+        val elementIndex: Int,
     )
 
     private data class AxisTransform(val scale: Double, val offset: Double) {
@@ -435,6 +575,18 @@ class MatchResultOcrFieldExtractor {
             bottom = y.map(rect.bottom),
         )
     }
+
+    private fun List<SymbolObservation>.boundingBoxOrNull(): MatchResultOcrRect? =
+        if (isEmpty()) {
+            null
+        } else {
+            MatchResultOcrRect(
+                left = minOf { it.box.left },
+                top = minOf { it.box.top },
+                right = maxOf { it.box.right },
+                bottom = maxOf { it.box.bottom },
+            )
+        }
 }
 
 private fun RawOcrGeometry?.boundingBoxOrCorners(): MatchResultOcrRect? {
@@ -468,6 +620,18 @@ private fun MatchResultOcrRect.expanded(horizontal: Double, vertical: Double): M
 private fun MatchResultOcrRect.intersects(other: MatchResultOcrRect): Boolean =
     left < other.right && right > other.left && top < other.bottom && bottom > other.top
 
+private fun MatchResultOcrRect.overlapAreaRatio(other: MatchResultOcrRect): Double {
+    val overlapLeft = maxOf(left, other.left)
+    val overlapTop = maxOf(top, other.top)
+    val overlapRight = minOf(right, other.right)
+    val overlapBottom = minOf(bottom, other.bottom)
+    val overlapWidth = (overlapRight - overlapLeft).coerceAtLeast(0.0)
+    val overlapHeight = (overlapBottom - overlapTop).coerceAtLeast(0.0)
+    val overlapArea = overlapWidth * overlapHeight
+    val ownArea = ((right - left) * (bottom - top)).coerceAtLeast(1.0)
+    return overlapArea / ownArea
+}
 private fun MatchResultOcrRect.centerX(): Double = (left + right) / 2.0
 
 private fun MatchResultOcrRect.centerY(): Double = (top + bottom) / 2.0
+

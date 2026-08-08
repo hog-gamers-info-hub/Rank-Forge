@@ -16,11 +16,19 @@ sealed interface RawOcrConfidence {
     data object Unavailable : RawOcrConfidence
 }
 
+data class RawOcrSymbol(
+    val text: String,
+    val geometry: RawOcrGeometry?,
+    val recognizedLanguage: String?,
+    val confidence: RawOcrConfidence,
+)
+
 data class RawOcrElement(
     val text: String,
     val geometry: RawOcrGeometry?,
     val recognizedLanguage: String?,
     val confidence: RawOcrConfidence,
+    val symbols: List<RawOcrSymbol> = emptyList(),
 )
 
 data class RawOcrLine(
