@@ -2,14 +2,20 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchWarning
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionRowInput
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,16 +25,30 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class MatchOcrReviewViewModel @Inject constructor(
     private val finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
+    private val matchResultOcrPreviewRunner: MatchResultOcrPreviewRunner,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
     val uiState: StateFlow<MatchOcrReviewUiState> = _uiState.asStateFlow()
 
     private var loadedMatchKey: String? = null
+    private var previewJob: Job? = null
+
+    internal constructor(
+        finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
+    ) : this(finalizeOcrCorrectionMatch, NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER)
 
     internal constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
         initialUiState: MatchOcrReviewUiState,
-    ) : this(finalizeOcrCorrectionMatch) {
+    ) : this(finalizeOcrCorrectionMatch, NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER) {
+        _uiState.value = initialUiState
+    }
+
+    internal constructor(
+        finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
+        matchResultOcrPreviewRunner: MatchResultOcrPreviewRunner,
+        initialUiState: MatchOcrReviewUiState,
+    ) : this(finalizeOcrCorrectionMatch, matchResultOcrPreviewRunner) {
         _uiState.value = initialUiState
     }
 
@@ -41,7 +61,38 @@ class MatchOcrReviewViewModel @Inject constructor(
             MatchOcrReviewUiState.Empty(
                 tournamentId = tournamentId,
                 matchId = matchId,
+                matchResultOcrPreview = MatchResultOcrPreviewUiState.Processing,
             )
+        }
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch {
+            val roleResults = MatchResultScreenshotRole.entries.map { role ->
+                MatchResultOcrPreviewRoleResult(
+                    role = role,
+                    result = matchResultOcrPreviewRunner.process(
+                        MatchResultScreenshotIdentity(
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                            role = role,
+                        ),
+                    ),
+                )
+            }
+            val preview = mapPreviewResults(roleResults)
+            _uiState.update { state ->
+                when (state) {
+                    is MatchOcrReviewUiState.Empty -> {
+                        if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                            state.copy(matchResultOcrPreview = preview)
+                        } else {
+                            state
+                        }
+                    }
+                    is MatchOcrReviewUiState.Ready -> state.copy(matchResultOcrPreview = preview)
+                    is MatchOcrReviewUiState.Error -> state.copy(matchResultOcrPreview = preview)
+                    MatchOcrReviewUiState.Loading -> state
+                }
+            }
         }
     }
 
@@ -296,4 +347,27 @@ class MatchOcrReviewViewModel @Inject constructor(
                 MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE
             else -> MatchOcrReviewFinalizationError.FINALIZATION_FAILED
         }
+
+    private fun mapPreviewResults(
+        roleResults: List<MatchResultOcrPreviewRoleResult>,
+    ): MatchResultOcrPreviewUiState {
+        if (roleResults.any { it.result is MatchResultOcrPreviewProcessingResult.Processed }) {
+            return MatchResultOcrPreviewUiStateMapper.map(roleResults)
+        }
+        return when {
+            roleResults.any { it.result == MatchResultOcrPreviewProcessingResult.MissingConfirmedCrop } ->
+                MatchResultOcrPreviewUiState.Error("Confirm the screenshot crop before running OCR preview.")
+            roleResults.any { it.result == MatchResultOcrPreviewProcessingResult.MissingAsset } ->
+                MatchResultOcrPreviewUiState.Error("The match-result screenshot asset is unavailable.")
+            roleResults.any { it.result == MatchResultOcrPreviewProcessingResult.MissingLocalOriginal } ->
+                MatchResultOcrPreviewUiState.Error("The local match-result screenshot is unavailable.")
+            roleResults.any { it.result == MatchResultOcrPreviewProcessingResult.InvalidCrop } ->
+                MatchResultOcrPreviewUiState.Error("The confirmed screenshot crop is invalid.")
+            else -> MatchResultOcrPreviewUiState.Error("OCR preview could not be processed.")
+        }
+    }
+}
+
+private val NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER = MatchResultOcrPreviewRunner {
+    MatchResultOcrPreviewProcessingResult.MissingAsset
 }

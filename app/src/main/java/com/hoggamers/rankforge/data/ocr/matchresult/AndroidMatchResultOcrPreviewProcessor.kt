@@ -23,13 +23,13 @@ private const val MATCH_RESULT_OCR_PREVIEW_TAG = "RF_MATCH_RESULT_OCR_PREVIEW"
 class AndroidMatchResultOcrPreviewProcessor(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localFileResolver: MatchResultOcrPreviewLocalFileResolver,
-) {
-    suspend fun processAndLog(
+) : MatchResultOcrPreviewRunner {
+    override suspend fun process(
         identity: MatchResultScreenshotIdentity,
-    ) {
-        if (!isAndroidRuntime()) return
+    ): MatchResultOcrPreviewProcessingResult {
+        if (!isAndroidRuntime()) return MatchResultOcrPreviewProcessingResult.RecognitionFailed
 
-        val result = try {
+        return try {
             MatchResultOcrPreviewProcessor(
                 assetRepository = assetRepository,
                 localFileResolver = localFileResolver,
@@ -46,6 +46,14 @@ class AndroidMatchResultOcrPreviewProcessor(
         } catch (_: Throwable) {
             MatchResultOcrPreviewProcessingResult.RecognitionFailed
         }
+    }
+
+    suspend fun processAndLog(
+        identity: MatchResultScreenshotIdentity,
+    ) {
+        if (!isAndroidRuntime()) return
+
+        val result = process(identity)
 
         logResult(identity, result)
     }

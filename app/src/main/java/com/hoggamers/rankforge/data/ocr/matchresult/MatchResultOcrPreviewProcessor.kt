@@ -30,6 +30,17 @@ sealed interface MatchResultOcrPreviewProcessingResult {
     data object RecognitionFailed : MatchResultOcrPreviewProcessingResult
 }
 
+data class MatchResultOcrPreviewRoleResult(
+    val role: MatchResultScreenshotRole,
+    val result: MatchResultOcrPreviewProcessingResult,
+)
+
+fun interface MatchResultOcrPreviewRunner {
+    suspend fun process(
+        identity: MatchResultScreenshotIdentity,
+    ): MatchResultOcrPreviewProcessingResult
+}
+
 fun interface MatchResultOcrPreviewLocalFileResolver {
     fun resolve(relativePath: String): File?
 }

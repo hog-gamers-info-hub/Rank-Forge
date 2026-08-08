@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
 import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyReason
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
@@ -10,6 +12,56 @@ import com.hoggamers.rankforge.domain.ocr.review.OcrReviewField
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewFieldType
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewSeverity
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewStatus
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+
+sealed interface MatchResultOcrPreviewUiState {
+    data object NotRequested : MatchResultOcrPreviewUiState
+    data object Processing : MatchResultOcrPreviewUiState
+    data object Empty : MatchResultOcrPreviewUiState
+
+    data class Error(val message: String) : MatchResultOcrPreviewUiState
+
+    data class Ready(
+        val roles: List<MatchResultScreenshotRole>,
+        val rows: List<MatchResultOcrPreviewRowUiState>,
+        val ignoredLowerRows: List<MatchResultOcrPreviewIgnoredRowUiState>,
+        val manualReviewRows: List<MatchResultOcrPreviewManualRowUiState>,
+    ) : MatchResultOcrPreviewUiState
+}
+
+data class MatchResultOcrPreviewRowUiState(
+    val position: Int,
+    val role: MatchResultScreenshotRole,
+    val sourceLabel: String,
+    val placementText: String,
+    val slots: List<MatchResultOcrPreviewSlotUiState>,
+)
+
+data class MatchResultOcrPreviewSlotUiState(
+    val slot: Int,
+    val playerText: String,
+    val playerOcrText: String,
+    val playerStatusLabel: String,
+    val killText: String,
+    val killOcrText: String,
+    val killStatusLabel: String,
+)
+
+data class MatchResultOcrPreviewIgnoredRowUiState(
+    val role: MatchResultScreenshotRole,
+    val visualRow: String,
+    val detectedPlacement: Int?,
+    val reason: String,
+)
+
+data class MatchResultOcrPreviewManualRowUiState(
+    val role: MatchResultScreenshotRole,
+    val visualRow: String,
+    val detectedPlacementText: String,
+    val reason: String,
+)
 
 sealed interface MatchOcrReviewUiState {
     data object Loading : MatchOcrReviewUiState
@@ -29,18 +81,87 @@ sealed interface MatchOcrReviewUiState {
         val hasUnavailableEvidence: Boolean,
         val correctionDraft: MatchOcrReviewCorrectionDraft? = null,
         val finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
+        val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
     ) : MatchOcrReviewUiState
 
     data class Empty(
         val tournamentId: String? = null,
         val matchId: String? = null,
+        val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
     ) : MatchOcrReviewUiState
 
     data class Error(
         val tournamentId: String? = null,
         val matchId: String? = null,
         val message: String,
+        val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
     ) : MatchOcrReviewUiState
+}
+
+object MatchResultOcrPreviewUiStateMapper {
+    fun map(
+        processedResults: List<MatchResultOcrPreviewRoleResult>,
+    ): MatchResultOcrPreviewUiState {
+        val processed = processedResults.mapNotNull { result ->
+            (result.result as? MatchResultOcrPreviewProcessingResult.Processed)?.let {
+                result.role to it.extraction
+            }
+        }
+        val rows = processed.flatMap { (role, extraction) ->
+            extraction.rows.map { row -> row.toUiState(role) }
+        }.sortedBy { it.position }
+        val ignoredRows = processed.flatMap { (role, extraction) ->
+            extraction.ignoredLowerRows.map { ignored ->
+                MatchResultOcrPreviewIgnoredRowUiState(
+                    role = role,
+                    visualRow = ignored.visualRow.name,
+                    detectedPlacement = ignored.detectedPlacement,
+                    reason = ignored.reason.name,
+                )
+            }
+        }
+        val manualRows = processed.flatMap { (role, extraction) ->
+            extraction.manualReviewRows.map { manual ->
+                MatchResultOcrPreviewManualRowUiState(
+                    role = role,
+                    visualRow = manual.visualRow.name,
+                    detectedPlacementText = manual.detectedPlacementText,
+                    reason = manual.reason.name,
+                )
+            }
+        }
+        return if (rows.isEmpty() && ignoredRows.isEmpty() && manualRows.isEmpty()) {
+            MatchResultOcrPreviewUiState.Empty
+        } else {
+            MatchResultOcrPreviewUiState.Ready(
+                roles = processed.map { it.first }.distinct(),
+                rows = rows,
+                ignoredLowerRows = ignoredRows,
+                manualReviewRows = manualRows,
+            )
+        }
+    }
+
+    private fun MatchResultOcrRow.toUiState(
+        role: MatchResultScreenshotRole,
+    ): MatchResultOcrPreviewRowUiState = MatchResultOcrPreviewRowUiState(
+        position = position,
+        role = role,
+        sourceLabel = source.name,
+        placementText = placement.resolvedText.ifBlank { placement.ocrText },
+        slots = playerSlots.map { it.toUiState() },
+    )
+
+    private fun MatchResultOcrPlayerSlot.toUiState(): MatchResultOcrPreviewSlotUiState =
+        MatchResultOcrPreviewSlotUiState(
+            slot = slot,
+            playerText = player.resolvedText.ifBlank { player.ocrText },
+            playerOcrText = player.ocrText,
+            playerStatusLabel = player.status.name,
+            killText = kill.resolvedText.ifBlank { kill.ocrText },
+            killOcrText = kill.ocrText,
+            killStatusLabel = kill.status.name,
+        )
 }
 
 data class MatchOcrReviewRowUiState(
