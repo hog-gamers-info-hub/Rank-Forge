@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.presentation.screen
+﻿package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
@@ -267,7 +267,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun linkedDraftScreenshotExposesOcrReviewNavigationForSameMatch() = runTest {
+    fun linkedLegacyDraftScreenshotDoesNotExposeResultOcrReviewNavigation() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
@@ -277,19 +277,15 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.canOpenOcrReview)
+        assertFalse(viewModel.uiState.value.canOpenOcrReview)
         assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
 
         viewModel.openOcrReview()
 
-        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
+        assertNull(viewModel.uiState.value.navigation)
         assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
-
-        viewModel.onNavigationHandled()
-
-        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -1227,3 +1223,4 @@ class MatchReviewViewModelTest {
         }
     }
 }
+

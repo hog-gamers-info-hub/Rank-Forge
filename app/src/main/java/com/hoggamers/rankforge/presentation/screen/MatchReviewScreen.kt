@@ -412,6 +412,7 @@ private fun MatchReviewContent(
         if (uiState.isEditable) {
             Button(
                 onClick = onOpenOcrReview,
+                enabled = uiState.canOpenOcrReview,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),

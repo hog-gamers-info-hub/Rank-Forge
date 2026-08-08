@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.presentation.screen
+﻿package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -192,11 +192,12 @@ data class MatchReviewUiState(
         get() = isEditable &&
             !tournamentId.isNullOrBlank() &&
             !matchId.isNullOrBlank() &&
-            hasLinkedScreenshot &&
-            !isScreenshotDuplicateDetectionInProgress &&
-            !isScreenshotPreservationInProgress &&
-            !isScreenshotUploadInProgress &&
-            !isPreservedScreenshotMissing
+            resultScreenshots.any { slot ->
+                slot.hasLinkedAsset &&
+                    slot.hasConfirmedCrop &&
+                    !slot.isBusy &&
+                    !slot.isLocalFileMissing
+            }
 }
 
 fun defaultMatchResultScreenshotSlots(): List<MatchResultScreenshotSlotUiState> = listOf(
@@ -224,3 +225,4 @@ data class MatchReviewRowUiState(
     val killsInput: String = "",
     val validationErrors: Set<MatchResultValidationError> = emptySet(),
 )
+
