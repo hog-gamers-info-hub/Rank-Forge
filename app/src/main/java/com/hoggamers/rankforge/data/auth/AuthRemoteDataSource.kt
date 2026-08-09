@@ -20,5 +20,7 @@ interface AuthRemoteDataSource {
         password: String,
     )
 
+    suspend fun signInWithGoogle()
+
     suspend fun logout(): AuthLogoutResult
 }

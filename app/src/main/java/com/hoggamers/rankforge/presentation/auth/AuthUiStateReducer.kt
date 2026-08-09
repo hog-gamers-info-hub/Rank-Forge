@@ -122,6 +122,12 @@ object AuthUiStateReducer {
                 warningMessage = null,
                 errorMessage = null,
             )
+            AuthSuccessOutcome.ExternalAuthenticationLaunched -> currentState.copy(
+                isSubmitting = false,
+                statusMessage = AuthUiMessage.ExternalAuthenticationLaunched,
+                warningMessage = null,
+                errorMessage = null,
+            )
             AuthSuccessOutcome.SignUpAuthenticated -> currentState.copy(
                 isSubmitting = false,
                 accountEmail = currentState.email.trim(),

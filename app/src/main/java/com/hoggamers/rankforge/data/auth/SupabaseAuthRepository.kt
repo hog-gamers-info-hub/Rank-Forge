@@ -47,6 +47,13 @@ class SupabaseAuthRepository @Inject constructor(
         remoteDataSource.login(email, password)
     }
 
+    override suspend fun signInWithGoogle(): AuthOperationResult = runAuthOperation(
+        context = AuthFailureContext.GoogleSignIn,
+        successOutcome = AuthSuccessOutcome.ExternalAuthenticationLaunched,
+    ) {
+        remoteDataSource.signInWithGoogle()
+    }
+
     override suspend fun logout(): AuthOperationResult =
         try {
             when (val result = remoteDataSource.logout()) {
@@ -67,12 +74,11 @@ class SupabaseAuthRepository @Inject constructor(
 
     private suspend fun runAuthOperation(
         context: AuthFailureContext,
+        successOutcome: AuthSuccessOutcome = AuthSuccessOutcome.SignedIn,
         operation: suspend () -> Unit,
     ): AuthOperationResult = try {
         operation()
-        AuthOperationResult.Success(
-            AuthSuccessOutcome.SignedIn,
-        )
+        AuthOperationResult.Success(successOutcome)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (throwable: Throwable) {

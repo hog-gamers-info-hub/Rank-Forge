@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 sealed interface AuthUiMessage {
     data object MissingCredentials : AuthUiMessage
     data object SignedIn : AuthUiMessage
+    data object ExternalAuthenticationLaunched : AuthUiMessage
     data object SignUpAuthenticated : AuthUiMessage
     data object SignUpConfirmationRequired : AuthUiMessage
     data object SignedOut : AuthUiMessage

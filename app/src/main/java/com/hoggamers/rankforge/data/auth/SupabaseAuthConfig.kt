@@ -15,6 +15,8 @@ data class SupabaseAuthConfig(
     companion object {
         const val DEFAULT_SUPABASE_URL = "https://example.supabase.co"
         const val DEFAULT_SUPABASE_PUBLISHABLE_KEY = "replace-with-supabase-publishable-key"
+        const val AUTH_CALLBACK_SCHEME = "com.hoggamers.rankforge"
+        const val AUTH_CALLBACK_HOST = "auth-callback"
 
         fun fromBuildConfig(): SupabaseAuthConfig = SupabaseAuthConfig(
             supabaseUrl = BuildConfig.SUPABASE_URL,

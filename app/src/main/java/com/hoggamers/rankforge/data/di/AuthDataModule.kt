@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -63,6 +64,12 @@ object AuthDataProvidersModule {
     fun provideLoginUseCase(
         repository: AuthRepository,
     ): LoginUseCase = LoginUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideSignInWithGoogleUseCase(
+        repository: AuthRepository,
+    ): SignInWithGoogleUseCase = SignInWithGoogleUseCase(repository)
 
     @Provides
     @Singleton

@@ -100,6 +100,26 @@ class AuthUiStateReducerTest {
     }
 
     @Test
+    fun externalAuthenticationLaunchReturnsToIdleWithoutSigningInOrFakingEmail() {
+        val uiState = AuthUiStateReducer.finishOperation(
+            currentState = AuthUiState(
+                email = "typed@example.com",
+                accountEmail = "existing@example.com",
+                isSubmitting = true,
+            ),
+            result = AuthOperationResult.Success(
+                AuthSuccessOutcome.ExternalAuthenticationLaunched,
+            ),
+        )
+
+        assertFalse(uiState.isSubmitting)
+        assertFalse(uiState.isSignedIn)
+        assertEquals("existing@example.com", uiState.accountEmail)
+        assertEquals(AuthUiMessage.ExternalAuthenticationLaunched, uiState.statusMessage)
+        assertEquals(null, uiState.errorMessage)
+    }
+
+    @Test
     fun remoteLogoutWarningStillLeavesSignedOutState() {
         val uiState = AuthUiStateReducer.finishOperation(
             currentState = AuthUiState(

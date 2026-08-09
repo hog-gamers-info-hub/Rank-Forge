@@ -87,6 +87,7 @@ fun RankForgeNavHost(
     matchResultScreenshotCropViewModelFactory: (() -> MatchResultScreenshotCropViewModel)? = null,
     matchOcrReviewViewModelFactory: ((String, String) -> MatchOcrReviewViewModel)? = null,
     matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
+    onAuthGoogleSignIn: () -> Unit = {},
 ) {
     NavHost(
         navController = navController,
@@ -135,6 +136,7 @@ fun RankForgeNavHost(
                 onEmailChanged = onAuthEmailChanged,
                 onPasswordChanged = onAuthPasswordChanged,
                 onSubmit = onAuthSubmit,
+                onGoogleSignIn = onAuthGoogleSignIn,
                 onLogout = onAuthLogout,
                 onBack = { navController.popBackStack() },
             )

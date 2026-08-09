@@ -7,6 +7,7 @@ sealed interface AuthOperationResult {
 
 sealed interface AuthSuccessOutcome {
     data object SignedIn : AuthSuccessOutcome
+    data object ExternalAuthenticationLaunched : AuthSuccessOutcome
     data object SignUpAuthenticated : AuthSuccessOutcome
     data object EmailConfirmationRequired : AuthSuccessOutcome
     data object SignedOutLocally : AuthSuccessOutcome

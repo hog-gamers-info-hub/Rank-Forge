@@ -21,9 +21,11 @@
     <string name="auth_login_action">Login</string>
     <string name="auth_signup_action">Sign up</string>
     <string name="auth_submitting_action">Submitting</string>
+    <string name="auth_google_sign_in_action">Sign in with Google</string>
     <string name="auth_logout_action">Logout</string>
     <string name="auth_missing_credentials_error">Enter an email and password.</string>
     <string name="auth_signed_in_message">Signed in.</string>
+    <string name="auth_external_authentication_launched_message">Complete sign-in in your browser.</string>
     <string name="auth_signup_authenticated_message">Account created and signed in.</string>
     <string name="auth_signup_confirmation_required_message">Account created. Confirm your email before signing in.</string>
     <string name="auth_signed_out_message">Signed out.</string>

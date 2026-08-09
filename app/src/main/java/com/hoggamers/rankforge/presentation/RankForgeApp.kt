@@ -29,6 +29,7 @@ fun RankForgeApp(
                 onAuthEmailChanged = authViewModel::onEmailChanged,
                 onAuthPasswordChanged = authViewModel::onPasswordChanged,
                 onAuthSubmit = authViewModel::submit,
+                onAuthGoogleSignIn = authViewModel::signInWithGoogle,
                 onAuthLogout = authViewModel::logout,
             )
         }

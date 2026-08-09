@@ -12,6 +12,7 @@ internal enum class AuthFailureContext {
     Restore,
     SignUp,
     Login,
+    GoogleSignIn,
     Logout,
 }
 

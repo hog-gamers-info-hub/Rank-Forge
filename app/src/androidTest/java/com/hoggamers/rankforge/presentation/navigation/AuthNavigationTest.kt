@@ -14,6 +14,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
+import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
@@ -22,6 +23,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,6 +73,29 @@ class AuthNavigationTest {
 
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun googleSignInActionIsThreadedThroughNavigation() {
+        val repository = InMemoryTournamentRepository()
+        val creationViewModel = createCreationViewModel(repository)
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        var googleClickCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = AuthUiState(isSignedIn = false),
+                    onAuthGoogleSignIn = { googleClickCount += 1 },
+                    creationViewModel = creationViewModel,
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).performClick()
+
+        assertEquals(1, googleClickCount)
     }
 
     private fun createCreationViewModel(
