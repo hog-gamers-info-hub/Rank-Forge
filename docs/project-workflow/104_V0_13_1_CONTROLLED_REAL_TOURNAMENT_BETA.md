@@ -1,4 +1,4 @@
-# v0.13.1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Controlled Real-Tournament Beta
+# v0.13.1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -6,7 +6,7 @@ Validate Rank-Forge using genuine tournament rosters, screenshots, match data, c
 
 This version is primarily a validation and defect-discovery milestone.
 
-Non-blocking defects should be recorded for v0.13.2 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Beta Defect Resolution rather than fixed immediately.
+Non-blocking defects should be recorded for v0.13.2 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Beta Defect Resolution rather than fixed immediately.
 
 ---
 
@@ -47,8 +47,8 @@ For every tested match:
 - [ ] MATCH_RESULT_LOWER screenshot selected when required
 - [ ] Both result crops confirmed
 - [ ] OCR preview completed
-- [ ] Positions 1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“10 sourced from upper screenshot only
-- [ ] Positions 11ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“12 sourced from lower screenshot only
+- [ ] Positions 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ10 sourced from upper screenshot only
+- [ ] Positions 11ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ12 sourced from lower screenshot only
 - [ ] Player evidence reviewed
 - [ ] Kill values reviewed
 - [ ] Team suggestions reviewed
@@ -61,7 +61,7 @@ For every tested match:
 - [x] Placement points correct
 - [x] Kill totals correct
 - [x] Kill points correct
-- [ ] Match totals correct
+- [x] Match totals correct
 - [x] Tournament standings correct
 - [ ] Tie-break behavior correct where applicable
 
@@ -126,10 +126,10 @@ Use one of:
 
 ### Severity
 
-- Critical ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â data loss, crash, corruption, or workflow cannot continue
-- High ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â major result is wrong or important workflow fails
-- Medium ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â incorrect behavior with available workaround
-- Low ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cosmetic/usability/minor issue
+- Critical ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â data loss, crash, corruption, or workflow cannot continue
+- High ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â major result is wrong or important workflow fails
+- Medium ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â incorrect behavior with available workaround
+- Low ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â cosmetic/usability/minor issue
 
 ---
 
