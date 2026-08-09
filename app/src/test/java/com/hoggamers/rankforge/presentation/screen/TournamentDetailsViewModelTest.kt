@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
+import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
+import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
@@ -115,12 +117,15 @@ class TournamentDetailsViewModelTest {
         assertTrue((result as AndroidExportResult.CsvReady).content.contains("stable-id"))
 
         viewModel.prepareGoogleSheetsStandingsExport()
+        advanceUntilIdle()
         assertEquals(
             AndroidExportType.STANDINGS_GOOGLE_SHEETS,
             viewModel.uiState.value.googleSheetsExportResult?.request?.type,
         )
         assertEquals("stable-id", viewModel.uiState.value.googleSheetsExportResult?.request?.tournamentId)
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.Unavailable)
+        assertTrue(
+            viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsSuccess,
+        )
     }
 
     @Test
@@ -254,6 +259,7 @@ class TournamentDetailsViewModelTest {
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
+        googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
     )
 
     private fun tournament(id: String) = Tournament(
@@ -338,5 +344,17 @@ class TournamentDetailsViewModelTest {
         ) = Unit
 
         override suspend fun confirmTournament(tournamentId: String): Boolean = false
+    }
+
+    private class FakeGoogleSheetsStandingsExportRemoteDataSource :
+        GoogleSheetsStandingsExportRemoteDataSource {
+        override suspend fun export(
+            tournamentId: String,
+            rows: List<com.hoggamers.rankforge.domain.export.TournamentStandingsExportRow>,
+        ): GoogleSheetsStandingsExportExecutionResult =
+            GoogleSheetsStandingsExportExecutionResult.Success(
+                exportedMatchCount = rows.firstOrNull()?.exportedMatchCount ?: 0,
+                rowsWritten = rows.size,
+            )
     }
 }

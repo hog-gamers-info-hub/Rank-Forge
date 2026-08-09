@@ -348,7 +348,7 @@ private fun MatchReviewContent(
                     text = "CSV export unavailable",
                     modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
                 )
-                null -> Unit
+                else -> Unit
             }
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))

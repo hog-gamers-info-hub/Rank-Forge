@@ -51,6 +51,21 @@ sealed interface AndroidExportResult {
         override val request: AndroidExportRequest,
         val reason: AndroidExportUnavailableReason,
     ) : AndroidExportResult
+
+    data class GoogleSheetsExporting(
+        override val request: AndroidExportRequest,
+    ) : AndroidExportResult
+
+    data class GoogleSheetsSuccess(
+        override val request: AndroidExportRequest,
+        val exportedMatchCount: Int,
+        val rowsWritten: Int,
+    ) : AndroidExportResult
+
+    data class GoogleSheetsFailure(
+        override val request: AndroidExportRequest,
+        val reason: AndroidGoogleSheetsExportFailureReason,
+    ) : AndroidExportResult
 }
 
 class AndroidExportCoordinator(
@@ -106,6 +121,17 @@ class AndroidExportCoordinator(
         reason = reason,
     )
 
+    fun blockGoogleSheetsStandings(
+        tournamentId: String,
+        reason: AndroidExportBlockedReason,
+    ): AndroidExportResult.Blocked = AndroidExportResult.Blocked(
+        request = AndroidExportRequest(
+            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+        ),
+        reason = reason,
+    )
+
     fun googleSheetsMatchUnavailable(
         tournamentId: String,
         matchId: String,
@@ -126,6 +152,39 @@ class AndroidExportCoordinator(
             tournamentId = tournamentId,
         ),
         reason = AndroidExportUnavailableReason.GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
+    )
+
+    fun googleSheetsStandingsExporting(
+        tournamentId: String,
+    ): AndroidExportResult.GoogleSheetsExporting = AndroidExportResult.GoogleSheetsExporting(
+        request = AndroidExportRequest(
+            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+        ),
+    )
+
+    fun googleSheetsStandingsSuccess(
+        tournamentId: String,
+        exportedMatchCount: Int,
+        rowsWritten: Int,
+    ): AndroidExportResult.GoogleSheetsSuccess = AndroidExportResult.GoogleSheetsSuccess(
+        request = AndroidExportRequest(
+            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+        ),
+        exportedMatchCount = exportedMatchCount,
+        rowsWritten = rowsWritten,
+    )
+
+    fun googleSheetsStandingsFailure(
+        tournamentId: String,
+        reason: AndroidGoogleSheetsExportFailureReason,
+    ): AndroidExportResult.GoogleSheetsFailure = AndroidExportResult.GoogleSheetsFailure(
+        request = AndroidExportRequest(
+            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+        ),
+        reason = reason,
     )
 
     private fun prepareCsv(
