@@ -47,6 +47,10 @@ const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
 const val MATCH_CLOUD_RESTORE_STATUS_TEST_TAG = "match_cloud_restore_status"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG = "tournament_standings_csv_export_action"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG = "tournament_standings_csv_export_status"
+const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG =
+    "tournament_standings_google_sheets_export_action"
+const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG =
+    "tournament_standings_google_sheets_export_status"
 
 @Composable
 fun TournamentDetailsRoute(
@@ -101,6 +105,10 @@ fun TournamentDetailsRoute(
         onReviewMatch = onReviewMatch,
         onOpenStandings = onOpenStandings,
         onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
+        onPrepareGoogleSheetsStandingsExport = {
+            viewModel.prepareGoogleSheetsStandingsExport()
+        },
+        googleSheetsExportResult = uiState.googleSheetsExportResult,
         uploadUiState = uploadUiState,
         onUpload = { id -> uploadViewModel?.upload(id) },
         draftMatchSyncUiState = draftMatchSyncUiState,
@@ -133,6 +141,8 @@ fun TournamentDetailsScreen(
     onSyncFinalizedMatches: (String) -> Unit = {},
     matchCloudRestorationUiState: MatchCloudRestorationUiState = MatchCloudRestorationUiState.Idle,
     onRestoreMatches: (String) -> Unit = {},
+    onPrepareGoogleSheetsStandingsExport: (String) -> Unit = {},
+    googleSheetsExportResult: AndroidExportResult? = null,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -161,6 +171,8 @@ fun TournamentDetailsScreen(
             onSyncFinalizedMatches = onSyncFinalizedMatches,
             matchCloudRestorationUiState = matchCloudRestorationUiState,
             onRestoreMatches = onRestoreMatches,
+            onPrepareGoogleSheetsStandingsExport = onPrepareGoogleSheetsStandingsExport,
+            googleSheetsExportResult = googleSheetsExportResult,
         )
     }
 }
@@ -186,6 +198,8 @@ private fun TournamentDetailsContent(
     onSyncFinalizedMatches: (String) -> Unit,
     matchCloudRestorationUiState: MatchCloudRestorationUiState,
     onRestoreMatches: (String) -> Unit,
+    onPrepareGoogleSheetsStandingsExport: (String) -> Unit,
+    googleSheetsExportResult: AndroidExportResult?,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -292,6 +306,41 @@ private fun TournamentDetailsContent(
             )
             null -> Unit
         }
+
+        if (tournament.canPrepareStandingsCsvExport) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Button(
+                onClick = { onPrepareGoogleSheetsStandingsExport(tournament.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG),
+            ) {
+                Text(text = "Export to Google Sheets")
+            }
+        }
+
+        when (googleSheetsExportResult) {
+            is AndroidExportResult.CsvReady -> Text(
+                text = "Google Sheets export ready",
+                modifier = Modifier.testTag(
+                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
+                ),
+            )
+            is AndroidExportResult.Blocked -> Text(
+                text = "Google Sheets export blocked",
+                modifier = Modifier.testTag(
+                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
+                ),
+            )
+            is AndroidExportResult.Unavailable -> Text(
+                text = "Google Sheets export unavailable",
+                modifier = Modifier.testTag(
+                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
+                ),
+            )
+            null -> Unit
+        }
+
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = onBackToList,
