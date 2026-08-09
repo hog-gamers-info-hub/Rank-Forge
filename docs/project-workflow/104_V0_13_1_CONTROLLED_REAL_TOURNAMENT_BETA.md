@@ -26,9 +26,9 @@ Non-blocking defects should be recorded for v0.13.2 — Beta Defect Resolution r
 
 ### Tournament Setup
 
-- [ ] Tournament created successfully
-- [ ] Tournament reopened successfully
-- [ ] Correct tournament state restored
+- [x] Tournament created successfully
+- [x] Tournament reopened successfully
+- [x] Correct tournament state restored
 
 ### Roster Workflow
 
@@ -43,18 +43,18 @@ Non-blocking defects should be recorded for v0.13.2 — Beta Defect Resolution r
 
 For every tested match:
 
-- [ ] MATCH_RESULT_UPPER screenshot selected
-- [ ] MATCH_RESULT_LOWER screenshot selected when required
-- [ ] Both result crops confirmed
-- [ ] OCR preview completed
-- [ ] Positions 1–10 sourced from upper screenshot only
-- [ ] Positions 11–12 sourced from lower screenshot only
-- [ ] Player evidence reviewed
-- [ ] Kill values reviewed
-- [ ] Team suggestions reviewed
-- [ ] Unsafe/manual assignments handled correctly
-- [ ] Correction draft completed
-- [ ] Match finalized successfully
+- [x] MATCH_RESULT_UPPER screenshot selected
+- [x] MATCH_RESULT_LOWER screenshot selected when required
+- [x] Both result crops confirmed
+- [x] OCR preview completed
+- [x] Positions 1–10 sourced from upper screenshot only
+- [x] Positions 11–12 sourced from lower screenshot only
+- [x] Player evidence reviewed
+- [x] Kill values reviewed
+- [x] Team suggestions reviewed
+- [x] Unsafe/manual assignments handled correctly
+- [x] Correction draft completed
+- [x] Match finalized successfully
 
 ### Scoring
 
@@ -67,15 +67,15 @@ For every tested match:
 
 ### Persistence / Recovery
 
-- [ ] Data survives normal screen navigation
+- [x] Data survives normal screen navigation
 - [x] Data survives app restart
 - [x] Finalized data remains protected
-- [ ] Corrections behave correctly
+- [x] Corrections behave correctly
 
 ### Synchronization
 
 - [x] Expected cloud synchronization succeeds
-- [ ] Offline/retry behavior remains functional where tested
+- [x] Offline/retry behavior remains functional where tested
 - [x] No duplicate records created
 - [x] Finalized protection preserved
 
@@ -84,7 +84,7 @@ For every tested match:
 - [ ] Match CSV export works
 - [ ] Tournament CSV export works
 - [x] Google Sheets export works where configured
-- [ ] Exported values match final tournament data
+- [x] Exported values match final tournament data
 
 ### Google Sheets Export Verification
 
