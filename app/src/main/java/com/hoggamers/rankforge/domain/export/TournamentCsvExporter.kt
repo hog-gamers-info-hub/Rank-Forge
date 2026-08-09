@@ -51,9 +51,24 @@ class TournamentCsvExporter(
     private val tieBreakRules: TieBreakRules = TieBreakRules(),
 ) {
     fun export(input: TournamentCsvExportInput): TournamentCsvExportResult {
+        return when (val rowsResult = buildStandingsRows(input)) {
+            is TournamentStandingsExportRowsResult.Success ->
+                TournamentCsvExportResult.Success(
+                    csv = (listOf(TOURNAMENT_CSV_HEADER) + rowsResult.rows.map { row ->
+                        row.orderedFields().toCsvRecord()
+                    }).joinToString(CRLF),
+                )
+            is TournamentStandingsExportRowsResult.Failure ->
+                TournamentCsvExportResult.Failure(rowsResult.failures)
+        }
+    }
+
+    fun buildStandingsRows(
+        input: TournamentCsvExportInput,
+    ): TournamentStandingsExportRowsResult {
         val failures = input.validate()
         if (failures.isNotEmpty()) {
-            return TournamentCsvExportResult.Failure(failures)
+            return TournamentStandingsExportRowsResult.Failure(failures)
         }
 
         val finalizedMatches = input.matches.filter { match ->
@@ -63,13 +78,13 @@ class TournamentCsvExporter(
         val orderedStandings = runCatching {
             tieBreakRules(standingsEngine(finalizedMatches))
         }.getOrElse {
-            return TournamentCsvExportResult.Failure(
+            return TournamentStandingsExportRowsResult.Failure(
                 setOf(TournamentCsvExportFailure.STANDINGS_GENERATION_FAILURE),
             )
         }
 
         if (!orderedStandings.hasCompleteTwelveSlotCoverage()) {
-            return TournamentCsvExportResult.Failure(
+            return TournamentStandingsExportRowsResult.Failure(
                 setOf(TournamentCsvExportFailure.STANDINGS_GENERATION_FAILURE),
             )
         }
@@ -100,41 +115,37 @@ class TournamentCsvExporter(
             }
             .eachCount()
 
-        val dataRows = orderedStandings.mapIndexed { index, tieBreakStanding ->
+        val rows = orderedStandings.mapIndexed { index, tieBreakStanding ->
             val standing = tieBreakStanding.standing
             val players = rosterPlayersBySlot[standing.teamSlotNumber].orEmpty()
 
-            listOf(
-                EXPORT_SCHEMA_VERSION,
-                EXPORT_TYPE,
-                input.tournament.id,
-                input.tournament.name,
-                finalizedMatches.size.toString(),
-                (index + 1).toString(),
-                standing.teamSlotNumber.toString(),
-                teamSlotsByNumber.getValue(standing.teamSlotNumber).teamName,
-                players.getOrNull(0)?.displayName.orEmpty(),
-                players.getOrNull(1)?.displayName.orEmpty(),
-                players.getOrNull(2)?.displayName.orEmpty(),
-                players.getOrNull(3)?.displayName.orEmpty(),
-                standing.matchesIncluded.toString(),
-                standing.totalPositionPoints.toString(),
-                totalKillsBySlot.getValue(standing.teamSlotNumber).toString(),
-                standing.totalKillPoints.toString(),
-                standing.totalPoints.toString(),
-                bestPlacementBySlot.getValue(standing.teamSlotNumber).toString(),
-                standing.firstPlaceFinishes.toString(),
-                tieBreakStanding.tieBreakStatus(
+            TournamentStandingsExportRow(
+                exportSchemaVersion = EXPORT_SCHEMA_VERSION,
+                exportType = EXPORT_TYPE,
+                tournamentId = input.tournament.id,
+                tournamentName = input.tournament.name,
+                exportedMatchCount = finalizedMatches.size,
+                standingsRank = index + 1,
+                teamSlot = standing.teamSlotNumber,
+                teamName = teamSlotsByNumber.getValue(standing.teamSlotNumber).teamName,
+                player1Name = players.getOrNull(0)?.displayName.orEmpty(),
+                player2Name = players.getOrNull(1)?.displayName.orEmpty(),
+                player3Name = players.getOrNull(2)?.displayName.orEmpty(),
+                player4Name = players.getOrNull(3)?.displayName.orEmpty(),
+                matchesPlayed = standing.matchesIncluded,
+                totalPositionPoints = standing.totalPositionPoints,
+                totalKills = totalKillsBySlot.getValue(standing.teamSlotNumber),
+                totalKillPoints = standing.totalKillPoints,
+                totalPoints = standing.totalPoints,
+                bestPlacement = bestPlacementBySlot.getValue(standing.teamSlotNumber),
+                firstPlaceCount = standing.firstPlaceFinishes,
+                tieBreakStatus = tieBreakStanding.tieBreakStatus(
                     totalPointCount = totalPointCounts.getValue(standing.totalPoints),
                 ),
             )
         }
 
-        return TournamentCsvExportResult.Success(
-            csv = (listOf(TOURNAMENT_CSV_HEADER) + dataRows.map { row ->
-                row.toCsvRecord()
-            }).joinToString(CRLF),
-        )
+        return TournamentStandingsExportRowsResult.Success(rows)
     }
 
     private fun TournamentCsvExportInput.validate(): Set<TournamentCsvExportFailure> {

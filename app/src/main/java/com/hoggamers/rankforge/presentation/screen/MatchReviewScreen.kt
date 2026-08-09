@@ -1,4 +1,4 @@
-package com.hoggamers.rankforge.presentation.screen
+﻿package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -348,7 +348,7 @@ private fun MatchReviewContent(
                     text = "CSV export unavailable",
                     modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
                 )
-                null -> Unit
+                else -> Unit
             }
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -410,6 +410,15 @@ private fun MatchReviewContent(
             },
         )
         if (uiState.isEditable) {
+            Button(
+                onClick = onOpenOcrReview,
+                enabled = uiState.canOpenOcrReview,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.match_ocr_review_title))
+            }
             Button(
                 onClick = onEnterPlacements,
                 modifier = Modifier
@@ -925,3 +934,4 @@ private fun ScreenshotUploadError.toMessageRes(): Int = when (this) {
     ScreenshotUploadError.RLS_DENIED ->
         R.string.match_review_screenshot_metadata_rls_denied
 }
+
