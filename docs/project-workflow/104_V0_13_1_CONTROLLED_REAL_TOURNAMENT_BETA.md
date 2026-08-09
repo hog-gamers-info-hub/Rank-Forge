@@ -1,4 +1,4 @@
-﻿# v0.13.1 — Controlled Real-Tournament Beta
+# v0.13.1 — Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -83,9 +83,23 @@ For every tested match:
 
 - [ ] Match CSV export works
 - [ ] Tournament CSV export works
-- [ ] Google Sheets export works where configured
+- [x] Google Sheets export works where configured
 - [ ] Exported values match final tournament data
 
+### Google Sheets Export Verification
+
+Verified during controlled real-tournament beta:
+
+- Google Cloud project and Google Sheets API configuration confirmed.
+- Existing Rank-Forge Google service account reused.
+- Local Supabase google-sheets-export Edge Function connection verification succeeded.
+- erify_connection returned ok = true and spreadsheet_access = verified.
+- Android standings export used the current authenticated Supabase session.
+- Physical-device export progressed from Exporting to Google Sheets... to Google Sheets export succeeded.
+- Exactly 12 tournament standings rows were appended to the configured Google Sheet.
+- No Edge Function runtime error was observed during the successful export.
+- Google Sheets export action UI commit: 2dc3a5a.
+- Authenticated Android standings export implementation commit: 6c29b8.
 ---
 
 ## Defect Register
