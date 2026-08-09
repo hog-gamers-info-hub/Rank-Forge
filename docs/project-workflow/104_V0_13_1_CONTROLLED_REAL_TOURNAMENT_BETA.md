@@ -1,4 +1,4 @@
-# v0.13.1 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Controlled Real-Tournament Beta
+# v0.13.1 — Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -6,7 +6,7 @@ Validate Rank-Forge using genuine tournament rosters, screenshots, match data, c
 
 This version is primarily a validation and defect-discovery milestone.
 
-Non-blocking defects should be recorded for v0.13.2 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Beta Defect Resolution rather than fixed immediately.
+Non-blocking defects should be recorded for v0.13.2 — Beta Defect Resolution rather than fixed immediately.
 
 ---
 
@@ -47,8 +47,8 @@ For every tested match:
 - [ ] MATCH_RESULT_LOWER screenshot selected when required
 - [ ] Both result crops confirmed
 - [ ] OCR preview completed
-- [ ] Positions 1ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“10 sourced from upper screenshot only
-- [ ] Positions 11ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“12 sourced from lower screenshot only
+- [ ] Positions 1–10 sourced from upper screenshot only
+- [ ] Positions 11–12 sourced from lower screenshot only
 - [ ] Player evidence reviewed
 - [ ] Kill values reviewed
 - [ ] Team suggestions reviewed
@@ -126,10 +126,10 @@ Use one of:
 
 ### Severity
 
-- Critical ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â data loss, crash, corruption, or workflow cannot continue
-- High ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â major result is wrong or important workflow fails
-- Medium ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â incorrect behavior with available workaround
-- Low ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â cosmetic/usability/minor issue
+- Critical — data loss, crash, corruption, or workflow cannot continue
+- High — major result is wrong or important workflow fails
+- Medium — incorrect behavior with available workaround
+- Low — cosmetic/usability/minor issue
 
 ---
 
