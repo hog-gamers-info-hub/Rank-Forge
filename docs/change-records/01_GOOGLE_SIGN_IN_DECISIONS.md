@@ -796,7 +796,7 @@ Source-code implementation must not begin until all of the following are resolve
 - [x] Google Web OAuth client configuration is verified;
 - [x] Supabase callback is registered in Google;
 - [x] Android callback is registered in Supabase Redirect URLs;
-- [ ] implementation branch is created from synchronized `main`.
+- [x] implementation branch is created from synchronized `main`.
 
 ---
 
