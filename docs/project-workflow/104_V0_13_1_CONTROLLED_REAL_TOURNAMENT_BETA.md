@@ -165,3 +165,21 @@ v0.13.1 may be considered complete when:
 - Remaining defects are ready to move into v0.13.2.
 
 No Phase 13 closure audit is created at this stage.
+## Completion Status
+
+**v0.13.1 — Controlled Real-Tournament Beta: COMPLETE**
+
+The controlled beta exit criteria have been satisfied.
+
+- Genuine tournament, roster, and match-result workflows were exercised.
+- Roster and result screenshot OCR workflows were validated.
+- Match review, correction, and finalization were completed.
+- Scoring and tournament standings were verified against finalized data.
+- Persistence, synchronization, duplicate prevention, and finalized protection were verified.
+- Match CSV, tournament CSV, and Google Sheets export were exercised successfully.
+- Exported standings were verified against finalized tournament data.
+- BETA-001 remains open as a non-blocking standings tie-break priority defect and is deferred to v0.13.2 — Beta Defect Resolution.
+
+The unchecked tie-break verification item remains intentional because the currently implemented priority does not match the required tournament rule.
+
+No Phase 13 closure audit is created for this individual version.
