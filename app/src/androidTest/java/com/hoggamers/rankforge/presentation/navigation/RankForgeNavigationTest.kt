@@ -32,6 +32,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
+import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
@@ -1213,6 +1215,18 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
+    private class FakeGoogleSheetsStandingsExportRemoteDataSource :
+        GoogleSheetsStandingsExportRemoteDataSource {
+        override suspend fun export(
+            tournamentId: String,
+            rows: List<com.hoggamers.rankforge.domain.export.TournamentStandingsExportRow>,
+        ): GoogleSheetsStandingsExportExecutionResult =
+            GoogleSheetsStandingsExportExecutionResult.Success(
+                exportedMatchCount = rows.firstOrNull()?.exportedMatchCount ?: 0,
+                rowsWritten = rows.size,
+            )
+    }
+
     private fun pressBackOnMainThread() {
         composeTestRule.runOnIdle {
             composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -1242,6 +1256,7 @@ class RankForgeNavigationTest {
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeRoster = ObserveRosterByTournamentUseCase(repository),
+                    googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
                 ).also {
                     it.load(tournamentId)
                 }
