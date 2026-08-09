@@ -788,14 +788,14 @@ Provider disablement is preferred because it is controlled and reversible.
 
 Source-code implementation must not begin until all of the following are resolved:
 
-- [ ] this decision document is reviewed and merged;
+- [x] this decision document is reviewed and merged;
 - [x] exact Android OAuth callback scheme is approved;
 - [x] exact Android OAuth callback host is approved;
 - [x] exact callback URI is recorded;
-- [ ] hosted Supabase Google provider configuration is verified;
-- [ ] Google Web OAuth client configuration is verified;
-- [ ] Supabase callback is registered in Google;
-- [ ] Android callback is registered in Supabase Redirect URLs;
+- [x] hosted Supabase Google provider configuration is verified;
+- [x] Google Web OAuth client configuration is verified;
+- [x] Supabase callback is registered in Google;
+- [x] Android callback is registered in Supabase Redirect URLs;
 - [ ] implementation branch is created from synchronized `main`.
 
 ---
