@@ -180,30 +180,29 @@ The callback must ultimately be passed to the Supabase Auth deep-link/session ha
 
 ---
 
-## 7. Callback URI Gate
+## 7. Approved Callback URI
 
-The exact callback scheme and host are **not approved in this document**.
+The Android OAuth callback identity is now formally approved for CR-001.
 
-They must be selected before implementation.
-
-The final callback must:
-
-- be unique to Rank Forge;
-- not conflict with common application schemes;
-- match Android manifest configuration;
-- match Supabase Auth client configuration;
-- be added to the hosted Supabase Auth redirect allow-list;
-- be verified on the physical Android device.
-
-Example structure only:
+Approved values:
 
 ```text
-<rank-forge-specific-scheme>://<auth-callback-host>
+Scheme: com.hoggamers.rankforge
+Host: auth-callback
+URI: com.hoggamers.rankforge://auth-callback
 ```
 
-This example is not an approved production URI.
+These values are authoritative for the initial CR-001 implementation.
 
-The exact value must be recorded before source-code implementation.
+The callback must:
+
+- match the Android manifest configuration exactly;
+- match the Supabase Auth client configuration exactly;
+- be added to the hosted Supabase Auth Redirect URLs allow-list;
+- be verified on the physical Android device;
+- remain limited to the Google authentication callback boundary.
+
+Implementation must not substitute a different scheme, host, or URI without a new documented decision.
 
 ---
 
@@ -790,9 +789,9 @@ Provider disablement is preferred because it is controlled and reversible.
 Source-code implementation must not begin until all of the following are resolved:
 
 - [ ] this decision document is reviewed and merged;
-- [ ] exact Android OAuth callback scheme is approved;
-- [ ] exact Android OAuth callback host is approved;
-- [ ] exact callback URI is recorded;
+- [x] exact Android OAuth callback scheme is approved;
+- [x] exact Android OAuth callback host is approved;
+- [x] exact callback URI is recorded;
 - [ ] hosted Supabase Google provider configuration is verified;
 - [ ] Google Web OAuth client configuration is verified;
 - [ ] Supabase callback is registered in Google;
