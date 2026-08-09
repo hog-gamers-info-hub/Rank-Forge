@@ -1,4 +1,4 @@
-# v0.13.1 Ã¢â‚¬â€ Controlled Real-Tournament Beta
+# v0.13.1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -6,7 +6,7 @@ Validate Rank-Forge using genuine tournament rosters, screenshots, match data, c
 
 This version is primarily a validation and defect-discovery milestone.
 
-Non-blocking defects should be recorded for v0.13.2 Ã¢â‚¬â€ Beta Defect Resolution rather than fixed immediately.
+Non-blocking defects should be recorded for v0.13.2 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Beta Defect Resolution rather than fixed immediately.
 
 ---
 
@@ -47,8 +47,8 @@ For every tested match:
 - [ ] MATCH_RESULT_LOWER screenshot selected when required
 - [ ] Both result crops confirmed
 - [ ] OCR preview completed
-- [ ] Positions 1Ã¢â‚¬â€œ10 sourced from upper screenshot only
-- [ ] Positions 11Ã¢â‚¬â€œ12 sourced from lower screenshot only
+- [ ] Positions 1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“10 sourced from upper screenshot only
+- [ ] Positions 11ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“12 sourced from lower screenshot only
 - [ ] Player evidence reviewed
 - [ ] Kill values reviewed
 - [ ] Team suggestions reviewed
@@ -58,11 +58,11 @@ For every tested match:
 
 ### Scoring
 
-- [ ] Placement points correct
-- [ ] Kill totals correct
-- [ ] Kill points correct
+- [x] Placement points correct
+- [x] Kill totals correct
+- [x] Kill points correct
 - [ ] Match totals correct
-- [ ] Tournament standings correct
+- [x] Tournament standings correct
 - [ ] Tie-break behavior correct where applicable
 
 ### Persistence / Recovery
@@ -126,10 +126,10 @@ Use one of:
 
 ### Severity
 
-- Critical Ã¢â‚¬â€ data loss, crash, corruption, or workflow cannot continue
-- High Ã¢â‚¬â€ major result is wrong or important workflow fails
-- Medium Ã¢â‚¬â€ incorrect behavior with available workaround
-- Low Ã¢â‚¬â€ cosmetic/usability/minor issue
+- Critical ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â data loss, crash, corruption, or workflow cannot continue
+- High ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â major result is wrong or important workflow fails
+- Medium ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â incorrect behavior with available workaround
+- Low ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cosmetic/usability/minor issue
 
 ---
 
