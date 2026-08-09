@@ -32,12 +32,12 @@ Non-blocking defects should be recorded for v0.13.2 — Beta Defect Resolution r
 
 ### Roster Workflow
 
-- [ ] Genuine roster screenshots selected
-- [ ] Manual crop completed
-- [ ] Roster OCR completed
-- [ ] Team/player parsing reviewed
-- [ ] Manual corrections completed where required
-- [ ] Final roster data is correct
+- [x] Genuine roster screenshots selected
+- [x] Manual crop completed
+- [x] Roster OCR completed
+- [x] Team/player parsing reviewed
+- [x] Manual corrections completed where required
+- [x] Final roster data is correct
 
 ### Match Result Workflow
 
