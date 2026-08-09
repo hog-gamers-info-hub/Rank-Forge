@@ -1,4 +1,4 @@
-# v0.13.1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Controlled Real-Tournament Beta
+# v0.13.1 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -6,7 +6,7 @@ Validate Rank-Forge using genuine tournament rosters, screenshots, match data, c
 
 This version is primarily a validation and defect-discovery milestone.
 
-Non-blocking defects should be recorded for v0.13.2 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Beta Defect Resolution rather than fixed immediately.
+Non-blocking defects should be recorded for v0.13.2 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Beta Defect Resolution rather than fixed immediately.
 
 ---
 
@@ -47,8 +47,8 @@ For every tested match:
 - [ ] MATCH_RESULT_LOWER screenshot selected when required
 - [ ] Both result crops confirmed
 - [ ] OCR preview completed
-- [ ] Positions 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ10 sourced from upper screenshot only
-- [ ] Positions 11ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ12 sourced from lower screenshot only
+- [ ] Positions 1ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“10 sourced from upper screenshot only
+- [ ] Positions 11ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“12 sourced from lower screenshot only
 - [ ] Player evidence reviewed
 - [ ] Kill values reviewed
 - [ ] Team suggestions reviewed
@@ -106,7 +106,7 @@ Verified during controlled real-tournament beta:
 
 | ID | Area | Match / Context | Expected | Actual | Severity | Blocks Beta? | Target |
 |---|---|---|---|---|---|---|---|
-| BETA-001 |  |  |  |  |  | No | v0.13.2 |
+| BETA-001 | Scoring | Tournament standings tie-break | When total points are equal, the team with higher cumulative placement points must rank above the team with lower placement points | Tie resolution currently prioritizes kill points ahead of cumulative placement points, producing a different standings order than required | High | No | v0.13.2 |
 
 ### Defect Areas
 
@@ -126,10 +126,10 @@ Use one of:
 
 ### Severity
 
-- Critical ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â data loss, crash, corruption, or workflow cannot continue
-- High ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â major result is wrong or important workflow fails
-- Medium ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â incorrect behavior with available workaround
-- Low ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â cosmetic/usability/minor issue
+- Critical ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â data loss, crash, corruption, or workflow cannot continue
+- High ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â major result is wrong or important workflow fails
+- Medium ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â incorrect behavior with available workaround
+- Low ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â cosmetic/usability/minor issue
 
 ---
 
