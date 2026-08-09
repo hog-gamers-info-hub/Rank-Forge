@@ -1,4 +1,4 @@
-# v0.13.1 â€” Controlled Real-Tournament Beta
+# v0.13.1 Ã¢â‚¬â€ Controlled Real-Tournament Beta
 
 ## Objective
 
@@ -6,7 +6,7 @@ Validate Rank-Forge using genuine tournament rosters, screenshots, match data, c
 
 This version is primarily a validation and defect-discovery milestone.
 
-Non-blocking defects should be recorded for v0.13.2 â€” Beta Defect Resolution rather than fixed immediately.
+Non-blocking defects should be recorded for v0.13.2 Ã¢â‚¬â€ Beta Defect Resolution rather than fixed immediately.
 
 ---
 
@@ -47,8 +47,8 @@ For every tested match:
 - [ ] MATCH_RESULT_LOWER screenshot selected when required
 - [ ] Both result crops confirmed
 - [ ] OCR preview completed
-- [ ] Positions 1â€“10 sourced from upper screenshot only
-- [ ] Positions 11â€“12 sourced from lower screenshot only
+- [ ] Positions 1Ã¢â‚¬â€œ10 sourced from upper screenshot only
+- [ ] Positions 11Ã¢â‚¬â€œ12 sourced from lower screenshot only
 - [ ] Player evidence reviewed
 - [ ] Kill values reviewed
 - [ ] Team suggestions reviewed
@@ -74,10 +74,10 @@ For every tested match:
 
 ### Synchronization
 
-- [ ] Expected cloud synchronization succeeds
+- [x] Expected cloud synchronization succeeds
 - [ ] Offline/retry behavior remains functional where tested
-- [ ] No duplicate records created
-- [ ] Finalized protection preserved
+- [x] No duplicate records created
+- [x] Finalized protection preserved
 
 ### Export
 
@@ -126,10 +126,10 @@ Use one of:
 
 ### Severity
 
-- Critical â€” data loss, crash, corruption, or workflow cannot continue
-- High â€” major result is wrong or important workflow fails
-- Medium â€” incorrect behavior with available workaround
-- Low â€” cosmetic/usability/minor issue
+- Critical Ã¢â‚¬â€ data loss, crash, corruption, or workflow cannot continue
+- High Ã¢â‚¬â€ major result is wrong or important workflow fails
+- Medium Ã¢â‚¬â€ incorrect behavior with available workaround
+- Low Ã¢â‚¬â€ cosmetic/usability/minor issue
 
 ---
 
