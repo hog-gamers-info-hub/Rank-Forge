@@ -81,8 +81,8 @@ For every tested match:
 
 ### Export
 
-- [ ] Match CSV export works
-- [ ] Tournament CSV export works
+- [x] Match CSV export works
+- [x] Tournament CSV export works
 - [x] Google Sheets export works where configured
 - [x] Exported values match final tournament data
 
