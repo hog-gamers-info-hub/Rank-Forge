@@ -548,10 +548,10 @@ Every item below must pass before `supabase db push`.
 * [ ] local `HEAD` equals `origin/main`;
 * [ ] audited backend baseline remains `28334448b0627e4e4eb7b0d91bc129036d6ebe37`;
 * [ ] the audited backend baseline is an ancestor of current `HEAD`;
-* [ ] the diff from the audited backend baseline to current `HEAD` contains only the two CR-002 documentation files;
+* [ ] the diff from the audited backend baseline to current `HEAD` contains only the approved CR-002 documentation delta: deletion of `docs/change-records/00_CHANGE_REGISTER.md` and addition/update of `docs/change-records/02_HOSTED_SUPABASE_DEPLOYMENT_DECISIONS.md`;
 * [ ] current synchronized `HEAD` is recorded as the **CR-002 deployment execution baseline**.
 
-the diff from the audited backend baseline to current HEAD contains only the approved CR-002 documentation delta: removal of `00_CHANGE_REGISTER.md` and addition/update of `02_HOSTED_SUPABASE_DEPLOYMENT_DECISIONS.md`
+If any other file has changed since the audited backend baseline, deployment must stop and CR-002 must be re-audited before proceeding.
 
 
 ### Supabase CLI
@@ -928,7 +928,7 @@ Deployment must stop immediately if any of the following occurs:
 * local repository is not clean;
 * current branch is not `main`;
 * `HEAD` differs from `origin/main`;
-* current `main` differs from the approved baseline;
+* the diff from the audited backend baseline contains any unapproved file change;
 * CLI target project differs from `jfllzadfduzktczzdvil`;
 * migration list contains an unexpected remote migration;
 * dry-run does not show exactly the approved migration chain;
@@ -1017,9 +1017,12 @@ CR-002 is complete only when all of the following are true:
 
 ### Repository
 
-* exact approved baseline recorded;
-* deployment executed from synchronized clean `main`;
-* no source migration was modified to enable deployment.
+* audited backend baseline is recorded;
+* CR-002 deployment execution baseline is recorded;
+* deployment is executed from synchronized clean `main`;
+* the delta from the audited backend baseline contains only the approved CR-002 documentation changes;
+* no source migration is modified to enable deployment.
+
 
 ### Database
 
