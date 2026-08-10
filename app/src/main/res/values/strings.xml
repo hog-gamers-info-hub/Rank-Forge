@@ -20,6 +20,15 @@
     <string name="auth_password_label">Password</string>
     <string name="auth_login_action">Login</string>
     <string name="auth_signup_action">Sign up</string>
+    <string name="auth_brand_name">Rank-Forge</string>
+    <string name="auth_signup_heading">Create your account</string>
+    <string name="auth_create_account_action">Create account</string>
+    <string name="auth_show_password">Show</string>
+    <string name="auth_hide_password">Hide</string>
+    <string name="auth_or_divider">or</string>
+    <string name="auth_google_continue_action">Continue with Google</string>
+    <string name="auth_local_tournaments_message">You can still use local tournaments without signing in.</string>
+    <string name="auth_continue_without_signing_in_action">Continue without signing in</string>
     <string name="auth_submitting_action">Submitting</string>
     <string name="auth_google_sign_in_action">Sign in with Google</string>
     <string name="auth_logout_action">Logout</string>
