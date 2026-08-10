@@ -32,12 +32,7 @@ The purpose of CR-002 is to deploy the existing repository-controlled backend to
 * finalized-match protection;
 * correction audit history;
 * export idempotency;
-* existing Google Sign-In configuration;
-* the current Phase 13 roadmap and version sequence.
-
-This work is independent of Phase 13.
-
-No Phase 13 version is added, renamed, reordered, or reopened by CR-002.
+* existing Google Sign-In configuration.
 
 ---
 
@@ -70,16 +65,18 @@ If the linked project reference differs, deployment must stop.
 
 ## 3. Repository Baseline
 
-The audited GitHub source-of-truth baseline is:
+The audited deployable-backend source baseline is:
 
 ```text
 Branch: main
-Commit: 28334448b0627e4e4eb7b0d91bc129036d6ebe37
+Audited backend commit: 28334448b0627e4e4eb7b0d91bc129036d6ebe37
 ```
 
-All migration, Storage, Edge Function, Auth integration, and Android configuration decisions in this document apply to that exact baseline.
+The 13-migration chain, Storage configuration, Edge Function implementation, Auth integration, and Android backend configuration approved by this decision were audited against that exact commit.
 
-Before deployment, the live local repository at:
+The CR-002 decision documentation itself is expected to advance `main` when its documentation PR is merged. Therefore, the final deployment execution `HEAD` is not required to equal the audited backend commit above.
+
+After the CR-002 documentation PR is merged, the live repository at:
 
 ```text
 D:\Projects\Rank-Forge
@@ -91,10 +88,21 @@ must satisfy all of the following:
 current branch = main
 working tree = clean
 HEAD = origin/main
-HEAD = 28334448b0627e4e4eb7b0d91bc129036d6ebe37
+28334448b0627e4e4eb7b0d91bc129036d6ebe37 is an ancestor of HEAD
 ```
 
-If `main` has advanced since this decision document was approved, deployment must stop and CR-002 must be re-audited against the new exact `main` commit before proceeding.
+The diff from the audited backend baseline to the deployment execution `HEAD` must contain only the approved documentation changes:
+
+docs/change-records/00_CHANGE_REGISTER.md
+    deleted
+
+docs/change-records/02_HOSTED_SUPABASE_DEPLOYMENT_DECISIONS.md
+    added/updated
+
+The synchronized post-merge `main` SHA must then be captured as the **CR-002 deployment execution baseline**.
+
+If any other file has changed since the audited backend baseline, especially anything under `supabase/` or Android/backend configuration, deployment must stop and CR-002 must be re-audited before proceeding.
+
 
 ---
 
@@ -538,9 +546,13 @@ Every item below must pass before `supabase db push`.
 * [ ] working tree is clean;
 * [ ] `git pull --ff-only origin main` succeeds;
 * [ ] local `HEAD` equals `origin/main`;
-* [ ] exact approved baseline is still `28334448b0627e4e4eb7b0d91bc129036d6ebe37`.
+* [ ] audited backend baseline remains `28334448b0627e4e4eb7b0d91bc129036d6ebe37`;
+* [ ] the audited backend baseline is an ancestor of current `HEAD`;
+* [ ] the diff from the audited backend baseline to current `HEAD` contains only the two CR-002 documentation files;
+* [ ] current synchronized `HEAD` is recorded as the **CR-002 deployment execution baseline**.
 
-If `main` has advanced, stop and re-audit.
+the diff from the audited backend baseline to current HEAD contains only the approved CR-002 documentation delta: removal of `00_CHANGE_REGISTER.md` and addition/update of `02_HOSTED_SUPABASE_DEPLOYMENT_DECISIONS.md`
+
 
 ### Supabase CLI
 
@@ -599,6 +611,8 @@ git pull --ff-only origin main
 git status --short
 git rev-parse HEAD
 git rev-parse origin/main
+git merge-base --is-ancestor 28334448b0627e4e4eb7b0d91bc129036d6ebe37 HEAD
+git diff --name-only 28334448b0627e4e4eb7b0d91bc129036d6ebe37..HEAD
 ```
 
 Required result:
@@ -607,10 +621,20 @@ Required result:
 branch = main
 working tree = clean
 HEAD = origin/main
-HEAD = 28334448b0627e4e4eb7b0d91bc129036d6ebe37
+audited backend baseline is an ancestor of HEAD
 ```
 
-Any difference is a stop condition.
+The diff from the audited backend baseline must contain exactly:
+
+```text
+docs/change-records/00_CHANGE_REGISTER.md
+docs/change-records/02_HOSTED_SUPABASE_DEPLOYMENT_DECISIONS.md
+```
+
+The synchronized post-merge `HEAD` SHA must then be recorded as the **CR-002 deployment execution baseline**.
+
+If any additional file appears in the diff, deployment must stop and CR-002 must be re-audited before proceeding.
+
 
 ### Step 2 — inspect CLI
 
@@ -1053,26 +1077,24 @@ If Google Sheets export is enabled for this hosted deployment:
 
 ## 27. Documentation Completion
 
-After all implementation and verification evidence passes:
+After all deployment and verification evidence passes:
 
-1. update `docs/change-records/00_CHANGE_REGISTER.md`;
-2. mark CR-002 as **Complete**;
-3. record:
+1. update this decision record status from **Decisions Approved — Deployment Pending** to **Complete**;
+2. record:
 
-   * deployed baseline commit;
-   * project reference;
+   * deployment execution baseline commit;
+   * hosted project reference;
    * applied migration range;
    * Storage buckets;
    * deployed Edge Functions;
    * verification results;
    * Security Advisor result;
    * any approved deferral;
-4. commit documentation separately;
-5. push the documentation branch;
-6. open a documentation PR;
-7. review and merge it;
-8. return local `main` to a clean synchronized state.
-
+3. commit the completion documentation separately;
+4. push the documentation branch;
+5. open a documentation PR;
+6. review and merge it;
+7. return local `main` to a clean synchronized state.
 ---
 
 ## 28. Approved Decision
@@ -1083,7 +1105,8 @@ The next execution stage is:
 
 ```text
 synchronize clean main
-→ verify exact baseline
+→ verify audited-backend delta
+→ capture deployment execution baseline
 → inspect installed Supabase CLI
 → confirm hosted project
 → inspect migration list
@@ -1092,5 +1115,3 @@ synchronize clean main
 ```
 
 Actual `supabase db push` is permitted only after every precondition passes and the dry-run exactly matches the approved 13-migration chain.
-
-No Phase 13 scope or version sequence is changed by this decision.
