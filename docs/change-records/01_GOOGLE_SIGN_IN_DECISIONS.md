@@ -2,9 +2,9 @@
 
 ## Status
 
-**Audit Complete — Decisions Documented**
+**Complete**
 
-Implementation has not started.
+Implementation and verification are complete. Google Sign-In was merged in PR #238.
 
 This change is managed independently from Phase 13 and must not modify the approved Phase 13 version sequence.
 

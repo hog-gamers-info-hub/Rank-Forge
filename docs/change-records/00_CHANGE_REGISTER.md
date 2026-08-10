@@ -27,7 +27,7 @@ New product changes documented here are handled separately before Phase 13 resum
 
 | ID | Change | Decision Record | Status |
 |---|---|---|---|
-| CR-001 | Google Sign-In | `01_GOOGLE_SIGN_IN_DECISIONS.md` | Audit Complete — Decisions Pending |
+| CR-001 | Google Sign-In | `01_GOOGLE_SIGN_IN_DECISIONS.md` | Complete |
 
 ## Status Definitions
 
@@ -52,8 +52,4 @@ New product changes documented here are handled separately before Phase 13 resum
 
 ## Next Change Record
 
-CR-001 — Google Sign-In
-
-Next document:
-
-`docs/change-records/01_GOOGLE_SIGN_IN_DECISIONS.md`
+No next change record has been assigned yet.
