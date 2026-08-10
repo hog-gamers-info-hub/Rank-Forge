@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -129,5 +130,47 @@ class AuthScreenTest {
         composeTestRule.onNodeWithText(
             context.getString(R.string.auth_signup_confirmation_required_message),
         ).assertIsDisplayed()
+    }
+
+    @Test
+    fun googleSignInActionIsIndependentOfEmailPasswordFields() {
+        var googleClickCount by mutableIntStateOf(0)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                    onGoogleSignIn = { googleClickCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).assertIsDisplayed().performClick()
+
+        assertEquals(1, googleClickCount)
+    }
+
+    @Test
+    fun googleSignInActionIsDisabledWhileSubmitting() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(isSubmitting = true),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).assertIsNotEnabled()
     }
 }

@@ -28,6 +28,7 @@ const val AUTH_SCREEN_TEST_TAG = "auth_screen"
 const val AUTH_EMAIL_FIELD_TEST_TAG = "auth_email_field"
 const val AUTH_PASSWORD_FIELD_TEST_TAG = "auth_password_field"
 const val AUTH_SUBMIT_ACTION_TEST_TAG = "auth_submit_action"
+const val AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG = "auth_google_sign_in_action"
 const val AUTH_LOGOUT_ACTION_TEST_TAG = "auth_logout_action"
 const val AUTH_STATUS_TEST_TAG = "auth_status"
 const val AUTH_WARNING_TEST_TAG = "auth_warning"
@@ -42,6 +43,7 @@ fun AuthScreen(
     onSubmit: () -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
+    onGoogleSignIn: () -> Unit = {},
 ) {
     RankForgeScreenContainer(
         modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
@@ -110,6 +112,19 @@ fun AuthScreen(
                     },
                 ),
             )
+        }
+
+        if (!uiState.isSignedIn) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            OutlinedButton(
+                onClick = onGoogleSignIn,
+                enabled = !uiState.isSubmitting && !uiState.isSessionLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG),
+            ) {
+                Text(text = stringResource(R.string.auth_google_sign_in_action))
+            }
         }
 
         uiState.statusMessage?.let { message ->
@@ -215,6 +230,8 @@ private fun AuthUiMessage.asText(): String =
     when (this) {
         AuthUiMessage.MissingCredentials -> stringResource(R.string.auth_missing_credentials_error)
         AuthUiMessage.SignedIn -> stringResource(R.string.auth_signed_in_message)
+        AuthUiMessage.ExternalAuthenticationLaunched ->
+            stringResource(R.string.auth_external_authentication_launched_message)
         AuthUiMessage.SignUpAuthenticated -> stringResource(R.string.auth_signup_authenticated_message)
         AuthUiMessage.SignUpConfirmationRequired -> stringResource(
             R.string.auth_signup_confirmation_required_message,

@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
 import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
@@ -27,6 +28,7 @@ class AuthViewModel @Inject constructor(
     private val restoreSession: RestoreSessionUseCase,
     private val signUp: SignUpUseCase,
     private val login: LoginUseCase,
+    private val signInWithGoogleUseCase: SignInWithGoogleUseCase,
     private val logout: LogoutUseCase,
     private val recoverForegroundSyncQueue: ForegroundSyncQueueRecoveryAction,
 ) : ViewModel() {
@@ -138,6 +140,19 @@ class AuthViewModel @Inject constructor(
                         ),
                     )
                 }
+            }
+        }
+    }
+
+    fun signInWithGoogle() {
+        if (_uiState.value.isSubmitting || _uiState.value.isSignedIn) {
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update(AuthUiStateReducer::startOperation)
+            val result = signInWithGoogleUseCase()
+            _uiState.update { state ->
+                AuthUiStateReducer.finishOperation(state, result)
             }
         }
     }

@@ -14,6 +14,7 @@ import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
+import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
@@ -282,6 +283,71 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun googleLaunchReturnsToIdleAndSessionStateRemainsAuthoritative() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("typed@example.com")
+
+        viewModel.signInWithGoogle()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSubmitting)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.accountEmail)
+        assertEquals(AuthUiMessage.ExternalAuthenticationLaunched, viewModel.uiState.value.statusMessage)
+
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "google-user-id", email = "google@example.com"),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals("google@example.com", viewModel.uiState.value.accountEmail)
+    }
+
+    @Test
+    fun duplicateGoogleLaunchIsIgnoredWhileOperationRuns() = runTest {
+        repository.googleGate = CompletableDeferred()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.signInWithGoogle()
+        runCurrent()
+        viewModel.signInWithGoogle()
+
+        assertEquals(1, repository.googleCalls)
+        repository.googleGate?.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun googleLaunchFailureShowsTypedErrorAndCanBeRetried() = runTest {
+        repository.googleResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.signInWithGoogle()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.NetworkUnavailable),
+            viewModel.uiState.value.errorMessage,
+        )
+
+        repository.googleResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.ExternalAuthenticationLaunched,
+        )
+        viewModel.signInWithGoogle()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(AuthUiMessage.ExternalAuthenticationLaunched, viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
     fun logoutClearsOnlyAuthState() = runTest {
         repository.authState.value = AuthState.SignedIn(
             AuthUser(id = "user-id", email = "user@example.com"),
@@ -375,6 +441,7 @@ class AuthViewModelTest {
             restoreSession = RestoreSessionUseCase(repository),
             signUp = SignUpUseCase(repository),
             login = LoginUseCase(repository),
+            signInWithGoogleUseCase = SignInWithGoogleUseCase(repository),
             logout = LogoutUseCase(repository),
             recoverForegroundSyncQueue = foregroundRecovery,
         )
@@ -389,6 +456,11 @@ class AuthViewModelTest {
         var loginResult: AuthOperationResult = AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
         var loginGate: CompletableDeferred<Unit>? = null
         var loginCalls: Int = 0
+        var googleResult: AuthOperationResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.ExternalAuthenticationLaunched,
+        )
+        var googleGate: CompletableDeferred<Unit>? = null
+        var googleCalls: Int = 0
         var logoutResult: AuthOperationResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignedOutLocally,
         )
@@ -422,6 +494,12 @@ class AuthViewModelTest {
                 authState.value = AuthState.SignedIn(AuthUser(id = "user-id", email = email))
             }
             return loginResult
+        }
+
+        override suspend fun signInWithGoogle(): AuthOperationResult {
+            googleCalls += 1
+            googleGate?.await()
+            return googleResult
         }
 
         override suspend fun logout(): AuthOperationResult {

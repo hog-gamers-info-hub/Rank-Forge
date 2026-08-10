@@ -17,5 +17,9 @@ interface AuthRepository {
         password: String,
     ): AuthOperationResult
 
+    suspend fun signInWithGoogle(): AuthOperationResult = AuthOperationResult.Failure(
+        AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+    )
+
     suspend fun logout(): AuthOperationResult
 }

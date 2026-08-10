@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.status.RefreshFailureCause
 import io.github.jan.supabase.auth.status.SessionStatus
 import java.util.concurrent.CancellationException
@@ -110,6 +111,11 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
             this.email = email
             this.password = password
         }
+    }
+
+    override suspend fun signInWithGoogle() {
+        ensureConfigured()
+        client.auth.signInWith(Google)
     }
 
     override suspend fun logout(): AuthLogoutResult {
