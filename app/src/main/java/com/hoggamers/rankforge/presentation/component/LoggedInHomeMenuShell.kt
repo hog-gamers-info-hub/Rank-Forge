@@ -18,6 +18,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -48,10 +49,19 @@ fun LoggedInHomeMenuShell(
     onOpenAccount: () -> Unit,
     onOpenAllTournaments: () -> Unit,
     content: @Composable () -> Unit,
+    openDrawerOnEnter: Boolean = false,
+    onDrawerOpenRequestConsumed: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val openMenuDescription = stringResource(R.string.logged_in_home_open_menu)
+
+    LaunchedEffect(openDrawerOnEnter) {
+        if (openDrawerOnEnter) {
+            drawerState.open()
+            onDrawerOpenRequestConsumed()
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,

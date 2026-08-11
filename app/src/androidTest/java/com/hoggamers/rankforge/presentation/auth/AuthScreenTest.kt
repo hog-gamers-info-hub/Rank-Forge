@@ -358,10 +358,79 @@ class AuthScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText(
-            context.getString(R.string.auth_signed_in_as, "user@example.com"),
-        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_EMAIL_TEST_TAG)
+            .assertIsDisplayed()
+            .assertTextEquals("user@example.com")
         composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun signedInAccountShowsOnlyReadOnlyAccountControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(
+                        isSignedIn = true,
+                        accountEmail = "user@example.com",
+                    ),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.auth_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.auth_email_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_EMAIL_TEST_TAG)
+            .assertIsDisplayed()
+            .assertTextEquals("user@example.com")
+        composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_EMAIL_FIELD_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(AUTH_SUBMIT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_login_mode))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_signup_mode))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(
+            context.getString(R.string.auth_signed_in_as, "user@example.com"),
+        ).assertCountEquals(0)
+    }
+
+    @Test
+    fun signedInAccountHomeBackAndSystemBackUseSeparateCallbacks() {
+        var homeCount by mutableIntStateOf(0)
+        var backCount by mutableIntStateOf(0)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(isSignedIn = true, accountEmail = "user@example.com"),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onBack = {},
+                    onSignedInHome = { homeCount += 1 },
+                    onSignedInBack = { backCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG).performClick()
+        composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+
+        assertEquals(1, homeCount)
+        assertEquals(2, backCount)
     }
 
     @Test

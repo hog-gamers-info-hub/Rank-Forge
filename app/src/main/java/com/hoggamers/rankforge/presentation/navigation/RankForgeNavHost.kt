@@ -3,7 +3,10 @@ package com.hoggamers.rankforge.presentation.navigation
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.toRoute
@@ -91,6 +94,8 @@ fun RankForgeNavHost(
     matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
     onAuthGoogleSignIn: () -> Unit = {},
 ) {
+    var openHomeMenuOnReturn by remember { mutableStateOf(false) }
+
     NavHost(
         navController = navController,
         startDestination = TournamentListDestination,
@@ -118,6 +123,8 @@ fun RankForgeNavHost(
                     onOpenTournamentDetails = onOpenTournamentDetails,
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
+                    openDrawerOnEnter = openHomeMenuOnReturn,
+                    onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                     restorationViewModel = cloudRestorationViewModel,
                 )
             } else {
@@ -126,18 +133,20 @@ fun RankForgeNavHost(
                     onOpenTournamentDetails = onOpenTournamentDetails,
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
+                    openDrawerOnEnter = openHomeMenuOnReturn,
+                    onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                     viewModel = listViewModel,
                     restorationViewModel = cloudRestorationViewModel,
                 )
             }
         }
         composable<AuthDestination> {
-            val wasSignedInWhenOpened = remember { authUiState.isSignedIn }
-            LaunchedEffect(authUiState.isSignedIn) {
-                if (!wasSignedInWhenOpened && authUiState.isSignedIn) {
+           val wasSignedInWhenOpened = remember { authUiState.isSignedIn }
+                LaunchedEffect(authUiState.isSignedIn) {
+                    if (!wasSignedInWhenOpened && authUiState.isSignedIn) {
                     navController.popBackStack()
+                    }
                 }
-            }
             AuthScreen(
                 uiState = authUiState,
                 onModeSelected = onAuthModeSelected,
@@ -147,6 +156,14 @@ fun RankForgeNavHost(
                 onGoogleSignIn = onAuthGoogleSignIn,
                 onLogout = onAuthLogout,
                 onBack = { navController.popBackStack() },
+                onSignedInHome = {
+                    openHomeMenuOnReturn = false
+                    navController.popBackStack()
+                },
+                onSignedInBack = {
+                    openHomeMenuOnReturn = true
+                    navController.popBackStack()
+                },
             )
         }
         composable<TournamentCreationDestination> {
