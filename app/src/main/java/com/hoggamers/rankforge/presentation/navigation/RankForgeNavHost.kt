@@ -11,7 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
-import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -99,21 +98,19 @@ fun RankForgeNavHost(
     onAuthGoogleSignIn: () -> Unit = {},
 ) {
     var openHomeMenuOnReturn by remember { mutableStateOf(false) }
+    val sharedTournamentListViewModel =
+        listViewModel ?: hiltViewModel<TournamentListViewModel>()
 
     NavHost(
         navController = navController,
         startDestination = TournamentListDestination,
         modifier = Modifier.fillMaxSize(),
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
-        composable<TournamentListDestination>(
-            exitTransition = {
-                if (targetState.destination.hasRoute<AllTournamentsDestination>()) {
-                    ExitTransition.None
-                } else {
-                    null
-                }
-            },
-        ) {
+        composable<TournamentListDestination> {
             val onCreateTournament = {
                 navController.navigate(TournamentCreationDestination)
             }
@@ -132,34 +129,19 @@ fun RankForgeNavHost(
                 } else {
                     null
                 }
-            if (listViewModel == null) {
-                TournamentListRoute(
-                    onCreateTournament = onCreateTournament,
-                    onOpenTournamentDetails = onOpenTournamentDetails,
-                    authUiState = authUiState,
-                    onOpenAuth = onOpenAuth,
-                    onOpenAllTournaments = onOpenAllTournaments,
-                    openDrawerOnEnter = openHomeMenuOnReturn,
-                    onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
-                    restorationViewModel = cloudRestorationViewModel,
-                )
-            } else {
-                TournamentListRoute(
-                    onCreateTournament = onCreateTournament,
-                    onOpenTournamentDetails = onOpenTournamentDetails,
-                    authUiState = authUiState,
-                    onOpenAuth = onOpenAuth,
-                    onOpenAllTournaments = onOpenAllTournaments,
-                    openDrawerOnEnter = openHomeMenuOnReturn,
-                    onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
-                    viewModel = listViewModel,
-                    restorationViewModel = cloudRestorationViewModel,
-                )
-            }
+            TournamentListRoute(
+                onCreateTournament = onCreateTournament,
+                onOpenTournamentDetails = onOpenTournamentDetails,
+                authUiState = authUiState,
+                onOpenAuth = onOpenAuth,
+                onOpenAllTournaments = onOpenAllTournaments,
+                openDrawerOnEnter = openHomeMenuOnReturn,
+                onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
+                viewModel = sharedTournamentListViewModel,
+                restorationViewModel = cloudRestorationViewModel,
+            )
         }
-        composable<AllTournamentsDestination>(
-            enterTransition = { EnterTransition.None },
-        ) {
+        composable<AllTournamentsDestination> {
             val cloudRestorationViewModel = cloudRestorationViewModelFactory?.invoke()
                 ?: if (listViewModel == null) {
                     hiltViewModel<TournamentCloudRestorationViewModel>()
@@ -181,7 +163,7 @@ fun RankForgeNavHost(
                 onHome = onHome,
                 onBack = onBack,
                 onOpenTournamentDetails = onOpenTournamentDetails,
-                viewModel = listViewModel,
+                viewModel = sharedTournamentListViewModel,
                 restorationViewModel = cloudRestorationViewModel,
             )
         }

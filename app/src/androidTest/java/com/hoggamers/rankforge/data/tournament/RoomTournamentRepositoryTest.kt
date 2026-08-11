@@ -122,6 +122,43 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun observingTournamentsPreservesCreationOrderAcrossDatabaseReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-tournament-order.db"
+        val databases = mutableListOf<RankForgeDatabase>()
+        val expectedIds = listOf("test1-id", "test2-id", "test3-id", "test4-id")
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            expectedIds.forEachIndexed { index, id ->
+                repository.create(
+                    tournament(
+                        id,
+                        TournamentStatus.DRAFT,
+                        date = LocalDate.of(2026, 7, 24).minusDays(index.toLong()),
+                    ),
+                )
+            }
+
+            assertEquals(
+                expectedIds,
+                repository.observeAll().first { it.size == expectedIds.size }.map { it.id },
+            )
+            databases.last().close()
+
+            val reopenedRepository = RoomTournamentRepository(
+                openDatabase(context, databaseName, databases),
+            )
+            assertEquals(
+                expectedIds,
+                reopenedRepository.observeAll().first { it.size == expectedIds.size }.map { it.id },
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun tournamentAndConfirmedStatusSurviveDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-tournament-reopen.db"
@@ -1758,10 +1795,14 @@ class RoomTournamentRepositoryTest {
         databaseName,
     ).build().also { databases += it }
 
-    private fun tournament(id: String, status: TournamentStatus) = Tournament(
+    private fun tournament(
+        id: String,
+        status: TournamentStatus,
+        date: LocalDate = LocalDate.of(2026, 7, 24),
+    ) = Tournament(
         id = id,
         name = "Summer Cup",
-        date = LocalDate.of(2026, 7, 24),
+        date = date,
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = status,

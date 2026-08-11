@@ -103,7 +103,21 @@ fun TournamentListScreen(
     onLoadCloudTournaments: () -> Unit = {},
     onRestoreCloudTournament: (String) -> Unit = {},
 ) {
-    val content: @Composable () -> Unit = {
+    if (authUiState.isSignedIn) {
+        LoggedInHomeMenuShell(
+            onOpenAccount = onOpenAuth,
+            onOpenAllTournaments = onOpenAllTournaments,
+            content = {
+                LoggedInTournamentHomeContent(
+                    uiState = uiState,
+                    onCreateTournament = onCreateTournament,
+                    onOpenTournamentDetails = onOpenTournamentDetails,
+                )
+            },
+            openDrawerOnEnter = openDrawerOnEnter,
+            onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
+        )
+    } else {
         TournamentListHomeContent(
             uiState = uiState,
             authUiState = authUiState,
@@ -115,17 +129,61 @@ fun TournamentListScreen(
             onRestoreCloudTournament = onRestoreCloudTournament,
         )
     }
+}
 
-    if (authUiState.isSignedIn) {
-        LoggedInHomeMenuShell(
-            onOpenAccount = onOpenAuth,
-            onOpenAllTournaments = onOpenAllTournaments,
-            content = content,
-            openDrawerOnEnter = openDrawerOnEnter,
-            onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
-        )
-    } else {
-        content()
+@Composable
+private fun LoggedInTournamentHomeContent(
+    uiState: TournamentListUiState,
+    onCreateTournament: () -> Unit,
+    onOpenTournamentDetails: (String) -> Unit,
+) {
+    RankForgeScreenContainer(
+        modifier = Modifier.testTag(TOURNAMENT_LIST_SCREEN_TEST_TAG),
+        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+        verticalArrangement = Arrangement.Top,
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
+        ) {
+            item {
+                Button(
+                    onClick = onCreateTournament,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = stringResource(R.string.open_tournament_creation))
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.recent_tournaments_heading),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+            }
+
+            if (uiState.isEmpty) {
+                item {
+                    Text(
+                        text = stringResource(R.string.tournament_list_empty_message),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.testTag(TOURNAMENT_LIST_EMPTY_TEST_TAG),
+                    )
+                }
+            } else {
+                items(
+                    items = uiState.tournaments.takeLast(3),
+                    key = { tournament -> tournament.id },
+                ) { tournament ->
+                    TournamentListItemCard(
+                        tournament = tournament,
+                        onClick = { onOpenTournamentDetails(tournament.id) },
+                    )
+                }
+            }
+        }
     }
 }
 

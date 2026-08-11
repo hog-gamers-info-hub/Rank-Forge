@@ -11,7 +11,7 @@ import org.junit.Test
 
 class ObserveTournamentsUseCaseTest {
     @Test
-    fun observingTournamentsReturnsNewestCreatedFirst() = runTest {
+    fun observingTournamentsReturnsOldestCreatedFirst() = runTest {
         val repository = TestTournamentRepository()
         val older = tournament(id = "older", name = "Older Cup")
         val newer = tournament(id = "newer", name = "Newer Cup")
@@ -20,7 +20,7 @@ class ObserveTournamentsUseCaseTest {
 
         val result = ObserveTournamentsUseCase(repository)().first()
 
-        assertEquals(listOf(newer, older), result)
+        assertEquals(listOf(older, newer), result)
     }
 
     private fun tournament(

@@ -22,7 +22,7 @@ interface SyncRevisionDao {
 
 @Dao
 interface TournamentDao {
-    @Query("SELECT * FROM tournaments ORDER BY date, id")
+    @Query("SELECT * FROM tournaments ORDER BY rowid")
     fun observeAll(): Flow<List<TournamentEntity>>
 
     @Query("SELECT * FROM tournaments WHERE id = :tournamentId")
