@@ -92,12 +92,7 @@ fun LoggedInHomeMenuShell(
                         )
                     },
                     selected = false,
-                    onClick = {
-                        scope.launch {
-                            drawerState.close()
-                            onOpenAccount()
-                        }
-                    },
+                    onClick = onOpenAccount,
                     modifier = Modifier.testTag(
                         LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG,
                     ),
