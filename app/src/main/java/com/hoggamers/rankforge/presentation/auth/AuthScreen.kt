@@ -69,7 +69,7 @@ fun AuthScreen(
         modifier = Modifier
             .testTag(AUTH_SCREEN_TEST_TAG)
             .then(
-                if (uiState.mode == AuthMode.SignUp && !uiState.isSignedIn) {
+                if (!uiState.isSignedIn) {
                     Modifier
                         .verticalScroll(rememberScrollState())
                         .imePadding()
@@ -80,7 +80,18 @@ fun AuthScreen(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        if (uiState.mode == AuthMode.SignUp && !uiState.isSignedIn) {
+        if (uiState.isSignedIn) {
+            SignedInAuthContent(
+                uiState = uiState,
+                onModeSelected = onModeSelected,
+                onEmailChanged = onEmailChanged,
+                onPasswordChanged = onPasswordChanged,
+                onSubmit = onSubmit,
+                onLogout = onLogout,
+                onBack = onBack,
+                onGoogleSignIn = onGoogleSignIn,
+            )
+        } else if (uiState.mode == AuthMode.SignUp) {
             SignUpAuthContent(
                 uiState = uiState,
                 onModeSelected = onModeSelected,
@@ -107,6 +118,127 @@ fun AuthScreen(
 
 @Composable
 private fun LoginAuthContent(
+    uiState: AuthUiState,
+    onModeSelected: (AuthMode) -> Unit,
+    onEmailChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onLogout: () -> Unit,
+    onBack: () -> Unit,
+    onGoogleSignIn: () -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_login_heading),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    if (uiState.isSessionLoading) {
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        AuthAccountCard(uiState = uiState, onLogout = onLogout)
+    }
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    AuthModeSelector(
+        selectedMode = uiState.mode,
+        onModeSelected = onModeSelected,
+        emphasizeSelection = true,
+        loginModeLabelRes = R.string.auth_log_in_mode,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+
+    OutlinedTextField(
+        value = uiState.email,
+        onValueChange = onEmailChanged,
+        label = { Text(text = stringResource(R.string.auth_email_label)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_EMAIL_FIELD_TEST_TAG),
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+    var passwordVisible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = uiState.password,
+        onValueChange = onPasswordChanged,
+        label = { Text(text = stringResource(R.string.auth_password_label)) },
+        singleLine = true,
+        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            TextButton(
+                onClick = { passwordVisible = !passwordVisible },
+                enabled = !uiState.isSubmitting,
+                modifier = Modifier.testTag(AUTH_PASSWORD_VISIBILITY_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (passwordVisible) R.string.auth_hide_password else R.string.auth_show_password,
+                    ),
+                )
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Button(
+        onClick = onSubmit,
+        enabled = uiState.canSubmit,
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_SUBMIT_ACTION_TEST_TAG),
+    ) {
+        Text(
+            text = stringResource(
+                if (uiState.isSubmitting) R.string.auth_submitting_action
+                else R.string.auth_log_in_action,
+            ),
+        )
+    }
+
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f))
+        Text(
+            text = stringResource(R.string.auth_or_divider),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f))
+    }
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    OutlinedButton(
+        onClick = onGoogleSignIn,
+        enabled = !uiState.isSubmitting && !uiState.isSessionLoading,
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_google_continue_action))
+    }
+
+    AuthMessages(uiState = uiState)
+    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraLarge))
+    Text(
+        text = stringResource(R.string.auth_login_local_tournaments_message),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    OutlinedButton(
+        onClick = onBack,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_continue_without_signing_in_action))
+    }
+}
+
+@Composable
+private fun SignedInAuthContent(
     uiState: AuthUiState,
     onModeSelected: (AuthMode) -> Unit,
     onEmailChanged: (String) -> Unit,
@@ -356,6 +488,7 @@ private fun AuthModeSelector(
     selectedMode: AuthMode,
     onModeSelected: (AuthMode) -> Unit,
     emphasizeSelection: Boolean = false,
+    loginModeLabelRes: Int = R.string.auth_login_mode,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
@@ -377,11 +510,13 @@ private fun AuthModeSelector(
                 mode = AuthMode.Login,
                 selectedMode = selectedMode,
                 onModeSelected = onModeSelected,
+                loginModeLabelRes = loginModeLabelRes,
             )
             AuthModeButton(
                 mode = AuthMode.SignUp,
                 selectedMode = selectedMode,
                 onModeSelected = onModeSelected,
+                loginModeLabelRes = loginModeLabelRes,
             )
         } else {
             OutlinedButton(
@@ -407,6 +542,7 @@ private fun RowScope.AuthModeButton(
     mode: AuthMode,
     selectedMode: AuthMode,
     onModeSelected: (AuthMode) -> Unit,
+    loginModeLabelRes: Int,
 ) {
     val selected = mode == selectedMode
     TextButton(
@@ -428,7 +564,7 @@ private fun RowScope.AuthModeButton(
     ) {
         Text(
             text = stringResource(
-                if (mode == AuthMode.Login) R.string.auth_login_mode else R.string.auth_signup_mode,
+                if (mode == AuthMode.Login) loginModeLabelRes else R.string.auth_signup_mode,
             ),
         )
     }

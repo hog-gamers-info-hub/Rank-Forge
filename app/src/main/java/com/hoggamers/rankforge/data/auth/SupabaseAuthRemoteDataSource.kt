@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.map
 class SupabaseAuthRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
+    private val signupEmailRegistrationStatusClient: SupabaseSignupEmailRegistrationStatusClient,
 ) : AuthRemoteDataSource {
     private val client get() = clientProvider.client
 
@@ -91,6 +92,9 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         password: String,
     ): AuthSuccessOutcome {
         ensureConfigured()
+        if (signupEmailRegistrationStatusClient.isConfirmedEmailRegistered(email)) {
+            throw IllegalStateException("User already registered")
+        }
         val user = client.auth.signUpWith(Email) {
             this.email = email
             this.password = password
