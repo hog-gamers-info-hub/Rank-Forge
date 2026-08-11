@@ -77,10 +77,24 @@ class TournamentCreationViewModelTest {
         assertFalse(viewModel.uiState.value.isSubmitting)
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.NAME))
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.DATE))
-        assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_NAME))
-        assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
+        assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_NAME))
+        assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
         assertTrue(repository.records.isEmpty())
         assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun validRequiredFieldsSubmitWithBlankOptionalFields() = runTest {
+        viewModel.onTournamentNameChanged("Summer Cup")
+        viewModel.onTournamentDateChanged(today)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertEquals("", repository.records.single().organizerName)
+        assertEquals("", repository.records.single().organizerContactNumber)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
     }
 
     @Test

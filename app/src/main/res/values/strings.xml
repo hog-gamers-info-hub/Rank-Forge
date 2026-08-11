@@ -65,8 +65,8 @@
     <string name="tournament_creation_title">Create tournament</string>
     <string name="tournament_name_label">Tournament Name</string>
     <string name="tournament_date_label">Tournament Date</string>
-    <string name="organizer_name_label">Organizer Name</string>
-    <string name="organizer_contact_number_label">Organizer Contact Number</string>
+    <string name="organizer_name_label">Organizer (Optional)</string>
+    <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>
     <string name="select_date_action">Select date</string>
     <string name="create_tournament_action">Create tournament</string>
     <string name="tournament_creation_submitting">Creating tournament…</string>

@@ -48,12 +48,6 @@ class CreateTournamentUseCase(
             } else if (input.date.isBefore(LocalDate.now(clock))) {
                 put(TournamentField.DATE, TournamentValidationError.PAST_DATE)
             }
-            if (input.organizerName.isBlank()) {
-                put(TournamentField.ORGANIZER_NAME, TournamentValidationError.REQUIRED)
-            }
-            if (input.organizerContactNumber.isBlank()) {
-                put(TournamentField.ORGANIZER_CONTACT_NUMBER, TournamentValidationError.REQUIRED)
-            }
             if (input.status != TournamentStatus.DRAFT) {
                 put(TournamentField.STATUS, TournamentValidationError.UNSUPPORTED_STATUS)
             }

@@ -72,17 +72,48 @@ class CreateTournamentUseCaseTest {
     }
 
     @Test
-    fun blankOrganizerNameFailsWithoutCreating() = runTest {
+    fun blankOrganizerNameIsAccepted() = runTest {
         val result = useCase(validInput().copy(organizerName = ""))
 
-        assertInvalid(result, TournamentField.ORGANIZER_NAME)
+        assertTrue(result is CreateTournamentResult.Created)
+        assertEquals("", result.createdTournament().organizerName)
     }
 
     @Test
-    fun blankOrganizerContactNumberFailsWithoutCreating() = runTest {
+    fun blankOrganizerContactNumberIsAccepted() = runTest {
         val result = useCase(validInput().copy(organizerContactNumber = "\t"))
 
-        assertInvalid(result, TournamentField.ORGANIZER_CONTACT_NUMBER)
+        assertTrue(result is CreateTournamentResult.Created)
+        assertEquals("", result.createdTournament().organizerContactNumber)
+    }
+
+    @Test
+    fun bothOrganizerFieldsBlankAreAccepted() = runTest {
+        val result = useCase(
+            validInput().copy(
+                organizerName = "   ",
+                organizerContactNumber = "   ",
+            ),
+        )
+
+        assertTrue(result is CreateTournamentResult.Created)
+        val created = result.createdTournament()
+        assertEquals("", created.organizerName)
+        assertEquals("", created.organizerContactNumber)
+    }
+
+    @Test
+    fun optionalValuesAreTrimmedBeforePersistence() = runTest {
+        val result = useCase(
+            validInput().copy(
+                organizerName = "  HOG Gamers  ",
+                organizerContactNumber = "  9876543210  ",
+            ),
+        )
+
+        val created = result.createdTournament()
+        assertEquals("HOG Gamers", created.organizerName)
+        assertEquals("9876543210", created.organizerContactNumber)
     }
 
     @Test
