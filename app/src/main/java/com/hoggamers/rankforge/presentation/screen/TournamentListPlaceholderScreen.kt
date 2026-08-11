@@ -26,6 +26,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
+import com.hoggamers.rankforge.presentation.component.LoggedInHomeMenuShell
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
@@ -92,6 +93,41 @@ fun TournamentListScreen(
     restorationUiState: TournamentCloudRestorationUiState? = null,
     onLoadCloudTournaments: () -> Unit = {},
     onRestoreCloudTournament: (String) -> Unit = {},
+) {
+    val content: @Composable () -> Unit = {
+        TournamentListHomeContent(
+            uiState = uiState,
+            authUiState = authUiState,
+            onCreateTournament = onCreateTournament,
+            onOpenTournamentDetails = onOpenTournamentDetails,
+            onOpenAuth = onOpenAuth,
+            restorationUiState = restorationUiState,
+            onLoadCloudTournaments = onLoadCloudTournaments,
+            onRestoreCloudTournament = onRestoreCloudTournament,
+        )
+    }
+
+    if (authUiState.isSignedIn) {
+        LoggedInHomeMenuShell(
+            onOpenAccount = onOpenAuth,
+            onOpenAllTournaments = {},
+            content = content,
+        )
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun TournamentListHomeContent(
+    uiState: TournamentListUiState,
+    authUiState: AuthUiState,
+    onCreateTournament: () -> Unit,
+    onOpenTournamentDetails: (String) -> Unit,
+    onOpenAuth: () -> Unit,
+    restorationUiState: TournamentCloudRestorationUiState?,
+    onLoadCloudTournaments: () -> Unit,
+    onRestoreCloudTournament: (String) -> Unit,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier.testTag(TOURNAMENT_LIST_SCREEN_TEST_TAG),
