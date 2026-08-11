@@ -37,7 +37,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_ACCOUNT_BACK_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_ACCOUNT_HOME_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_LOGOUT_ACTION_TEST_TAG
@@ -82,7 +81,6 @@ import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_EMPTY_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
-import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST_TAG
@@ -165,34 +163,6 @@ class RankForgeNavigationTest {
 
     private companion object {
         const val OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG = "open_roster_screenshot_crop"
-    }
-
-    @Test
-    fun signedOutToSignedInWhileOnAuthReturnsToTournamentList() {
-        val repository = InMemoryTournamentRepository()
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
-        var authUiState by mutableStateOf(AuthUiState(isSignedIn = false))
-
-        composeTestRule.setContent {
-            RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = authUiState,
-                    listViewModel = listViewModel,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
-
-        authUiState = AuthUiState(
-            isSignedIn = true,
-            accountEmail = "user@example.com",
-        )
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
     }
 
     @Test
@@ -581,32 +551,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG).assertIsDisplayed()
-    }
-
-    @Test
-    fun successfulGoogleAuthenticationUsesTheSameSignedInTransition() {
-        val repository = InMemoryTournamentRepository()
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
-        var authUiState by mutableStateOf(AuthUiState(isSignedIn = false))
-
-        composeTestRule.setContent {
-            RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = authUiState,
-                    onAuthGoogleSignIn = {
-                        authUiState = authUiState.copy(isSignedIn = true)
-                    },
-                    listViewModel = listViewModel,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).performClick()
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
     }
 
     @Test

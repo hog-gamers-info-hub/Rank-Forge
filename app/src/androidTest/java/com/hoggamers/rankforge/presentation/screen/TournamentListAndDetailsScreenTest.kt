@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,7 +17,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
-import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST_TAG
@@ -47,7 +45,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -56,7 +53,7 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithText(context.getString(R.string.tournament_list_title))
+            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithText(context.getString(R.string.open_tournament_creation))
@@ -74,7 +71,6 @@ class TournamentListAndDetailsScreenTest {
                     uiState = TournamentListUiState(
                         tournaments = listOf(tournamentListItem()),
                     ),
-                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -99,7 +95,6 @@ class TournamentListAndDetailsScreenTest {
                     uiState = TournamentListUiState(
                         tournaments = listOf(tournamentListItem()),
                     ),
-                    authUiState = AuthUiState(isSignedIn = false),
                     onCreateTournament = {},
                     onOpenTournamentDetails = { openedTournamentId = it },
                     onOpenAuth = {},
@@ -117,19 +112,11 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun signedInHomepageShowsMenuAndSignedOutHomepageDoesNot() {
-        val authUiState = mutableStateOf(
-            AuthUiState(
-                isSignedIn = true,
-                accountEmail = "user@example.com",
-            ),
-        )
-
+    fun homepageShowsAuthenticatedShell() {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = authUiState.value,
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -140,15 +127,6 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
             .assertIsDisplayed()
-
-        composeTestRule.runOnIdle {
-            authUiState.value = AuthUiState(isSignedIn = false)
-        }
-        composeTestRule.waitForIdle()
-
-        composeTestRule
-            .onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
-            .assertCountEquals(0)
     }
 
     @Test
@@ -157,7 +135,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -174,9 +151,6 @@ class TournamentListAndDetailsScreenTest {
             .assertIsDisplayed()
         composeTestRule
             .onAllNodesWithText(context.getString(R.string.tournament_list_title))
-            .assertCountEquals(0)
-        composeTestRule
-            .onAllNodesWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule
             .onAllNodesWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG)
@@ -196,7 +170,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(tournaments = tournaments),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -225,7 +198,6 @@ class TournamentListAndDetailsScreenTest {
                     uiState = TournamentListUiState(
                         tournaments = listOf(tournamentListItem()),
                     ),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = { openedTournamentId = it },
                     onOpenAuth = {},
@@ -248,7 +220,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -293,7 +264,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = { openAccountCount++ },
@@ -328,7 +298,6 @@ class TournamentListAndDetailsScreenTest {
             RankForgeTheme {
                 TournamentListScreen(
                     uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
@@ -377,8 +346,6 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title))
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithText(context.getString(R.string.open_tournament_creation))
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_account_section_title))
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
             .assertCountEquals(0)

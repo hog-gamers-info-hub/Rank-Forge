@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,7 +52,6 @@ const val AUTH_STATUS_TEST_TAG = "auth_status"
 const val AUTH_WARNING_TEST_TAG = "auth_warning"
 const val AUTH_ERROR_TEST_TAG = "auth_error"
 const val AUTH_PASSWORD_VISIBILITY_TEST_TAG = "auth_password_visibility"
-const val AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG = "auth_continue_without_signing_in_action"
 const val AUTH_SIGNUP_HEADING_TEST_TAG = "auth_signup_heading"
 const val AUTH_ACCOUNT_HOME_ACTION_TEST_TAG = "auth_account_home_action"
 const val AUTH_ACCOUNT_BACK_ACTION_TEST_TAG = "auth_account_back_action"
@@ -67,7 +65,6 @@ fun AuthScreen(
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     onLogout: () -> Unit,
-    onBack: () -> Unit,
     onGoogleSignIn: () -> Unit = {},
     onSignedInHome: () -> Unit = {},
     onSignedInBack: () -> Unit = {},
@@ -101,7 +98,6 @@ fun AuthScreen(
                 onEmailChanged = onEmailChanged,
                 onPasswordChanged = onPasswordChanged,
                 onSubmit = onSubmit,
-                onBack = onBack,
                 onGoogleSignIn = onGoogleSignIn,
             )
         } else {
@@ -111,8 +107,6 @@ fun AuthScreen(
                 onEmailChanged = onEmailChanged,
                 onPasswordChanged = onPasswordChanged,
                 onSubmit = onSubmit,
-                onLogout = onLogout,
-                onBack = onBack,
                 onGoogleSignIn = onGoogleSignIn,
             )
         }
@@ -126,8 +120,6 @@ private fun LoginAuthContent(
     onEmailChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
-    onLogout: () -> Unit,
-    onBack: () -> Unit,
     onGoogleSignIn: () -> Unit,
 ) {
     Text(
@@ -140,10 +132,6 @@ private fun LoginAuthContent(
         text = stringResource(R.string.auth_login_heading),
         style = MaterialTheme.typography.headlineMedium,
     )
-    if (uiState.isSessionLoading) {
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        AuthAccountCard(uiState = uiState, onLogout = onLogout)
-    }
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
     AuthModeSelector(
         selectedMode = uiState.mode,
@@ -223,21 +211,6 @@ private fun LoginAuthContent(
     }
 
     AuthMessages(uiState = uiState)
-    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraLarge))
-    Text(
-        text = stringResource(R.string.auth_login_local_tournaments_message),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-    OutlinedButton(
-        onClick = onBack,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG),
-    ) {
-        Text(text = stringResource(R.string.auth_continue_without_signing_in_action))
-    }
 }
 
 @Composable
@@ -305,7 +278,6 @@ private fun SignUpAuthContent(
     onEmailChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
-    onBack: () -> Unit,
     onGoogleSignIn: () -> Unit,
 ) {
     Text(
@@ -397,21 +369,6 @@ private fun SignUpAuthContent(
     }
 
     AuthMessages(uiState = uiState)
-    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraLarge))
-    Text(
-        text = stringResource(R.string.auth_local_tournaments_message),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-    OutlinedButton(
-        onClick = onBack,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG),
-    ) {
-        Text(text = stringResource(R.string.auth_continue_without_signing_in_action))
-    }
 }
 
 @Composable
@@ -431,45 +388,6 @@ private fun AuthMessages(uiState: AuthUiState) {
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.testTag(AUTH_ERROR_TEST_TAG),
         )
-    }
-}
-
-@Composable
-private fun AuthAccountCard(
-    uiState: AuthUiState,
-    onLogout: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(RankForgeSpacing.Medium),
-            verticalArrangement = Arrangement.Top,
-        ) {
-            Text(
-                text = when {
-                    uiState.isSessionLoading -> stringResource(R.string.auth_checking_session)
-                    uiState.isSignedIn -> stringResource(
-                        R.string.auth_signed_in_as,
-                        uiState.accountEmail ?: stringResource(R.string.auth_unknown_account),
-                    )
-                    else -> stringResource(R.string.auth_signed_out)
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (uiState.isSignedIn) {
-                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-                OutlinedButton(
-                    onClick = onLogout,
-                    enabled = !uiState.isSubmitting,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(AUTH_LOGOUT_ACTION_TEST_TAG),
-                ) {
-                    Text(text = stringResource(R.string.auth_logout_action))
-                }
-            }
-        }
     }
 }
 
