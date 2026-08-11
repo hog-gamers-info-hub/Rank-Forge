@@ -16,6 +16,7 @@
     <string name="auth_account_section_title">Account</string>
     <string name="auth_account_action">Account sign-in</string>
     <string name="auth_title">Account</string>
+    <string name="auth_home_action">Home</string>
     <string name="auth_checking_session">Checking account session.</string>
     <string name="auth_signed_out">Signed out. Local tournaments remain available on this device.</string>
     <string name="auth_signed_in_as">Signed in as %1$s.</string>
@@ -41,7 +42,7 @@
     <string name="auth_continue_without_signing_in_action">Continue without signing in</string>
     <string name="auth_submitting_action">Submitting</string>
     <string name="auth_google_sign_in_action">Sign in with Google</string>
-    <string name="auth_logout_action">Logout</string>
+    <string name="auth_logout_action">Log out</string>
     <string name="auth_missing_credentials_error">Enter an email and password.</string>
     <string name="auth_signed_in_message">Signed in.</string>
     <string name="auth_external_authentication_launched_message">Complete sign-in in your browser.</string>

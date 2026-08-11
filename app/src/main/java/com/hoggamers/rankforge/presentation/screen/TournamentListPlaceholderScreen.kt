@@ -47,6 +47,8 @@ fun TournamentListRoute(
     onOpenTournamentDetails: (String) -> Unit,
     authUiState: AuthUiState = AuthUiState(),
     onOpenAuth: () -> Unit = {},
+    openDrawerOnEnter: Boolean = false,
+    onDrawerOpenRequestConsumed: () -> Unit = {},
     viewModel: TournamentListViewModel = hiltViewModel(),
     restorationViewModel: TournamentCloudRestorationViewModel? = null,
 ) {
@@ -64,6 +66,8 @@ fun TournamentListRoute(
         onCreateTournament = onCreateTournament,
         onOpenTournamentDetails = onOpenTournamentDetails,
         onOpenAuth = onOpenAuth,
+        openDrawerOnEnter = openDrawerOnEnter,
+        onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
         restorationUiState = restorationUiState,
         onLoadCloudTournaments = { restorationViewModel?.loadAvailable() },
         onRestoreCloudTournament = { tournamentId -> restorationViewModel?.restore(tournamentId) },
@@ -90,6 +94,8 @@ fun TournamentListScreen(
     onCreateTournament: () -> Unit,
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAuth: () -> Unit,
+    openDrawerOnEnter: Boolean = false,
+    onDrawerOpenRequestConsumed: () -> Unit = {},
     restorationUiState: TournamentCloudRestorationUiState? = null,
     onLoadCloudTournaments: () -> Unit = {},
     onRestoreCloudTournament: (String) -> Unit = {},
@@ -112,6 +118,8 @@ fun TournamentListScreen(
             onOpenAccount = onOpenAuth,
             onOpenAllTournaments = {},
             content = content,
+            openDrawerOnEnter = openDrawerOnEnter,
+            onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
         )
     } else {
         content()
