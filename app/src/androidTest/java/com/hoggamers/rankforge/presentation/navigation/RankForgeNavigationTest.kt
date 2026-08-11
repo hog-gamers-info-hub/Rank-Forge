@@ -3,6 +3,9 @@ package com.hoggamers.rankforge.presentation.navigation
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
@@ -10,6 +13,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -32,6 +36,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.auth.AUTH_LOGOUT_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
@@ -70,6 +78,7 @@ import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewMod
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
@@ -144,6 +153,86 @@ class RankForgeNavigationTest {
 
     private companion object {
         const val OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG = "open_roster_screenshot_crop"
+    }
+
+    @Test
+    fun signedOutToSignedInWhileOnAuthReturnsToTournamentList() {
+        val repository = InMemoryTournamentRepository()
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        var authUiState by mutableStateOf(AuthUiState(isSignedIn = false))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = authUiState,
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        authUiState = AuthUiState(
+            isSignedIn = true,
+            accountEmail = "user@example.com",
+        )
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun openingAuthWhileAlreadySignedInKeepsAccountDestinationOpen() {
+        val repository = InMemoryTournamentRepository()
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        val authUiState = AuthUiState(
+            isSignedIn = true,
+            accountEmail = "user@example.com",
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = authUiState,
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title)).assertCountEquals(0)
+    }
+
+    @Test
+    fun successfulGoogleAuthenticationUsesTheSameSignedInTransition() {
+        val repository = InMemoryTournamentRepository()
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        var authUiState by mutableStateOf(AuthUiState(isSignedIn = false))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = authUiState,
+                    onAuthGoogleSignIn = {
+                        authUiState = authUiState.copy(isSignedIn = true)
+                    },
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
     }
 
     @Test

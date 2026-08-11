@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.toRoute
@@ -130,6 +132,12 @@ fun RankForgeNavHost(
             }
         }
         composable<AuthDestination> {
+            val wasSignedInWhenOpened = remember { authUiState.isSignedIn }
+            LaunchedEffect(authUiState.isSignedIn) {
+                if (!wasSignedInWhenOpened && authUiState.isSignedIn) {
+                    navController.popBackStack()
+                }
+            }
             AuthScreen(
                 uiState = authUiState,
                 onModeSelected = onAuthModeSelected,
