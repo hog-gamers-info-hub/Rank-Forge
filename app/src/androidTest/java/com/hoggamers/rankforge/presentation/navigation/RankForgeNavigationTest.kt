@@ -83,9 +83,13 @@ import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TES
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
+import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
@@ -376,6 +380,136 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         .onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
         .assertCountEquals(0)
 }
+
+   @Test
+fun allTournamentsMenuItemOpensDedicatedDestination() {
+    val repository = InMemoryTournamentRepository()
+    val listViewModel = TournamentListViewModel(
+        ObserveTournamentsUseCase(repository),
+    )
+
+    composeTestRule.setContent {
+        RankForgeTheme {
+            RankForgeNavHost(
+                authUiState = AuthUiState(isSignedIn = true),
+                listViewModel = listViewModel,
+            )
+        }
+    }
+
+    composeTestRule
+        .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+        .performClick()
+
+    composeTestRule
+        .onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG)
+        .performClick()
+
+    composeTestRule.waitForIdle()
+
+    composeTestRule
+        .onNodeWithTag(ALL_TOURNAMENTS_SCREEN_TEST_TAG)
+        .assertIsDisplayed()
+
+    composeTestRule
+        .onNodeWithText("All Tournaments")
+        .assertIsDisplayed()
+
+    composeTestRule
+        .onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+        .assertCountEquals(0)
+}
+
+    @Test
+fun allTournamentsHomeReturnsToHomepageWithDrawerClosed() {
+    val repository = InMemoryTournamentRepository()
+    val listViewModel = TournamentListViewModel(
+        ObserveTournamentsUseCase(repository),
+    )
+
+    composeTestRule.setContent {
+        RankForgeTheme {
+            RankForgeNavHost(
+                authUiState = AuthUiState(isSignedIn = true),
+                listViewModel = listViewModel,
+            )
+        }
+    }
+
+    composeTestRule
+        .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+        .performClick()
+
+    composeTestRule
+        .onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG)
+        .performClick()
+
+    composeTestRule.waitForIdle()
+
+    composeTestRule
+        .onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG)
+        .performClick()
+
+    composeTestRule.waitForIdle()
+
+    composeTestRule
+        .onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG)
+        .assertIsDisplayed()
+
+    composeTestRule
+        .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
+        .assertIsNotDisplayed()
+}
+
+    @Test
+    fun allTournamentsBackReturnsToHomepageWithDrawerOpen() {
+        val repository = InMemoryTournamentRepository()
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = AuthUiState(isSignedIn = true),
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun allTournamentsSystemBackReturnsToHomepageWithDrawerOpen() {
+        val repository = InMemoryTournamentRepository()
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = AuthUiState(isSignedIn = true),
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG).assertIsDisplayed()
+    }
 
     @Test
     fun successfulGoogleAuthenticationUsesTheSameSignedInTransition() {

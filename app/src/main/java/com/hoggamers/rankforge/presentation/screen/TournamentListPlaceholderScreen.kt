@@ -47,6 +47,7 @@ fun TournamentListRoute(
     onOpenTournamentDetails: (String) -> Unit,
     authUiState: AuthUiState = AuthUiState(),
     onOpenAuth: () -> Unit = {},
+    onOpenAllTournaments: () -> Unit = {},
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
     viewModel: TournamentListViewModel = hiltViewModel(),
@@ -66,6 +67,7 @@ fun TournamentListRoute(
         onCreateTournament = onCreateTournament,
         onOpenTournamentDetails = onOpenTournamentDetails,
         onOpenAuth = onOpenAuth,
+        onOpenAllTournaments = onOpenAllTournaments,
         openDrawerOnEnter = openDrawerOnEnter,
         onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
         restorationUiState = restorationUiState,
@@ -94,6 +96,7 @@ fun TournamentListScreen(
     onCreateTournament: () -> Unit,
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAuth: () -> Unit,
+    onOpenAllTournaments: () -> Unit = {},
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
     restorationUiState: TournamentCloudRestorationUiState? = null,
@@ -116,7 +119,7 @@ fun TournamentListScreen(
     if (authUiState.isSignedIn) {
         LoggedInHomeMenuShell(
             onOpenAccount = onOpenAuth,
-            onOpenAllTournaments = {},
+            onOpenAllTournaments = onOpenAllTournaments,
             content = content,
             openDrawerOnEnter = openDrawerOnEnter,
             onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
@@ -199,7 +202,7 @@ private fun TournamentListHomeContent(
 }
 
 @Composable
-private fun TournamentCloudRestorationSection(
+internal fun TournamentCloudRestorationSection(
     uiState: TournamentCloudRestorationUiState,
     onLoadCloudTournaments: () -> Unit,
     onRestoreCloudTournament: (String) -> Unit,
@@ -343,7 +346,7 @@ private fun TournamentListAuthCard(
 }
 
 @Composable
-private fun TournamentListItemCard(
+internal fun TournamentListItemCard(
     tournament: TournamentListItemUiState,
     onClick: () -> Unit,
 ) {
