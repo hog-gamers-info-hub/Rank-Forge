@@ -112,6 +112,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_6_7,
         RankForgeDatabase.MIGRATION_7_8,
         RankForgeDatabase.MIGRATION_8_9,
+        RankForgeDatabase.MIGRATION_9_10,
     ).build()
 
     @Provides

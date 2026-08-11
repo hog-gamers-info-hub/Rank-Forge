@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(9, cursor.getInt(0))
+                assertEquals(10, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -365,7 +365,58 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
-    fun migrationFromVersion1ToVersion9PreservesLegacyStateAndFinalSchema() {
+    fun migrationFromVersion9AddsDurableTournamentCreationOrder() {
+        val expectedIds = listOf("test1-id", "test2-id", "test3-id", "test4-id")
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 9).use { database ->
+            expectedIds.forEachIndexed { index, id ->
+                database.execSQL(
+                    """
+                    INSERT INTO tournaments (
+                        id, name, date, organizer_name, organizer_contact_number, status
+                    ) VALUES (?, ?, '2026-08-11', 'Organizer', '123', 'DRAFT')
+                    """.trimIndent(),
+                    arrayOf<Any>(id, "test ${index + 1}"),
+                )
+            }
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            10,
+            true,
+            RankForgeDatabase.MIGRATION_9_10,
+        )
+
+        migrated.query("PRAGMA table_info(tournaments)").use { cursor ->
+            var foundCreationOrder = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "creation_order") {
+                    foundCreationOrder = true
+                    assertEquals(1, cursor.getInt(cursor.getColumnIndexOrThrow("notnull")))
+                }
+            }
+            assertTrue(foundCreationOrder)
+        }
+
+        val migratedIds = mutableListOf<String>()
+        val creationOrders = mutableListOf<Long>()
+        migrated.query(
+            "SELECT id, creation_order FROM tournaments ORDER BY creation_order, id",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                assertTrue(!cursor.isNull(1))
+                migratedIds += cursor.getString(0)
+                creationOrders += cursor.getLong(1)
+            }
+        }
+        assertEquals(expectedIds, migratedIds)
+        assertEquals(creationOrders.size, creationOrders.distinct().size)
+        assertTrue(creationOrders.all { it > 0L })
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion1ToVersion10PreservesLegacyStateAndFinalSchema() {
         val payload = """{"tournaments":[{"id":"legacy-tournament","name":"Legacy Cup"}]}"""
         createVersion1Database().use { database ->
             database.execSQL(
@@ -376,7 +427,7 @@ class RankForgeDatabaseMigrationTest {
 
         val migrated = migrationTestHelper().runMigrationsAndValidate(
             MIGRATION_DATABASE_NAME,
-            9,
+            10,
             true,
             RankForgeDatabase.MIGRATION_1_2,
             RankForgeDatabase.MIGRATION_2_3,
@@ -386,6 +437,7 @@ class RankForgeDatabaseMigrationTest {
             RankForgeDatabase.MIGRATION_6_7,
             RankForgeDatabase.MIGRATION_7_8,
             RankForgeDatabase.MIGRATION_8_9,
+            RankForgeDatabase.MIGRATION_9_10,
         )
 
         migrated.query("SELECT payload FROM rank_forge_state WHERE id = 1").use { cursor ->

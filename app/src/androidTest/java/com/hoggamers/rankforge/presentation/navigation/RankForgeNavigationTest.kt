@@ -80,6 +80,7 @@ import com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener
 import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewModel
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_DETAILS_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_EMPTY_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
@@ -212,7 +213,12 @@ class RankForgeNavigationTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG)
+            .performClick()
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
@@ -382,7 +388,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 }
 
    @Test
-fun allTournamentsMenuItemOpensDedicatedDestination() {
+    fun allTournamentsMenuItemOpensDedicatedDestination() {
     val repository = InMemoryTournamentRepository()
     val listViewModel = TournamentListViewModel(
         ObserveTournamentsUseCase(repository),
@@ -415,13 +421,79 @@ fun allTournamentsMenuItemOpensDedicatedDestination() {
         .onNodeWithText("All Tournaments")
         .assertIsDisplayed()
 
-    composeTestRule
-        .onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
-        .assertCountEquals(0)
-}
+        composeTestRule
+            .onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .assertCountEquals(0)
+    }
 
     @Test
-fun allTournamentsHomeReturnsToHomepageWithDrawerClosed() {
+    fun allTournamentsUsesPreloadedSharedTournamentListState() {
+        val repository = InMemoryTournamentRepository()
+        val tournaments = (1..4).map { index ->
+            confirmedTournament().copy(
+                id = "test$index-id",
+                name = "test $index",
+            )
+        }
+        runBlocking {
+            tournaments.forEach { repository.create(it) }
+        }
+        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    authUiState = AuthUiState(isSignedIn = true),
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            listViewModel.uiState.value.tournaments.size == tournaments.size
+        }
+        composeTestRule.waitForIdle()
+        listOf("test2-id", "test3-id", "test4-id").forEach { tournamentId ->
+            composeTestRule
+                .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "test1-id")
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).performClick()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG)
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_LIST_EMPTY_TEST_TAG)
+            .assertCountEquals(0)
+        tournaments.forEach { tournament ->
+            composeTestRule
+                .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournament.id)
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+        listOf("test2-id", "test3-id", "test4-id").forEach { tournamentId ->
+            composeTestRule
+                .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "test1-id")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun allTournamentsHomeReturnsToHomepageWithDrawerClosed() {
     val repository = InMemoryTournamentRepository()
     val listViewModel = TournamentListViewModel(
         ObserveTournamentsUseCase(repository),

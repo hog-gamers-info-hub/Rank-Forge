@@ -153,6 +153,53 @@ class RoomTournamentCloudRestorationTest {
         }
     }
 
+    @Test
+    fun restoringNewTournamentAppendsItAfterExistingCreationOrder() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-creation-order.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(
+            context,
+            RankForgeDatabase::class.java,
+            databaseName,
+        ).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("test1-id", "test 1", TournamentStatus.DRAFT))
+            repository.create(tournament("test2-id", "test 2", TournamentStatus.DRAFT))
+
+            repository.restore(
+                TournamentCloudRestorationSnapshot(
+                    tournament = tournament("test3-id", "test 3", TournamentStatus.DRAFT),
+                    slots = TeamSlot.fixedSlotsForTournament("test3-id"),
+                    players = emptyList(),
+                ),
+            )
+
+            assertEquals(
+                listOf("test1-id", "test2-id", "test3-id"),
+                repository.observeAll().first().map { it.id },
+            )
+
+            repository.restore(
+                TournamentCloudRestorationSnapshot(
+                    tournament = tournament("test2-id", "test 2 updated", TournamentStatus.DRAFT),
+                    slots = TeamSlot.fixedSlotsForTournament("test2-id"),
+                    players = emptyList(),
+                ),
+            )
+
+            assertEquals(
+                listOf("test1-id", "test2-id", "test3-id"),
+                repository.observeAll().first().map { it.id },
+            )
+            assertEquals("test 2 updated", repository.observeById("test2-id").first()!!.name)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private fun tournament(id: String, name: String, status: TournamentStatus) = Tournament(
         id = id,
         name = name,

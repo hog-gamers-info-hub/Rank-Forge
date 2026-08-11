@@ -47,14 +47,14 @@ class TournamentListViewModelTest {
     }
 
     @Test
-    fun createdTournamentsRenderInNewestFirstOrder() = runTest {
+    fun createdTournamentsRenderInCreationOrder() = runTest {
         val viewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
         repository.create(tournament(id = "older", name = "Older Cup"))
         repository.create(tournament(id = "newer", name = "Newer Cup"))
 
         advanceUntilIdle()
 
-        assertEquals(listOf("Newer Cup", "Older Cup"), viewModel.uiState.value.tournaments.map { it.name })
+        assertEquals(listOf("Older Cup", "Newer Cup"), viewModel.uiState.value.tournaments.map { it.name })
     }
 
     private fun tournament(

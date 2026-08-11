@@ -152,6 +152,97 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun signedInHomeShowsRecentHeadingAndOmitsSignedOutContent() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    authUiState = AuthUiState(isSignedIn = true),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = {},
+                    onOpenAuth = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.open_tournament_creation))
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .assertIsDisplayed()
+        composeTestRule
+            .onAllNodesWithText(context.getString(R.string.tournament_list_title))
+            .assertCountEquals(0)
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun signedInHomeShowsLastThreeTournamentsInCreationOrder() {
+        val tournaments = listOf(
+            tournamentListItem(id = "test1-id", name = "test 1"),
+            tournamentListItem(id = "test2-id", name = "test 2"),
+            tournamentListItem(id = "test3-id", name = "test 3"),
+            tournamentListItem(id = "test4-id", name = "test 4"),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(tournaments = tournaments),
+                    authUiState = AuthUiState(isSignedIn = true),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = {},
+                    onOpenAuth = {},
+                )
+            }
+        }
+
+        listOf("test2-id", "test3-id", "test4-id").forEach { tournamentId ->
+            composeTestRule
+                .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+        composeTestRule
+            .onAllNodesWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "test1-id")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun signedInRecentTournamentTapPassesStableTournamentId() {
+        var openedTournamentId: String? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(
+                        tournaments = listOf(tournamentListItem()),
+                    ),
+                    authUiState = AuthUiState(isSignedIn = true),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = { openedTournamentId = it },
+                    onOpenAuth = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "stable-id")
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals("stable-id", openedTournamentId)
+        }
+    }
+
+    @Test
     fun menuShowsEnabledAccountAndAllTournamentsAndDisabledFutureItems() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -291,6 +382,34 @@ class TournamentListAndDetailsScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
             .assertCountEquals(0)
+    }
+
+    @Test
+    fun allTournamentsPageShowsAllFourUniqueTournamentIds() {
+        val tournaments = listOf(
+            tournamentListItem(id = "test1-id", name = "test 1"),
+            tournamentListItem(id = "test2-id", name = "test 2"),
+            tournamentListItem(id = "test3-id", name = "test 3"),
+            tournamentListItem(id = "test4-id", name = "test 4"),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AllTournamentsScreen(
+                    uiState = TournamentListUiState(tournaments = tournaments),
+                    restorationUiState = null,
+                    onHome = {},
+                    onBack = {},
+                    onOpenTournamentDetails = {},
+                )
+            }
+        }
+
+        listOf("test1-id", "test2-id", "test3-id", "test4-id").forEach { tournamentId ->
+            composeTestRule
+                .onAllNodesWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+                .assertCountEquals(1)
+        }
     }
 
     @Test
@@ -582,9 +701,12 @@ class TournamentListAndDetailsScreenTest {
         }
     }
 
-    private fun tournamentListItem() = TournamentListItemUiState(
-        id = "stable-id",
-        name = "Summer Cup",
+    private fun tournamentListItem(
+        id: String = "stable-id",
+        name: String = "Summer Cup",
+    ) = TournamentListItemUiState(
+        id = id,
+        name = name,
         date = LocalDate.of(2026, 7, 24),
         organizerName = "Alex",
         status = TournamentStatus.DRAFT,

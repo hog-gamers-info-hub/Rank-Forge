@@ -86,7 +86,13 @@ class RoomTournamentRepository @Inject constructor(
                     val existingIds = database.tournamentDao().observeAll().first().map { it.id }.toSet()
                     restored.tournaments
                         .filter { it.id !in existingIds }
-                        .forEach { database.tournamentDao().upsert(it.toEntity()) }
+                        .forEach { tournament ->
+                            database.tournamentDao().upsert(
+                                tournament.toEntity(
+                                    creationOrder = database.tournamentDao().nextCreationOrder(),
+                                ),
+                            )
+                        }
 
                     val normalizedTournaments = database.tournamentDao().observeAll().first().map { it.toDomain() }
                     normalizedTournaments.forEach { tournament ->
@@ -270,7 +276,11 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction
                 }
 
-                database.tournamentDao().upsert(tournament.toEntity())
+                database.tournamentDao().upsert(
+                    tournament.toEntity(
+                        creationOrder = database.tournamentDao().nextCreationOrder(),
+                    ),
+                )
                 val normalizedSlots = TeamSlot.fixedSlotsForTournament(tournament.id)
                 database.teamSlotDao().upsertAll(normalizedSlots.map { it.toEntity() })
                 database.syncRevisionDao().upsert(
@@ -332,7 +342,16 @@ class RoomTournamentRepository @Inject constructor(
                     ),
             )
             database.withTransaction {
-                database.tournamentDao().upsert(snapshot.tournament.toEntity())
+                val existingCreationOrder = database.tournamentDao()
+                    .observeById(snapshot.tournament.id)
+                    .first()
+                    ?.creationOrder
+                database.tournamentDao().upsert(
+                    snapshot.tournament.toEntity(
+                        creationOrder = existingCreationOrder
+                            ?: database.tournamentDao().nextCreationOrder(),
+                    ),
+                )
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
@@ -1004,7 +1023,14 @@ class RoomTournamentRepository @Inject constructor(
             .filter { nextTournament ->
                 current.tournaments.firstOrNull { it.id == nextTournament.id }?.status != nextTournament.status
             }
-            .forEach { database.tournamentDao().upsert(it.toEntity()) }
+            .forEach { tournament ->
+                val creationOrder = database.tournamentDao()
+                    .observeById(tournament.id)
+                    .first()
+                    ?.creationOrder
+                    ?: database.tournamentDao().nextCreationOrder()
+                database.tournamentDao().upsert(tournament.toEntity(creationOrder))
+            }
     }
 
     private suspend fun backfillSlots(

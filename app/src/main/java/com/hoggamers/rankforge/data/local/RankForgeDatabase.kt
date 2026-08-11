@@ -45,7 +45,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -370,6 +370,17 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_upload_status` ON `match_result_screenshot_assets` (`upload_status`)",
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tournaments` ADD COLUMN `creation_order` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "UPDATE `tournaments` SET `creation_order` = rowid",
                 )
             }
         }

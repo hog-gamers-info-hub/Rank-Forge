@@ -23,13 +23,14 @@ import java.time.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-internal fun Tournament.toEntity(): TournamentEntity = TournamentEntity(
+internal fun Tournament.toEntity(creationOrder: Long): TournamentEntity = TournamentEntity(
     id = id,
     name = name,
     date = date.toString(),
     organizerName = organizerName,
     organizerContactNumber = organizerContactNumber,
     status = status.name,
+    creationOrder = creationOrder,
 )
 
 internal fun TournamentEntity.toDomain(): Tournament = Tournament(
