@@ -230,7 +230,9 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun allTournamentsMenuItemClosesDrawerAndKeepsListVisible() {
+    fun allTournamentsMenuItemInvokesDedicatedPageCallback() {
+        var openAllTournamentsCount = 0
+
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentListScreen(
@@ -239,6 +241,7 @@ class TournamentListAndDetailsScreenTest {
                     onCreateTournament = {},
                     onOpenTournamentDetails = {},
                     onOpenAuth = {},
+                    onOpenAllTournaments = { openAllTournamentsCount += 1 },
                 )
             }
         }
@@ -253,13 +256,99 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.waitForIdle()
 
-        composeTestRule
-            .onNodeWithText(context.getString(R.string.tournament_list_title))
-            .assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(1, openAllTournamentsCount)
+        }
+    }
+
+    @Test
+    fun allTournamentsPageShowsApprovedContentWithoutHomepageControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AllTournamentsScreen(
+                    uiState = TournamentListUiState(
+                        tournaments = listOf(tournamentListItem()),
+                    ),
+                    restorationUiState = TournamentCloudRestorationUiState.Idle,
+                    onHome = {},
+                    onBack = {},
+                    onOpenTournamentDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_LOCAL_HEADING_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_CLOUD_HEADING_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.open_tournament_creation))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_account_section_title))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun allTournamentsLocalTapPassesStableTournamentId() {
+        var openedTournamentId: String? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AllTournamentsScreen(
+                    uiState = TournamentListUiState(
+                        tournaments = listOf(tournamentListItem()),
+                    ),
+                    restorationUiState = null,
+                    onHome = {},
+                    onBack = {},
+                    onOpenTournamentDetails = { openedTournamentId = it },
+                )
+            }
+        }
 
         composeTestRule
-            .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
-            .assertIsNotDisplayed()
+            .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "stable-id")
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals("stable-id", openedTournamentId)
+        }
+    }
+
+    @Test
+    fun allTournamentsPageKeepsCloudRestoreActionsAvailable() {
+        val cloudTournamentId = "cloud-id"
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AllTournamentsScreen(
+                    uiState = TournamentListUiState(),
+                    restorationUiState = TournamentCloudRestorationUiState.Available(
+                        listOf(
+                            com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary(
+                                id = cloudTournamentId,
+                                name = "Cloud Cup",
+                                date = "2026-07-24",
+                                organizerName = "Organizer",
+                                status = "draft",
+                            ),
+                        ),
+                    ),
+                    onHome = {},
+                    onBack = {},
+                    onOpenTournamentDetails = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX + cloudTournamentId)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test

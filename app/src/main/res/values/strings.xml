@@ -7,6 +7,8 @@
     <string name="open_tournament_creation">Create tournament</string>
     <string name="tournament_list_title">Tournaments</string>
     <string name="tournament_list_empty_message">No tournaments have been created yet.</string>
+    <string name="all_tournaments_local_heading">All Tournaments</string>
+    <string name="all_tournaments_cloud_heading">Cloud Tournaments</string>
     <string name="logged_in_home_menu_title">Menu</string>
     <string name="logged_in_home_open_menu">Open menu</string>
     <string name="logged_in_home_all_tournaments">All tournaments</string>

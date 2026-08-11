@@ -6,6 +6,9 @@ import kotlinx.serialization.Serializable
 data object TournamentListDestination
 
 @Serializable
+data object AllTournamentsDestination
+
+@Serializable
 data object AuthDestination
 
 @Serializable

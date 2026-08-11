@@ -19,7 +19,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
@@ -55,11 +59,17 @@ fun LoggedInHomeMenuShell(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val openMenuDescription = stringResource(R.string.logged_in_home_open_menu)
+    var skipCloseAfterOpenRequest by remember { mutableStateOf(false) }
 
     LaunchedEffect(openDrawerOnEnter) {
         if (openDrawerOnEnter) {
             drawerState.open()
+            skipCloseAfterOpenRequest = true
             onDrawerOpenRequestConsumed()
+        } else if (skipCloseAfterOpenRequest) {
+            skipCloseAfterOpenRequest = false
+        } else {
+            drawerState.snapTo(DrawerValue.Closed)
         }
     }
 
@@ -101,12 +111,9 @@ fun LoggedInHomeMenuShell(
                             ),
                         )
                     },
-                    selected = true,
+                    selected = false,
                     onClick = {
-                        scope.launch {
-                            drawerState.close()
-                            onOpenAllTournaments()
-                        }
+                        onOpenAllTournaments()
                     },
                     modifier = Modifier.testTag(
                         LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG,

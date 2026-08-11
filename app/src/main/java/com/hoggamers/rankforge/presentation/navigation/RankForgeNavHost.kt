@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -38,6 +41,7 @@ import com.hoggamers.rankforge.presentation.screen.TournamentStandingsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentListPlaceholderScreen
+import com.hoggamers.rankforge.presentation.screen.AllTournamentsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCreationRoute
@@ -101,7 +105,15 @@ fun RankForgeNavHost(
         startDestination = TournamentListDestination,
         modifier = Modifier.fillMaxSize(),
     ) {
-        composable<TournamentListDestination> {
+        composable<TournamentListDestination>(
+            exitTransition = {
+                if (targetState.destination.hasRoute<AllTournamentsDestination>()) {
+                    ExitTransition.None
+                } else {
+                    null
+                }
+            },
+        ) {
             val onCreateTournament = {
                 navController.navigate(TournamentCreationDestination)
             }
@@ -110,6 +122,9 @@ fun RankForgeNavHost(
             }
             val onOpenTournamentDetails: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentDetailsDestination(tournamentId))
+            }
+            val onOpenAllTournaments = {
+                navController.navigate(AllTournamentsDestination)
             }
             val cloudRestorationViewModel = cloudRestorationViewModelFactory?.invoke()
                 ?: if (listViewModel == null) {
@@ -123,6 +138,7 @@ fun RankForgeNavHost(
                     onOpenTournamentDetails = onOpenTournamentDetails,
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
+                    onOpenAllTournaments = onOpenAllTournaments,
                     openDrawerOnEnter = openHomeMenuOnReturn,
                     onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                     restorationViewModel = cloudRestorationViewModel,
@@ -133,12 +149,41 @@ fun RankForgeNavHost(
                     onOpenTournamentDetails = onOpenTournamentDetails,
                     authUiState = authUiState,
                     onOpenAuth = onOpenAuth,
+                    onOpenAllTournaments = onOpenAllTournaments,
                     openDrawerOnEnter = openHomeMenuOnReturn,
                     onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                     viewModel = listViewModel,
                     restorationViewModel = cloudRestorationViewModel,
                 )
             }
+        }
+        composable<AllTournamentsDestination>(
+            enterTransition = { EnterTransition.None },
+        ) {
+            val cloudRestorationViewModel = cloudRestorationViewModelFactory?.invoke()
+                ?: if (listViewModel == null) {
+                    hiltViewModel<TournamentCloudRestorationViewModel>()
+                } else {
+                    null
+                }
+            val onHome: () -> Unit = {
+                openHomeMenuOnReturn = false
+                navController.popBackStack(TournamentListDestination, inclusive = false)
+            }
+            val onBack: () -> Unit = {
+                openHomeMenuOnReturn = true
+                navController.popBackStack(TournamentListDestination, inclusive = false)
+            }
+            val onOpenTournamentDetails: (String) -> Unit = { tournamentId ->
+                navController.navigate(TournamentDetailsDestination(tournamentId))
+            }
+            AllTournamentsRoute(
+                onHome = onHome,
+                onBack = onBack,
+                onOpenTournamentDetails = onOpenTournamentDetails,
+                viewModel = listViewModel,
+                restorationViewModel = cloudRestorationViewModel,
+            )
         }
         composable<AuthDestination> {
            val wasSignedInWhenOpened = remember { authUiState.isSignedIn }
