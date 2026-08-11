@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.component
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
@@ -37,6 +40,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.launch
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
+const val LOGGED_IN_HOME_BACK_ITEM_TEST_TAG = "logged_in_home_back_item"
 const val LOGGED_IN_HOME_DRAWER_TEST_TAG = "logged_in_home_drawer"
 const val LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG = "logged_in_home_account_item"
 const val LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG =
@@ -73,17 +77,43 @@ fun LoggedInHomeMenuShell(
         }
     }
 
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch {
+            drawerState.close()
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG),
             ) {
-                Text(
-                    text = stringResource(R.string.logged_in_home_menu_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(RankForgeSpacing.Medium),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(RankForgeSpacing.Medium),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.logged_in_home_menu_title),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                        },
+                        modifier = Modifier.testTag(
+                            LOGGED_IN_HOME_BACK_ITEM_TEST_TAG,
+                        ),
+                    ) {
+                        Text(text = stringResource(R.string.back_action))
+                    }
+                }
 
                 NavigationDrawerItem(
                     label = {
