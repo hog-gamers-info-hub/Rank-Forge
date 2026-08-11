@@ -25,6 +25,7 @@ data class TournamentEntity(
     @ColumnInfo(name = "organizer_name") val organizerName: String,
     @ColumnInfo(name = "organizer_contact_number") val organizerContactNumber: String,
     val status: String,
+    @ColumnInfo(name = "creation_order", defaultValue = "0") val creationOrder: Long = 0L,
 )
 
 @Entity(

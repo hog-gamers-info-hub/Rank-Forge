@@ -143,6 +143,11 @@ class RoomTournamentRepositoryTest {
                 expectedIds,
                 repository.observeAll().first { it.size == expectedIds.size }.map { it.id },
             )
+            databases.last().openHelper.writableDatabase.execSQL("VACUUM")
+            assertEquals(
+                expectedIds,
+                repository.observeAll().first { it.size == expectedIds.size }.map { it.id },
+            )
             databases.last().close()
 
             val reopenedRepository = RoomTournamentRepository(
@@ -860,7 +865,7 @@ class RoomTournamentRepositoryTest {
                 mapName = "Normalized Map",
                 status = MatchStatus.DRAFT,
             )
-            database.tournamentDao().upsert(normalizedTournament.toEntity())
+            database.tournamentDao().upsert(normalizedTournament.toEntity(creationOrder = 1L))
             database.teamSlotDao().upsertAll(TeamSlotEntity(normalizedTournament.id, 1, "Team One").let { listOf(it) })
             database.matchDao().upsert(normalizedMatch.toEntity())
             database.matchPlacementDao().upsertAll(listOf(MatchPlacementEntity("match-1", 1, 9)))
@@ -912,7 +917,7 @@ class RoomTournamentRepositoryTest {
         try {
             val database = openDatabase(context, databaseName, databases)
             val normalized = tournament("tournament-1", TournamentStatus.CONFIRMED)
-            database.tournamentDao().upsert(normalized.toEntity())
+            database.tournamentDao().upsert(normalized.toEntity(creationOrder = 1L))
             database.teamSlotDao().upsertAll(
                 (1..12).map { slotNumber ->
                     TeamSlotEntity(normalized.id, slotNumber, "Normalized Team $slotNumber")

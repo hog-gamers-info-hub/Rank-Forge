@@ -22,7 +22,7 @@ interface SyncRevisionDao {
 
 @Dao
 interface TournamentDao {
-    @Query("SELECT * FROM tournaments ORDER BY rowid")
+    @Query("SELECT * FROM tournaments ORDER BY creation_order, id")
     fun observeAll(): Flow<List<TournamentEntity>>
 
     @Query("SELECT * FROM tournaments WHERE id = :tournamentId")
@@ -30,6 +30,9 @@ interface TournamentDao {
 
     @Upsert
     suspend fun upsert(tournament: TournamentEntity)
+
+    @Query("SELECT COALESCE(MAX(creation_order), 0) + 1 FROM tournaments")
+    suspend fun nextCreationOrder(): Long
 
     @Query("DELETE FROM tournaments WHERE id = :tournamentId")
     suspend fun deleteById(tournamentId: String)
