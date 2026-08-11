@@ -17,11 +17,9 @@
     <string name="logged_in_home_notifications">Notifications</string>
     <string name="logged_in_home_settings">Settings</string>
     <string name="auth_account_section_title">Account</string>
-    <string name="auth_account_action">Account sign-in</string>
     <string name="auth_title">Account</string>
     <string name="auth_home_action">Home</string>
     <string name="auth_checking_session">Checking account session.</string>
-    <string name="auth_signed_out">Signed out. Local tournaments remain available on this device.</string>
     <string name="auth_signed_in_as">Signed in as %1$s.</string>
     <string name="auth_unknown_account">this account</string>
     <string name="auth_login_mode">Login</string>
@@ -40,9 +38,6 @@
     <string name="auth_hide_password">Hide</string>
     <string name="auth_or_divider">or</string>
     <string name="auth_google_continue_action">Continue with Google</string>
-    <string name="auth_login_local_tournaments_message">You can use local tournaments without signing in.</string>
-    <string name="auth_local_tournaments_message">You can still use local tournaments without signing in.</string>
-    <string name="auth_continue_without_signing_in_action">Continue without signing in</string>
     <string name="auth_submitting_action">Submitting</string>
     <string name="auth_google_sign_in_action">Sign in with Google</string>
     <string name="auth_logout_action">Log out</string>
@@ -53,9 +48,9 @@
     <string name="auth_signup_confirmation_required_message">Check your email to confirm your account before signing in.</string>
     <string name="auth_signed_out_message">Signed out.</string>
     <string name="auth_logout_remote_warning">Signed out on this device. Remote session revocation could not be confirmed.</string>
-    <string name="auth_restoration_network_warning">Could not verify the saved session because the network is unavailable. Local tournaments remain available.</string>
-    <string name="auth_restoration_timeout_warning">Session verification timed out. Local tournaments remain available; try signing in again.</string>
-    <string name="auth_restoration_unknown_warning">The saved session could not be verified. Local tournaments remain available; try signing in again.</string>
+    <string name="auth_restoration_network_warning">Could not verify the saved session because the network is unavailable. Sign in again when the connection is restored.</string>
+    <string name="auth_restoration_timeout_warning">Session verification timed out. Sign in again.</string>
+    <string name="auth_restoration_unknown_warning">The saved session could not be verified. Sign in again.</string>
     <string name="auth_failure_invalid_credentials">The email or password is incorrect.</string>
     <string name="auth_failure_invalid_email">Enter a valid email address.</string>
     <string name="auth_failure_weak_password">Choose a stronger password.</string>

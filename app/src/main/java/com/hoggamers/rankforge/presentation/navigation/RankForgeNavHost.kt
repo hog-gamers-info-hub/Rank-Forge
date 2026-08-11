@@ -4,7 +4,6 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,22 +122,14 @@ fun RankForgeNavHost(
             val onOpenAllTournaments = {
                 navController.navigate(AllTournamentsDestination)
             }
-            val cloudRestorationViewModel = cloudRestorationViewModelFactory?.invoke()
-                ?: if (listViewModel == null) {
-                    hiltViewModel<TournamentCloudRestorationViewModel>()
-                } else {
-                    null
-                }
             TournamentListRoute(
                 onCreateTournament = onCreateTournament,
                 onOpenTournamentDetails = onOpenTournamentDetails,
-                authUiState = authUiState,
                 onOpenAuth = onOpenAuth,
                 onOpenAllTournaments = onOpenAllTournaments,
                 openDrawerOnEnter = openHomeMenuOnReturn,
                 onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                 viewModel = sharedTournamentListViewModel,
-                restorationViewModel = cloudRestorationViewModel,
             )
         }
         composable<AllTournamentsDestination> {
@@ -168,12 +159,6 @@ fun RankForgeNavHost(
             )
         }
         composable<AuthDestination> {
-           val wasSignedInWhenOpened = remember { authUiState.isSignedIn }
-                LaunchedEffect(authUiState.isSignedIn) {
-                    if (!wasSignedInWhenOpened && authUiState.isSignedIn) {
-                    navController.popBackStack()
-                    }
-                }
             AuthScreen(
                 uiState = authUiState,
                 onModeSelected = onAuthModeSelected,
@@ -182,7 +167,6 @@ fun RankForgeNavHost(
                 onSubmit = onAuthSubmit,
                 onGoogleSignIn = onAuthGoogleSignIn,
                 onLogout = onAuthLogout,
-                onBack = { navController.popBackStack() },
                 onSignedInHome = {
                     openHomeMenuOnReturn = false
                     navController.popBackStack()

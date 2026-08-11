@@ -1,29 +1,29 @@
 package com.hoggamers.rankforge.presentation.navigation
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.Text
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
-import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
-import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
-import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
-import com.hoggamers.rankforge.presentation.auth.AuthUiState
+import com.hoggamers.rankforge.presentation.AUTH_SESSION_LOADING_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.RankForgeAppContent
 import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
-import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_CREATION_SCREEN_TEST_TAG
-import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG
-import com.hoggamers.rankforge.presentation.screen.TournamentCreationViewModel
-import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
+import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.auth.AuthMode
+import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
-import java.time.Clock
-import java.time.LocalDate
-import java.time.ZoneOffset
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,80 +33,128 @@ class AuthNavigationTest {
     @get:Rule
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
-    private val context
-        get() = InstrumentationRegistry.getInstrumentation().targetContext
-
     @Test
-    fun signedOutLocalTournamentCreationRemainsAccessible() {
-        val repository = InMemoryTournamentRepository()
-        val creationViewModel = createCreationViewModel(repository)
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+    fun sessionLoadingShowsOnlyOpaqueLoadingState() {
         composeTestRule.setContent {
             RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = AuthUiState(isSignedIn = false),
-                    creationViewModel = creationViewModel,
-                    listViewModel = listViewModel,
+                RankForgeAppContent(
+                    authUiState = AuthUiState(isSessionLoading = true),
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
                 )
             }
         }
 
-        composeTestRule.onNodeWithText(context.getString(R.string.open_tournament_creation)).performClick()
-
-        composeTestRule.onNodeWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Rank-Forge").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Checking account session.").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }
 
     @Test
-    fun accountEntryOpensAuthRouteWithoutGatingList() {
-        val repository = InMemoryTournamentRepository()
-        val creationViewModel = createCreationViewModel(repository)
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
-        composeTestRule.setContent {
-            RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = AuthUiState(isSignedIn = false),
-                    creationViewModel = creationViewModel,
-                    listViewModel = listViewModel,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
-    }
-
-    @Test
-    fun googleSignInActionIsThreadedThroughNavigation() {
-        val repository = InMemoryTournamentRepository()
-        val creationViewModel = createCreationViewModel(repository)
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+    fun signedOutAuthKeepsGoogleCallbackAvailable() {
         var googleClickCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = AuthUiState(isSignedIn = false),
+                RankForgeAppContent(
+                    authUiState = AuthUiState(),
                     onAuthGoogleSignIn = { googleClickCount += 1 },
-                    creationViewModel = creationViewModel,
-                    listViewModel = listViewModel,
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_AUTH_ENTRY_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG).performClick()
-
-        assertEquals(1, googleClickCount)
+        composeTestRule.runOnIdle { org.junit.Assert.assertEquals(1, googleClickCount) }
     }
 
-    private fun createCreationViewModel(
-        repository: InMemoryTournamentRepository,
-    ): TournamentCreationViewModel {
-        val today = LocalDate.of(2026, 7, 24)
-        return TournamentCreationViewModel(
-            CreateTournamentUseCase(
-                repository = repository,
-                clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
-            ),
-        )
+    @Test
+    fun signedOutShowsAuthAndNoProtectedContent() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(),
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
+    }
+
+    @Test
+    fun signedInShowsProtectedContentEvenWhileSessionLoading() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(isSignedIn = true, isSessionLoading = true),
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("protected_home").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun signedOutToSignedInTransitionRemovesAuthAndShowsProtectedContent() {
+        var authUiState by mutableStateOf(AuthUiState())
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle { authUiState = AuthUiState(isSignedIn = true) }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("protected_home").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun logoutOrSessionLossRemovesProtectedContentAndShowsAuth() {
+        var authUiState by mutableStateOf(AuthUiState(isSignedIn = true))
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("protected_home").assertIsDisplayed()
+        composeTestRule.runOnIdle { authUiState = AuthUiState() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
+    }
+
+    @Test
+    fun signupConfirmationRemainsOnAuthGate() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(
+                        mode = AuthMode.SignUp,
+                        statusMessage = com.hoggamers.rankforge.presentation.auth.AuthUiMessage.SignUpConfirmationRequired,
+                    ),
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            InstrumentationRegistry.getInstrumentation().targetContext
+                .getString(R.string.auth_signup_confirmation_required_message),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }
 }

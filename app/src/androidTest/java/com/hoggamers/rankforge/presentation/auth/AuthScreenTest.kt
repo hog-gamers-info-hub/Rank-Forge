@@ -45,7 +45,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -58,13 +57,9 @@ class AuthScreenTest {
             .assertIsDisplayed()
             .assertTextEquals(context.getString(R.string.auth_log_in_action))
         composeTestRule.onNodeWithText(context.getString(R.string.auth_google_continue_action)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            context.getString(R.string.auth_login_local_tournaments_message),
-        ).assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            context.getString(R.string.auth_continue_without_signing_in_action),
-        ).assertIsDisplayed()
-        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_signed_out)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("You can use local tournaments without signing in.")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Continue without signing in").assertCountEquals(0)
     }
 
     @Test
@@ -78,7 +73,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -111,7 +105,6 @@ class AuthScreenTest {
                     onPasswordChanged = { password -> uiState = uiState.copy(password = password) },
                     onSubmit = { submitCount += 1 },
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -122,29 +115,6 @@ class AuthScreenTest {
 
         assertEquals(AuthMode.Login, uiState.mode)
         assertEquals(1, submitCount)
-    }
-
-    @Test
-    fun loginContinueWithoutSigningInInvokesOnBack() {
-        var backCount by mutableIntStateOf(0)
-
-        composeTestRule.setContent {
-            RankForgeTheme {
-                AuthScreen(
-                    uiState = AuthUiState(),
-                    onModeSelected = {},
-                    onEmailChanged = {},
-                    onPasswordChanged = {},
-                    onSubmit = {},
-                    onLogout = {},
-                    onBack = { backCount += 1 },
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG).performClick()
-
-        assertEquals(1, backCount)
     }
 
     @Test
@@ -162,7 +132,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -185,7 +154,6 @@ class AuthScreenTest {
                     onPasswordChanged = { password -> uiState = uiState.copy(password = password) },
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -199,10 +167,9 @@ class AuthScreenTest {
         composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.auth_create_account_action)).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.auth_google_continue_action)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            context.getString(R.string.auth_continue_without_signing_in_action),
-        ).assertIsDisplayed()
-        composeTestRule.onAllNodesWithText(context.getString(R.string.auth_signed_out)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("You can still use local tournaments without signing in.")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Continue without signing in").assertCountEquals(0)
     }
 
     @Test
@@ -219,7 +186,6 @@ class AuthScreenTest {
                     onPasswordChanged = { password -> uiState = uiState.copy(password = password) },
                     onSubmit = { submitCount += 1 },
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -235,31 +201,6 @@ class AuthScreenTest {
     }
 
     @Test
-    fun continueWithoutSigningInInvokesOnBack() {
-        var uiState by mutableStateOf(AuthUiState())
-        var backCount by mutableIntStateOf(0)
-
-        composeTestRule.setContent {
-            RankForgeTheme {
-                AuthScreen(
-                    uiState = uiState,
-                    onModeSelected = { mode -> uiState = uiState.copy(mode = mode) },
-                    onEmailChanged = {},
-                    onPasswordChanged = {},
-                    onSubmit = {},
-                    onLogout = {},
-                    onBack = { backCount += 1 },
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithText(context.getString(R.string.auth_signup_mode)).performClick()
-        composeTestRule.onNodeWithTag(AUTH_CONTINUE_WITHOUT_SIGNING_IN_ACTION_TEST_TAG).performClick()
-
-        assertEquals(1, backCount)
-    }
-
-    @Test
     fun passwordStartsHiddenAndShowHideTogglesVisibility() {
         var uiState by mutableStateOf(AuthUiState())
 
@@ -272,7 +213,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -301,7 +241,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                     onGoogleSignIn = { googleClickCount += 1 },
                 )
             }
@@ -329,7 +268,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -353,7 +291,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -378,7 +315,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -418,7 +354,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                     onSignedInHome = { homeCount += 1 },
                     onSignedInBack = { backCount += 1 },
                 )
@@ -448,7 +383,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -474,7 +408,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -499,7 +432,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }
@@ -523,7 +455,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                     onGoogleSignIn = { googleClickCount += 1 },
                 )
             }
@@ -545,7 +476,6 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onBack = {},
                 )
             }
         }

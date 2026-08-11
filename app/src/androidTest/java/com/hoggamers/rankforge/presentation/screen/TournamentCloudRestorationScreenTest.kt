@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
-import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -25,13 +24,8 @@ class TournamentCloudRestorationScreenTest {
         var restoredTournamentId: String? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                TournamentListScreen(
-                    uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
-                    onCreateTournament = {},
-                    onOpenTournamentDetails = {},
-                    onOpenAuth = {},
-                    restorationUiState = TournamentCloudRestorationUiState.Available(
+                TournamentCloudRestorationSection(
+                    uiState = TournamentCloudRestorationUiState.Available(
                         listOf(
                             TournamentCloudRestorationSummary(
                                 id = TOURNAMENT_ID,
@@ -42,6 +36,7 @@ class TournamentCloudRestorationScreenTest {
                             ),
                         ),
                     ),
+                    onLoadCloudTournaments = {},
                     onRestoreCloudTournament = { restoredTournamentId = it },
                 )
             }
@@ -58,13 +53,10 @@ class TournamentCloudRestorationScreenTest {
     fun authenticationRequiredStateIsVisible() {
         composeTestRule.setContent {
             RankForgeTheme {
-                TournamentListScreen(
-                    uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = false),
-                    onCreateTournament = {},
-                    onOpenTournamentDetails = {},
-                    onOpenAuth = {},
-                    restorationUiState = TournamentCloudRestorationUiState.AuthenticationRequired,
+                TournamentCloudRestorationSection(
+                    uiState = TournamentCloudRestorationUiState.AuthenticationRequired,
+                    onLoadCloudTournaments = {},
+                    onRestoreCloudTournament = {},
                 )
             }
         }
@@ -77,11 +69,10 @@ class TournamentCloudRestorationScreenTest {
     fun queuedStateShowsRestorationSavedLocallyMessage() {
         composeTestRule.setContent {
             RankForgeTheme {
-                TournamentListScreen(
-                    uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
-                    onCreateTournament = {}, onOpenTournamentDetails = {}, onOpenAuth = {},
-                    restorationUiState = TournamentCloudRestorationUiState.Queued,
+                TournamentCloudRestorationSection(
+                    uiState = TournamentCloudRestorationUiState.Queued,
+                    onLoadCloudTournaments = {},
+                    onRestoreCloudTournament = {},
                 )
             }
         }
@@ -93,11 +84,10 @@ class TournamentCloudRestorationScreenTest {
     fun queuePersistenceFailureStateShowsRestorationLocalSaveFailureMessage() {
         composeTestRule.setContent {
             RankForgeTheme {
-                TournamentListScreen(
-                    uiState = TournamentListUiState(),
-                    authUiState = AuthUiState(isSignedIn = true),
-                    onCreateTournament = {}, onOpenTournamentDetails = {}, onOpenAuth = {},
-                    restorationUiState = TournamentCloudRestorationUiState.QueuePersistenceFailure,
+                TournamentCloudRestorationSection(
+                    uiState = TournamentCloudRestorationUiState.QueuePersistenceFailure,
+                    onLoadCloudTournaments = {},
+                    onRestoreCloudTournament = {},
                 )
             }
         }
