@@ -19,6 +19,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
+import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_BACK_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG
@@ -236,6 +237,10 @@ class TournamentListAndDetailsScreenTest {
             .assertIsDisplayed()
 
         composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_BACK_ITEM_TEST_TAG)
+            .assertIsDisplayed()
+
+        composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG)
             .assertIsEnabled()
 
@@ -257,7 +262,7 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun accountMenuItemClosesDrawerAndInvokesAccountCallback() {
+    fun accountMenuItemInvokesAccountCallbackSynchronously() {
         var openAccountCount = 0
 
         composeTestRule.setContent {
@@ -284,7 +289,63 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(1, openAccountCount)
         }
+    }
 
+    @Test
+    fun visibleBackItemClosesDrawerAndKeepsHomeVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = {},
+                    onOpenAuth = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_BACK_ITEM_TEST_TAG)
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
+            .assertIsNotDisplayed()
+    }
+
+    @Test
+    fun systemBackClosesOpenDrawerAndKeepsHomeVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = {},
+                    onOpenAuth = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.runOnIdle {
+            composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
             .assertIsNotDisplayed()
