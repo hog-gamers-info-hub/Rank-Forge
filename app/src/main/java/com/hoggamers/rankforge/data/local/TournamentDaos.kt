@@ -502,6 +502,49 @@ interface MatchLobbyScreenshotAssetDao {
     )
 
     @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET crop_profile_id = :cropProfileId,
+            crop_left = :cropLeft,
+            crop_top = :cropTop,
+            crop_right = :cropRight,
+            crop_bottom = :cropBottom,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun updateConfirmedCrop(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        cropProfileId: String,
+        cropLeft: Double,
+        cropTop: Double,
+        cropRight: Double,
+        cropBottom: Double,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET crop_profile_id = NULL,
+            crop_left = NULL,
+            crop_top = NULL,
+            crop_right = NULL,
+            crop_bottom = NULL,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun clearConfirmedCrop(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        updatedAt: Long,
+    )
+
+    @Query(
         "DELETE FROM match_lobby_screenshot_assets WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex",
     )
     suspend fun deleteByMatchAndIndex(matchId: String, lobbyScreenshotIndex: Int)

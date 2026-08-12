@@ -1,6 +1,11 @@
 package com.hoggamers.rankforge.data.local
 
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -15,6 +20,13 @@ sealed interface MatchLobbyScreenshotAssetSaveResult {
     ) : MatchLobbyScreenshotAssetSaveResult
 
     data object StateConflict : MatchLobbyScreenshotAssetSaveResult
+}
+
+sealed interface MatchLobbyScreenshotCropSaveResult {
+    data object Saved : MatchLobbyScreenshotCropSaveResult
+    data object MissingAsset : MatchLobbyScreenshotCropSaveResult
+    data object InvalidIdentity : MatchLobbyScreenshotCropSaveResult
+    data object InvalidCrop : MatchLobbyScreenshotCropSaveResult
 }
 
 interface MatchLobbyScreenshotAssetRepository {
@@ -40,6 +52,17 @@ interface MatchLobbyScreenshotAssetRepository {
     suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity)
 
     suspend fun deleteByMatchId(matchId: String)
+
+    suspend fun persistConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult
+
+    suspend fun clearConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult
 }
 
 @Singleton
@@ -146,6 +169,59 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
     override suspend fun deleteByMatchId(matchId: String) {
         dao.deleteByMatchId(matchId)
     }
+
+    override suspend fun persistConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult {
+        val asset = try {
+            dao.readByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: RuntimeException) {
+            return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        } ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
+        val storedIdentity = asset.identityOrNull()
+            ?: return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
+            ?: return MatchLobbyScreenshotCropSaveResult.InvalidCrop
+        return when (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.Lobby)) {
+            is OcrCropValidationResult.Invalid -> MatchLobbyScreenshotCropSaveResult.InvalidCrop
+            is OcrCropValidationResult.Valid -> {
+                dao.updateConfirmedCrop(
+                    matchId = identity.matchId,
+                    lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+                    cropProfileId = OcrCropValidationProfiles.Lobby.id,
+                    cropLeft = crop.left,
+                    cropTop = crop.top,
+                    cropRight = crop.right,
+                    cropBottom = crop.bottom,
+                    updatedAt = updatedAt,
+                )
+                MatchLobbyScreenshotCropSaveResult.Saved
+            }
+        }
+    }
+
+    override suspend fun clearConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult {
+        val asset = try {
+            dao.readByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: RuntimeException) {
+            return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        } ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
+        val storedIdentity = asset.identityOrNull()
+            ?: return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        dao.clearConfirmedCrop(identity.matchId, identity.lobbyScreenshotIndex, updatedAt)
+        return MatchLobbyScreenshotCropSaveResult.Saved
+    }
 }
 
 class NoOpMatchLobbyScreenshotAssetRepository : MatchLobbyScreenshotAssetRepository {
@@ -178,6 +254,17 @@ class NoOpMatchLobbyScreenshotAssetRepository : MatchLobbyScreenshotAssetReposit
     override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
 
     override suspend fun deleteByMatchId(matchId: String) = Unit
+
+    override suspend fun persistConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
+
+    override suspend fun clearConfirmedCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
 }
 
 fun MatchLobbyScreenshotAssetEntity.identityOrNull(): MatchLobbyScreenshotIdentity? = runCatching {
