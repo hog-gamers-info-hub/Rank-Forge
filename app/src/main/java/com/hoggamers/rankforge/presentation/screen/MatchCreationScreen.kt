@@ -230,6 +230,10 @@ private fun MatchValidationText(error: MatchValidationError?) {
         MatchValidationError.INVALID -> stringResource(R.string.match_number_invalid_error)
         MatchValidationError.DUPLICATE -> stringResource(R.string.duplicate_match_number_error)
         MatchValidationError.TOURNAMENT_NOT_CONFIRMED -> stringResource(R.string.match_tournament_not_confirmed_error)
+        MatchValidationError.NO_PARTICIPATING_TEAMS ->
+            stringResource(R.string.enter_and_save_teams_before_calculating_message)
+        MatchValidationError.INVALID_TEAM_SLOTS ->
+            stringResource(R.string.invalid_team_slots_before_calculating_message)
         MatchValidationError.LIMIT_REACHED -> stringResource(R.string.match_limit_reached_error)
         MatchValidationError.TOURNAMENT_NOT_FOUND -> stringResource(R.string.match_tournament_not_found_error)
         null -> null
@@ -238,4 +242,3 @@ private fun MatchValidationText(error: MatchValidationError?) {
         Text(text = message, color = MaterialTheme.colorScheme.error)
     }
 }
-

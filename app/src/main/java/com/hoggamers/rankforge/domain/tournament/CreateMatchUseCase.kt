@@ -24,6 +24,8 @@ enum class MatchValidationError {
     DUPLICATE,
     TOURNAMENT_NOT_FOUND,
     TOURNAMENT_NOT_CONFIRMED,
+    NO_PARTICIPATING_TEAMS,
+    INVALID_TEAM_SLOTS,
     LIMIT_REACHED,
 }
 
@@ -46,10 +48,22 @@ class CreateMatchUseCase(
             )
         }
 
+        val participation = repository
+            .observeSlotsByTournamentId(input.tournamentId)
+            .first()
+            .analyzeTeamSlotParticipation()
+        if (participation.hasGap) {
+            return CreateMatchResult.Invalid(
+                mapOf(MatchField.TOURNAMENT to MatchValidationError.INVALID_TEAM_SLOTS),
+            )
+        }
+        if (participation.activeCount == 0) {
+            return CreateMatchResult.Invalid(
+                mapOf(MatchField.TOURNAMENT to MatchValidationError.NO_PARTICIPATING_TEAMS),
+            )
+        }
+
         val errors = buildMap {
-            if (tournament.status != TournamentStatus.CONFIRMED) {
-                put(MatchField.TOURNAMENT, MatchValidationError.TOURNAMENT_NOT_CONFIRMED)
-            }
             val trimmedMatchNumber = input.matchNumber.trim()
             val parsedMatchNumber = trimmedMatchNumber.toIntOrNull()
             when {
@@ -89,6 +103,8 @@ class CreateMatchUseCase(
 enum class MatchCreationFailure(val field: MatchField, val error: MatchValidationError) {
     TOURNAMENT_NOT_FOUND(MatchField.TOURNAMENT, MatchValidationError.TOURNAMENT_NOT_FOUND),
     TOURNAMENT_NOT_CONFIRMED(MatchField.TOURNAMENT, MatchValidationError.TOURNAMENT_NOT_CONFIRMED),
+    NO_PARTICIPATING_TEAMS(MatchField.TOURNAMENT, MatchValidationError.NO_PARTICIPATING_TEAMS),
+    INVALID_TEAM_SLOTS(MatchField.TOURNAMENT, MatchValidationError.INVALID_TEAM_SLOTS),
     DUPLICATE_MATCH_NUMBER(MatchField.MATCH_NUMBER, MatchValidationError.DUPLICATE),
     LIMIT_REACHED(MatchField.TOURNAMENT, MatchValidationError.LIMIT_REACHED),
     DUPLICATE_ID(MatchField.TOURNAMENT, MatchValidationError.INVALID),

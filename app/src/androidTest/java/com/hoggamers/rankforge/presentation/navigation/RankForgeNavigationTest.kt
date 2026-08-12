@@ -694,8 +694,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         pressBackOnMainThread()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Contact: 123").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
     }
 
     @Test
@@ -720,7 +719,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + createdTournamentId).performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Contact: 123").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
 
         pressBackOnMainThread()
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
@@ -1114,7 +1113,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Status: FINALIZED").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1 - Completed").performScrollTo().assertIsDisplayed()
 
         composeTestRule
             .onNodeWithTag(OPEN_STANDINGS_ACTION_TEST_TAG)
@@ -1142,9 +1141,12 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 ) as CreateMatchResult.Created
             ).match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1160,10 +1162,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchPlacementDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + "1")
@@ -1174,20 +1176,23 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     @Test
     fun draftMatchDetailsNavigatesToKillEntry() {
         val viewModels = createNavigationViewModels()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
-            CreateMatchUseCase(viewModels.repository)(
+            (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
                     matchNumber = "1",
                     date = LocalDate.of(2026, 7, 24),
                     mapName = "Bermuda",
                 ),
-            )
+            ) as CreateMatchResult.Created).match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1206,10 +1211,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchKillDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(MATCH_KILL_FIELD_TEST_TAG_PREFIX + "1")
@@ -1219,20 +1224,23 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     @Test
     fun draftMatchReviewNavigatesToPlacementKillsAndDetails() {
         val viewModels = createNavigationViewModels()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
-            CreateMatchUseCase(viewModels.repository)(
+            (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
                     matchNumber = "1",
                     date = LocalDate.of(2026, 7, 24),
                     mapName = "Bermuda",
                 ),
-            )
+            ) as CreateMatchResult.Created).match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1251,10 +1259,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
 
         composeTestRule
@@ -1285,20 +1293,23 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         val viewModels = createNavigationViewModels()
         var activeMatchReviewViewModel: MatchReviewViewModel? = null
         val cachedMatchReviewViewModels = mutableMapOf<String, MatchReviewViewModel>()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
-            CreateMatchUseCase(viewModels.repository)(
+            (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
                     matchNumber = "1",
                     date = LocalDate.of(2026, 7, 24),
                     mapName = "Bermuda",
                 ),
-            )
+            ) as CreateMatchResult.Created).match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1324,10 +1335,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
 
         composeTestRule.runOnIdle {
@@ -1368,7 +1379,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     @Test
     fun finalizedMatchReviewDoesNotOfferPlacementOrKillEditing() {
         val viewModels = createNavigationViewModels()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
             val match = (
                 CreateMatchUseCase(viewModels.repository)(
@@ -1385,10 +1396,14 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 placements = (1..12).map { MatchPlacement(it, it) },
                 kills = (1..12).map { MatchKill(it, it - 1) },
             )
+            match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1407,10 +1422,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
@@ -1430,7 +1445,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithText("Status: FINALIZED").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1 - Completed").performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1").assertCountEquals(0)
     }
@@ -1438,7 +1453,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     @Test
     fun finalizedMatchCorrectionReturnsToCorrectedReadOnlyReview() {
         val viewModels = createNavigationViewModels()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
             val match = (
                 CreateMatchUseCase(viewModels.repository)(
@@ -1455,10 +1470,14 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 placements = (1..12).map { MatchPlacement(it, it) },
                 kills = (1..12).map { MatchKill(it, it - 1) },
             )
+            match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1477,10 +1496,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
 
@@ -1518,7 +1537,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
-    fun draftMatchDetailsSurfacesMissingResultValidation() {
+    fun draftMatchDetailsHidesLegacyValidationDetails() {
         val viewModels = createNavigationViewModels()
         runBlocking {
             viewModels.repository.create(confirmedTournament())
@@ -1550,39 +1569,31 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule
-            .onNodeWithText(
-                context.getString(
-                    R.string.match_validation_issue,
-                    1,
-                    context.getString(R.string.match_validation_missing_placement),
-                ),
-            )
-            .performScrollTo()
-            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1 - In Progress").performScrollTo().assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Map: Bermuda").assertCountEquals(0)
     }
 
     @Test
     fun draftMatchAllowsEnteringAndDisplayingAllKills() {
         val viewModels = createNavigationViewModels()
-        runBlocking {
+        val matchId = runBlocking {
             viewModels.repository.create(confirmedTournament())
-            CreateMatchUseCase(viewModels.repository)(
+            (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
                     matchNumber = "1",
                     date = LocalDate.of(2026, 7, 24),
                     mapName = "Bermuda",
                 ),
-            )
+            ) as CreateMatchResult.Created).match.id
         }
+        lateinit var navController: NavHostController
         composeTestRule.setContent {
+            navController = rememberNavController()
             RankForgeTheme {
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1601,10 +1612,10 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_KILLS_ACTION_TEST_TAG_PREFIX + "1")
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchKillDestination("confirmed-id", matchId))
+        }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
 
         (1..12).forEach { slotNumber ->
@@ -1664,6 +1675,8 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeRoster = ObserveRosterByTournamentUseCase(repository),
                     googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
+                    saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+                    validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
                 ).also {
                     it.load(tournamentId)
                 }

@@ -499,7 +499,7 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun detailsScreenShowsAllApprovedFields() {
+    fun detailsScreenShowsSimplifiedHeaderAndHidesLegacyMetadata() {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
@@ -519,9 +519,9 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
         composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Organizer: Alex").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Contact: 123").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Organizer: Alex").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Contact: 123").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
     }
 
     @Test
@@ -553,7 +553,7 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun detailsScreenShowsAllTwelveEmptySlotsWithoutRosterControls() {
+    fun detailsScreenShowsNoTeamsWhenAllSlotsAreEmpty() {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
@@ -567,22 +567,11 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        (1..12).forEach { slotNumber ->
-            composeTestRule
-                .onNodeWithTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slotNumber)
-                .performScrollTo()
-                .assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_details_no_teams_saved)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + "1").assertCountEquals(0)
 
-            composeTestRule
-                .onNodeWithText("Slot $slotNumber")
-                .performScrollTo()
-                .assertIsDisplayed()
-        }
-
-        composeTestRule
-            .onAllNodesWithText(context.getString(R.string.empty_team_slot_subtitle))
-            .assertCountEquals(12)
-
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_details_slot_list_title)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.enter_teams_action)).assertCountEquals(1)
         composeTestRule.onAllNodesWithText("Team name").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Player").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Edit").assertCountEquals(0)
@@ -596,21 +585,20 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
-                    uiState = TournamentDetailsUiState(
-                        isLoading = false,
-                        tournament = tournamentDetailsItem(
-                            slots = listOf(
-                                TeamSlotUiState(
-                                    slotNumber = 1,
-                                    teamName = "Alpha",
-                                ),
-                            ) + (2..12).map {
-                                TeamSlotUiState(
-                                    slotNumber = it,
-                                    teamName = "",
-                                )
-                            },
-                        ),
+                        uiState = TournamentDetailsUiState(
+                            isLoading = false,
+                            tournament = tournamentDetailsItem(
+                                slots = (1..12).map { slotNumber ->
+                                    TeamSlotUiState(
+                                        slotNumber = slotNumber,
+                                        teamName = when (slotNumber) {
+                                            1 -> "Alpha"
+                                            2 -> "HOG"
+                                            else -> ""
+                                        },
+                                    )
+                                },
+                            ),
                     ),
                     onBackToList = {},
                     onEnterTeams = { entryTournamentId = it },
@@ -619,9 +607,12 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithText("Alpha")
+            .onNodeWithText("Slot 1 - Alpha")
             .performScrollTo()
             .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slot 2 - HOG").performScrollTo().assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Slot 10 - Team 10").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Slot 12 - Titan").assertCountEquals(0)
 
         composeTestRule
             .onNodeWithText(context.getString(R.string.enter_teams_action))
@@ -634,7 +625,7 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
-    fun detailsScreenShowsDraftMatchValidationIssues() {
+    fun detailsScreenHidesLegacyMatchDetailsAndShowsSimplifiedRows() {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
@@ -665,31 +656,134 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1")
+            .onNodeWithText("Match 1 - In Progress")
             .performScrollTo()
             .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Map: Bermuda").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.enter_match_placements_action)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.enter_match_kills_action)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.review_match_action)).assertCountEquals(0)
+    }
 
-        composeTestRule
-            .onNodeWithText(
-                context.getString(
-                    R.string.match_validation_issue,
-                    1,
-                    context.getString(
-                        R.string.match_validation_missing_placement,
+    @Test
+    fun detailsScreenShowsCreateMatchForUnconfirmedTournament() {
+        var createdTournamentId: String? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            slots = (1..8).map { slotNumber ->
+                                TeamSlotUiState(slotNumber, "Team $slotNumber")
+                            } + (9..12).map { slotNumber -> TeamSlotUiState(slotNumber, "") },
+                            status = TournamentStatus.DRAFT,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
                     ),
-                ),
-            )
-            .assertExists()
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onCreateMatch = { createdTournamentId = it },
+                )
+            }
+        }
 
+        composeTestRule.onNodeWithText("MATCHES").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1 - Completed").performScrollTo().assertIsDisplayed()
         composeTestRule
-            .onNodeWithTag(
-                MATCH_VALIDATION_ISSUE_TEST_TAG_PREFIX +
-                    "1_" +
-                    com.hoggamers.rankforge.domain.tournament
-                        .MatchResultValidationError.MISSING_PLACEMENT.name,
-            )
+            .onNodeWithText(context.getString(R.string.calculate_points_action))
             .performScrollTo()
-            .assertIsDisplayed()
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals("stable-id", createdTournamentId)
+        }
+        composeTestRule.onAllNodesWithText(context.getString(R.string.matches_require_confirmed_roster_message)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("+ Calculate New Match").assertCountEquals(0)
+    }
+
+    @Test
+    fun calculatePointsConfirmationShowsDynamicActionsOnDetails() {
+        var cancelled = false
+        var usedTeams = false
+        var usedDefaults = false
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            slots = (1..8).map { TeamSlotUiState(it, "Team $it") },
+                        ),
+                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(8, 4),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onUseEnteredTeams = { usedTeams = true },
+                    onUseDefaults = { usedDefaults = true },
+                    onCancelTeamCountConfirmation = { cancelled = true },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("You have entered 8 team names.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("4 slots are empty.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("How would you like to continue?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Use 8 Teams").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText("Use Defaults").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed().performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(true, usedTeams)
+            assertEquals(true, usedDefaults)
+            assertEquals(true, cancelled)
+        }
+    }
+
+    @Test
+    fun detailsScreenHidesLegacyManagementControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_CLOUD_UPLOAD_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(DRAFT_MATCH_CLOUD_SYNC_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_CLOUD_RESTORE_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.back_to_tournament_list_action)).assertCountEquals(0)
     }
 
     @Test
@@ -748,13 +842,14 @@ class TournamentListAndDetailsScreenTest {
             )
         },
         matches: List<MatchUiState> = emptyList(),
+        status: TournamentStatus = TournamentStatus.DRAFT,
     ) = TournamentDetailsItemUiState(
         id = "stable-id",
         name = "Summer Cup",
         date = LocalDate.of(2026, 7, 24),
         organizerName = "Alex",
         organizerContactNumber = "123",
-        status = TournamentStatus.DRAFT,
+        status = status,
         slots = slots,
         matches = matches,
     )

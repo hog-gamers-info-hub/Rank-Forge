@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import java.time.LocalDate
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -12,11 +13,25 @@ import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
+data class TeamCountConfirmationUiState(
+    val enteredCount: Int,
+    val emptyCount: Int,
+)
+
+enum class CalculatePointsMessage {
+    NO_TEAMS_SAVED,
+    INVALID_TEAM_SLOTS,
+    VALIDATION_FAILED,
+}
+
 data class TournamentDetailsUiState(
     val isLoading: Boolean = true,
     val tournament: TournamentDetailsItemUiState? = null,
     val csvExportResult: AndroidExportResult? = null,
     val googleSheetsExportResult: AndroidExportResult? = null,
+    val pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
+    val calculatePointsMessage: CalculatePointsMessage? = null,
+    val createMatchRequest: String? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null
@@ -31,6 +46,7 @@ data class TournamentDetailsItemUiState(
     val status: TournamentStatus,
     val slots: List<TeamSlotUiState>,
     val matches: List<MatchUiState> = emptyList(),
+    val hasInvalidTeamSlotState: Boolean = false,
 )
 
 val TournamentDetailsItemUiState.canPrepareStandingsCsvExport: Boolean
@@ -73,20 +89,24 @@ data class MatchResultValidationIssueUiState(
 fun Tournament.toDetailsItemUiState(
     slots: List<TeamSlot>,
     matches: List<Match> = emptyList(),
-): TournamentDetailsItemUiState = TournamentDetailsItemUiState(
-    id = id,
-    name = name,
-    date = date,
-    organizerName = organizerName,
-    organizerContactNumber = organizerContactNumber,
-    status = status,
-    slots = slots.map {
+): TournamentDetailsItemUiState {
+    val participation = slots.analyzeTeamSlotParticipation()
+    return TournamentDetailsItemUiState(
+        id = id,
+        name = name,
+        date = date,
+        organizerName = organizerName,
+        organizerContactNumber = organizerContactNumber,
+        status = status,
+        slots = slots
+            .filter { it.slotNumber in participation.activeSlotNumbers }
+            .map {
         TeamSlotUiState(
             slotNumber = it.slotNumber,
             teamName = it.teamName,
         )
-    },
-    matches = matches.sortedBy { it.matchNumber }.map { match ->
+            },
+        matches = matches.sortedBy { it.matchNumber }.map { match ->
         MatchUiState(
             id = match.id,
             matchNumber = match.matchNumber,
@@ -104,8 +124,10 @@ fun Tournament.toDetailsItemUiState(
                     }
                 },
         )
-    },
-)
+        },
+        hasInvalidTeamSlotState = participation.hasGap,
+    )
+}
 
 private fun List<MatchPlacement>.toUiState(): List<MatchPlacementDisplayUiState> = map { placement ->
     MatchPlacementDisplayUiState(
@@ -122,4 +144,6 @@ private fun List<MatchKill>.toKillUiState(): List<MatchKillDisplayUiState> = map
 }
 
 fun TournamentDetailsItemUiState.canCreateMatch(): Boolean =
-    status == TournamentStatus.CONFIRMED && matches.size < MAX_MATCHES_PER_TOURNAMENT
+    matches.size < MAX_MATCHES_PER_TOURNAMENT
+
+fun TournamentDetailsItemUiState.activeTeamSlotCount(): Int = slots.count { it.teamName.trim().isNotBlank() }

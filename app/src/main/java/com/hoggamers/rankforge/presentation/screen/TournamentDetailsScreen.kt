@@ -7,16 +7,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.format.DateTimeFormatter
@@ -51,6 +55,7 @@ const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG =
     "tournament_standings_google_sheets_export_action"
 const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG =
     "tournament_standings_google_sheets_export_status"
+private const val SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS = false
 
 @Composable
 fun TournamentDetailsRoute(
@@ -73,6 +78,12 @@ fun TournamentDetailsRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(uiState.createMatchRequest) {
+        uiState.createMatchRequest?.let { tournamentId ->
+            viewModel.onCreateMatchRequestHandled()
+            onCreateMatch(tournamentId)
+        }
+    }
     val uploadUiState = if (uploadViewModel == null) {
         TournamentCloudUploadUiState.Idle
     } else {
@@ -100,6 +111,12 @@ fun TournamentDetailsRoute(
         onBackToList = onBackToList,
         onEnterTeams = onEnterTeams,
         onCreateMatch = onCreateMatch,
+        onCalculatePointsRequested = { viewModel.onCalculatePointsRequested() },
+        pendingTeamCountConfirmation = uiState.pendingTeamCountConfirmation,
+        calculatePointsMessage = uiState.calculatePointsMessage,
+        onCancelTeamCountConfirmation = viewModel::cancelTeamCountConfirmation,
+        onUseEnteredTeams = viewModel::useEnteredTeams,
+        onUseDefaults = viewModel::useDefaults,
         onEnterMatchPlacements = onEnterMatchPlacements,
         onEnterMatchKills = onEnterMatchKills,
         onReviewMatch = onReviewMatch,
@@ -127,6 +144,12 @@ fun TournamentDetailsScreen(
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
+    onCalculatePointsRequested: ((String) -> Unit)? = null,
+    pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
+    calculatePointsMessage: CalculatePointsMessage? = null,
+    onCancelTeamCountConfirmation: () -> Unit = {},
+    onUseEnteredTeams: () -> Unit = {},
+    onUseDefaults: () -> Unit = {},
     onEnterMatchPlacements: (String, String) -> Unit = { _, _ -> },
     onEnterMatchKills: (String, String) -> Unit = { _, _ -> },
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
@@ -143,6 +166,7 @@ fun TournamentDetailsScreen(
     onRestoreMatches: (String) -> Unit = {},
     onPrepareGoogleSheetsStandingsExport: (String) -> Unit = {},
     googleSheetsExportResult: AndroidExportResult? = null,
+    showLegacyControls: Boolean = SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -156,6 +180,12 @@ fun TournamentDetailsScreen(
             onBackToList = onBackToList,
             onEnterTeams = onEnterTeams,
             onCreateMatch = onCreateMatch,
+            onCalculatePointsRequested = onCalculatePointsRequested ?: onCreateMatch,
+            pendingTeamCountConfirmation = pendingTeamCountConfirmation,
+            calculatePointsMessage = calculatePointsMessage,
+            onCancelTeamCountConfirmation = onCancelTeamCountConfirmation,
+            onUseEnteredTeams = onUseEnteredTeams,
+            onUseDefaults = onUseDefaults,
             onEnterMatchPlacements = onEnterMatchPlacements,
             onEnterMatchKills = onEnterMatchKills,
             onReviewMatch = onReviewMatch,
@@ -173,6 +203,7 @@ fun TournamentDetailsScreen(
             onRestoreMatches = onRestoreMatches,
             onPrepareGoogleSheetsStandingsExport = onPrepareGoogleSheetsStandingsExport,
             googleSheetsExportResult = googleSheetsExportResult,
+            showLegacyControls = showLegacyControls,
         )
     }
 }
@@ -183,6 +214,12 @@ private fun TournamentDetailsContent(
     onBackToList: () -> Unit,
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit,
+    onCalculatePointsRequested: (String) -> Unit,
+    pendingTeamCountConfirmation: TeamCountConfirmationUiState?,
+    calculatePointsMessage: CalculatePointsMessage?,
+    onCancelTeamCountConfirmation: () -> Unit,
+    onUseEnteredTeams: () -> Unit,
+    onUseDefaults: () -> Unit,
     onEnterMatchPlacements: (String, String) -> Unit,
     onEnterMatchKills: (String, String) -> Unit,
     onReviewMatch: (String, String) -> Unit,
@@ -200,6 +237,7 @@ private fun TournamentDetailsContent(
     onRestoreMatches: (String) -> Unit,
     onPrepareGoogleSheetsStandingsExport: (String) -> Unit,
     googleSheetsExportResult: AndroidExportResult?,
+    showLegacyControls: Boolean,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -219,58 +257,80 @@ private fun TournamentDetailsContent(
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Text(text = stringResource(R.string.tournament_date_value, tournament.date.format(detailsDateFormatter)))
-        Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
-        Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
-        Text(
-            text = stringResource(
-                R.string.tournament_status_value,
-                stringResource(
-                    if (tournament.status == com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED) {
-                        R.string.tournament_status_confirmed
-                    } else {
-                        R.string.tournament_status_draft
-                    },
+        if (showLegacyControls) {
+            Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
+            Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
+            Text(
+                text = stringResource(
+                    R.string.tournament_status_value,
+                    stringResource(
+                        if (tournament.status == com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED) {
+                            R.string.tournament_status_confirmed
+                        } else {
+                            R.string.tournament_status_draft
+                        },
+                    ),
                 ),
-            ),
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        Button(
-            onClick = { onEnterTeams(tournament.id) },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(text = stringResource(R.string.enter_teams_action))
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Button(
+                onClick = { onEnterTeams(tournament.id) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = stringResource(R.string.enter_teams_action))
+            }
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            TournamentCloudUploadSection(
+                tournamentId = tournament.id,
+                uiState = uploadUiState,
+                onUpload = onUpload,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            DraftMatchCloudSyncSection(
+                tournamentId = tournament.id,
+                uiState = draftMatchSyncUiState,
+                onSync = onSyncDraftMatches,
+                onResolveConflict = onResolveDraftConflict,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            FinalizedMatchCloudSyncSection(
+                tournamentId = tournament.id,
+                uiState = finalizedMatchSyncUiState,
+                onSync = onSyncFinalizedMatches,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            LegacyTeamSlotList(slots = tournament.slots)
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            MatchList(
+                tournament = tournament,
+                onCreateMatch = onCreateMatch,
+                onEnterMatchPlacements = onEnterMatchPlacements,
+                onEnterMatchKills = onEnterMatchKills,
+                onReviewMatch = onReviewMatch,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            MatchCloudRestorationSection(tournament.id, matchCloudRestorationUiState, onRestoreMatches)
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        TournamentCloudUploadSection(
-            tournamentId = tournament.id,
-            uiState = uploadUiState,
-            onUpload = onUpload,
+
+        TeamSlotList(
+            slots = tournament.slots,
+            onEnterTeams = { onEnterTeams(tournament.id) },
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        DraftMatchCloudSyncSection(
-            tournamentId = tournament.id,
-            uiState = draftMatchSyncUiState,
-            onSync = onSyncDraftMatches,
-            onResolveConflict = onResolveDraftConflict,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        FinalizedMatchCloudSyncSection(
-            tournamentId = tournament.id,
-            uiState = finalizedMatchSyncUiState,
-            onSync = onSyncFinalizedMatches,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        TeamSlotList(slots = tournament.slots)
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        MatchList(
+        SimplifiedMatchList(
             tournament = tournament,
-            onCreateMatch = onCreateMatch,
-            onEnterMatchPlacements = onEnterMatchPlacements,
-            onEnterMatchKills = onEnterMatchKills,
-            onReviewMatch = onReviewMatch,
+            onCalculatePointsRequested = onCalculatePointsRequested,
+            calculatePointsMessage = calculatePointsMessage,
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        MatchCloudRestorationSection(tournament.id, matchCloudRestorationUiState, onRestoreMatches)
+        pendingTeamCountConfirmation?.let { confirmation ->
+            TeamCountConfirmationDialog(
+                confirmation = confirmation,
+                onCancel = onCancelTeamCountConfirmation,
+                onUseEnteredTeams = onUseEnteredTeams,
+                onUseDefaults = onUseDefaults,
+            )
+        }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = { onOpenStandings(tournament.id) },
@@ -280,7 +340,7 @@ private fun TournamentDetailsContent(
         ) {
             Text(text = stringResource(R.string.open_standings_action))
         }
-        if (tournament.canPrepareStandingsCsvExport) {
+        if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Button(
                 onClick = { onPrepareStandingsCsvExport(tournament.id) },
@@ -291,7 +351,7 @@ private fun TournamentDetailsContent(
                 Text(text = "Prepare CSV export")
             }
         }
-        when (csvExportResult) {
+        if (showLegacyControls) when (csvExportResult) {
             is AndroidExportResult.CsvReady -> Text(
                 text = "CSV export ready",
                 modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
@@ -307,7 +367,7 @@ private fun TournamentDetailsContent(
             else -> Unit
         }
 
-        if (tournament.canPrepareStandingsCsvExport) {
+        if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Button(
                 onClick = { onPrepareGoogleSheetsStandingsExport(tournament.id) },
@@ -320,7 +380,7 @@ private fun TournamentDetailsContent(
             }
         }
 
-        when (googleSheetsExportResult) {
+        if (showLegacyControls) when (googleSheetsExportResult) {
             is AndroidExportResult.CsvReady -> Text(
                 text = "Google Sheets export ready",
                 modifier = Modifier.testTag(
@@ -360,12 +420,14 @@ private fun TournamentDetailsContent(
             null -> Unit
         }
 
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        Button(
-            onClick = onBackToList,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(text = stringResource(R.string.back_to_tournament_list_action))
+        if (showLegacyControls) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Button(
+                onClick = onBackToList,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = stringResource(R.string.back_to_tournament_list_action))
+            }
         }
     }
 }
@@ -701,7 +763,45 @@ private fun MatchList(
 }
 
 @Composable
-private fun TeamSlotList(slots: List<TeamSlotUiState>) {
+private fun TeamSlotList(
+    slots: List<TeamSlotUiState>,
+    onEnterTeams: () -> Unit,
+) {
+    val activeSlots = slots.takeWhile { it.teamName.trim().isNotBlank() }
+    Column(
+        modifier = Modifier.testTag(TOURNAMENT_SLOT_LIST_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.tournament_details_slot_list_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (activeSlots.isEmpty()) {
+            Text(text = stringResource(R.string.tournament_details_no_teams_saved))
+        } else {
+            activeSlots.forEach { slot ->
+                Text(
+                    text = stringResource(
+                        R.string.tournament_details_slot_row,
+                        slot.slotNumber,
+                        slot.teamName,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.testTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slot.slotNumber),
+                )
+            }
+        }
+        Button(
+            onClick = onEnterTeams,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(text = stringResource(R.string.enter_teams_action))
+        }
+    }
+}
+
+@Composable
+private fun LegacyTeamSlotList(slots: List<TeamSlotUiState>) {
     Column(
         modifier = Modifier.testTag(TOURNAMENT_SLOT_LIST_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
@@ -727,6 +827,146 @@ private fun TeamSlotList(slots: List<TeamSlotUiState>) {
             }
         }
     }
+}
+
+@Composable
+private fun SimplifiedMatchList(
+    tournament: TournamentDetailsItemUiState,
+    onCalculatePointsRequested: (String) -> Unit,
+    calculatePointsMessage: CalculatePointsMessage?,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.tournament_details_matches_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (tournament.matches.isEmpty()) {
+            Text(text = stringResource(R.string.tournament_details_no_matches_message))
+        } else {
+            tournament.matches.forEach { match ->
+                Text(
+                    text = stringResource(
+                        R.string.tournament_details_match_row,
+                        match.matchNumber,
+                        stringResource(
+                            if (match.status == MatchStatus.DRAFT) {
+                                R.string.tournament_details_match_in_progress
+                            } else {
+                                R.string.tournament_details_match_completed
+                            },
+                        ),
+                    ),
+                    modifier = Modifier.testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
+                )
+            }
+        }
+        if (calculatePointsMessage != null) {
+            Text(
+                text = stringResource(
+                    when (calculatePointsMessage) {
+                        CalculatePointsMessage.NO_TEAMS_SAVED ->
+                            R.string.enter_and_save_teams_before_calculating_message
+                        CalculatePointsMessage.INVALID_TEAM_SLOTS ->
+                            R.string.team_entry_gap_message
+                        CalculatePointsMessage.VALIDATION_FAILED ->
+                            R.string.calculate_points_validation_error
+                    },
+                ),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (tournament.matches.size < com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
+            Button(
+                onClick = { onCalculatePointsRequested(tournament.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CREATE_MATCH_ACTION_TEST_TAG),
+            ) {
+                Text(text = stringResource(R.string.calculate_points_action))
+            }
+        } else {
+            Text(text = stringResource(R.string.match_limit_reached_message))
+        }
+    }
+}
+
+const val CALCULATE_POINTS_CONFIRMATION_DIALOG_TEST_TAG = "calculate_points_confirmation_dialog"
+const val CALCULATE_POINTS_USE_TEAMS_TEST_TAG = "calculate_points_use_teams"
+const val CALCULATE_POINTS_USE_DEFAULTS_TEST_TAG = "calculate_points_use_defaults"
+const val CALCULATE_POINTS_CANCEL_TEST_TAG = "calculate_points_cancel"
+
+@Composable
+private fun TeamCountConfirmationDialog(
+    confirmation: TeamCountConfirmationUiState,
+    onCancel: () -> Unit,
+    onUseEnteredTeams: () -> Unit,
+    onUseDefaults: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag(CALCULATE_POINTS_CONFIRMATION_DIALOG_TEST_TAG),
+        onDismissRequest = onCancel,
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.team_count_confirmation_entered,
+                        confirmation.enteredCount,
+                        confirmation.enteredCount,
+                    ),
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.team_count_confirmation_empty,
+                        confirmation.emptyCount,
+                        confirmation.emptyCount,
+                    ),
+                )
+                Text(text = stringResource(R.string.team_count_confirmation_prompt))
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                if (confirmation.enteredCount > 0) {
+                    FilledTonalButton(
+                        onClick = onUseEnteredTeams,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.team_count_confirmation_use_teams,
+                                confirmation.enteredCount,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+                FilledTonalButton(
+                    onClick = onUseDefaults,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.team_count_confirmation_use_defaults),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(CALCULATE_POINTS_CANCEL_TEST_TAG),
+                ) {
+                    Text(text = stringResource(R.string.team_count_confirmation_cancel))
+                }
+            }
+        },
+        confirmButton = {},
+    )
 }
 
 @Composable

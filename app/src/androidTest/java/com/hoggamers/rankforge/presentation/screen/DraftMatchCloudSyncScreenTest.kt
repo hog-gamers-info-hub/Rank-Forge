@@ -34,6 +34,7 @@ class DraftMatchCloudSyncScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                 )
             }
         }
@@ -51,6 +52,7 @@ class DraftMatchCloudSyncScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     onSyncDraftMatches = { syncedTournamentId = it },
                 )
             }
@@ -65,14 +67,14 @@ class DraftMatchCloudSyncScreenTest {
 
     @Test
     fun queuedStateShowsDraftSyncSavedLocallyMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, draftMatchSyncUiState = DraftMatchCloudSyncUiState.Queued) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, draftMatchSyncUiState = DraftMatchCloudSyncUiState.Queued, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
             .assertTextEquals("Draft-match sync could not complete. Saved locally for later sync.")
     }
 
     @Test
     fun queuePersistenceFailureStateShowsDraftSyncLocalSaveFailureMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, draftMatchSyncUiState = DraftMatchCloudSyncUiState.QueuePersistenceFailure) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, draftMatchSyncUiState = DraftMatchCloudSyncUiState.QueuePersistenceFailure, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(DRAFT_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
             .assertTextEquals("Draft-match sync failed and could not be saved locally.")
     }
@@ -93,6 +95,7 @@ class DraftMatchCloudSyncScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     draftMatchSyncUiState = DraftMatchCloudSyncUiState.Conflict(context),
                     onResolveDraftConflict = { selected = it },
                 )

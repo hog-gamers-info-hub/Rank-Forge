@@ -21,7 +21,7 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun validInputCreatesDraftMatch() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
 
         val result = useCase(validInput("first"))
 
@@ -35,7 +35,7 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun blankOrInvalidMatchNumberIsRejected() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
 
         listOf("", "  ", "abc", "1.5").forEach { value ->
             val result = useCase(validInput("first").copy(matchNumber = value))
@@ -46,7 +46,7 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun zeroAndNegativeMatchNumbersAreRejected() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
 
         listOf("0", "-1").forEach { value ->
             val result = useCase(validInput("first").copy(matchNumber = value))
@@ -56,7 +56,7 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun duplicateMatchNumberIsRejectedWithinTournament() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
         assertTrue(useCase(validInput("first")) is CreateMatchResult.Created)
 
         val result = useCase(validInput("first"))
@@ -66,8 +66,8 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun sameMatchNumberIsAllowedAcrossTournaments() = runTest {
-        repository.create(tournament("first"))
-        repository.create(tournament("second"))
+        createReadyTournament("first")
+        createReadyTournament("second")
 
         assertTrue(useCase(validInput("first")) is CreateMatchResult.Created)
         assertTrue(useCase(validInput("second")) is CreateMatchResult.Created)
@@ -75,7 +75,7 @@ class CreateMatchUseCaseTest {
 
     @Test
     fun missingDateAndBlankMapAreRejected() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
 
         val result = useCase(validInput("first").copy(date = null, mapName = "  "))
 
@@ -95,20 +95,39 @@ class CreateMatchUseCaseTest {
     }
 
     @Test
-    fun unconfirmedTournamentIsRejected() = runTest {
+    fun draftTournamentWithEightTeamsCanCreateMatch() = runTest {
+        repository.create(tournament("first").copy(status = TournamentStatus.DRAFT))
+        repository.saveTeamNames("first", (1..8).associateWith { "Team $it" })
+
+        val result = useCase(validInput("first"))
+
+        assertTrue(result is CreateMatchResult.Created)
+    }
+
+    @Test
+    fun noParticipatingTeamsAreRejectedWithoutMutation() = runTest {
         repository.create(tournament("first").copy(status = TournamentStatus.DRAFT))
 
         val result = useCase(validInput("first"))
 
-        assertEquals(
-            MatchValidationError.TOURNAMENT_NOT_CONFIRMED,
-            (result as CreateMatchResult.Invalid).errors[MatchField.TOURNAMENT],
-        )
+        assertEquals(MatchValidationError.NO_PARTICIPATING_TEAMS, (result as CreateMatchResult.Invalid).errors[MatchField.TOURNAMENT])
+        assertTrue(repository.observeMatchesByTournamentId("first").first().isEmpty())
+    }
+
+    @Test
+    fun gappedTeamSlotsAreRejectedWithoutMutation() = runTest {
+        repository.create(tournament("first").copy(status = TournamentStatus.DRAFT))
+        repository.saveTeamNames("first", mapOf(1 to "Alpha", 3 to "Charlie"))
+
+        val result = useCase(validInput("first"))
+
+        assertEquals(MatchValidationError.INVALID_TEAM_SLOTS, (result as CreateMatchResult.Invalid).errors[MatchField.TOURNAMENT])
+        assertTrue(repository.observeMatchesByTournamentId("first").first().isEmpty())
     }
 
     @Test
     fun eleventhMatchIsRejected() = runTest {
-        repository.create(tournament("first"))
+        createReadyTournament("first")
         (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
             assertTrue(useCase(validInput("first").copy(matchNumber = number.toString())) is CreateMatchResult.Created)
         }
@@ -125,6 +144,11 @@ class CreateMatchUseCaseTest {
         date = LocalDate.of(2026, 7, 24),
         mapName = "  Bermuda  ",
     )
+
+    private suspend fun createReadyTournament(id: String) {
+        repository.create(tournament(id))
+        repository.saveTeamNames(id, mapOf(1 to "Team 1"))
+    }
 
     private fun tournament(id: String) = Tournament(
         id = id,

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -141,7 +142,8 @@ class MatchCreationScreenTest {
         }
 
         composeTestRule.onNodeWithText("Maximum of 10 matches reached.").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Match 1").performScrollTo().assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(10)
+        composeTestRule.onNodeWithText("Match 1 - In Progress").performScrollTo().assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(CREATE_MATCH_ACTION_TEST_TAG).assertCountEquals(0)
     }
 }

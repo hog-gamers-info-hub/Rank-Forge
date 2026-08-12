@@ -29,6 +29,7 @@ class FinalizedMatchCloudSyncScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                 )
             }
         }
@@ -46,6 +47,7 @@ class FinalizedMatchCloudSyncScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     onSyncFinalizedMatches = { syncedTournamentId = it },
                 )
             }
@@ -60,14 +62,14 @@ class FinalizedMatchCloudSyncScreenTest {
 
     @Test
     fun queuedStateShowsFinalizedSyncSavedLocallyMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.Queued) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.Queued, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
             .assertTextEquals("Finalized-match sync could not complete. Saved locally for later sync.")
     }
 
     @Test
     fun queuePersistenceFailureStateShowsFinalizedSyncLocalSaveFailureMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.QueuePersistenceFailure) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(detailsState(), {}, {}, finalizedMatchSyncUiState = FinalizedMatchCloudSyncUiState.QueuePersistenceFailure, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(FINALIZED_MATCH_CLOUD_SYNC_STATUS_TEST_TAG)
             .assertTextEquals("Finalized-match sync failed and could not be saved locally.")
     }

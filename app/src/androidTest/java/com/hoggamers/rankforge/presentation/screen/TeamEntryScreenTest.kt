@@ -206,6 +206,26 @@ class TeamEntryScreenTest {
             .assertCountEquals(0)
     }
 
+    @Test
+    fun gapMessageIsRendered() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TeamEntryScreen(
+                    uiState = TeamEntryUiState(
+                        isLoading = false,
+                        slots = teamEntrySlots(),
+                        hasTeamNameGap = true,
+                    ),
+                    onTeamNameChanged = { _, _ -> },
+                    onSave = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.team_entry_gap_message)).assertIsDisplayed()
+    }
+
     private fun teamEntrySlots() = (1..12).map { slotNumber ->
         TeamEntrySlotUiState(
             slotNumber = slotNumber,

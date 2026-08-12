@@ -71,19 +71,21 @@ class TeamEntryViewModelTest {
         advanceUntilIdle()
 
         viewModel.onTeamNameChanged(slotNumber = 1, teamName = "  Alpha  ")
-        viewModel.onTeamNameChanged(slotNumber = 2, teamName = "")
+        (2..12).forEach { slotNumber ->
+            viewModel.onTeamNameChanged(slotNumber = slotNumber, teamName = "Team $slotNumber")
+        }
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
         val savedSlots = repository.observeSlotsByTournamentId("stable-id").first()
         assertEquals("Alpha", savedSlots.first { it.slotNumber == 1 }.teamName)
-        assertEquals("Team 02", savedSlots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Team 2", savedSlots.first { it.slotNumber == 2 }.teamName)
         assertEquals("Alpha", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
-        assertEquals("Team 02", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Team 2", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
     }
 
     @Test
-    fun savingAllBlankNamesPersistsSlotBasedDefaults() = runTest {
+    fun savingAllBlankNamesKeepsTrailingSlotsBlank() = runTest {
         repository.create(tournament())
         val viewModel = viewModel()
         viewModel.load("stable-id")
@@ -92,22 +94,13 @@ class TeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        val expectedNames = (1..12).map { slotNumber ->
-            "Team ${slotNumber.toString().padStart(2, '0')}"
-        }
-        assertEquals(
-            expectedNames,
-            repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
-        )
-        assertEquals(
-            expectedNames,
-            viewModel.uiState.value.slots.map { it.teamName },
-        )
+        assertEquals(0, repository.observeSlotsByTournamentId("stable-id").first().count { it.teamName.isNotBlank() })
+        assertTrue(repository.observeSlotsByTournamentId("stable-id").first().all { it.teamName.isBlank() })
         assertTrue(viewModel.uiState.value.validationIssues.none { it.isBlocking })
     }
 
     @Test
-    fun mixedAndWhitespaceNamesUseTheirOwnSlotDefaults() = runTest {
+    fun incompleteNamesSaveImmediatelyAndPreserveTrailingBlanks() = runTest {
         repository.create(tournament())
         val viewModel = viewModel()
         viewModel.load("stable-id")
@@ -120,12 +113,20 @@ class TeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
+        assertTrue(viewModel.uiState.value.hasTeamNameGap)
+
+        viewModel.onTeamNameChanged(2, "Bravo")
+        viewModel.onTeamNameChanged(3, "")
+        viewModel.onTeamNameChanged(4, "")
+        viewModel.onTeamNameChanged(7, "")
+        viewModel.onTeamNameChanged(10, "")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
         val savedSlots = repository.observeSlotsByTournamentId("stable-id").first()
         assertEquals("Alpha", savedSlots[0].teamName)
-        assertEquals("Team 02", savedSlots[1].teamName)
-        assertEquals("Bravo", savedSlots[2].teamName)
-        assertEquals("Team 07", savedSlots[6].teamName)
-        assertEquals("Titan", savedSlots[9].teamName)
+        assertEquals("Bravo", savedSlots[1].teamName)
+        assertEquals("", savedSlots[2].teamName)
+        assertEquals("", savedSlots[9].teamName)
     }
 
     @Test
@@ -135,6 +136,8 @@ class TeamEntryViewModelTest {
         firstViewModel.load("stable-id")
         advanceUntilIdle()
         firstViewModel.onTeamNameChanged(slotNumber = 3, teamName = "Charlie")
+        (1..2).forEach { slotNumber -> firstViewModel.onTeamNameChanged(slotNumber, "Team $slotNumber") }
+        (4..12).forEach { slotNumber -> firstViewModel.onTeamNameChanged(slotNumber, "Team $slotNumber") }
         firstViewModel.saveTeamNames()
         advanceUntilIdle()
 
@@ -166,7 +169,6 @@ class TeamEntryViewModelTest {
         viewModel.onTeamNameChanged(2, "Alpha")
         viewModel.saveTeamNames()
         advanceUntilIdle()
-
         assertFalse(viewModel.uiState.value.validationIssues.none { it.isBlocking })
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first()[1].teamName)
