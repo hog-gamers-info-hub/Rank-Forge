@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -30,6 +31,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
 const val TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX = "team_entry_roster_button_"
+private const val SHOW_TEAM_ENTRY_VALIDATION_ISSUES = false
 
 @Composable
 fun TeamEntryRoute(
@@ -104,6 +106,7 @@ private fun TeamEntryContent(
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(TEAM_ENTRY_SCREEN_TEST_TAG)
+            .imePadding()
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
@@ -119,9 +122,11 @@ private fun TeamEntryContent(
             style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        RosterValidationIssues(issues = validationIssues)
-        if (validationIssues.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        if (SHOW_TEAM_ENTRY_VALIDATION_ISSUES) {
+            RosterValidationIssues(issues = validationIssues)
+            if (validationIssues.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            }
         }
         slots.forEach { slot ->
             val isFocusedSlot = slot.slotNumber == focusSlotNumber
@@ -152,8 +157,9 @@ private fun TeamEntryContent(
             ) {
                 Text(text = stringResource(R.string.enter_players_name_action))
             }
-            HorizontalDivider(modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            HorizontalDivider(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         }
         Button(
             onClick = onReviewRoster,
