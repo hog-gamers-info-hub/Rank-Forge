@@ -163,7 +163,7 @@
     <string name="tournament_standing_matches_included_value">Matches included: %1$d</string>
     <string name="tournament_standing_complete_tie_message">Complete tie: unresolved by approved tie-break rules.</string>
     <string name="edit_roster_action">Edit Roster for Slot %1$d</string>
-    <string name="roster_entry_title">Slot %1$d roster</string>
+    <string name="roster_entry_title">Slot %1$d - Players Name</string>
     <string name="roster_entry_loading">Loading roster</string>
     <string name="roster_player_count">Players: %1$d/6</string>
     <string name="roster_incomplete_message">Roster incomplete: fewer than four players.</string>
@@ -172,7 +172,7 @@
     <string name="roster_player_name_label">Player %1$d display name</string>
     <string name="add_player_action">Add player</string>
     <string name="remove_player_action">Remove player %1$d</string>
-    <string name="save_roster_action">Save roster</string>
+    <string name="save_roster_action">Save Players Name</string>
     <string name="roster_saving_action">Saving rosterâ€¦</string>
     <string name="roster_save_error">Roster could not be saved. Try again.</string>
     <string name="back_to_team_entry_action">Back to team entry</string>
