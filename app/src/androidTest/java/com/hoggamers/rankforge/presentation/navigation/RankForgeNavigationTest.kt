@@ -886,7 +886,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
-    fun confirmedTournamentDetailsCalculatePointsNavigatesDirectlyToMatchPlacements() {
+    fun confirmedTournamentDetailsCalculatePointsNavigatesToMatchReview() {
         val viewModels = createNavigationViewModels()
         runBlocking {
             viewModels.repository.create(confirmedTournament())
@@ -905,7 +905,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
                 )
             }
         }
@@ -916,9 +916,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onNodeWithText("Match 1 placements").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review match 1").assertIsDisplayed()
     }
 
     @Test

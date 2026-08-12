@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteData
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -94,7 +96,7 @@ class TournamentDetailsViewModelTest {
             TeamCountConfirmationUiState(enteredCount = 8, emptyCount = 4),
             viewModel.uiState.value.pendingTeamCountConfirmation,
         )
-        assertNull(viewModel.uiState.value.matchPlacementRequest)
+        assertNull(viewModel.uiState.value.matchReviewRequest)
     }
 
     @Test
@@ -110,10 +112,10 @@ class TournamentDetailsViewModelTest {
         viewModel.useEnteredTeams()
         advanceUntilIdle()
 
-        assertEquals("stable-id", viewModel.uiState.value.matchPlacementRequest?.tournamentId)
+        assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
         assertTrue(repository.observeSlotsByTournamentId("stable-id").first().drop(8).all { it.teamName.isBlank() })
-        viewModel.onMatchPlacementRequestHandled()
-        assertNull(viewModel.uiState.value.matchPlacementRequest)
+        viewModel.onMatchReviewRequestHandled()
+        assertNull(viewModel.uiState.value.matchReviewRequest)
     }
 
     @Test
@@ -129,7 +131,7 @@ class TournamentDetailsViewModelTest {
         viewModel.useDefaults()
         advanceUntilIdle()
 
-        assertEquals("stable-id", viewModel.uiState.value.matchPlacementRequest?.tournamentId)
+        assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
         assertEquals(
             (1..8).map { "Team $it" } + (9..12).map { "Team ${it.toString().padStart(2, '0')}" },
             repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
@@ -149,7 +151,7 @@ class TournamentDetailsViewModelTest {
 
         assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
         assertEquals(CalculatePointsMessage.INVALID_TEAM_SLOTS, viewModel.uiState.value.calculatePointsMessage)
-        assertNull(viewModel.uiState.value.matchPlacementRequest)
+        assertNull(viewModel.uiState.value.matchReviewRequest)
     }
 
     @Test
@@ -164,14 +166,44 @@ class TournamentDetailsViewModelTest {
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
-        val request = viewModel.uiState.value.matchPlacementRequest
+        val request = viewModel.uiState.value.matchReviewRequest
         assertEquals("stable-id", request?.tournamentId)
-        assertNotNull(request?.matchId)
-        assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().single().matchNumber)
+        val firstMatch = repository.observeMatchesByTournamentId("stable-id").first().single()
+        assertEquals(MatchReviewRequest("stable-id", firstMatch.id), request)
+        assertEquals(1, firstMatch.matchNumber)
 
+        viewModel.onMatchReviewRequestHandled()
+        assertNull(viewModel.uiState.value.matchReviewRequest)
         viewModel.onCalculatePointsRequested()
         advanceUntilIdle()
+        val matches = repository.observeMatchesByTournamentId("stable-id").first()
+        assertEquals(2, matches.size)
+        assertEquals(listOf(1, 2), matches.map { it.matchNumber })
+        assertEquals(MatchReviewRequest("stable-id", matches[1].id), viewModel.uiState.value.matchReviewRequest)
+    }
+
+    @Test
+    fun repeatedCalculatePointsWhileMatchCreationIsPendingDoesNotDuplicate() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        repository.blockMatchCreation = true
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        runCurrent()
+        viewModel.onCalculatePointsRequested()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isCreatingMatch)
+        assertEquals(0, repository.observeMatchesByTournamentId("stable-id").first().size)
+
+        repository.releaseMatchCreation.complete(Unit)
+        advanceUntilIdle()
+
         assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().size)
+        assertNotNull(viewModel.uiState.value.matchReviewRequest)
     }
 
     @Test
@@ -394,6 +426,8 @@ class TournamentDetailsViewModelTest {
     private class TestTournamentRepository : TournamentRepository {
         private val state = MutableStateFlow<List<Tournament>>(emptyList())
         private val matchesState = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
+        val releaseMatchCreation = CompletableDeferred<Unit>()
+        var blockMatchCreation = false
 
         override suspend fun create(tournament: Tournament) {
             state.value = state.value + tournament
@@ -455,6 +489,7 @@ class TournamentDetailsViewModelTest {
         override suspend fun confirmTournament(tournamentId: String): Boolean = false
 
         override suspend fun createDraftMatch(match: Match): com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult {
+            if (blockMatchCreation) releaseMatchCreation.await()
             val current = matchesState.value[match.tournamentId].orEmpty()
             if (current.size >= MAX_MATCHES_PER_TOURNAMENT) {
                 return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)

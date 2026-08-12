@@ -670,6 +670,7 @@ class TournamentListAndDetailsScreenTest {
     @Test
     fun existingMatchRowsShowChevronsAndOpenPersistedMatchIds() {
         val openedMatches = mutableListOf<Pair<String, String>>()
+        val openedPlacements = mutableListOf<Pair<String, String>>()
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
@@ -697,6 +698,9 @@ class TournamentListAndDetailsScreenTest {
                     onBackToList = {},
                     onEnterTeams = {},
                     onEnterMatchPlacements = { tournamentId, matchId ->
+                        openedPlacements += tournamentId to matchId
+                    },
+                    onReviewMatch = { tournamentId, matchId ->
                         openedMatches += tournamentId to matchId
                     },
                 )
@@ -722,6 +726,7 @@ class TournamentListAndDetailsScreenTest {
                 ),
                 openedMatches,
             )
+            assertEquals(emptyList<Pair<String, String>>(), openedPlacements)
         }
     }
 
