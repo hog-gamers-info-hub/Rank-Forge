@@ -251,6 +251,31 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         }
         updateSlot(index) { it.copy(isValidationInProgress = false, isDuplicateDetectionInProgress = true) }
         val duplicateResult = duplicateDetector.link(identity, selectedUri, existing?.fingerprint)
+        var sameIdentityRecovery = false
+        val fingerprint = when (duplicateResult) {
+            MatchLobbyScreenshotDuplicateLinkResult.SameIdentity -> {
+                if (existing?.isLocalFileMissing != true) {
+                    updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false) }
+                    _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
+                    return
+                }
+                sameIdentityRecovery = true
+                existingAsset?.sha256 ?: run {
+                    updateSlot(index) {
+                        it.copy(
+                            isDuplicateDetectionInProgress = false,
+                            duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT,
+                        )
+                    }
+                    return
+                }
+            }
+            is MatchLobbyScreenshotDuplicateLinkResult.Linked -> duplicateResult.fingerprint
+            MatchLobbyScreenshotDuplicateLinkResult.FingerprintFailure,
+            MatchLobbyScreenshotDuplicateLinkResult.StateConflict,
+            is MatchLobbyScreenshotDuplicateLinkResult.LinkedToOtherIdentity,
+            -> ""
+        }
         when (duplicateResult) {
             MatchLobbyScreenshotDuplicateLinkResult.FingerprintFailure -> {
                 updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT) }
@@ -264,12 +289,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, duplicateError = MatchLobbyScreenshotDuplicateError.USED_BY_ANOTHER_LOBBY_SCREENSHOT) }
                 return
             }
-            MatchLobbyScreenshotDuplicateLinkResult.SameIdentity -> {
-                updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false) }
-                _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
-                return
-            }
-            is MatchLobbyScreenshotDuplicateLinkResult.Linked -> Unit
+            MatchLobbyScreenshotDuplicateLinkResult.SameIdentity,
+            is MatchLobbyScreenshotDuplicateLinkResult.Linked,
+            -> Unit
         }
         updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, isPreservationInProgress = true) }
         val preservation = try {
@@ -283,20 +305,23 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             is LocalImagePreservationResult.Preserved -> preservation.file
             is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservation.file
             is LocalImagePreservationResult.Failed -> {
-                duplicateDetector.rollback(identity, (duplicateResult as MatchLobbyScreenshotDuplicateLinkResult.Linked).fingerprint, existing?.fingerprint)
+                if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.PRESERVATION_FAILED) }
                 return
             }
         }
-        val ownerId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
+        val ownerId = if (sameIdentityRecovery) {
+            existingAsset?.ownerUserId?.takeIf { it.isNotBlank() }
+        } else {
+            screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
+        }
         if (ownerId == null) {
-            duplicateDetector.rollback(identity, (duplicateResult as MatchLobbyScreenshotDuplicateLinkResult.Linked).fingerprint, existing?.fingerprint)
+            if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
             localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
             updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING) }
             return
         }
         val now = clock.millis()
-        val fingerprint = (duplicateResult as MatchLobbyScreenshotDuplicateLinkResult.Linked).fingerprint
         val asset = MatchLobbyScreenshotAssetEntity(
             tournamentId = tournamentId,
             matchId = matchId,
@@ -317,11 +342,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             uploadFailureCode = null,
             storageBucket = null,
             storageObjectPath = null,
-            cropProfileId = null,
-            cropLeft = null,
-            cropTop = null,
-            cropRight = null,
-            cropBottom = null,
+            cropProfileId = if (sameIdentityRecovery) existingAsset?.cropProfileId else null,
+            cropLeft = if (sameIdentityRecovery) existingAsset?.cropLeft else null,
+            cropTop = if (sameIdentityRecovery) existingAsset?.cropTop else null,
+            cropRight = if (sameIdentityRecovery) existingAsset?.cropRight else null,
+            cropBottom = if (sameIdentityRecovery) existingAsset?.cropBottom else null,
             createdAt = existingAsset?.let { assetCreatedAt(it) } ?: now,
             updatedAt = now,
             preservedAt = now,
@@ -351,11 +376,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
             MatchLobbyScreenshotAssetSaveResult.StateConflict,
             -> {
-                duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
+                if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
             }
             is MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint -> {
-                duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
+                if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
             }

@@ -15,6 +15,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -115,6 +116,45 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @Test
+    fun sameIdentityWithMissingLocalFileRepreservesBeforeCropNavigation() = runTest {
+        val root = Files.createTempDirectory("lobby-intake-recover").toFile()
+        val preserver = preserver(root)
+        val fingerprint = byteArrayOf(1, 2, 3).sha256()
+        val existingAsset = asset(1, matchId, "missing/lobby.png", fingerprint).copy(
+            cropProfileId = "lobby",
+            cropLeft = 0.1,
+            cropTop = 0.1,
+            cropRight = 0.9,
+            cropBottom = 0.9,
+            createdAt = 41,
+            updatedAt = 42,
+            preservedAt = 42,
+            revision = 7,
+        )
+        lobbyRepository.saveOrReplace(existingAsset)
+
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.slot(1)?.isLocalFileMissing == true)
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        assertTrue(preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png").isFile)
+        val restored = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        assertTrue(restored != null)
+        assertEquals(fingerprint, restored?.sha256)
+        assertEquals(41L, restored?.createdAt)
+        assertEquals(8L, restored?.revision)
+        assertEquals("lobby", restored?.cropProfileId)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+        assertFalse(viewModel.uiState.value.slot(1)?.isLocalFileMissing == true)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
     fun finalizedMatchBlocksPickerAndRemoval() = runTest {
         tournamentRepository.finalizeDraftMatch(
             matchId = matchId,
@@ -205,4 +245,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
         fun readByMatchAndIndex(matchId: String, index: Int) = state.value.firstOrNull { it.matchId == matchId && it.lobbyScreenshotIndex == index }
     }
+
+    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString("") { byte -> "%02x".format(byte) }
 }
