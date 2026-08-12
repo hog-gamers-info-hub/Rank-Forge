@@ -2,6 +2,15 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.OCR_SCREENSHOTS_BUCKET
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
@@ -32,6 +41,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val clock: Clock,
+    private val storageUploader: MatchLobbyScreenshotStorageUploader = NoOpMatchLobbyScreenshotStorageUploader(),
+    private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
     val uiState: StateFlow<MatchLobbyScreenshotIntakeUiState> = _uiState.asStateFlow()
@@ -39,6 +50,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private var loadedKey: String? = null
     private var loadJob: Job? = null
     private val missingMarked = mutableSetOf<String>()
+    private val uploadJobs = mutableMapOf<Int, Job>()
 
     fun load(tournamentId: String, matchId: String) {
         val key = "$tournamentId:$matchId"
@@ -142,6 +154,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     fun onPhotoPickerResult(selectedUri: String?) {
         val slot = _uiState.value.slots.firstOrNull { it.isPhotoPickerRequestActive } ?: return
         val index = slot.index
+        uploadJobs.remove(index)?.cancel()
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
@@ -193,6 +206,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val tournamentId = current.tournamentId ?: return
         val matchId = current.matchId ?: return
         val fingerprint = slot.fingerprint
+        uploadJobs.remove(index)?.cancel()
+        val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, index)
         viewModelScope.launch {
             val cleanup = if (slot.localRelativePath != null) {
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
@@ -212,6 +227,15 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 duplicateDetector.unlink(MatchLobbyScreenshotIdentity(tournamentId, matchId, index), fingerprint)
                 _uiState.update {
                     it.replaceSlot(index) { MatchLobbyScreenshotSlotUiState(index) }
+                }
+                viewModelScope.launch {
+                    try {
+                        cloudDataSource.deleteByIdentity(identity)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        // Local removal is authoritative; cloud cleanup is best effort.
+                    }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -310,6 +334,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 return
             }
         }
+        val retainCloudState = sameIdentityRecovery &&
+            existingAsset?.uploadStatus == ScreenshotUploadStatus.UPLOADED.name &&
+            !existingAsset?.storageBucket.isNullOrBlank() &&
+            !existingAsset?.storageObjectPath.isNullOrBlank()
         val ownerId = if (sameIdentityRecovery) {
             existingAsset?.ownerUserId?.takeIf { it.isNotBlank() }
         } else {
@@ -338,10 +366,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             localStatus = if (preservation is LocalImagePreservationResult.PreservedWithCleanupFailure) {
                 ScreenshotLocalStatus.CLEANUP_FAILED.name
             } else ScreenshotLocalStatus.PRESERVED.name,
-            uploadStatus = ScreenshotUploadStatus.PENDING.name,
-            uploadFailureCode = null,
-            storageBucket = null,
-            storageObjectPath = null,
+            uploadStatus = if (retainCloudState) existingAsset?.uploadStatus.orEmpty() else ScreenshotUploadStatus.PENDING.name,
+            uploadFailureCode = if (retainCloudState) existingAsset?.uploadFailureCode else null,
+            storageBucket = if (retainCloudState) existingAsset?.storageBucket else null,
+            storageObjectPath = if (retainCloudState) existingAsset?.storageObjectPath else null,
             cropProfileId = if (sameIdentityRecovery) existingAsset?.cropProfileId else null,
             cropLeft = if (sameIdentityRecovery) existingAsset?.cropLeft else null,
             cropTop = if (sameIdentityRecovery) existingAsset?.cropTop else null,
@@ -350,7 +378,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             createdAt = existingAsset?.let { assetCreatedAt(it) } ?: now,
             updatedAt = now,
             preservedAt = now,
-            uploadedAt = null,
+            uploadedAt = if (retainCloudState) existingAsset?.uploadedAt else null,
             revision = (existingAsset?.revision ?: 0L) + 1L,
         )
         when (assetRepository.saveOrReplace(asset)) {
@@ -365,13 +393,14 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         localRelativePath = asset.localRelativePath,
                         hasLinkedAsset = true,
                         isLocalFileMissing = false,
-                        confirmedCrop = null,
-                        cropProfileId = null,
+                         confirmedCrop = if (sameIdentityRecovery) it.confirmedCrop else null,
+                         cropProfileId = if (sameIdentityRecovery) it.cropProfileId else null,
                         isPreservationInProgress = false,
                         preservationError = null,
                     )
                 }
                 _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
+                if (!retainCloudState) scheduleCloudUpload(index)
             }
             MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
             MatchLobbyScreenshotAssetSaveResult.StateConflict,
@@ -385,6 +414,92 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
             }
         }
+    }
+
+    private fun scheduleCloudUpload(index: Int) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
+        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
+        uploadJobs.remove(index)?.cancel()
+        val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, index)
+        uploadJobs[index] = viewModelScope.launch {
+            val asset = readLatestAsset(identity) ?: return@launch
+            val localFile = localImagePreserver.resolveRelativePath(asset.localRelativePath)
+            val result = try {
+                storageUploader.upload(tournamentId, matchId, index, localFile)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                MatchLobbyScreenshotStorageUploadResult.Failed(
+                    MatchLobbyScreenshotStorageUploadFailure.UPLOAD_FAILED,
+                )
+            }
+            when (result) {
+                is MatchLobbyScreenshotStorageUploadResult.Uploaded ->
+                    handleStorageSuccess(identity, asset.sha256, result.objectPath)
+                is MatchLobbyScreenshotStorageUploadResult.Failed ->
+                    markCloudFailure(identity, asset.sha256, result.failure.name)
+            }
+        }
+    }
+
+    private suspend fun handleStorageSuccess(
+        identity: MatchLobbyScreenshotIdentity,
+        uploadSha256: String,
+        objectPath: String,
+    ) {
+        val latest = readLatestAsset(identity) ?: return
+        if (latest.sha256 != uploadSha256) return
+        val uploadedAt = clock.millis()
+        val uploaded = latest.copy(
+            storageBucket = OCR_SCREENSHOTS_BUCKET,
+            storageObjectPath = objectPath,
+            uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+            uploadFailureCode = null,
+            uploadedAt = uploadedAt,
+            updatedAt = uploadedAt,
+            revision = latest.revision + 1L,
+        )
+        if (assetRepository.saveOrReplace(uploaded) !is MatchLobbyScreenshotAssetSaveResult.Saved) return
+        val cloudResult = try {
+            cloudDataSource.upsert(uploaded)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyScreenshotAssetCloudResult.Failed(
+                MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED,
+            )
+        }
+        if (cloudResult is MatchLobbyScreenshotAssetCloudResult.Failed) {
+            markCloudFailure(identity, uploadSha256, cloudResult.failure.name)
+        }
+    }
+
+    private suspend fun markCloudFailure(
+        identity: MatchLobbyScreenshotIdentity,
+        uploadSha256: String,
+        failureCode: String,
+    ) {
+        val latest = readLatestAsset(identity) ?: return
+        if (latest.sha256 != uploadSha256) return
+        val failedAt = clock.millis()
+        val failed = latest.copy(
+            uploadStatus = ScreenshotUploadStatus.FAILED.name,
+            uploadFailureCode = failureCode,
+            updatedAt = failedAt,
+            revision = latest.revision + 1L,
+        )
+        assetRepository.saveOrReplace(failed)
+    }
+
+    private suspend fun readLatestAsset(
+        identity: MatchLobbyScreenshotIdentity,
+    ): MatchLobbyScreenshotAssetEntity? = try {
+        assetRepository.getByIdentity(identity)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 
     private fun assetCreatedAt(asset: MatchLobbyScreenshotAssetEntity): Long = asset.createdAt
@@ -454,5 +569,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         "image/jpeg" -> "jpg"
         "image/webp" -> "webp"
         else -> "png"
+    }
+
+    override fun onCleared() {
+        uploadJobs.values.forEach { it.cancel() }
+        uploadJobs.clear()
+        super.onCleared()
     }
 }

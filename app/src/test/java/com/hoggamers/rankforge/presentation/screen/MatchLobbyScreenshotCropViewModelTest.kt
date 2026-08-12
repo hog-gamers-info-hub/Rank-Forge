@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
@@ -89,6 +92,60 @@ class MatchLobbyScreenshotCropViewModelTest {
     }
 
     @Test
+    fun successfulCropUpsertsLatestCloudMetadataAndPreservesStorageFields() = runTest {
+        val root = Files.createTempDirectory("lobby-crop-cloud").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(
+            asset(preserver.relativePathFor(file)!!).copy(
+                storageBucket = "ocr-screenshots",
+                storageObjectPath = "cloud/path.png",
+                uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.UPLOADED.name,
+            ),
+        )
+        val cloud = FakeCloudDataSource()
+        val viewModel = viewModel(preserver, cloud)
+        viewModel.load(tournamentId, matchId, 1)
+        advanceUntilIdle()
+        viewModel.onCropChanged(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
+        var confirmations = 0
+        viewModel.confirmCrop { confirmations++ }
+        advanceUntilIdle()
+
+        assertEquals(1, confirmations)
+        assertEquals(1, cloud.upserts.size)
+        assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
+        assertEquals("lobby", cloud.upserts.single().cropProfileId)
+    }
+
+    @Test
+    fun cloudFailureDoesNotUndoLocalCropOrConfirmedCallback() = runTest {
+        val root = Files.createTempDirectory("lobby-crop-cloud-failure").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!))
+        val cloud = FakeCloudDataSource(MatchLobbyScreenshotAssetCloudResult.Failed(MatchLobbyScreenshotAssetCloudFailure.NETWORK))
+        val viewModel = viewModel(preserver, cloud)
+        viewModel.load(tournamentId, matchId, 1)
+        advanceUntilIdle()
+        val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
+        viewModel.onCropChanged(crop)
+        var confirmations = 0
+        viewModel.confirmCrop { confirmations++ }
+        advanceUntilIdle()
+
+        assertEquals(1, confirmations)
+        val saved = assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))
+        assertEquals(crop.left, saved?.cropLeft)
+        assertEquals(com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name, saved?.uploadStatus)
+        assertEquals(MatchLobbyScreenshotAssetCloudFailure.NETWORK.name, saved?.uploadFailureCode)
+    }
+
+    @Test
     fun noAssetAndFinalizedMatchAreControlled() = runTest {
         val preserver = preserver(Files.createTempDirectory("lobby-crop-missing").toFile())
         val viewModel = viewModel(preserver)
@@ -111,11 +168,15 @@ class MatchLobbyScreenshotCropViewModelTest {
         assertEquals(MatchLobbyScreenshotCropError.FINALIZED_MATCH, finalizedViewModel.uiState.value.error)
     }
 
-    private fun viewModel(preserver: LocalImagePreserver) = MatchLobbyScreenshotCropViewModel(
+    private fun viewModel(
+        preserver: LocalImagePreserver,
+        cloud: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
+    ) = MatchLobbyScreenshotCropViewModel(
         observeMatches = ObserveMatchesUseCase(tournamentRepository),
         assetRepository = assetRepository,
         localImagePreserver = preserver,
         clock = java.time.Clock.systemUTC(),
+        cloudDataSource = cloud,
     )
 
     private fun preserver(root: java.io.File) = LocalImagePreserver(
@@ -174,5 +235,19 @@ class MatchLobbyScreenshotCropViewModelTest {
             return MatchLobbyScreenshotCropSaveResult.Saved
         }
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+    }
+
+    private class FakeCloudDataSource(
+        private val result: MatchLobbyScreenshotAssetCloudResult = MatchLobbyScreenshotAssetCloudResult.Success,
+    ) : MatchLobbyScreenshotAssetCloudDataSource {
+        val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()
+
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            return result
+        }
+
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
+            MatchLobbyScreenshotAssetCloudResult.Success
     }
 }

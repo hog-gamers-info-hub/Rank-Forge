@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
@@ -31,6 +35,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
+    private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
     val uiState: StateFlow<MatchLobbyScreenshotCropUiState> = _uiState.asStateFlow()
@@ -158,6 +163,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                         )
                     }
                     onConfirmed()
+                    viewModelScope.launch { syncCloudMetadata(identity) }
                 }
                 MatchLobbyScreenshotCropSaveResult.MissingAsset ->
                     _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.MISSING_ASSET) }
@@ -165,6 +171,36 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                 MatchLobbyScreenshotCropSaveResult.InvalidCrop,
                 -> _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.INVALID_CROP) }
             }
+        }
+    }
+
+    private suspend fun syncCloudMetadata(identity: MatchLobbyScreenshotIdentity) {
+        val latest = try {
+            assetRepository.getByIdentity(identity)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return
+        val result = try {
+            cloudDataSource.upsert(latest)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyScreenshotAssetCloudResult.Failed(
+                MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED,
+            )
+        }
+        if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
+            val failedAt = clock.millis()
+            assetRepository.saveOrReplace(
+                latest.copy(
+                    uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name,
+                    uploadFailureCode = result.failure.name,
+                    updatedAt = failedAt,
+                    revision = latest.revision + 1L,
+                ),
+            )
         }
     }
 
