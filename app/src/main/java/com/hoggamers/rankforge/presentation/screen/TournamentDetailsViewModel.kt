@@ -21,6 +21,9 @@ import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.defaultTeamNameForSlot
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchFailure
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -41,6 +44,7 @@ class TournamentDetailsViewModel @Inject constructor(
     private val googleSheetsStandingsExport: GoogleSheetsStandingsExportRemoteDataSource,
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
+    private val createNextMatch: CreateNextMatchUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
@@ -75,7 +79,8 @@ class TournamentDetailsViewModel @Inject constructor(
                         googleSheetsExportResult = current.googleSheetsExportResult,
                         pendingTeamCountConfirmation = current.pendingTeamCountConfirmation,
                         calculatePointsMessage = current.calculatePointsMessage,
-                        createMatchRequest = current.createMatchRequest,
+                        matchPlacementRequest = current.matchPlacementRequest,
+                        isCreatingMatch = current.isCreatingMatch,
                     )
                 }
             }
@@ -84,7 +89,11 @@ class TournamentDetailsViewModel @Inject constructor(
 
     fun onCalculatePointsRequested() {
         val tournament = _uiState.value.tournament ?: return
-        if (tournament.matches.size >= MAX_MATCHES_PER_TOURNAMENT) return
+        if (
+            tournament.matches.size >= MAX_MATCHES_PER_TOURNAMENT ||
+            _uiState.value.isCreatingMatch ||
+            _uiState.value.matchPlacementRequest != null
+        ) return
         viewModelScope.launch {
             val slots = observeTournamentSlots(tournament.id).first()
             val participation = slots.analyzeTeamSlotParticipation()
@@ -172,14 +181,46 @@ class TournamentDetailsViewModel @Inject constructor(
         }
     }
 
-    fun onCreateMatchRequestHandled() {
-        _uiState.update { it.copy(createMatchRequest = null) }
+    fun onMatchPlacementRequestHandled() {
+        _uiState.update { it.copy(matchPlacementRequest = null) }
     }
 
     private fun requestMatchCreation(tournamentId: String) {
-        if (_uiState.value.createMatchRequest == null) {
-            _uiState.update { it.copy(calculatePointsMessage = null, createMatchRequest = tournamentId) }
+        if (_uiState.value.isCreatingMatch || _uiState.value.matchPlacementRequest != null) return
+        _uiState.update {
+            it.copy(
+                calculatePointsMessage = null,
+                isCreatingMatch = true,
+            )
         }
+        viewModelScope.launch {
+            when (val result = createNextMatch(tournamentId)) {
+                is CreateNextMatchResult.Created -> _uiState.update {
+                    it.copy(
+                        isCreatingMatch = false,
+                        matchPlacementRequest = MatchPlacementRequest(
+                            tournamentId = result.match.tournamentId,
+                            matchId = result.match.id,
+                        ),
+                    )
+                }
+                is CreateNextMatchResult.Rejected -> _uiState.update {
+                    it.copy(
+                        isCreatingMatch = false,
+                        calculatePointsMessage = result.failure.toCalculatePointsMessage(),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun CreateNextMatchFailure.toCalculatePointsMessage(): CalculatePointsMessage = when (this) {
+        CreateNextMatchFailure.NO_PARTICIPATING_TEAMS -> CalculatePointsMessage.NO_TEAMS_SAVED
+        CreateNextMatchFailure.INVALID_TEAM_SLOTS -> CalculatePointsMessage.INVALID_TEAM_SLOTS
+        CreateNextMatchFailure.TOURNAMENT_NOT_FOUND,
+        CreateNextMatchFailure.LIMIT_REACHED,
+        CreateNextMatchFailure.REPOSITORY_REJECTED,
+        -> CalculatePointsMessage.MATCH_CREATION_FAILED
     }
 
     fun prepareStandingsCsvExport() {

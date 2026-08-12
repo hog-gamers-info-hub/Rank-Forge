@@ -22,7 +22,13 @@ enum class CalculatePointsMessage {
     NO_TEAMS_SAVED,
     INVALID_TEAM_SLOTS,
     VALIDATION_FAILED,
+    MATCH_CREATION_FAILED,
 }
+
+data class MatchPlacementRequest(
+    val tournamentId: String,
+    val matchId: String,
+)
 
 data class TournamentDetailsUiState(
     val isLoading: Boolean = true,
@@ -31,7 +37,8 @@ data class TournamentDetailsUiState(
     val googleSheetsExportResult: AndroidExportResult? = null,
     val pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     val calculatePointsMessage: CalculatePointsMessage? = null,
-    val createMatchRequest: String? = null,
+    val matchPlacementRequest: MatchPlacementRequest? = null,
+    val isCreatingMatch: Boolean = false,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null

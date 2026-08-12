@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +44,11 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
+import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentDetailsViewModelTest {
@@ -88,7 +94,7 @@ class TournamentDetailsViewModelTest {
             TeamCountConfirmationUiState(enteredCount = 8, emptyCount = 4),
             viewModel.uiState.value.pendingTeamCountConfirmation,
         )
-        assertNull(viewModel.uiState.value.createMatchRequest)
+        assertNull(viewModel.uiState.value.matchPlacementRequest)
     }
 
     @Test
@@ -104,10 +110,10 @@ class TournamentDetailsViewModelTest {
         viewModel.useEnteredTeams()
         advanceUntilIdle()
 
-        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
+        assertEquals("stable-id", viewModel.uiState.value.matchPlacementRequest?.tournamentId)
         assertTrue(repository.observeSlotsByTournamentId("stable-id").first().drop(8).all { it.teamName.isBlank() })
-        viewModel.onCreateMatchRequestHandled()
-        assertNull(viewModel.uiState.value.createMatchRequest)
+        viewModel.onMatchPlacementRequestHandled()
+        assertNull(viewModel.uiState.value.matchPlacementRequest)
     }
 
     @Test
@@ -123,7 +129,7 @@ class TournamentDetailsViewModelTest {
         viewModel.useDefaults()
         advanceUntilIdle()
 
-        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
+        assertEquals("stable-id", viewModel.uiState.value.matchPlacementRequest?.tournamentId)
         assertEquals(
             (1..8).map { "Team $it" } + (9..12).map { "Team ${it.toString().padStart(2, '0')}" },
             repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
@@ -143,7 +149,7 @@ class TournamentDetailsViewModelTest {
 
         assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
         assertEquals(CalculatePointsMessage.INVALID_TEAM_SLOTS, viewModel.uiState.value.calculatePointsMessage)
-        assertNull(viewModel.uiState.value.createMatchRequest)
+        assertNull(viewModel.uiState.value.matchPlacementRequest)
     }
 
     @Test
@@ -158,7 +164,14 @@ class TournamentDetailsViewModelTest {
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
-        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
+        val request = viewModel.uiState.value.matchPlacementRequest
+        assertEquals("stable-id", request?.tournamentId)
+        assertNotNull(request?.matchId)
+        assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().single().matchNumber)
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+        assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().size)
     }
 
     @Test
@@ -355,6 +368,7 @@ class TournamentDetailsViewModelTest {
         googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+        createNextMatch = CreateNextMatchUseCase(repository),
     )
 
     private fun tournament(id: String) = Tournament(
@@ -439,6 +453,18 @@ class TournamentDetailsViewModelTest {
         ) = Unit
 
         override suspend fun confirmTournament(tournamentId: String): Boolean = false
+
+        override suspend fun createDraftMatch(match: Match): com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult {
+            val current = matchesState.value[match.tournamentId].orEmpty()
+            if (current.size >= MAX_MATCHES_PER_TOURNAMENT) {
+                return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)
+            }
+            if (current.any { it.matchNumber == match.matchNumber }) {
+                return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.DUPLICATE_MATCH_NUMBER)
+            }
+            matchesState.value = matchesState.value + (match.tournamentId to (current + match))
+            return CreateMatchRepositoryResult.Created
+        }
     }
 
     private class FakeGoogleSheetsStandingsExportRemoteDataSource :

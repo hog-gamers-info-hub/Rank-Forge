@@ -78,10 +78,10 @@ fun TournamentDetailsRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(uiState.createMatchRequest) {
-        uiState.createMatchRequest?.let { tournamentId ->
-            viewModel.onCreateMatchRequestHandled()
-            onCreateMatch(tournamentId)
+    LaunchedEffect(uiState.matchPlacementRequest) {
+        uiState.matchPlacementRequest?.let { request ->
+            viewModel.onMatchPlacementRequestHandled()
+            onEnterMatchPlacements(request.tournamentId, request.matchId)
         }
     }
     val uploadUiState = if (uploadViewModel == null) {
@@ -114,6 +114,7 @@ fun TournamentDetailsRoute(
         onCalculatePointsRequested = { viewModel.onCalculatePointsRequested() },
         pendingTeamCountConfirmation = uiState.pendingTeamCountConfirmation,
         calculatePointsMessage = uiState.calculatePointsMessage,
+        isCreatingMatch = uiState.isCreatingMatch,
         onCancelTeamCountConfirmation = viewModel::cancelTeamCountConfirmation,
         onUseEnteredTeams = viewModel::useEnteredTeams,
         onUseDefaults = viewModel::useDefaults,
@@ -147,6 +148,7 @@ fun TournamentDetailsScreen(
     onCalculatePointsRequested: ((String) -> Unit)? = null,
     pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     calculatePointsMessage: CalculatePointsMessage? = null,
+    isCreatingMatch: Boolean = false,
     onCancelTeamCountConfirmation: () -> Unit = {},
     onUseEnteredTeams: () -> Unit = {},
     onUseDefaults: () -> Unit = {},
@@ -183,6 +185,7 @@ fun TournamentDetailsScreen(
             onCalculatePointsRequested = onCalculatePointsRequested ?: onCreateMatch,
             pendingTeamCountConfirmation = pendingTeamCountConfirmation,
             calculatePointsMessage = calculatePointsMessage,
+            isCreatingMatch = isCreatingMatch,
             onCancelTeamCountConfirmation = onCancelTeamCountConfirmation,
             onUseEnteredTeams = onUseEnteredTeams,
             onUseDefaults = onUseDefaults,
@@ -217,6 +220,7 @@ private fun TournamentDetailsContent(
     onCalculatePointsRequested: (String) -> Unit,
     pendingTeamCountConfirmation: TeamCountConfirmationUiState?,
     calculatePointsMessage: CalculatePointsMessage?,
+    isCreatingMatch: Boolean,
     onCancelTeamCountConfirmation: () -> Unit,
     onUseEnteredTeams: () -> Unit,
     onUseDefaults: () -> Unit,
@@ -322,6 +326,7 @@ private fun TournamentDetailsContent(
             tournament = tournament,
             onCalculatePointsRequested = onCalculatePointsRequested,
             calculatePointsMessage = calculatePointsMessage,
+            isCreatingMatch = isCreatingMatch,
         )
         pendingTeamCountConfirmation?.let { confirmation ->
             TeamCountConfirmationDialog(
@@ -834,6 +839,7 @@ private fun SimplifiedMatchList(
     tournament: TournamentDetailsItemUiState,
     onCalculatePointsRequested: (String) -> Unit,
     calculatePointsMessage: CalculatePointsMessage?,
+    isCreatingMatch: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -875,6 +881,8 @@ private fun SimplifiedMatchList(
                             R.string.team_entry_gap_message
                         CalculatePointsMessage.VALIDATION_FAILED ->
                             R.string.calculate_points_validation_error
+                        CalculatePointsMessage.MATCH_CREATION_FAILED ->
+                            R.string.match_creation_error
                     },
                 ),
                 color = MaterialTheme.colorScheme.error,
@@ -883,6 +891,7 @@ private fun SimplifiedMatchList(
         if (tournament.matches.size < com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
             Button(
                 onClick = { onCalculatePointsRequested(tournament.id) },
+                enabled = !isCreatingMatch,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(CREATE_MATCH_ACTION_TEST_TAG),
