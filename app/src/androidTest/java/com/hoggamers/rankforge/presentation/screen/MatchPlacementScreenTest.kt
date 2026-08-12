@@ -67,6 +67,31 @@ class MatchPlacementScreenTest {
     }
 
     @Test
+    fun finalizedPlacementScreenIsReadOnly() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchPlacementScreen(
+                    uiState = availableState().copy(
+                        isReadOnly = true,
+                        rows = availableState().rows.mapIndexed { index, row ->
+                            if (index == 0) row.copy(placementInput = "1") else row
+                        },
+                    ),
+                    onPlacementChanged = { _, _ -> },
+                    onSave = {},
+                    onResetDraft = {},
+                    onBackPressed = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Slot 1 placement: 1").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_PLACEMENT_RESET_ACTION_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
     fun invalidAndDuplicatePlacementErrorsAreVisible() {
         composeTestRule.setContent {
             RankForgeTheme {

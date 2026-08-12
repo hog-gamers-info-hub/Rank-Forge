@@ -104,6 +104,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_T
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_BACK_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILLS_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_KILL_SCREEN_TEST_TAG
@@ -133,6 +134,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_CREATE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_MAP_FIELD_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_NUMBER_FIELD_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.CREATE_MATCH_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_ITEM_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.OPEN_STANDINGS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDINGS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX
@@ -913,6 +915,62 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onNodeWithText("Match 1 placements").assertIsDisplayed()
+    }
+
+    @Test
+    fun existingMatchRowOpensThatPersistedMatchWithoutCreatingAnother() {
+        val viewModels = createNavigationViewModels()
+        val matchId = runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            viewModels.repository.saveTeamNames("confirmed-id", mapOf(1 to "Team 1"))
+            (CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = "confirmed-id",
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            ) as CreateMatchResult.Created).match.id
+        }
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeNavHost(
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
+                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
+                    rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterScreenshotIntakeContent = { _, _ -> },
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1 placements").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
+        assertEquals(1, runBlocking { viewModels.repository.observeMatchesByTournamentId("confirmed-id").first().size })
+        assertEquals(
+            matchId,
+            runBlocking { viewModels.repository.observeMatchesByTournamentId("confirmed-id").first().single().id },
+        )
+
+        composeTestRule
+            .onNodeWithTag(MATCH_PLACEMENT_BACK_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test

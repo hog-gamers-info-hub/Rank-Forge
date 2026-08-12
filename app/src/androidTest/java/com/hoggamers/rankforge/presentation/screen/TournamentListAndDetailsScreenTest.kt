@@ -668,6 +668,64 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun existingMatchRowsShowChevronsAndOpenPersistedMatchIds() {
+        val openedMatches = mutableListOf<Pair<String, String>>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "draft-match-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                                ),
+                                MatchUiState(
+                                    id = "completed-match-id",
+                                    matchNumber = 2,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onEnterMatchPlacements = { tournamentId, matchId ->
+                        openedMatches += tournamentId to matchId
+                    },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + "1", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + "2", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1").performClick()
+        composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "2").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    "stable-id" to "draft-match-id",
+                    "stable-id" to "completed-match-id",
+                ),
+                openedMatches,
+            )
+        }
+    }
+
+    @Test
     fun detailsScreenShowsCreateMatchForUnconfirmedTournament() {
         var createdTournamentId: String? = null
 

@@ -63,7 +63,7 @@ class MatchPlacementViewModel @Inject constructor(
                 observeDraftValues(tournamentId, matchId),
             ) { matches, slots, rosters, draftValues ->
                 val match = matches.firstOrNull { it.id == matchId }
-                if (match == null || match.status != MatchStatus.DRAFT) {
+                if (match == null) {
                     MatchPlacementUiState(
                         isLoading = false,
                         isAvailable = false,
@@ -71,6 +71,7 @@ class MatchPlacementViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val isReadOnly = match.status == MatchStatus.FINALIZED
                     val savedPlacements = match.placements.associateBy { it.teamSlotNumber }
                     MatchPlacementUiState(
                         isLoading = false,
@@ -78,12 +79,17 @@ class MatchPlacementViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         matchNumber = match.matchNumber,
+                        isReadOnly = isReadOnly,
                         rows = slots.sortedBy { it.slotNumber }.map { slot ->
                             MatchPlacementRowUiState(
                                 teamSlotNumber = slot.slotNumber,
                                 teamName = slot.teamName,
-                                placementInput = draftValues[slot.slotNumber]?.placementInput
-                                    ?: savedPlacements[slot.slotNumber]?.position?.toString().orEmpty(),
+                                placementInput = if (isReadOnly) {
+                                    savedPlacements[slot.slotNumber]?.position?.toString().orEmpty()
+                                } else {
+                                    draftValues[slot.slotNumber]?.placementInput
+                                        ?: savedPlacements[slot.slotNumber]?.position?.toString().orEmpty()
+                                },
                                 playerNames = rosters[slot.slotNumber].orEmpty().map { it.displayName },
                             )
                         },
@@ -112,6 +118,7 @@ class MatchPlacementViewModel @Inject constructor(
 
     fun onPlacementChanged(teamSlotNumber: Int, value: String) {
         val currentState = _uiState.value
+        if (currentState.isReadOnly) return
         _uiState.update { state ->
             state.copy(
                 rows = state.rows.map { row ->
@@ -179,6 +186,7 @@ class MatchPlacementViewModel @Inject constructor(
     }
 
     fun resetDraft() {
+        if (_uiState.value.isReadOnly) return
         val tournamentId = _uiState.value.tournamentId ?: return
         val matchId = _uiState.value.matchId ?: return
         _uiState.update { state ->

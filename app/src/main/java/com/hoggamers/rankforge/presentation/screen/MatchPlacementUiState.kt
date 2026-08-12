@@ -18,6 +18,7 @@ data class MatchPlacementUiState(
     val tournamentId: String? = null,
     val matchId: String? = null,
     val matchNumber: Int? = null,
+    val isReadOnly: Boolean = false,
     val rows: List<MatchPlacementRowUiState> = emptyList(),
     val validationErrors: Map<Int, PlacementValidationError> = emptyMap(),
     val globalError: PlacementGlobalError? = null,
@@ -28,7 +29,7 @@ data class MatchPlacementUiState(
         get() = !isLoading && !isAvailable
 
     val canSave: Boolean
-        get() = isAvailable && !isSubmitting
+        get() = isAvailable && !isReadOnly && !isSubmitting
 }
 
 data class MatchPlacementRowUiState(
