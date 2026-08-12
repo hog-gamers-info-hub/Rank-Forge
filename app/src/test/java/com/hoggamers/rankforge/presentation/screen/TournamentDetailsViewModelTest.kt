@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -32,12 +34,15 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
+import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentDetailsViewModelTest {
@@ -66,6 +71,94 @@ class TournamentDetailsViewModelTest {
 
         assertEquals("Summer Cup", viewModel.uiState.value.tournament?.name)
         assertEquals("123", viewModel.uiState.value.tournament?.organizerContactNumber)
+    }
+
+    @Test
+    fun calculatePointsWithEightTeamsShowsConfirmationWithoutRequestingMatch() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertEquals(
+            TeamCountConfirmationUiState(enteredCount = 8, emptyCount = 4),
+            viewModel.uiState.value.pendingTeamCountConfirmation,
+        )
+        assertNull(viewModel.uiState.value.createMatchRequest)
+    }
+
+    @Test
+    fun useEnteredTeamsRequestsMatchOnceAndLeavesTrailingBlanks() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        viewModel.useEnteredTeams()
+        advanceUntilIdle()
+
+        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
+        assertTrue(repository.observeSlotsByTournamentId("stable-id").first().drop(8).all { it.teamName.isBlank() })
+        viewModel.onCreateMatchRequestHandled()
+        assertNull(viewModel.uiState.value.createMatchRequest)
+    }
+
+    @Test
+    fun useDefaultsPersistsRemainingNamesAndRequestsMatch() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        viewModel.useDefaults()
+        advanceUntilIdle()
+
+        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
+        assertEquals(
+            (1..8).map { "Team $it" } + (9..12).map { "Team ${it.toString().padStart(2, '0')}" },
+            repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
+        )
+    }
+
+    @Test
+    fun gappedTeamSlotsBlockCalculatePointsWithoutConfirmation() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", mapOf(1 to "Alpha", 3 to "Charlie"))
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
+        assertEquals(CalculatePointsMessage.INVALID_TEAM_SLOTS, viewModel.uiState.value.calculatePointsMessage)
+        assertNull(viewModel.uiState.value.createMatchRequest)
+    }
+
+    @Test
+    fun twelveTeamsRequestMatchWithoutConfirmation() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
+        assertEquals("stable-id", viewModel.uiState.value.createMatchRequest)
     }
 
     @Test
@@ -152,14 +245,14 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
-    fun foundTournamentExposesTwelveSlots() = runTest {
+    fun foundTournamentWithNoTeamsExposesNoActiveSlots() = runTest {
         repository.create(tournament(id = "stable-id"))
         val viewModel = detailsViewModel()
 
         viewModel.load("stable-id")
         advanceUntilIdle()
 
-        assertEquals((1..12).toList(), viewModel.uiState.value.tournament?.slots?.map { it.slotNumber })
+        assertEquals(emptyList<Int>(), viewModel.uiState.value.tournament?.slots?.map { it.slotNumber })
     }
 
     @Test
@@ -260,6 +353,8 @@ class TournamentDetailsViewModelTest {
         observeMatches = ObserveMatchesUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
+        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+        validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
     )
 
     private fun tournament(id: String) = Tournament(

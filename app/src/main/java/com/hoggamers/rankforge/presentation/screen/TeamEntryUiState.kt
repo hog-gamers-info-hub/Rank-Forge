@@ -8,6 +8,7 @@ data class TeamEntryUiState(
     val isSaving: Boolean = false,
     val hasSaveError: Boolean = false,
     val validationIssues: List<RosterValidationIssueUiState> = emptyList(),
+    val hasTeamNameGap: Boolean = false,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && slots.isEmpty()

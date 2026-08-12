@@ -30,6 +30,7 @@ class TournamentCloudUploadScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                 )
             }
         }
@@ -47,6 +48,7 @@ class TournamentCloudUploadScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     onUpload = { uploadedTournamentId = it },
                 )
             }
@@ -67,6 +69,7 @@ class TournamentCloudUploadScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     uploadUiState = TournamentCloudUploadUiState.Queued,
                 )
             }
@@ -84,6 +87,7 @@ class TournamentCloudUploadScreenTest {
                     uiState = detailsState(),
                     onBackToList = {},
                     onEnterTeams = {},
+                    showLegacyControls = true,
                     uploadUiState = TournamentCloudUploadUiState.QueuePersistenceFailure,
                 )
             }

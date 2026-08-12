@@ -31,6 +31,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
 const val TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX = "team_entry_roster_button_"
+const val TEAM_ENTRY_TEAM_NAME_GAP_TEST_TAG = "team_entry_team_name_gap"
 private const val SHOW_TEAM_ENTRY_VALIDATION_ISSUES = false
 
 @Composable
@@ -75,18 +76,22 @@ fun TeamEntryScreen(
 
         uiState.isNotFound -> TeamEntryNotFoundState(onBackToDetails)
 
-        else -> TeamEntryContent(
-            slots = uiState.slots,
-            onTeamNameChanged = onTeamNameChanged,
-            onSave = onSave,
-            onBackToDetails = onBackToDetails,
-            onEditRoster = onEditRoster,
-            onReviewRoster = onReviewRoster,
-            focusSlotNumber = focusSlotNumber,
-            isSaving = uiState.isSaving,
-            hasSaveError = uiState.hasSaveError,
-            validationIssues = uiState.validationIssues,
-        )
+        else -> {
+            TeamEntryContent(
+                slots = uiState.slots,
+                onTeamNameChanged = onTeamNameChanged,
+                onSave = onSave,
+                onBackToDetails = onBackToDetails,
+                onEditRoster = onEditRoster,
+                onReviewRoster = onReviewRoster,
+                focusSlotNumber = focusSlotNumber,
+                isSaving = uiState.isSaving,
+                hasSaveError = uiState.hasSaveError,
+                validationIssues = uiState.validationIssues,
+                hasTeamNameGap = uiState.hasTeamNameGap,
+            )
+
+        }
     }
 }
 
@@ -102,6 +107,7 @@ private fun TeamEntryContent(
     isSaving: Boolean,
     hasSaveError: Boolean,
     validationIssues: List<RosterValidationIssueUiState>,
+    hasTeamNameGap: Boolean,
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -127,6 +133,14 @@ private fun TeamEntryContent(
             if (validationIssues.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             }
+        }
+        if (hasTeamNameGap) {
+            Text(
+                text = stringResource(R.string.team_entry_gap_message),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(TEAM_ENTRY_TEAM_NAME_GAP_TEST_TAG),
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         }
         slots.forEach { slot ->
             val isFocusedSlot = slot.slotNumber == focusSlotNumber

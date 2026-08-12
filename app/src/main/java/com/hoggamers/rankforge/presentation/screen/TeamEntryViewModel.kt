@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -63,6 +64,7 @@ class TeamEntryViewModel @Inject constructor(
                     }
                 },
                 validationIssues = emptyList(),
+                hasTeamNameGap = false,
             )
         }
     }
@@ -70,20 +72,44 @@ class TeamEntryViewModel @Inject constructor(
     fun saveTeamNames() {
         val tournamentId = loadedTournamentId ?: return
         val slotsToSave = uiState.value.slots
-        val resolvedTeamNamesBySlotNumber = slotsToSave.associate { slot ->
-            val trimmedName = slot.teamName.trim()
-            slot.slotNumber to if (trimmedName.isBlank()) {
-                defaultTeamName(slot.slotNumber)
-            } else {
-                trimmedName
-            }
+        val teamNamesBySlotNumber = slotsToSave.associate { slot ->
+            slot.slotNumber to slot.teamName.trim()
         }
-        _uiState.update { it.copy(isSaving = true, hasSaveError = false) }
+        val participation = teamNamesBySlotNumber.analyzeTeamSlotParticipation()
+        if (participation.hasGap) {
+            _uiState.update {
+                it.copy(
+                    hasTeamNameGap = true,
+                    hasSaveError = false,
+                )
+            }
+            return
+        }
+        persistTeamNames(
+            tournamentId = tournamentId,
+            teamNamesBySlotNumber = teamNamesBySlotNumber,
+            activeSlotNumbers = participation.activeSlotNumbers.toSet(),
+        )
+    }
+
+    private fun persistTeamNames(
+        tournamentId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+        activeSlotNumbers: Set<Int>,
+    ) {
+        _uiState.update {
+            it.copy(
+                isSaving = true,
+                hasSaveError = false,
+                hasTeamNameGap = false,
+            )
+        }
         viewModelScope.launch {
             runCatching {
                 val validation = validateTournamentRoster(
                     tournamentId = tournamentId,
-                    teamNamesBySlotNumber = resolvedTeamNamesBySlotNumber,
+                    teamNamesBySlotNumber = teamNamesBySlotNumber,
+                    activeTeamSlotNumbers = activeSlotNumbers,
                 )
                 if (validation.hasBlockingIssues) {
                     _uiState.update {
@@ -95,14 +121,14 @@ class TeamEntryViewModel @Inject constructor(
                 } else {
                     saveTeamSlotNames(
                         tournamentId = tournamentId,
-                        teamNamesBySlotNumber = resolvedTeamNamesBySlotNumber,
+                        teamNamesBySlotNumber = teamNamesBySlotNumber,
                     )
                     _uiState.update { current ->
                         current.copy(
                             isSaving = false,
                             validationIssues = validation.toUiState(),
                             slots = current.slots.map { slot ->
-                                slot.copy(teamName = resolvedTeamNamesBySlotNumber.getValue(slot.slotNumber))
+                                slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber))
                             },
                         )
                     }
@@ -115,6 +141,4 @@ class TeamEntryViewModel @Inject constructor(
         }
     }
 
-    private fun defaultTeamName(slotNumber: Int): String =
-        "Team ${slotNumber.toString().padStart(2, '0')}"
 }

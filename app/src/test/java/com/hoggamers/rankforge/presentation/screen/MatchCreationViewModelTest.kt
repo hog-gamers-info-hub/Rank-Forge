@@ -56,7 +56,7 @@ class MatchCreationViewModelTest {
 
     @Test
     fun invalidSubmitSurfacesValidationErrors() = runTest {
-        repository.create(tournament(TournamentStatus.CONFIRMED))
+        createReadyTournament(TournamentStatus.CONFIRMED)
         viewModel.load("stable-id")
 
         viewModel.submit()
@@ -71,7 +71,7 @@ class MatchCreationViewModelTest {
 
     @Test
     fun successfulCreationRecordsNavigationWithCreatedMatchId() = runTest {
-        repository.create(tournament(TournamentStatus.CONFIRMED))
+        createReadyTournament(TournamentStatus.CONFIRMED)
         viewModel.load("stable-id")
         viewModel.onMatchNumberChanged("1")
         viewModel.onMatchDateChanged(LocalDate.of(2026, 7, 24))
@@ -90,7 +90,7 @@ class MatchCreationViewModelTest {
 
     @Test
     fun successfulCreationNavigationCanBeConsumed() = runTest {
-        repository.create(tournament(TournamentStatus.CONFIRMED))
+        createReadyTournament(TournamentStatus.CONFIRMED)
         viewModel.load("stable-id")
         viewModel.onMatchNumberChanged("1")
         viewModel.onMatchDateChanged(LocalDate.of(2026, 7, 24))
@@ -106,8 +106,8 @@ class MatchCreationViewModelTest {
     }
 
     @Test
-    fun unconfirmedTournamentIsHandledSafely() = runTest {
-        repository.create(tournament(TournamentStatus.DRAFT))
+    fun unconfirmedTournamentCanStartMatchCreation() = runTest {
+        createReadyTournament(TournamentStatus.DRAFT)
         viewModel.load("stable-id")
         viewModel.onMatchNumberChanged("1")
         viewModel.onMatchDateChanged(LocalDate.of(2026, 7, 24))
@@ -116,16 +116,13 @@ class MatchCreationViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(
-            MatchValidationError.TOURNAMENT_NOT_CONFIRMED,
-            viewModel.uiState.value.validationErrors[MatchField.TOURNAMENT],
-        )
-        assertEquals(null, viewModel.uiState.value.navigation)
+        assertTrue(viewModel.uiState.value.navigation is MatchCreationNavigation.Created)
+        assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
     }
 
     @Test
     fun limitReachedStateBlocksCreation() = runTest {
-        repository.create(tournament(TournamentStatus.CONFIRMED))
+        createReadyTournament(TournamentStatus.CONFIRMED)
         val createMatch = CreateMatchUseCase(repository)
         (1..10).forEach { number ->
             createMatch(
@@ -157,4 +154,9 @@ class MatchCreationViewModelTest {
         organizerContactNumber = "123",
         status = status,
     )
+
+    private suspend fun createReadyTournament(status: TournamentStatus) {
+        repository.create(tournament(status))
+        repository.saveTeamNames("stable-id", mapOf(1 to "Team 1"))
+    }
 }

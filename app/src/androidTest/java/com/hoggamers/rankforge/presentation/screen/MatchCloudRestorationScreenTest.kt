@@ -22,23 +22,23 @@ class MatchCloudRestorationScreenTest {
     @get:Rule val composeTestRule = createAndroidComposeRule<ComponentActivity>()
     @Test fun restoreActionShowsAndInvokesSelectedTournament() {
         var restored: String? = null
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, onRestoreMatches = { restored = it }) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, onRestoreMatches = { restored = it }, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_ACTION_TEST_TAG).performScrollTo().assertIsDisplayed().performClick()
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
         composeTestRule.runOnIdle { assertEquals(TOURNAMENT_ID, restored) }
     }
     @Test fun authenticationRequiredStateIsVisible() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.AuthenticationRequired) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.AuthenticationRequired, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
     }
     @Test fun queuedStateShowsMatchRestorationSavedLocallyMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.Queued) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.Queued, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo()
             .assertTextEquals("Match restore could not complete. Saved locally for later sync.")
     }
 
     @Test fun queuePersistenceFailureStateShowsMatchRestorationLocalSaveFailureMessage() {
-        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.QueuePersistenceFailure) } }
+        composeTestRule.setContent { RankForgeTheme { TournamentDetailsScreen(details(), {}, {}, matchCloudRestorationUiState = MatchCloudRestorationUiState.QueuePersistenceFailure, showLegacyControls = true) } }
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo()
             .assertTextEquals("Match restore failed and could not be saved locally.")
     }

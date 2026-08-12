@@ -79,7 +79,7 @@
     <string name="keep_editing_action">Keep Editing</string>
     <string name="discard_changes_action">Discard Changes</string>
     <string name="back_action">Back</string>
-    <string name="tournament_details_title">Tournament details</string>
+    <string name="tournament_details_title">Tournament Details</string>
     <string name="tournament_details_loading">Loading tournament</string>
     <string name="tournament_not_found_title">Tournament not found</string>
     <string name="tournament_not_found_message">This tournament is no longer available in the current app session.</string>
@@ -137,6 +137,8 @@
     <string name="restore_tournament_queue_persistence_failed">Restore failed and could not be saved locally.</string>
     <string name="restore_tournament_item">Restore %1$s</string>
     <string name="team_slots_section_title">Team slots</string>
+    <string name="tournament_details_slot_list_title">Slot-List</string>
+    <string name="tournament_details_slot_row">Slot %1$d - %2$s</string>
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>
     <string name="enter_teams_action">Enter Teams</string>
@@ -146,8 +148,19 @@
     <string name="save_team_names_action">Save team names</string>
     <string name="saving_team_names_action">Saving team namesâ€¦</string>
     <string name="team_names_save_error">Team names could not be saved. Try again.</string>
+    <string name="team_entry_gap_message">Enter team names in order from Slot 1. Fill the empty slot or clear the later team name.</string>
+    <string name="team_count_confirmation_title">Continue with team names?</string>
+    <string name="team_count_confirmation_prompt">How would you like to continue?</string>
+    <string name="team_count_confirmation_cancel">Cancel</string>
+    <string name="team_count_confirmation_use_teams">Use %1$d Teams</string>
+    <string name="team_count_confirmation_use_defaults">Use Defaults</string>
+    <string name="calculate_points_action">Calculate Points</string>
+    <string name="enter_and_save_teams_before_calculating_message">Enter and save team names before calculating points.</string>
+    <string name="invalid_team_slots_before_calculating_message">Team names must be entered in order from Slot 1 before calculating points.</string>
+    <string name="calculate_points_validation_error">Team names could not be used to calculate points.</string>
+    <string name="tournament_details_no_teams_saved">No teams saved</string>
     <string name="back_to_tournament_details_action">Back to tournament details</string>
-    <string name="open_standings_action">View standings</string>
+    <string name="open_standings_action">View Standings</string>
     <string name="tournament_standings_title">Tournament standings</string>
     <string name="tournament_standings_loading">Loading tournament standings</string>
     <string name="tournament_standings_finalized_only_message">Only finalized matches are included in these standings.</string>
@@ -203,6 +216,11 @@
     <string name="match_limit_reached_error">This tournament already has the maximum of 10 matches.</string>
     <string name="match_tournament_not_found_error">This tournament is no longer available.</string>
     <string name="matches_section_title">Matches</string>
+    <string name="tournament_details_matches_title">MATCHES</string>
+    <string name="tournament_details_match_row">Match %1$d - %2$s</string>
+    <string name="tournament_details_match_completed">Completed</string>
+    <string name="tournament_details_match_in_progress">In Progress</string>
+    <string name="tournament_details_no_matches_message">No matches yet</string>
     <string name="matches_require_confirmed_roster_message">Confirm the tournament roster before creating matches.</string>
     <string name="match_limit_reached_message">Maximum of 10 matches reached.</string>
     <string name="no_matches_message">No matches have been created yet.</string>
@@ -633,4 +651,12 @@
     <string name="roster_ocr_review_final_validation_global_issue">Roster issue: %1$s</string>
     <string name="roster_ocr_review_final_validation_slot_issue">Slot %1$d issue: %2$s</string>
     <string name="roster_ocr_review_final_validation_player_issue">Slot %1$d, player %2$d issue: %3$s</string>
+    <plurals name="team_count_confirmation_entered">
+        <item quantity="one">You have entered %1$d team name.</item>
+        <item quantity="other">You have entered %1$d team names.</item>
+    </plurals>
+    <plurals name="team_count_confirmation_empty">
+        <item quantity="one">%1$d slot is empty.</item>
+        <item quantity="other">%1$d slots are empty.</item>
+    </plurals>
 </resources>

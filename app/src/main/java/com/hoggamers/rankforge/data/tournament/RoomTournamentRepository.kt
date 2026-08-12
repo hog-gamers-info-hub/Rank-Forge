@@ -31,6 +31,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
@@ -673,8 +674,14 @@ class RoomTournamentRepository @Inject constructor(
             val current = state.value
             val tournament = current.tournaments.firstOrNull { it.id == match.tournamentId }
                 ?: return@withLock CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_FOUND)
-            if (tournament.status != TournamentStatus.CONFIRMED) {
-                return@withLock CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_CONFIRMED)
+            val participation = current.slots[match.tournamentId]
+                .orEmpty()
+                .analyzeTeamSlotParticipation()
+            if (participation.hasGap) {
+                return@withLock CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_TEAM_SLOTS)
+            }
+            if (participation.activeCount == 0) {
+                return@withLock CreateMatchRepositoryResult.Rejected(MatchCreationFailure.NO_PARTICIPATING_TEAMS)
             }
             val matches = current.matches[match.tournamentId].orEmpty()
             if (matches.any { it.id == match.id }) {

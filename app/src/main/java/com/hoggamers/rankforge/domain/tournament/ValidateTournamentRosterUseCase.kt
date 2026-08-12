@@ -9,8 +9,18 @@ class ValidateTournamentRosterUseCase(
     suspend operator fun invoke(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String> = emptyMap(),
+        activeTeamSlotNumbers: Set<Int>? = null,
     ): RosterValidationResult {
-        val slots = repository.observeSlotsByTournamentId(tournamentId).first().sortedBy { it.slotNumber }
+        val slots = repository.observeSlotsByTournamentId(tournamentId)
+            .first()
+            .sortedBy { it.slotNumber }
+            .let { allSlots ->
+                if (activeTeamSlotNumbers == null) {
+                    allSlots
+                } else {
+                    allSlots.filter { it.slotNumber in activeTeamSlotNumbers }
+                }
+            }
         val teams = slots.map { slot ->
             val players = repository
                 .observeRosterByTournamentAndSlot(tournamentId, slot.slotNumber)
