@@ -25,7 +25,7 @@ enum class CalculatePointsMessage {
     MATCH_CREATION_FAILED,
 }
 
-data class MatchPlacementRequest(
+data class MatchReviewRequest(
     val tournamentId: String,
     val matchId: String,
 )
@@ -37,7 +37,7 @@ data class TournamentDetailsUiState(
     val googleSheetsExportResult: AndroidExportResult? = null,
     val pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     val calculatePointsMessage: CalculatePointsMessage? = null,
-    val matchPlacementRequest: MatchPlacementRequest? = null,
+    val matchReviewRequest: MatchReviewRequest? = null,
     val isCreatingMatch: Boolean = false,
 ) {
     val isNotFound: Boolean

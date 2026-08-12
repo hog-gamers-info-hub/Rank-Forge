@@ -82,10 +82,10 @@ fun TournamentDetailsRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(uiState.matchPlacementRequest) {
-        uiState.matchPlacementRequest?.let { request ->
-            viewModel.onMatchPlacementRequestHandled()
-            onEnterMatchPlacements(request.tournamentId, request.matchId)
+    LaunchedEffect(uiState.matchReviewRequest) {
+        uiState.matchReviewRequest?.let { request ->
+            viewModel.onMatchReviewRequestHandled()
+            onReviewMatch(request.tournamentId, request.matchId)
         }
     }
     val uploadUiState = if (uploadViewModel == null) {
@@ -331,7 +331,7 @@ private fun TournamentDetailsContent(
             onCalculatePointsRequested = onCalculatePointsRequested,
             calculatePointsMessage = calculatePointsMessage,
             isCreatingMatch = isCreatingMatch,
-            onOpenMatchPlacements = onEnterMatchPlacements,
+            onOpenMatchReview = onReviewMatch,
         )
         pendingTeamCountConfirmation?.let { confirmation ->
             TeamCountConfirmationDialog(
@@ -845,7 +845,7 @@ private fun SimplifiedMatchList(
     onCalculatePointsRequested: (String) -> Unit,
     calculatePointsMessage: CalculatePointsMessage?,
     isCreatingMatch: Boolean,
-    onOpenMatchPlacements: (String, String) -> Unit,
+    onOpenMatchReview: (String, String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -864,7 +864,7 @@ private fun SimplifiedMatchList(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenMatchPlacements(tournament.id, match.id) }
+                        .clickable { onOpenMatchReview(tournament.id, match.id) }
                         .testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

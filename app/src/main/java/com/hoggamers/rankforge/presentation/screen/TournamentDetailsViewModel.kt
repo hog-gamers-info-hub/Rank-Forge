@@ -79,7 +79,7 @@ class TournamentDetailsViewModel @Inject constructor(
                         googleSheetsExportResult = current.googleSheetsExportResult,
                         pendingTeamCountConfirmation = current.pendingTeamCountConfirmation,
                         calculatePointsMessage = current.calculatePointsMessage,
-                        matchPlacementRequest = current.matchPlacementRequest,
+                        matchReviewRequest = current.matchReviewRequest,
                         isCreatingMatch = current.isCreatingMatch,
                     )
                 }
@@ -92,7 +92,7 @@ class TournamentDetailsViewModel @Inject constructor(
         if (
             tournament.matches.size >= MAX_MATCHES_PER_TOURNAMENT ||
             _uiState.value.isCreatingMatch ||
-            _uiState.value.matchPlacementRequest != null
+            _uiState.value.matchReviewRequest != null
         ) return
         viewModelScope.launch {
             val slots = observeTournamentSlots(tournament.id).first()
@@ -181,12 +181,12 @@ class TournamentDetailsViewModel @Inject constructor(
         }
     }
 
-    fun onMatchPlacementRequestHandled() {
-        _uiState.update { it.copy(matchPlacementRequest = null) }
+    fun onMatchReviewRequestHandled() {
+        _uiState.update { it.copy(matchReviewRequest = null) }
     }
 
     private fun requestMatchCreation(tournamentId: String) {
-        if (_uiState.value.isCreatingMatch || _uiState.value.matchPlacementRequest != null) return
+        if (_uiState.value.isCreatingMatch || _uiState.value.matchReviewRequest != null) return
         _uiState.update {
             it.copy(
                 calculatePointsMessage = null,
@@ -198,7 +198,7 @@ class TournamentDetailsViewModel @Inject constructor(
                 is CreateNextMatchResult.Created -> _uiState.update {
                     it.copy(
                         isCreatingMatch = false,
-                        matchPlacementRequest = MatchPlacementRequest(
+                        matchReviewRequest = MatchReviewRequest(
                             tournamentId = result.match.tournamentId,
                             matchId = result.match.id,
                         ),
