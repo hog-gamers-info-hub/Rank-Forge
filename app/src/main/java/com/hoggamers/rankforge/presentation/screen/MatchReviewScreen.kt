@@ -86,6 +86,8 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG = "match_review_resul
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG = "match_review_result_screenshot_2_remove"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_result_screenshot_1_crop_ready"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
+const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 
 @Composable
 fun MatchReviewRoute(
@@ -97,6 +99,8 @@ fun MatchReviewRoute(
     onOpenOcrReview: (String, String) -> Unit,
     onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
     onStartCorrection: (String, String) -> Unit,
+    matchLobbyScreenshotIntake: @Composable () -> Unit = {},
+    showLegacyManualReviewContent: Boolean = false,
     viewModel: MatchReviewViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
@@ -225,6 +229,8 @@ fun MatchReviewRoute(
         onRetryScreenshotUpload = viewModel::retryScreenshotUpload,
         onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
+        matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+        showLegacyManualReviewContent = showLegacyManualReviewContent,
     )
 }
 
@@ -246,6 +252,8 @@ fun MatchReviewScreen(
     onRetryScreenshotUpload: () -> Unit = {},
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit = {},
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    matchLobbyScreenshotIntake: @Composable () -> Unit = {},
+    showLegacyManualReviewContent: Boolean = true,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -269,6 +277,8 @@ fun MatchReviewScreen(
             onRetryScreenshotUpload = onRetryScreenshotUpload,
             onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
             onRemoveResultScreenshot = onRemoveResultScreenshot,
+            matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+            showLegacyManualReviewContent = showLegacyManualReviewContent,
         )
     }
 }
@@ -291,6 +301,8 @@ private fun MatchReviewContent(
     onRetryScreenshotUpload: () -> Unit,
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit,
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    matchLobbyScreenshotIntake: @Composable () -> Unit,
+    showLegacyManualReviewContent: Boolean,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -303,76 +315,98 @@ private fun MatchReviewContent(
         verticalArrangement = Arrangement.Top,
     ) {
         Text(
-            text = stringResource(R.string.match_review_title, uiState.matchNumber ?: 0),
+            text = stringResource(
+                if (showLegacyManualReviewContent) {
+                    R.string.match_review_title
+                } else {
+                    R.string.match_review_simplified_title
+                },
+                uiState.matchNumber ?: 0,
+            ),
             style = MaterialTheme.typography.headlineMedium,
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        Text(
-            text = stringResource(
-                R.string.match_review_status_value,
-                stringResource(
-                    if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
-                        R.string.match_status_finalized
-                    } else {
-                        R.string.match_status_draft
-                    },
-                ),
-            ),
-            modifier = if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
-                Modifier.testTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
-            } else {
-                Modifier
-            },
-        )
-        if (uiState.status == MatchStatus.FINALIZED) {
-            Text(text = stringResource(R.string.match_review_finalized_read_only))
-            Button(
-                onClick = onPrepareCsvExport,
-                enabled = uiState.canPrepareMatchCsvExport,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG),
-            ) {
-                Text(text = "Prepare CSV export")
-            }
-            when (uiState.csvExportResult) {
-                is AndroidExportResult.CsvReady -> Text(
-                    text = "CSV export ready",
-                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
-                )
-                is AndroidExportResult.Blocked -> Text(
-                    text = "CSV export blocked",
-                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
-                )
-                is AndroidExportResult.Unavailable -> Text(
-                    text = "CSV export unavailable",
-                    modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
-                )
-                else -> Unit
-            }
-        }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        if (uiState.isValid) {
+        if (showLegacyManualReviewContent) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Text(
-                text = stringResource(R.string.match_review_valid_status),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.testTag(MATCH_REVIEW_VALID_STATUS_TEST_TAG),
+                text = stringResource(
+                    R.string.match_review_status_value,
+                    stringResource(
+                        if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
+                            R.string.match_status_finalized
+                        } else {
+                            R.string.match_status_draft
+                        },
+                    ),
+                ),
+                modifier = if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
+                    Modifier.testTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
+                } else {
+                    Modifier
+                },
             )
+            if (uiState.status == MatchStatus.FINALIZED) {
+                Text(text = stringResource(R.string.match_review_finalized_read_only))
+                Button(
+                    onClick = onPrepareCsvExport,
+                    enabled = uiState.canPrepareMatchCsvExport,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG),
+                ) {
+                    Text(text = "Prepare CSV export")
+                }
+                when (uiState.csvExportResult) {
+                    is AndroidExportResult.CsvReady -> Text(
+                        text = "CSV export ready",
+                        modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                    )
+                    is AndroidExportResult.Blocked -> Text(
+                        text = "CSV export blocked",
+                        modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                    )
+                    is AndroidExportResult.Unavailable -> Text(
+                        text = "CSV export unavailable",
+                        modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
+                    )
+                    else -> Unit
+                }
+            }
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            if (uiState.isValid) {
+                Text(
+                    text = stringResource(R.string.match_review_valid_status),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag(MATCH_REVIEW_VALID_STATUS_TEST_TAG),
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.match_review_issues_status),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(MATCH_REVIEW_ISSUES_STATUS_TEST_TAG),
+                )
+            }
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            uiState.rows.forEach { row ->
+                MatchReviewRow(row)
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            }
+            if (uiState.correctionHistory.isNotEmpty()) {
+                MatchCorrectionHistory(uiState.correctionHistory)
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            }
         } else {
             Text(
-                text = stringResource(R.string.match_review_issues_status),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MATCH_REVIEW_ISSUES_STATUS_TEST_TAG),
+                text = stringResource(R.string.match_review_lobby_screenshots_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
             )
-        }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        uiState.rows.forEach { row ->
-            MatchReviewRow(row)
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        }
-        if (uiState.correctionHistory.isNotEmpty()) {
-            MatchCorrectionHistory(uiState.correctionHistory)
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            matchLobbyScreenshotIntake()
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Text(
+                text = stringResource(R.string.match_review_result_screenshots_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+            )
         }
         MatchResultScreenshotSlotSection(
             screenshotNumber = 1,
@@ -409,7 +443,7 @@ private fun MatchReviewContent(
                 onRemoveResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
             },
         )
-        if (uiState.isEditable) {
+        if (showLegacyManualReviewContent && uiState.isEditable) {
             Button(
                 onClick = onOpenOcrReview,
                 enabled = uiState.canOpenOcrReview,
@@ -461,7 +495,7 @@ private fun MatchReviewContent(
                 )
             }
         }
-        if (uiState.status == MatchStatus.FINALIZED) {
+        if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {
             Button(
                 onClick = { showCorrectionConfirmation = true },
                 modifier = Modifier
@@ -483,7 +517,15 @@ private fun MatchReviewContent(
                 .fillMaxWidth()
                 .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
         ) {
-            Text(stringResource(R.string.back_to_match_details_action))
+            Text(
+                stringResource(
+                    if (showLegacyManualReviewContent) {
+                        R.string.back_to_match_details_action
+                    } else {
+                        R.string.match_review_simplified_back_action
+                    },
+                ),
+            )
         }
     }
 
@@ -934,4 +976,3 @@ private fun ScreenshotUploadError.toMessageRes(): Int = when (this) {
     ScreenshotUploadError.RLS_DENIED ->
         R.string.match_review_screenshot_metadata_rls_denied
 }
-

@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.Clock
@@ -104,6 +105,10 @@ import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewTestTags
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
+import com.hoggamers.rankforge.presentation.screen.MATCH_LOBBY_SCREENSHOT_CROP_CANCEL_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG
@@ -1127,6 +1132,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                         activeMatchReviewViewModel = viewModel
                         viewModel
                     },
+                    showLegacyManualReviewContent = true,
                     standingsViewModelFactory = viewModels.standingsViewModel,
                 )
             }
@@ -1284,6 +1290,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
@@ -1345,27 +1352,82 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
 
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
-        pressBackOnMainThread()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
-
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_KILL_SCREEN_TEST_TAG).assertIsDisplayed()
-        pressBackOnMainThread()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
 
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun reviewMatchLobbyCropKeepsExactMatchContextAndReturnsToReview() {
+        val viewModels = createNavigationViewModels()
+        val tournamentId = "confirmed-id"
+        val matchId = runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            val id = "lobby-crop-match"
+            viewModels.repository.createDraftMatch(
+                com.hoggamers.rankforge.domain.tournament.Match(
+                    id = id,
+                    tournamentId = tournamentId,
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                ),
+            )
+            id
+        }
+        lateinit var navController: NavHostController
+        composeTestRule.setContent {
+            navController = rememberNavController()
+            RankForgeTheme {
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchLobbyScreenshotIntakeContent = { _, _, onOpenCrop ->
+                        Button(
+                            onClick = { onOpenCrop(2) },
+                            modifier = Modifier.testTag("open_lobby_crop_2"),
+                        ) { Text("Open Lobby Screenshot 2") }
+                    },
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination(tournamentId, matchId))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("open_lobby_crop_2").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            val destination = navController.currentBackStackEntry?.toRoute<MatchLobbyScreenshotCropDestination>()
+            assertEquals(tournamentId, destination?.tournamentId)
+            assertEquals(matchId, destination?.matchId)
+            assertEquals(2, destination?.lobbyScreenshotIndex)
+        }
+        assertEquals(1, runBlocking { viewModels.repository.observeMatchesByTournamentId(tournamentId).first().size })
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_CROP_CANCEL_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchReviewDestination(tournamentId, matchId),
+                navController.currentBackStackEntry?.toRoute<MatchReviewDestination>(),
+            )
+        }
     }
 
     @Test
@@ -1407,6 +1469,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                             activeMatchReviewViewModel = it
                         }
                     },
+                    showLegacyManualReviewContent = true,
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
@@ -1495,6 +1558,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
@@ -1569,6 +1633,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }

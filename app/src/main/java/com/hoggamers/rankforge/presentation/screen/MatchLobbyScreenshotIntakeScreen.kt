@@ -30,6 +30,7 @@ fun MatchLobbyScreenshotIntakeRoute(
     tournamentId: String,
     matchId: String,
     onOpenCropEditor: (Int) -> Unit,
+    showTitle: Boolean = true,
     viewModel: MatchLobbyScreenshotIntakeViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) { viewModel.load(tournamentId, matchId) }
@@ -58,6 +59,7 @@ fun MatchLobbyScreenshotIntakeRoute(
         onSelect = viewModel::requestPhotoPicker,
         onCrop = viewModel::requestCropEditor,
         onRemove = viewModel::removeScreenshot,
+        showTitle = showTitle,
     )
 }
 
@@ -67,12 +69,15 @@ fun MatchLobbyScreenshotIntakeScreen(
     onSelect: (Int) -> Unit,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    showTitle: Boolean = true,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        Text(text = stringResource(R.string.match_lobby_screenshot_intake_title), style = MaterialTheme.typography.titleLarge)
+        if (showTitle) {
+            Text(text = stringResource(R.string.match_lobby_screenshot_intake_title), style = MaterialTheme.typography.titleLarge)
+        }
         if (uiState.isLoading) Text(text = stringResource(R.string.match_lobby_screenshot_loading))
         uiState.intakeError?.let { Text(text = stringResource(it.toStringRes()), color = MaterialTheme.colorScheme.error) }
         if (uiState.isFinalized) {

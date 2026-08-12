@@ -344,6 +344,10 @@
     <string name="match_ocr_review_finalization_already_finalized">This match is already finalized.</string>
     <string name="match_ocr_review_finalization_failed">The corrected match could not be finalized.</string>
     <string name="match_review_title">Review match %1$d</string>
+    <string name="match_review_simplified_title">Review Match %1$d</string>
+    <string name="match_review_simplified_back_action">Back to Tournament Details</string>
+    <string name="match_review_lobby_screenshots_title">LOBBY SCREENSHOTS</string>
+    <string name="match_review_result_screenshots_title">RESULT SCREENSHOTS</string>
     <string name="match_review_loading">Loading match review</string>
     <string name="match_review_valid_status">Result is valid.</string>
     <string name="match_review_issues_status">Result has issues.</string>
