@@ -54,6 +54,10 @@ class MatchPlacementViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
         matchId = (CreateMatchUseCase(repository)(
             CreateMatchInput(
                 tournamentId = "tournament-id",
@@ -212,5 +216,27 @@ class MatchPlacementViewModelTest {
 
         assertFalse(viewModel.uiState.value.isAvailable)
         assertTrue(viewModel.uiState.value.isNotFound)
+    }
+
+    @Test
+    fun finalizedMatchLoadsPlacementsReadOnlyWithoutMutation() = runTest {
+        repository.finalizeDraftMatch(
+            matchId = matchId,
+            placements = (1..12).map { slotNumber -> MatchPlacement(slotNumber, slotNumber) },
+            kills = (1..12).map { slotNumber -> com.hoggamers.rankforge.domain.tournament.MatchKill(slotNumber, 0) },
+        )
+
+        viewModel.load("tournament-id", matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isAvailable)
+        assertTrue(viewModel.uiState.value.isReadOnly)
+        assertEquals("1", viewModel.uiState.value.rows.first().placementInput)
+        viewModel.onPlacementChanged(1, "9")
+        viewModel.save()
+        viewModel.resetDraft()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.observeMatchById(matchId).first()?.placements?.first()?.position)
     }
 }

@@ -133,32 +133,35 @@ private fun MatchPlacementContent(
                 row = row,
                 error = uiState.validationErrors[row.teamSlotNumber],
                 onPlacementChanged = onPlacementChanged,
+                isReadOnly = uiState.isReadOnly,
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         }
         MatchPlacementGlobalError(uiState.globalError)
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        Button(
-            onClick = onSave,
-            enabled = uiState.canSave,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG),
-        ) {
-            if (uiState.isSubmitting) {
-                CircularProgressIndicator()
-            } else {
-                Text(stringResource(R.string.save_match_placements_action))
+        if (!uiState.isReadOnly) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Button(
+                onClick = onSave,
+                enabled = uiState.canSave,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG),
+            ) {
+                if (uiState.isSubmitting) {
+                    CircularProgressIndicator()
+                } else {
+                    Text(stringResource(R.string.save_match_placements_action))
+                }
             }
-        }
-        TextButton(
-            onClick = { showResetConfirmation = true },
-            enabled = !uiState.isSubmitting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_PLACEMENT_RESET_ACTION_TEST_TAG),
-        ) {
-            Text(stringResource(R.string.reset_match_draft_action))
+            TextButton(
+                onClick = { showResetConfirmation = true },
+                enabled = !uiState.isSubmitting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_PLACEMENT_RESET_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.reset_match_draft_action))
+            }
         }
         TextButton(
             onClick = onBackPressed,
@@ -201,6 +204,7 @@ private fun MatchPlacementRow(
     row: MatchPlacementRowUiState,
     error: PlacementValidationError?,
     onPlacementChanged: (Int, String) -> Unit,
+    isReadOnly: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -224,23 +228,36 @@ private fun MatchPlacementRow(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        OutlinedTextField(
-            value = row.placementInput,
-            onValueChange = { value -> onPlacementChanged(row.teamSlotNumber, value) },
-            label = { Text(stringResource(R.string.match_placement_field_label)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + row.teamSlotNumber),
-            isError = error != null,
-            supportingText = {
-                when (error) {
-                    PlacementValidationError.INVALID -> Text(stringResource(R.string.match_placement_invalid_error))
-                    PlacementValidationError.DUPLICATE -> Text(stringResource(R.string.match_placement_duplicate_error))
-                    null -> Unit
-                }
-            },
-        )
+        if (isReadOnly) {
+            if (row.placementInput.isNotBlank()) {
+                Text(
+                    text = stringResource(
+                        R.string.match_placement_value,
+                        row.teamSlotNumber,
+                        row.placementInput.toIntOrNull() ?: 0,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        } else {
+            OutlinedTextField(
+                value = row.placementInput,
+                onValueChange = { value -> onPlacementChanged(row.teamSlotNumber, value) },
+                label = { Text(stringResource(R.string.match_placement_field_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX + row.teamSlotNumber),
+                isError = error != null,
+                supportingText = {
+                    when (error) {
+                        PlacementValidationError.INVALID -> Text(stringResource(R.string.match_placement_invalid_error))
+                        PlacementValidationError.DUPLICATE -> Text(stringResource(R.string.match_placement_duplicate_error))
+                        null -> Unit
+                    }
+                },
+            )
+        }
     }
 }
 

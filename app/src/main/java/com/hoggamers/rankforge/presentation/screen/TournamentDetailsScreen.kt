@@ -2,14 +2,17 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -327,6 +331,7 @@ private fun TournamentDetailsContent(
             onCalculatePointsRequested = onCalculatePointsRequested,
             calculatePointsMessage = calculatePointsMessage,
             isCreatingMatch = isCreatingMatch,
+            onOpenMatchPlacements = onEnterMatchPlacements,
         )
         pendingTeamCountConfirmation?.let { confirmation ->
             TeamCountConfirmationDialog(
@@ -840,6 +845,7 @@ private fun SimplifiedMatchList(
     onCalculatePointsRequested: (String) -> Unit,
     calculatePointsMessage: CalculatePointsMessage?,
     isCreatingMatch: Boolean,
+    onOpenMatchPlacements: (String, String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -854,21 +860,37 @@ private fun SimplifiedMatchList(
         if (tournament.matches.isEmpty()) {
             Text(text = stringResource(R.string.tournament_details_no_matches_message))
         } else {
-            tournament.matches.forEach { match ->
-                Text(
-                    text = stringResource(
-                        R.string.tournament_details_match_row,
-                        match.matchNumber,
-                        stringResource(
-                            if (match.status == MatchStatus.DRAFT) {
-                                R.string.tournament_details_match_in_progress
-                            } else {
-                                R.string.tournament_details_match_completed
-                            },
+            tournament.matches.forEachIndexed { index, match ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenMatchPlacements(tournament.id, match.id) }
+                        .testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.tournament_details_match_row,
+                            match.matchNumber,
+                            stringResource(
+                                if (match.status == MatchStatus.DRAFT) {
+                                    R.string.tournament_details_match_in_progress
+                                } else {
+                                    R.string.tournament_details_match_completed
+                                },
+                            ),
                         ),
-                    ),
-                    modifier = Modifier.testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
-                )
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.testTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + match.matchNumber),
+                    )
+                }
+                if (index < tournament.matches.lastIndex) {
+                    HorizontalDivider()
+                }
             }
         }
         if (calculatePointsMessage != null) {
@@ -1004,6 +1026,7 @@ private fun TournamentDetailsNotFoundState(
 const val TOURNAMENT_MATCH_LIST_TEST_TAG = "tournament_match_list"
 const val CREATE_MATCH_ACTION_TEST_TAG = "create_match_action"
 const val MATCH_ITEM_TEST_TAG_PREFIX = "match_item_"
+const val MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX = "match_item_chevron_"
 const val MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX = "match_placement_action_"
 const val MATCH_KILLS_ACTION_TEST_TAG_PREFIX = "match_kills_action_"
 const val MATCH_REVIEW_ACTION_TEST_TAG_PREFIX = "match_review_action_"
