@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(10, cursor.getInt(0))
+                assertEquals(11, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -416,7 +416,88 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
-    fun migrationFromVersion1ToVersion10PreservesLegacyStateAndFinalSchema() {
+    fun migrationFromVersion10AddsLobbyScreenshotAssetsWithoutDroppingExistingData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 10).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, creation_order) VALUES ('tournament-lobby', 'Lobby Cup', '2026-08-12', 'Organizer', '123', 'CONFIRMED', 1)",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) VALUES ('match-lobby', 'tournament-lobby', 1, '2026-08-12', 'Bermuda', 'DRAFT')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            11,
+            true,
+            RankForgeDatabase.MIGRATION_10_11,
+        )
+
+        migrated.query("SELECT id FROM tournaments WHERE id = 'tournament-lobby'").use {
+            assertTrue(it.moveToFirst())
+        }
+        migrated.query("SELECT id FROM matches WHERE id = 'match-lobby'").use {
+            assertTrue(it.moveToFirst())
+        }
+        assertTrue(migrated.hasTable("match_lobby_screenshot_assets"))
+        migrated.query("PRAGMA table_info('match_lobby_screenshot_assets')").use { cursor ->
+            val columns = buildMap<String, Int> {
+                while (cursor.moveToNext()) {
+                    put(
+                        cursor.getString(cursor.getColumnIndexOrThrow("name")),
+                        cursor.getInt(cursor.getColumnIndexOrThrow("pk")),
+                    )
+                }
+            }
+            assertTrue(
+                setOf(
+                    "tournament_id",
+                    "match_id",
+                    "lobby_screenshot_index",
+                    "owner_user_id",
+                    "local_relative_path",
+                    "file_extension",
+                    "mime_type",
+                    "original_width",
+                    "original_height",
+                    "byte_size",
+                    "sha256",
+                    "local_status",
+                    "upload_status",
+                    "upload_failure_code",
+                    "storage_bucket",
+                    "storage_object_path",
+                    "crop_profile_id",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "created_at",
+                    "updated_at",
+                    "preserved_at",
+                    "uploaded_at",
+                    "revision",
+                ).all(columns::containsKey),
+            )
+            assertEquals(1, columns["match_id"])
+            assertEquals(2, columns["lobby_screenshot_index"])
+        }
+        migrated.query("PRAGMA foreign_key_list('match_lobby_screenshot_assets')").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("matches", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+            assertEquals("id", cursor.getString(cursor.getColumnIndexOrThrow("to")))
+            assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+        }
+        listOf(
+            "index_match_lobby_screenshot_assets_tournament_id",
+            "index_match_lobby_screenshot_assets_sha256",
+            "index_match_lobby_screenshot_assets_upload_status",
+        ).forEach { index -> assertTrue(migrated.hasIndex(index)) }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion1ToVersion11PreservesLegacyStateAndFinalSchema() {
         val payload = """{"tournaments":[{"id":"legacy-tournament","name":"Legacy Cup"}]}"""
         createVersion1Database().use { database ->
             database.execSQL(
@@ -427,7 +508,7 @@ class RankForgeDatabaseMigrationTest {
 
         val migrated = migrationTestHelper().runMigrationsAndValidate(
             MIGRATION_DATABASE_NAME,
-            10,
+            11,
             true,
             RankForgeDatabase.MIGRATION_1_2,
             RankForgeDatabase.MIGRATION_2_3,
@@ -438,6 +519,7 @@ class RankForgeDatabaseMigrationTest {
             RankForgeDatabase.MIGRATION_7_8,
             RankForgeDatabase.MIGRATION_8_9,
             RankForgeDatabase.MIGRATION_9_10,
+            RankForgeDatabase.MIGRATION_10_11,
         )
 
         migrated.query("SELECT payload FROM rank_forge_state WHERE id = 1").use { cursor ->
@@ -452,6 +534,7 @@ class RankForgeDatabaseMigrationTest {
             "match_ocr_row_evidence",
             "match_ocr_correction_snapshots",
             "match_result_screenshot_assets",
+            "match_lobby_screenshot_assets",
         ).forEach { table ->
             assertTrue(migrated.hasTable(table))
         }
@@ -463,6 +546,9 @@ class RankForgeDatabaseMigrationTest {
             "index_match_ocr_correction_snapshots_match_id",
             "index_match_result_screenshot_assets_tournament_id",
             "index_match_result_screenshot_assets_sha256",
+            "index_match_lobby_screenshot_assets_tournament_id",
+            "index_match_lobby_screenshot_assets_sha256",
+            "index_match_lobby_screenshot_assets_upload_status",
         ).forEach { index ->
             assertTrue(migrated.hasIndex(index))
         }

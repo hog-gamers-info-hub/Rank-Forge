@@ -176,6 +176,84 @@ class LocalImagePreserverTest {
         assertArrayEquals(byteArrayOf(2), lower.file.readBytes())
     }
 
+    @Test
+    fun lobbyScreenshotPathIsDeterministicAndEncoded() = runTest {
+        val preserver = preserver(byteArrayOf(8), "image/png")
+
+        val result = preserver.preserveLobbyScreenshot(
+            tournamentId = "tournament one",
+            matchId = "match/one",
+            lobbyScreenshotIndex = 2,
+            selectedUri = "content://picked/lobby",
+        )
+
+        val file = (result as LocalImagePreservationResult.Preserved).file
+        assertEquals("original.png", file.name)
+        assertEquals(
+            "screenshots/746f75726e616d656e74206f6e65/6d617463682f6f6e65/lobby/2/original.png",
+            preserver.lobbyRelativePath("tournament one", "match/one", 2, "png"),
+        )
+        assertEquals(
+            preserver.lobbyPreservedFile("tournament one", "match/one", 2, "png").canonicalFile,
+            file.canonicalFile,
+        )
+    }
+
+    @Test
+    fun lobbyIndexesAreIsolatedForReplacementAndCleanup() = runTest {
+        var bytes = byteArrayOf(1)
+        var mime = "image/png"
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("rank-forge-lobby-isolation").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { bytes.inputStream() },
+            mimeTypeReader = ImageSourceMimeTypeReader { mime },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val lobbyOne = preserver.preserveLobbyScreenshot("tournament", "match", 1, "one")
+            as LocalImagePreservationResult.Preserved
+        bytes = byteArrayOf(2)
+        mime = "image/jpeg"
+        val lobbyTwo = preserver.preserveLobbyScreenshot("tournament", "match", 2, "two")
+            as LocalImagePreservationResult.Preserved
+        bytes = byteArrayOf(4)
+        val lobbyThree = preserver.preserveLobbyScreenshot("tournament", "match", 3, "three")
+            as LocalImagePreservationResult.Preserved
+        bytes = byteArrayOf(3)
+        val replacedLobbyOne = preserver.preserveLobbyScreenshot("tournament", "match", 1, "replacement")
+            as LocalImagePreservationResult.Preserved
+
+        assertArrayEquals(byteArrayOf(3), replacedLobbyOne.file.readBytes())
+        assertTrue(lobbyTwo.file.exists())
+        assertArrayEquals(byteArrayOf(2), lobbyTwo.file.readBytes())
+        assertTrue(lobbyThree.file.exists())
+        assertArrayEquals(byteArrayOf(4), lobbyThree.file.readBytes())
+        assertFalse(lobbyOne.file.exists())
+
+        assertEquals(
+            LocalImageCleanupResult.Cleaned,
+            preserver.cleanupLobbyScreenshot("tournament", "match", 1),
+        )
+        assertFalse(replacedLobbyOne.file.exists())
+        assertTrue(lobbyTwo.file.exists())
+        assertTrue(lobbyThree.file.exists())
+    }
+
+    @Test
+    fun invalidLobbyScreenshotIndexIsRejected() = runTest {
+        val preserver = preserver(byteArrayOf(1), "image/png")
+
+        assertEquals(
+            LocalImagePreservationFailure.COPY_FAILED,
+            (preserver.preserveLobbyScreenshot("tournament", "match", 4, "uri")
+                as LocalImagePreservationResult.Failed).error,
+        )
+        assertEquals(
+            LocalImageCleanupResult.Failed,
+            preserver.cleanupLobbyScreenshot("tournament", "match", 0),
+        )
+    }
+
     private fun preserver(
         bytes: ByteArray,
         mimeType: String,

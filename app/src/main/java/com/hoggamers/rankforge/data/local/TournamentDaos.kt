@@ -400,6 +400,117 @@ interface MatchResultScreenshotAssetDao {
 }
 
 @Dao
+interface MatchLobbyScreenshotAssetDao {
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE match_id = :matchId
+        ORDER BY lobby_screenshot_index ASC
+        """,
+    )
+    fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    fun observeByMatchAndIndex(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): Flow<MatchLobbyScreenshotAssetEntity?>
+
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun readByMatchAndIndex(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): MatchLobbyScreenshotAssetEntity?
+
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY match_id ASC, lobby_screenshot_index ASC
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY match_id ASC, lobby_screenshot_index ASC
+        """,
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<MatchLobbyScreenshotAssetEntity>
+
+    @Query(
+        """
+        SELECT * FROM match_lobby_screenshot_assets
+        WHERE tournament_id = :tournamentId
+            AND sha256 = :sha256
+            AND NOT (match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex)
+        LIMIT 1
+        """,
+    )
+    suspend fun readDuplicateFingerprint(
+        tournamentId: String,
+        sha256: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): MatchLobbyScreenshotAssetEntity?
+
+    @Upsert
+    suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity)
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun markLocalMissing(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        localStatus: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET local_status = :localStatus,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun markCleanupFailure(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        localStatus: String,
+        updatedAt: Long,
+    )
+
+    @Query(
+        "DELETE FROM match_lobby_screenshot_assets WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex",
+    )
+    suspend fun deleteByMatchAndIndex(matchId: String, lobbyScreenshotIndex: Int)
+
+    @Query("DELETE FROM match_lobby_screenshot_assets WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+}
+
+@Dao
 interface MatchOcrEvidenceDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMatchEvidence(entity: MatchOcrEvidenceEntity)
