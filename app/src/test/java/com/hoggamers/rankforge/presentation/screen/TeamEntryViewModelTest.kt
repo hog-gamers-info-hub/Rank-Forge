@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -18,20 +19,26 @@ import org.junit.Test
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TeamEntryViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: InMemoryTournamentRepository
+    private lateinit var uploadAction: FakeTournamentCloudUploadAction
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = InMemoryTournamentRepository()
+        uploadAction = FakeTournamentCloudUploadAction()
     }
 
     @After
@@ -82,6 +89,103 @@ class TeamEntryViewModelTest {
         assertEquals("Team 2", savedSlots.first { it.slotNumber == 2 }.teamName)
         assertEquals("Alpha", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
         assertEquals("Team 2", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals(listOf("stable-id"), uploadAction.tournamentIds)
+    }
+
+    @Test
+    fun saveUploadsAfterLocalNamesArePersisted() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.onTeamNameChanged(2, "Bravo")
+        uploadAction.onInvocation = {
+            val slots = repository.observeSlotsByTournamentId("stable-id").first()
+            assertEquals("Alpha", slots.first { it.slotNumber == 1 }.teamName)
+            assertEquals("Bravo", slots.first { it.slotNumber == 2 }.teamName)
+        }
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(listOf("stable-id"), uploadAction.tournamentIds)
+        assertFalse(viewModel.uiState.value.hasSaveError)
+        assertFalse(viewModel.uiState.value.isSaving)
+    }
+
+    @Test
+    fun networkFailurePreservesLocalNamesWithoutSaveError() = runTest {
+        repository.create(tournament())
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+        assertFalse(viewModel.uiState.value.hasSaveError)
+        assertFalse(viewModel.uiState.value.isSaving)
+    }
+
+    @Test
+    fun queuePersistenceFailurePreservesLocalNamesWithoutSaveError() = runTest {
+        repository.create(tournament())
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
+        )
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+        assertFalse(viewModel.uiState.value.hasSaveError)
+    }
+
+    @Test
+    fun unexpectedCloudExceptionPreservesLocalNamesWithoutSaveError() = runTest {
+        repository.create(tournament())
+        uploadAction.throwable = IllegalStateException("cloud unavailable")
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
+        assertFalse(viewModel.uiState.value.hasSaveError)
+        assertFalse(viewModel.uiState.value.isSaving)
+    }
+
+    @Test
+    fun repeatedSaveWhileCloudUploadIsBlockedDoesNotDuplicate() = runTest {
+        repository.create(tournament())
+        uploadAction.block = true
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.saveTeamNames()
+        viewModel.saveTeamNames()
+        runCurrent()
+
+        assertEquals(1, uploadAction.tournamentIds.size)
+        assertTrue(viewModel.uiState.value.isSaving)
+        uploadAction.release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, uploadAction.tournamentIds.size)
+        assertFalse(viewModel.uiState.value.isSaving)
     }
 
     @Test
@@ -172,12 +276,14 @@ class TeamEntryViewModelTest {
         assertFalse(viewModel.uiState.value.validationIssues.none { it.isBlocking })
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first()[1].teamName)
+        assertTrue(uploadAction.tournamentIds.isEmpty())
     }
 
     private fun viewModel() = TeamEntryViewModel(
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+        uploadTournament = uploadAction,
     )
 
     private fun tournament() = Tournament(
@@ -188,4 +294,24 @@ class TeamEntryViewModelTest {
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
     )
+
+    private class FakeTournamentCloudUploadAction : TournamentCloudUploadAction {
+        val tournamentIds = mutableListOf<String>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var block = false
+        var throwable: Throwable? = null
+        var onInvocation: (suspend () -> Unit)? = null
+        var result: QueueAwareActionResult<TournamentCloudUploadResult> = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.Success(1),
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult> {
+            tournamentIds += tournamentId
+            onInvocation?.invoke()
+            if (block) release.await()
+            throwable?.let { throw it }
+            return result
+        }
+    }
 }
