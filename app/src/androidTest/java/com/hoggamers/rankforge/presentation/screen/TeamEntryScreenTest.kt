@@ -128,6 +128,84 @@ class TeamEntryScreenTest {
         composeTestRule.onAllNodesWithText("Confirm roster").assertCountEquals(0)
     }
 
+    @Test
+    fun validationIssuesRemainInStateButAreNotRendered() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TeamEntryScreen(
+                    uiState = TeamEntryUiState(
+                        isLoading = false,
+                        slots = teamEntrySlots(),
+                        validationIssues = listOf(
+                            RosterValidationIssueUiState.DuplicateTeamName(
+                                slotNumber = 2,
+                                firstSlotNumber = 1,
+                                normalizedName = "Alpha",
+                            ),
+                        ),
+                    ),
+                    onTeamNameChanged = { _, _ -> },
+                    onSave = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule
+            .onAllNodesWithText(context.getString(R.string.roster_validation_issues_title))
+            .assertCountEquals(0)
+        composeTestRule
+            .onAllNodesWithText(
+                context.getString(
+                    R.string.validation_duplicate_team_name,
+                    2,
+                    1,
+                    "Alpha",
+                ),
+            )
+            .assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.save_team_names_action))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun saveErrorRemainsVisibleWhenValidationIssuesAreHidden() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TeamEntryScreen(
+                    uiState = TeamEntryUiState(
+                        isLoading = false,
+                        slots = teamEntrySlots(),
+                        validationIssues = listOf(
+                            RosterValidationIssueUiState.InvalidPlayerCount(
+                                slotNumber = 1,
+                                playerCount = 0,
+                            ),
+                        ),
+                        hasSaveError = true,
+                    ),
+                    onTeamNameChanged = { _, _ -> },
+                    onSave = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.team_names_save_error))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onAllNodesWithText(context.getString(R.string.roster_validation_issues_title))
+            .assertCountEquals(0)
+    }
+
     private fun teamEntrySlots() = (1..12).map { slotNumber ->
         TeamEntrySlotUiState(
             slotNumber = slotNumber,

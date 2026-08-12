@@ -70,15 +70,20 @@ class TeamEntryViewModel @Inject constructor(
     fun saveTeamNames() {
         val tournamentId = loadedTournamentId ?: return
         val slotsToSave = uiState.value.slots
-        val teamNamesBySlotNumber = slotsToSave.associate { slot ->
-            slot.slotNumber to slot.teamName
+        val resolvedTeamNamesBySlotNumber = slotsToSave.associate { slot ->
+            val trimmedName = slot.teamName.trim()
+            slot.slotNumber to if (trimmedName.isBlank()) {
+                defaultTeamName(slot.slotNumber)
+            } else {
+                trimmedName
+            }
         }
         _uiState.update { it.copy(isSaving = true, hasSaveError = false) }
         viewModelScope.launch {
             runCatching {
                 val validation = validateTournamentRoster(
                     tournamentId = tournamentId,
-                    teamNamesBySlotNumber = teamNamesBySlotNumber,
+                    teamNamesBySlotNumber = resolvedTeamNamesBySlotNumber,
                 )
                 if (validation.hasBlockingIssues) {
                     _uiState.update {
@@ -90,14 +95,14 @@ class TeamEntryViewModel @Inject constructor(
                 } else {
                     saveTeamSlotNames(
                         tournamentId = tournamentId,
-                        teamNamesBySlotNumber = teamNamesBySlotNumber,
+                        teamNamesBySlotNumber = resolvedTeamNamesBySlotNumber,
                     )
                     _uiState.update { current ->
                         current.copy(
                             isSaving = false,
                             validationIssues = validation.toUiState(),
                             slots = current.slots.map { slot ->
-                                slot.copy(teamName = slot.teamName.trim())
+                                slot.copy(teamName = resolvedTeamNamesBySlotNumber.getValue(slot.slotNumber))
                             },
                         )
                     }
@@ -109,4 +114,7 @@ class TeamEntryViewModel @Inject constructor(
             }
         }
     }
+
+    private fun defaultTeamName(slotNumber: Int): String =
+        "Team ${slotNumber.toString().padStart(2, '0')}"
 }

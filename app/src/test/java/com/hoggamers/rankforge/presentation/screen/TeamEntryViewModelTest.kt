@@ -77,8 +77,55 @@ class TeamEntryViewModelTest {
 
         val savedSlots = repository.observeSlotsByTournamentId("stable-id").first()
         assertEquals("Alpha", savedSlots.first { it.slotNumber == 1 }.teamName)
-        assertEquals("", savedSlots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Team 02", savedSlots.first { it.slotNumber == 2 }.teamName)
         assertEquals("Alpha", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
+        assertEquals("Team 02", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+    }
+
+    @Test
+    fun savingAllBlankNamesPersistsSlotBasedDefaults() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        val expectedNames = (1..12).map { slotNumber ->
+            "Team ${slotNumber.toString().padStart(2, '0')}"
+        }
+        assertEquals(
+            expectedNames,
+            repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
+        )
+        assertEquals(
+            expectedNames,
+            viewModel.uiState.value.slots.map { it.teamName },
+        )
+        assertTrue(viewModel.uiState.value.validationIssues.none { it.isBlocking })
+    }
+
+    @Test
+    fun mixedAndWhitespaceNamesUseTheirOwnSlotDefaults() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged(1, "  Alpha  ")
+        viewModel.onTeamNameChanged(3, "Bravo")
+        viewModel.onTeamNameChanged(7, "   ")
+        viewModel.onTeamNameChanged(10, "  Titan  ")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        val savedSlots = repository.observeSlotsByTournamentId("stable-id").first()
+        assertEquals("Alpha", savedSlots[0].teamName)
+        assertEquals("Team 02", savedSlots[1].teamName)
+        assertEquals("Bravo", savedSlots[2].teamName)
+        assertEquals("Team 07", savedSlots[6].teamName)
+        assertEquals("Titan", savedSlots[9].teamName)
     }
 
     @Test
