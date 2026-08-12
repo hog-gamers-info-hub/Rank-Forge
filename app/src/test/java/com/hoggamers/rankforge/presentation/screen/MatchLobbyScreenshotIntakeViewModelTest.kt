@@ -258,12 +258,22 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             ),
         )
         val uploader = FakeStorageUploader { _, _, _, _ -> error("upload must not run") }
-        val cloud = FakeCloudDataSource()
+        val cloudStarted = CompletableDeferred<Unit>()
+        val cloudResult = CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>()
+        val cloud = SuspendingCloudDataSource(cloudStarted, cloudResult)
         val viewModel = viewModel(preserver, storageUploader = uploader, cloudDataSource = cloud)
         viewModel.load(tournamentId, matchId)
         advanceUntilIdle()
         viewModel.requestPhotoPicker(1)
         viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        assertTrue(preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png").isFile)
+        assertTrue(cloudStarted.isCompleted)
+        assertFalse(cloudResult.isCompleted)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertTrue(uploader.calls.isEmpty())
+        cloudResult.complete(MatchLobbyScreenshotAssetCloudResult.Success)
         advanceUntilIdle()
 
         val restored = lobbyRepository.readByMatchAndIndex(matchId, 1)
@@ -278,8 +288,6 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
         assertEquals(4L, cloud.upserts.single().uploadedAt)
         assertEquals(0.1, cloud.upserts.single().cropLeft)
-        assertTrue(viewModel.uiState.value.pendingCropNavigationSlotIndex == 1)
-        assertTrue(uploader.calls.isEmpty())
     }
 
     @Test
@@ -441,6 +449,22 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
             upserts += asset
             return MatchLobbyScreenshotAssetCloudResult.Success
+        }
+
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
+            MatchLobbyScreenshotAssetCloudResult.Success
+    }
+
+    private class SuspendingCloudDataSource(
+        private val started: CompletableDeferred<Unit>,
+        private val result: CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>,
+    ) : MatchLobbyScreenshotAssetCloudDataSource {
+        val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()
+
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            started.complete(Unit)
+            return result.await()
         }
 
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =

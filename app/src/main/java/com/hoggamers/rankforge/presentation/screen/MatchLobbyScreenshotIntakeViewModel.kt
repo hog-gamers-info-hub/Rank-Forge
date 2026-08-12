@@ -400,11 +400,12 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         preservationError = null,
                     )
                 }
+                _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
                 if (retainCloudState) {
                     syncRetainedCloudMetadata(identity, fingerprint)
+                } else {
+                    scheduleCloudUpload(index)
                 }
-                _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
-                if (!retainCloudState) scheduleCloudUpload(index)
             }
             MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
             MatchLobbyScreenshotAssetSaveResult.StateConflict,
