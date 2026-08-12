@@ -9,6 +9,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -149,14 +150,16 @@ private fun TeamEntryContent(
                     .fillMaxWidth()
                     .testTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber),
             ) {
-                Text(text = stringResource(R.string.edit_roster_action, slot.slotNumber))
+                Text(text = stringResource(R.string.enter_players_name_action))
             }
+            HorizontalDivider(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         }
         Button(
             onClick = onReviewRoster,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(text = stringResource(R.string.review_roster_action))
+            Text(text = stringResource(R.string.overview_team_details_action))
         }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Button(

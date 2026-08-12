@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="enter_players_name_action">Enter Players Name</string>
+    <string name="overview_team_details_action">Overview Team Details</string>
+</resources>
