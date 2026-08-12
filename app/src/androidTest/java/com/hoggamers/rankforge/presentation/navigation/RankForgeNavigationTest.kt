@@ -46,6 +46,8 @@ import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionR
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -63,6 +65,8 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
@@ -1740,9 +1744,15 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
     private fun createNavigationViewModels(): NavigationViewModels {
         val repository = InMemoryTournamentRepository()
+        val uploadAction = TournamentCloudUploadAction {
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.Success(1),
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
         return NavigationViewModels(
             repository = repository,
-            creationViewModel = createCreationViewModel(repository),
+            creationViewModel = createCreationViewModel(repository, uploadAction),
             listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository)),
             detailsViewModel = { tournamentId ->
                 TournamentDetailsViewModel(
@@ -1772,6 +1782,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
                     validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+                    uploadTournament = uploadAction,
                 ).also {
                     it.load(tournamentId)
                 }
@@ -1944,13 +1955,17 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         status = TournamentStatus.CONFIRMED,
     )
 
-    private fun createCreationViewModel(repository: InMemoryTournamentRepository): TournamentCreationViewModel {
+    private fun createCreationViewModel(
+        repository: InMemoryTournamentRepository,
+        uploadAction: TournamentCloudUploadAction,
+    ): TournamentCreationViewModel {
         val today = LocalDate.of(2026, 7, 24)
         return TournamentCreationViewModel(
             CreateTournamentUseCase(
                 repository = repository,
                 clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             ),
+            uploadAction,
         )
     }
 

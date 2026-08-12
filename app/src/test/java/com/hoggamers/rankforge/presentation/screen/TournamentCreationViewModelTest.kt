@@ -24,22 +24,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentCreationViewModelTest {
     private val today = LocalDate.of(2026, 7, 24)
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: TestTournamentRepository
+    private lateinit var uploadAction: FakeTournamentCloudUploadAction
     private lateinit var viewModel: TournamentCreationViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = TestTournamentRepository()
-        viewModel = TournamentCreationViewModel(createUseCase(repository))
+        uploadAction = FakeTournamentCloudUploadAction()
+        viewModel = viewModel()
     }
 
     @After
@@ -81,6 +87,7 @@ class TournamentCreationViewModelTest {
         assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
         assertTrue(repository.records.isEmpty())
         assertNull(viewModel.uiState.value.navigation)
+        assertTrue(uploadAction.tournamentIds.isEmpty())
     }
 
     @Test
@@ -133,6 +140,93 @@ class TournamentCreationViewModelTest {
     }
 
     @Test
+    fun successfulSubmitUploadsAfterLocalCreationAndNavigates() = runTest {
+        uploadAction.onInvocation = {
+            assertEquals(1, repository.records.size)
+        }
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(listOf(repository.records.single().id), uploadAction.tournamentIds)
+        assertEquals(
+            TournamentCreationNavigation.Created(repository.records.single().id),
+            viewModel.uiState.value.navigation,
+        )
+        assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun networkFailureStillNavigatesAndRetainsLocalCreation() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertEquals(1, uploadAction.tournamentIds.size)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+        assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun queuePersistenceFailureStillNavigatesAndRetainsLocalCreation() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+        assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun unexpectedCloudExceptionStillNavigatesAndRetainsLocalCreation() = runTest {
+        uploadAction.throwable = IllegalStateException("cloud unavailable")
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+        assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun repeatedSubmitWhileCloudUploadIsBlockedDoesNotDuplicate() = runTest {
+        uploadAction.block = true
+        fillValidForm()
+
+        viewModel.submit()
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(1, repository.records.size)
+        assertEquals(1, uploadAction.tournamentIds.size)
+        assertTrue(viewModel.uiState.value.isSubmitting)
+
+        uploadAction.release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertEquals(1, uploadAction.tournamentIds.size)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+    }
+
+    @Test
     fun repositoryFailureIsRepresentedInState() = runTest {
         repository.failCreation = true
         fillValidForm()
@@ -180,6 +274,31 @@ class TournamentCreationViewModelTest {
         repository = repository,
         clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
     )
+
+    private fun viewModel() = TournamentCreationViewModel(
+        createTournament = createUseCase(repository),
+        uploadTournament = uploadAction,
+    )
+
+    private class FakeTournamentCloudUploadAction : TournamentCloudUploadAction {
+        val tournamentIds = mutableListOf<String>()
+        val release = CompletableDeferred<Unit>()
+        var block = false
+        var throwable: Throwable? = null
+        var onInvocation: (() -> Unit)? = null
+        var result: QueueAwareActionResult<TournamentCloudUploadResult> = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.Success(1),
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult> {
+            tournamentIds += tournamentId
+            onInvocation?.invoke()
+            if (block) release.await()
+            throwable?.let { throw it }
+            return result
+        }
+    }
 
     private class TestTournamentRepository : TournamentRepository {
         val records = mutableListOf<Tournament>()

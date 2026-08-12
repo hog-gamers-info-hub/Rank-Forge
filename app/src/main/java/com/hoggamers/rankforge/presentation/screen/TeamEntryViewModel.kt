@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,12 +15,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.CancellationException
 
 @HiltViewModel
 class TeamEntryViewModel @Inject constructor(
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
+    private val uploadTournament: TournamentCloudUploadAction,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TeamEntryUiState())
     val uiState: StateFlow<TeamEntryUiState> = _uiState.asStateFlow()
@@ -70,6 +73,7 @@ class TeamEntryViewModel @Inject constructor(
     }
 
     fun saveTeamNames() {
+        if (_uiState.value.isSaving) return
         val tournamentId = loadedTournamentId ?: return
         val slotsToSave = uiState.value.slots
         val teamNamesBySlotNumber = slotsToSave.associate { slot ->
@@ -105,7 +109,7 @@ class TeamEntryViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            runCatching {
+            try {
                 val validation = validateTournamentRoster(
                     tournamentId = tournamentId,
                     teamNamesBySlotNumber = teamNamesBySlotNumber,
@@ -118,22 +122,32 @@ class TeamEntryViewModel @Inject constructor(
                             validationIssues = validation.toUiState(),
                         )
                     }
-                } else {
-                    saveTeamSlotNames(
-                        tournamentId = tournamentId,
-                        teamNamesBySlotNumber = teamNamesBySlotNumber,
-                    )
-                    _uiState.update { current ->
-                        current.copy(
-                            isSaving = false,
-                            validationIssues = validation.toUiState(),
-                            slots = current.slots.map { slot ->
-                                slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber))
-                            },
-                        )
-                    }
+                    return@launch
                 }
-            }.onFailure {
+
+                saveTeamSlotNames(
+                    tournamentId = tournamentId,
+                    teamNamesBySlotNumber = teamNamesBySlotNumber,
+                )
+                _uiState.update { current ->
+                    current.copy(
+                        validationIssues = validation.toUiState(),
+                        slots = current.slots.map { slot ->
+                            slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber))
+                        },
+                    )
+                }
+                try {
+                    uploadTournament(tournamentId)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Local team names remain saved when the immediate cloud attempt throws.
+                }
+                _uiState.update { it.copy(isSaving = false) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
                 _uiState.update {
                     it.copy(isSaving = false, hasSaveError = true)
                 }

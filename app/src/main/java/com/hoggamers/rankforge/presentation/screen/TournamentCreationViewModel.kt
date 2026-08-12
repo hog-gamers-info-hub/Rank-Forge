@@ -6,7 +6,9 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentInput
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentResult
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentField
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class TournamentCreationViewModel @Inject constructor(
     private val createTournament: CreateTournamentUseCase,
+    private val uploadTournament: TournamentCloudUploadAction,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentCreationUiState())
     val uiState: StateFlow<TournamentCreationUiState> = _uiState.asStateFlow()
@@ -85,13 +88,24 @@ class TournamentCreationViewModel @Inject constructor(
                         )
                     }
 
-                    is CreateTournamentResult.Created -> _uiState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            navigation = TournamentCreationNavigation.Created(result.tournament.id),
-                        )
+                    is CreateTournamentResult.Created -> {
+                        try {
+                            uploadTournament(result.tournament.id)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Throwable) {
+                            // Local creation remains successful when the immediate cloud attempt throws.
+                        }
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                navigation = TournamentCreationNavigation.Created(result.tournament.id),
+                            )
+                        }
                     }
                 }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (_: Throwable) {
                 _uiState.update {
                     it.copy(
