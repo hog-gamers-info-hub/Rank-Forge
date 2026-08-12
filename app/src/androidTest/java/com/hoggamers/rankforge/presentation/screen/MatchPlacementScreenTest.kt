@@ -51,6 +51,22 @@ class MatchPlacementScreenTest {
     }
 
     @Test
+    fun placementScreenUsesPersistedMatchNumberInTitle() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchPlacementScreen(
+                    uiState = availableState().copy(matchNumber = 2),
+                    onPlacementChanged = { _, _ -> },
+                    onSave = {},
+                    onBackPressed = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Match 2 placements").assertIsDisplayed()
+    }
+
+    @Test
     fun invalidAndDuplicatePlacementErrorsAreVisible() {
         composeTestRule.setContent {
             RankForgeTheme {

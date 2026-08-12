@@ -49,6 +49,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -879,10 +880,14 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
-    fun confirmedTournamentDetailsNavigatesToMatchCreation() {
+    fun confirmedTournamentDetailsCalculatePointsNavigatesDirectlyToMatchPlacements() {
         val viewModels = createNavigationViewModels()
         runBlocking {
             viewModels.repository.create(confirmedTournament())
+            viewModels.repository.saveTeamNames(
+                "confirmed-id",
+                (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+            )
         }
         composeTestRule.setContent {
             RankForgeTheme {
@@ -894,7 +899,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchCreationViewModelFactory = viewModels.matchCreationViewModel,
+                    matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                 )
             }
         }
@@ -905,8 +910,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText(context.getString(R.string.match_number_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithText("Match 1 placements").assertIsDisplayed()
     }
 
     @Test
@@ -914,12 +920,19 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         val viewModels = createNavigationViewModels()
         var activeMatchCreationViewModel: MatchCreationViewModel? = null
         var cachedMatchCreationViewModel: MatchCreationViewModel? = null
+        lateinit var navController: NavHostController
         runBlocking {
             viewModels.repository.create(confirmedTournament())
+            viewModels.repository.saveTeamNames(
+                "confirmed-id",
+                mapOf(1 to "Team 1"),
+            )
         }
         composeTestRule.setContent {
             RankForgeTheme {
+                navController = rememberNavController()
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -944,10 +957,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchCreationDestination("confirmed-id"))
+        }
         composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_NUMBER_FIELD_TEST_TAG).performTextInput("1")
         composeTestRule.runOnIdle {
@@ -1015,12 +1027,19 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         var cachedMatchCreationViewModel: MatchCreationViewModel? = null
         var activeMatchReviewViewModel: MatchReviewViewModel? = null
         var cachedMatchReviewViewModel: MatchReviewViewModel? = null
+        lateinit var navController: NavHostController
         runBlocking {
             viewModels.repository.create(confirmedTournament())
+            viewModels.repository.saveTeamNames(
+                "confirmed-id",
+                mapOf(1 to "Team 1"),
+            )
         }
         composeTestRule.setContent {
             RankForgeTheme {
+                navController = rememberNavController()
                 RankForgeNavHost(
+                    navController = navController,
                     creationViewModel = viewModels.creationViewModel,
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
@@ -1053,10 +1072,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
-        composeTestRule
-            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchCreationDestination("confirmed-id"))
+        }
         composeTestRule.onNodeWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_NUMBER_FIELD_TEST_TAG).performTextInput("1")
         composeTestRule.runOnIdle {
@@ -1677,6 +1695,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
                     saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
                     validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+                    createNextMatch = CreateNextMatchUseCase(repository),
                 ).also {
                     it.load(tournamentId)
                 }

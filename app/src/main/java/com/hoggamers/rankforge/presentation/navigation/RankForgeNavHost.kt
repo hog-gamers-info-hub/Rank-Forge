@@ -208,9 +208,6 @@ fun RankForgeNavHost(
             val onEnterTeams: (String) -> Unit = { tournamentId ->
                 navController.navigate(TeamEntryDestination(tournamentId))
             }
-            val onCreateMatch: (String) -> Unit = { tournamentId ->
-                navController.navigate(MatchCreationDestination(tournamentId))
-            }
             val onEnterMatchPlacements: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchPlacementDestination(tournamentId, matchId))
             }
@@ -259,7 +256,6 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     onBackToList = onBackToList,
                     onEnterTeams = onEnterTeams,
-                    onCreateMatch = onCreateMatch,
                     onEnterMatchPlacements = onEnterMatchPlacements,
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
@@ -275,7 +271,6 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     onBackToList = onBackToList,
                     onEnterTeams = onEnterTeams,
-                    onCreateMatch = onCreateMatch,
                     onEnterMatchPlacements = onEnterMatchPlacements,
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,

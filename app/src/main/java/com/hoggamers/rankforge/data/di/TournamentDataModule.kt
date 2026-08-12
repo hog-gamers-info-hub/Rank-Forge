@@ -31,6 +31,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
@@ -224,6 +225,12 @@ object TournamentDataProvidersModule {
     fun provideCreateMatchUseCase(
         repository: TournamentRepository,
     ): CreateMatchUseCase = CreateMatchUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideCreateNextMatchUseCase(
+        repository: TournamentRepository,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository)
 
     @Provides
     @Singleton
