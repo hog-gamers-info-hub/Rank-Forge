@@ -116,6 +116,21 @@ class LocalImagePreserver(
         selectedUri = selectedUri,
     )
 
+    suspend fun preserveLobbyScreenshot(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        selectedUri: String,
+    ): LocalImagePreservationResult {
+        if (lobbyScreenshotIndex !in 1..3) {
+            return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        return preserveToDirectory(
+            directory = lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex),
+            selectedUri = selectedUri,
+        )
+    }
+
     private suspend fun preserveToDirectory(
         directory: File,
         selectedUri: String,
@@ -273,6 +288,25 @@ class LocalImagePreserver(
         }
     }
 
+    suspend fun cleanupLobbyScreenshot(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (lobbyScreenshotIndex !in 1..3) return@withContext LocalImageCleanupResult.Failed
+        val directory = lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex)
+        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+            ?: return@withContext LocalImageCleanupResult.Failed
+        val ownedFiles = files.filter { file ->
+            file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
+        }
+        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+            LocalImageCleanupResult.Cleaned
+        } else {
+            LocalImageCleanupResult.Failed
+        }
+    }
+
     fun preservedFile(
         tournamentId: String,
         matchId: String,
@@ -306,6 +340,25 @@ class LocalImagePreserver(
         role: MatchResultScreenshotRole,
         extension: String,
     ): File = File(matchResultScreenshotDirectory(tournamentId, matchId, role), "original.$extension")
+
+    fun lobbyRelativePath(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        extension: String,
+    ): String =
+        "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/lobby/" +
+            "$lobbyScreenshotIndex/original.$extension"
+
+    fun lobbyPreservedFile(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        extension: String,
+    ): File = File(
+        lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex),
+        "original.$extension",
+    )
 
     fun relativePathFor(file: File): String? {
         val rootPath = runCatching { File(appPrivateRoot, SCREENSHOTS_DIRECTORY).canonicalFile.toPath() }
@@ -342,6 +395,15 @@ class LocalImagePreserver(
     ): File = File(
         File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
         "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/result/${roleDirectoryName(role)}",
+    )
+
+    private fun lobbyScreenshotDirectory(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): File = File(
+        File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
+        "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/lobby/$lobbyScreenshotIndex",
     )
 
     private fun roleDirectoryName(role: MatchResultScreenshotRole): String = when (role) {

@@ -13,11 +13,14 @@ import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetDao
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetDao
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RoomRosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.RoomMatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
@@ -91,6 +94,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindMatchResultScreenshotAssetRepository(
         repository: RoomMatchResultScreenshotAssetRepository,
     ): MatchResultScreenshotAssetRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchLobbyScreenshotAssetRepository(
+        repository: RoomMatchLobbyScreenshotAssetRepository,
+    ): MatchLobbyScreenshotAssetRepository
 }
 
 @Module
@@ -114,6 +123,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_7_8,
         RankForgeDatabase.MIGRATION_8_9,
         RankForgeDatabase.MIGRATION_9_10,
+        RankForgeDatabase.MIGRATION_10_11,
     ).build()
 
     @Provides
@@ -134,6 +144,11 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideMatchResultScreenshotAssetDao(database: RankForgeDatabase): MatchResultScreenshotAssetDao =
         database.matchResultScreenshotAssetDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchLobbyScreenshotAssetDao(database: RankForgeDatabase): MatchLobbyScreenshotAssetDao =
+        database.matchLobbyScreenshotAssetDao()
 
     @Provides
     @Singleton
