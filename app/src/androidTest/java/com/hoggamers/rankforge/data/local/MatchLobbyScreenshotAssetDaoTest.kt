@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.data.local
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -97,6 +98,58 @@ class MatchLobbyScreenshotAssetDaoTest {
                 MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
                 repository.saveOrReplace(asset(tournamentId = "", index = 1, sha256 = "d".repeat(64))),
             )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun repositoryRequiresExactTournamentIdentityForCropPersistenceAndClearing() = runBlocking {
+        val database = createDatabase()
+        try {
+            insertTournamentAndMatches(database)
+            val repository = RoomMatchLobbyScreenshotAssetRepository(database.matchLobbyScreenshotAssetDao())
+            val storedIdentity = MatchLobbyScreenshotIdentity("tournament-1", "match-1", 1)
+            val mismatchedIdentity = MatchLobbyScreenshotIdentity("tournament-2", "match-1", 1)
+            val confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
+            val replacementCrop = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+            val storedAsset = asset(index = 1, sha256 = "e".repeat(64)).copy(
+                cropProfileId = "lobby",
+                cropLeft = confirmedCrop.left,
+                cropTop = confirmedCrop.top,
+                cropRight = confirmedCrop.right,
+                cropBottom = confirmedCrop.bottom,
+                revision = 4,
+            )
+            assertEquals(MatchLobbyScreenshotAssetSaveResult.Saved, repository.saveOrReplace(storedAsset))
+
+            assertEquals(
+                MatchLobbyScreenshotCropSaveResult.InvalidIdentity,
+                repository.persistConfirmedCrop(mismatchedIdentity, replacementCrop, updatedAt = 5),
+            )
+            assertEquals(storedAsset, repository.getByIdentity(storedIdentity))
+
+            assertEquals(
+                MatchLobbyScreenshotCropSaveResult.InvalidIdentity,
+                repository.clearConfirmedCrop(mismatchedIdentity, updatedAt = 6),
+            )
+            assertEquals(storedAsset, repository.getByIdentity(storedIdentity))
+
+            assertEquals(
+                MatchLobbyScreenshotCropSaveResult.Saved,
+                repository.persistConfirmedCrop(storedIdentity, replacementCrop, updatedAt = 7),
+            )
+            assertEquals(
+                MatchLobbyScreenshotCropSaveResult.Saved,
+                repository.clearConfirmedCrop(storedIdentity, updatedAt = 8),
+            )
+            val clearedAsset = repository.getByIdentity(storedIdentity)
+            assertNull(clearedAsset?.cropProfileId)
+            assertNull(clearedAsset?.cropLeft)
+            assertNull(clearedAsset?.cropTop)
+            assertNull(clearedAsset?.cropRight)
+            assertNull(clearedAsset?.cropBottom)
+            assertEquals(6L, clearedAsset?.revision)
         } finally {
             database.close()
         }

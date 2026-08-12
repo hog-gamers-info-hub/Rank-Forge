@@ -173,6 +173,12 @@ object OcrCropValidationProfiles {
         minimumNormalizedWidth = 0.10,
         minimumNormalizedHeight = 0.10,
     )
+
+    val Lobby = OcrCropValidationProfile(
+        id = "lobby",
+        minimumNormalizedWidth = 0.10,
+        minimumNormalizedHeight = 0.10,
+    )
 }
 
 object OcrCropValidator {
