@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
+import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -154,7 +155,6 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     fun onPhotoPickerResult(selectedUri: String?) {
         val slot = _uiState.value.slots.firstOrNull { it.isPhotoPickerRequestActive } ?: return
         val index = slot.index
-        uploadJobs.remove(index)?.cancel()
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
@@ -163,7 +163,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 )
             }
         }
-        if (selectedUri.isNullOrBlank()) return
+        val replacementUri = selectedUri?.takeIf { it.isNotBlank() } ?: return
+        uploadJobs.remove(index)?.cancel()
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
@@ -174,7 +175,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 )
             }
         }
-        viewModelScope.launch { processSelection(index, selectedUri) }
+        viewModelScope.launch { processSelection(index, replacementUri) }
     }
 
     fun onCropNavigationHandled() {
@@ -399,6 +400,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         preservationError = null,
                     )
                 }
+                if (retainCloudState) {
+                    syncRetainedCloudMetadata(identity, fingerprint)
+                }
                 _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
                 if (!retainCloudState) scheduleCloudUpload(index)
             }
@@ -413,6 +417,26 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
             }
+        }
+    }
+
+    private suspend fun syncRetainedCloudMetadata(
+        identity: MatchLobbyScreenshotIdentity,
+        uploadSha256: String,
+    ) {
+        val latest = readLatestAsset(identity) ?: return
+        if (latest.identityOrNull() != identity || latest.sha256 != uploadSha256) return
+        val result = try {
+            cloudDataSource.upsert(latest)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyScreenshotAssetCloudResult.Failed(
+                MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED,
+            )
+        }
+        if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
+            markCloudFailure(identity, uploadSha256, result.failure.name)
         }
     }
 

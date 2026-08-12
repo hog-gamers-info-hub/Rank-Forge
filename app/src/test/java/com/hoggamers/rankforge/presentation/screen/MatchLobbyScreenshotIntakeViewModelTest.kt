@@ -24,6 +24,7 @@ import java.security.MessageDigest
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -143,6 +144,38 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @Test
+    fun cancellingPhotoPickerDoesNotCancelExistingUploadOrChangeAsset() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var uploadCancelled = false
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            try {
+                gate.await()
+            } catch (cancellation: CancellationException) {
+                uploadCancelled = true
+                throw cancellation
+            }
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/1/original.png")
+        }
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-picker-cancel").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+        val beforeCancel = lobbyRepository.readByMatchAndIndex(matchId, 1)
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult(null)
+        advanceUntilIdle()
+
+        assertFalse(uploadCancelled)
+        assertEquals(beforeCancel, lobbyRepository.readByMatchAndIndex(matchId, 1))
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun storageSuccessUpdatesLatestLocalAssetAndCloudMetadata() = runTest {
         val uploader = FakeStorageUploader { _, _, _, _ ->
             MatchLobbyScreenshotStorageUploadResult.Uploaded("users/owner/lobby/1/original.png")
@@ -225,7 +258,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             ),
         )
         val uploader = FakeStorageUploader { _, _, _, _ -> error("upload must not run") }
-        val viewModel = viewModel(preserver, storageUploader = uploader)
+        val cloud = FakeCloudDataSource()
+        val viewModel = viewModel(preserver, storageUploader = uploader, cloudDataSource = cloud)
         viewModel.load(tournamentId, matchId)
         advanceUntilIdle()
         viewModel.requestPhotoPicker(1)
@@ -236,6 +270,14 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertEquals(ScreenshotUploadStatus.UPLOADED.name, restored?.uploadStatus)
         assertEquals("cloud/path.png", restored?.storageObjectPath)
         assertEquals("lobby", restored?.cropProfileId)
+        assertEquals(2L, restored?.revision)
+        assertEquals(ScreenshotLocalStatus.PRESERVED.name, restored?.localStatus)
+        assertEquals(1, cloud.upserts.size)
+        assertEquals(restored, cloud.upserts.single())
+        assertEquals("ocr-screenshots", cloud.upserts.single().storageBucket)
+        assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
+        assertEquals(4L, cloud.upserts.single().uploadedAt)
+        assertEquals(0.1, cloud.upserts.single().cropLeft)
         assertTrue(viewModel.uiState.value.pendingCropNavigationSlotIndex == 1)
         assertTrue(uploader.calls.isEmpty())
     }
