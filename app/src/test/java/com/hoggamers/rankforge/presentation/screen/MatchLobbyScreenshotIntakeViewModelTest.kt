@@ -1,5 +1,10 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
@@ -18,6 +23,8 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,6 +123,174 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @Test
+    fun localSaveRequestsCropNavigationWithoutWaitingForCloud() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            gate.await()
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/2/original.png")
+        }
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-local-first").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(2)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertTrue(uploader.calls.isNotEmpty())
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun cancellingPhotoPickerDoesNotCancelExistingUploadOrChangeAsset() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var uploadCancelled = false
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            try {
+                gate.await()
+            } catch (cancellation: CancellationException) {
+                uploadCancelled = true
+                throw cancellation
+            }
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/1/original.png")
+        }
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-picker-cancel").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+        val beforeCancel = lobbyRepository.readByMatchAndIndex(matchId, 1)
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult(null)
+        advanceUntilIdle()
+
+        assertFalse(uploadCancelled)
+        assertEquals(beforeCancel, lobbyRepository.readByMatchAndIndex(matchId, 1))
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun storageSuccessUpdatesLatestLocalAssetAndCloudMetadata() = runTest {
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("users/owner/lobby/1/original.png")
+        }
+        val cloud = FakeCloudDataSource()
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-uploaded").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader, cloudDataSource = cloud)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        val saved = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, saved?.uploadStatus)
+        assertEquals("users/owner/lobby/1/original.png", saved?.storageObjectPath)
+        assertEquals(1, cloud.upserts.size)
+        assertEquals(saved, cloud.upserts.single())
+    }
+
+    @Test
+    fun storageFailureLeavesLocalAssetLinkedAndMarksFailure() = runTest {
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            MatchLobbyScreenshotStorageUploadResult.Failed(MatchLobbyScreenshotStorageUploadFailure.NETWORK)
+        }
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-failed").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        val saved = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+        assertEquals(ScreenshotUploadStatus.FAILED.name, saved?.uploadStatus)
+        assertEquals(MatchLobbyScreenshotStorageUploadFailure.NETWORK.name, saved?.uploadFailureCode)
+    }
+
+    @Test
+    fun staleUploadCannotMutateReplacementAsset() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val uploader = FakeStorageUploader { _, _, _, _ ->
+            gate.await()
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("stale/path.png")
+        }
+        val preserver = preserver(Files.createTempDirectory("lobby-intake-stale").toFile())
+        val viewModel = viewModel(preserver, storageUploader = uploader)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+        lobbyRepository.saveOrReplace(asset(1, matchId, "replacement/path.png", "replacement"))
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        val replacement = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        assertEquals("replacement", replacement?.sha256)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, replacement?.uploadStatus)
+        assertEquals(null, replacement?.storageObjectPath)
+    }
+
+    @Test
+    fun sameIdentityRecoveryRetainsSuccessfulCloudState() = runTest {
+        val root = Files.createTempDirectory("lobby-intake-cloud-recovery").toFile()
+        val preserver = preserver(root)
+        val fingerprint = byteArrayOf(1, 2, 3).sha256()
+        lobbyRepository.saveOrReplace(
+            asset(1, matchId, "missing/path.png", fingerprint).copy(
+                storageBucket = "ocr-screenshots",
+                storageObjectPath = "cloud/path.png",
+                uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                uploadedAt = 4,
+                cropProfileId = "lobby",
+                cropLeft = 0.1,
+                cropTop = 0.1,
+                cropRight = 0.9,
+                cropBottom = 0.9,
+            ),
+        )
+        val uploader = FakeStorageUploader { _, _, _, _ -> error("upload must not run") }
+        val cloudStarted = CompletableDeferred<Unit>()
+        val cloudResult = CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>()
+        val cloud = SuspendingCloudDataSource(cloudStarted, cloudResult)
+        val viewModel = viewModel(preserver, storageUploader = uploader, cloudDataSource = cloud)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        assertTrue(preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png").isFile)
+        assertTrue(cloudStarted.isCompleted)
+        assertFalse(cloudResult.isCompleted)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertTrue(uploader.calls.isEmpty())
+        cloudResult.complete(MatchLobbyScreenshotAssetCloudResult.Success)
+        advanceUntilIdle()
+
+        val restored = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, restored?.uploadStatus)
+        assertEquals("cloud/path.png", restored?.storageObjectPath)
+        assertEquals("lobby", restored?.cropProfileId)
+        assertEquals(2L, restored?.revision)
+        assertEquals(ScreenshotLocalStatus.PRESERVED.name, restored?.localStatus)
+        assertEquals(1, cloud.upserts.size)
+        assertEquals(restored, cloud.upserts.single())
+        assertEquals("ocr-screenshots", cloud.upserts.single().storageBucket)
+        assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
+        assertEquals(4L, cloud.upserts.single().uploadedAt)
+        assertEquals(0.1, cloud.upserts.single().cropLeft)
+    }
+
+    @Test
     fun sameIdentityWithMissingLocalFileRepreservesBeforeCropNavigation() = runTest {
         val root = Files.createTempDirectory("lobby-intake-recover").toFile()
         val preserver = preserver(root)
@@ -147,7 +322,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertTrue(restored != null)
         assertEquals(fingerprint, restored?.sha256)
         assertEquals(41L, restored?.createdAt)
-        assertEquals(8L, restored?.revision)
+        assertEquals(9L, restored?.revision)
         assertEquals("lobby", restored?.cropProfileId)
         assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
         assertFalse(viewModel.uiState.value.slot(1)?.isLocalFileMissing == true)
@@ -173,6 +348,10 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     private fun viewModel(
         preserver: LocalImagePreserver,
         validator: ImageCandidateValidator = ImageCandidateValidator(ImageCandidateMetadataReader { ImageCandidateReadResult.Metadata("image/png", 100, 100) }),
+        storageUploader: MatchLobbyScreenshotStorageUploader = FakeStorageUploader { _, _, _, _ ->
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/default.png")
+        },
+        cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
     ) = MatchLobbyScreenshotIntakeViewModel(
         observeMatches = ObserveMatchesUseCase(tournamentRepository),
         imageCandidateValidator = validator,
@@ -189,6 +368,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             override suspend fun currentOwnerUserId(): String = "owner-1"
         },
         clock = java.time.Clock.systemUTC(),
+        storageUploader = storageUploader,
+        cloudDataSource = cloudDataSource,
     )
 
     private fun preserver(root: java.io.File) = LocalImagePreserver(
@@ -244,6 +425,50 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         override suspend fun persistConfirmedCrop(identity: MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
         fun readByMatchAndIndex(matchId: String, index: Int) = state.value.firstOrNull { it.matchId == matchId && it.lobbyScreenshotIndex == index }
+    }
+
+    private class FakeStorageUploader(
+        private val handler: suspend (String, String, Int, java.io.File?) -> MatchLobbyScreenshotStorageUploadResult,
+    ) : MatchLobbyScreenshotStorageUploader {
+        val calls = mutableListOf<Int>()
+
+        override suspend fun upload(
+            tournamentId: String?,
+            matchId: String?,
+            lobbyScreenshotIndex: Int?,
+            localFile: java.io.File?,
+        ): MatchLobbyScreenshotStorageUploadResult {
+            calls += lobbyScreenshotIndex ?: -1
+            return handler(tournamentId.orEmpty(), matchId.orEmpty(), lobbyScreenshotIndex ?: -1, localFile)
+        }
+    }
+
+    private class FakeCloudDataSource : MatchLobbyScreenshotAssetCloudDataSource {
+        val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()
+
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            return MatchLobbyScreenshotAssetCloudResult.Success
+        }
+
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
+            MatchLobbyScreenshotAssetCloudResult.Success
+    }
+
+    private class SuspendingCloudDataSource(
+        private val started: CompletableDeferred<Unit>,
+        private val result: CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>,
+    ) : MatchLobbyScreenshotAssetCloudDataSource {
+        val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()
+
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            started.complete(Unit)
+            return result.await()
+        }
+
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
+            MatchLobbyScreenshotAssetCloudResult.Success
     }
 
     private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")

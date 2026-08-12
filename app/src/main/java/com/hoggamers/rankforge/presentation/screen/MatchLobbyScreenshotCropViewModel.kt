@@ -2,9 +2,14 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
+import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -31,6 +36,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
+    private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
     val uiState: StateFlow<MatchLobbyScreenshotCropUiState> = _uiState.asStateFlow()
@@ -157,6 +163,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
+                    syncCloudMetadata(identity)
                     onConfirmed()
                 }
                 MatchLobbyScreenshotCropSaveResult.MissingAsset ->
@@ -164,6 +171,52 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                 MatchLobbyScreenshotCropSaveResult.InvalidIdentity,
                 MatchLobbyScreenshotCropSaveResult.InvalidCrop,
                 -> _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.INVALID_CROP) }
+            }
+        }
+    }
+
+    private suspend fun syncCloudMetadata(identity: MatchLobbyScreenshotIdentity) {
+        val latest = try {
+            assetRepository.getByIdentity(identity)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return
+        if (latest.identityOrNull() != identity) return
+        val submittedSha256 = latest.sha256
+        val result = try {
+            cloudDataSource.upsert(latest)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyScreenshotAssetCloudResult.Failed(
+                MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED,
+            )
+        }
+        if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
+            val newest = try {
+                assetRepository.getByIdentity(identity)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            } ?: return
+            if (newest.identityOrNull() != identity || newest.sha256 != submittedSha256) return
+            val failedAt = clock.millis()
+            try {
+                assetRepository.saveOrReplace(
+                    newest.copy(
+                        uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name,
+                        uploadFailureCode = result.failure.name,
+                        updatedAt = failedAt,
+                        revision = newest.revision + 1L,
+                    ),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Cloud failure must not prevent confirmed crop navigation.
             }
         }
     }
