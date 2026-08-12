@@ -79,6 +79,13 @@ data class MatchResultScreenshotCropDestination(
 )
 
 @Serializable
+data class MatchLobbyScreenshotCropDestination(
+    val tournamentId: String,
+    val matchId: String,
+    val lobbyScreenshotIndex: Int,
+)
+
+@Serializable
 data class MatchOcrReviewDestination(
     val tournamentId: String,
     val matchId: String,

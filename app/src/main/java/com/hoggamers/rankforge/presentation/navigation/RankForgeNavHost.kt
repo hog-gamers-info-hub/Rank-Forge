@@ -53,6 +53,8 @@ import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropRoute
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
@@ -87,10 +89,19 @@ fun RankForgeNavHost(
         )
     },
     rosterScreenshotCropViewModelFactory: (() -> RosterScreenshotIntakeViewModel)? = null,
+    matchLobbyScreenshotIntakeContent: @Composable (String, String, (Int) -> Unit) -> Unit = { tournamentId, matchId, onOpenCropEditor ->
+        MatchLobbyScreenshotIntakeRoute(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            onOpenCropEditor = onOpenCropEditor,
+            showTitle = false,
+        )
+    },
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
     matchReviewViewModelFactory: ((String, String) -> MatchReviewViewModel)? = null,
+    showLegacyManualReviewContent: Boolean = false,
     matchResultScreenshotCropViewModelFactory: (() -> MatchResultScreenshotCropViewModel)? = null,
     matchOcrReviewViewModelFactory: ((String, String) -> MatchOcrReviewViewModel)? = null,
     matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
@@ -573,6 +584,32 @@ fun RankForgeNavHost(
                     ),
                 )
             }
+            val onOpenLobbyScreenshotCrop: (String, String, Int) -> Unit = {
+                    tournamentId,
+                    matchId,
+                    lobbyScreenshotIndex,
+                ->
+                navController.navigate(
+                    MatchLobbyScreenshotCropDestination(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        lobbyScreenshotIndex = lobbyScreenshotIndex,
+                    ),
+                )
+            }
+            val matchLobbyScreenshotIntake = @Composable {
+                matchLobbyScreenshotIntakeContent(
+                    destination.tournamentId,
+                    destination.matchId,
+                    { index ->
+                        onOpenLobbyScreenshotCrop(
+                            destination.tournamentId,
+                            destination.matchId,
+                            index,
+                        )
+                    },
+                )
+            }
             val reviewViewModel = matchReviewViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -587,6 +624,8 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+                    showLegacyManualReviewContent = showLegacyManualReviewContent,
                 )
             } else {
                 MatchReviewRoute(
@@ -598,9 +637,37 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+                    showLegacyManualReviewContent = showLegacyManualReviewContent,
                     viewModel = reviewViewModel,
                 )
             }
+        }
+        composable<MatchLobbyScreenshotCropDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<MatchLobbyScreenshotCropDestination>()
+            val onBackToReview: () -> Unit = {
+                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+                if (!navController.popBackStack(reviewDestination, inclusive = false)) {
+                    navController.navigate(reviewDestination) {
+                        popUpTo(
+                            MatchLobbyScreenshotCropDestination(
+                                destination.tournamentId,
+                                destination.matchId,
+                                destination.lobbyScreenshotIndex,
+                            ),
+                        ) {
+                            inclusive = true
+                        }
+                    }
+                }
+            }
+            MatchLobbyScreenshotCropRoute(
+                tournamentId = destination.tournamentId,
+                matchId = destination.matchId,
+                lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
+                onCancel = onBackToReview,
+                onConfirmed = onBackToReview,
+            )
         }
         composable<MatchResultScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchResultScreenshotCropDestination>()

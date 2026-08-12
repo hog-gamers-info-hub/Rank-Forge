@@ -19,6 +19,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +28,41 @@ import org.junit.runner.RunWith
 class MatchReviewScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Test
+    fun simplifiedReviewShowsLobbyBeforeResultAndHidesLegacyManualContent() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    matchLobbyScreenshotIntake = {
+                        androidx.compose.material3.Text("Lobby screenshot slots")
+                    },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Result Screenshot 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Result Screenshot 2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Back to Tournament Details").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1").assertCountEquals(0)
+        val lobbyY = composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
+            .fetchSemanticsNode().positionInRoot.y
+        val resultY = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
+            .fetchSemanticsNode().positionInRoot.y
+        assertTrue(lobbyY < resultY)
+    }
 
     @Test
     fun reviewScreenShowsAllRowsRestoredValuesAndValidStatus() {
