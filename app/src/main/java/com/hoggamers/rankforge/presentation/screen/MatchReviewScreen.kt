@@ -86,6 +86,8 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG = "match_review_resul
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG = "match_review_result_screenshot_2_remove"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_result_screenshot_1_crop_ready"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 
@@ -613,6 +615,27 @@ private fun MatchResultScreenshotSlotSection(
             ),
             style = MaterialTheme.typography.bodySmall,
         )
+        if (slot.hasLinkedAsset &&
+            !slot.isLocalFileMissing &&
+            slot.hasConfirmedCrop &&
+            !slot.localPreviewUri.isNullOrBlank()
+        ) {
+            LocalScreenshotPreview(
+                imageUri = slot.localPreviewUri,
+                crop = slot.confirmedCrop,
+                contentDescription = stringResource(
+                    R.string.match_review_result_screenshot_preview_description,
+                    screenshotNumber,
+                ),
+                sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                testTag = if (screenshotNumber == 1) {
+                    MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                } else {
+                    MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                },
+            )
+        }
         if (slot.isValidationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_validating))
         }

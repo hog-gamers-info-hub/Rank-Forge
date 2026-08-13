@@ -65,6 +65,129 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun linkedResultSlotsShowLocalPreviewsAndUnselectedSlotsDoNot() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun linkedResultSlotWithoutConfirmedCropDoesNotShowPreview() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun linkedResultScreenshotTwoShowsItsConfirmedCropPreview() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun missingLocalResultFileDoesNotShowPreview() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                isLocalFileMissing = true,
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
     fun reviewScreenShowsAllRowsRestoredValuesAndValidStatus() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -593,6 +716,7 @@ class MatchReviewScreenTest {
 
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
+        resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
     ) = MatchReviewUiState(
         isLoading = false,
         isAvailable = true,
@@ -614,11 +738,15 @@ class MatchReviewScreenTest {
             )
         },
         validationErrors = validationErrors,
+        resultScreenshots = resultScreenshots,
     )
 
     private fun resultSlot(
         role: MatchResultScreenshotRole,
         selectedScreenshotUri: String? = null,
+        localPreviewUri: String? = null,
+        originalWidth: Int? = null,
+        originalHeight: Int? = null,
         isPhotoPickerRequestActive: Boolean = false,
         isSelectedScreenshotValidated: Boolean = false,
         imageValidationError: ImageValidationError? = null,
@@ -636,6 +764,9 @@ class MatchReviewScreenTest {
     ) = MatchResultScreenshotSlotUiState(
         role = role,
         selectedScreenshotUri = selectedScreenshotUri,
+        localPreviewUri = localPreviewUri,
+        originalWidth = originalWidth,
+        originalHeight = originalHeight,
         isPhotoPickerRequestActive = isPhotoPickerRequestActive,
         isSelectedScreenshotValidated = isSelectedScreenshotValidated,
         imageValidationError = imageValidationError,
