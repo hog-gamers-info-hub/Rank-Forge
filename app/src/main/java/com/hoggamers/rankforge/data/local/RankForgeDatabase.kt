@@ -41,12 +41,13 @@ interface RankForgeStateDao {
         ScreenshotMetadataEntity::class,
         MatchResultScreenshotAssetEntity::class,
         MatchLobbyScreenshotAssetEntity::class,
+        TournamentLobbyTemplateAssetEntity::class,
         RosterScreenshotMetadataEntity::class,
         MatchOcrEvidenceEntity::class,
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -64,6 +65,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
     abstract fun matchResultScreenshotAssetDao(): MatchResultScreenshotAssetDao
     abstract fun matchLobbyScreenshotAssetDao(): MatchLobbyScreenshotAssetDao
+    abstract fun tournamentLobbyTemplateAssetDao(): TournamentLobbyTemplateAssetDao
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
     abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
 
@@ -431,6 +433,46 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_match_lobby_screenshot_assets_upload_status` ON `match_lobby_screenshot_assets` (`upload_status`)",
+                )
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tournament_lobby_template_assets` (
+                        `tournament_id` TEXT NOT NULL,
+                        `lobby_screenshot_index` INTEGER NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `local_relative_path` TEXT NOT NULL,
+                        `file_extension` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `original_width` INTEGER NOT NULL,
+                        `original_height` INTEGER NOT NULL,
+                        `byte_size` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `crop_profile_id` TEXT NOT NULL,
+                        `crop_left` REAL NOT NULL,
+                        `crop_top` REAL NOT NULL,
+                        `crop_right` REAL NOT NULL,
+                        `crop_bottom` REAL NOT NULL,
+                        `source_match_id` TEXT NOT NULL,
+                        `saved_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `revision` INTEGER NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `lobby_screenshot_index`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_lobby_template_assets_tournament_id` " +
+                        "ON `tournament_lobby_template_assets` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_lobby_template_assets_sha256` " +
+                        "ON `tournament_lobby_template_assets` (`sha256`)",
                 )
             }
         }

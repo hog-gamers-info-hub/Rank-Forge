@@ -47,6 +47,7 @@ const val MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX = "match_lobby_sc
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX = "match_lobby_screenshot_preview_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX = "match_lobby_screenshot_slot_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG = "match_lobby_screenshot_intake_pager"
+const val MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG = "match_lobby_screenshot_save_template"
 
 @Composable
 fun MatchLobbyScreenshotIntakeRoute(
@@ -82,6 +83,7 @@ fun MatchLobbyScreenshotIntakeRoute(
         onSelect = viewModel::requestPhotoPicker,
         onCrop = viewModel::requestCropEditor,
         onRemove = viewModel::removeScreenshot,
+        onSaveLobbyForNextMatches = viewModel::saveLobbyForNextMatches,
         showTitle = showTitle,
     )
 }
@@ -92,6 +94,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     onSelect: (Int) -> Unit,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onSaveLobbyForNextMatches: () -> Unit = {},
     showTitle: Boolean = true,
 ) {
     Column(
@@ -186,6 +189,25 @@ fun MatchLobbyScreenshotIntakeScreen(
                         onRemove = onRemove,
                     )
                 }
+            }
+            Button(
+                onClick = onSaveLobbyForNextMatches,
+                enabled = uiState.canSaveLobbyForNextMatches,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
+            ) {
+                Text(text = stringResource(R.string.match_lobby_screenshot_save_template_action))
+            }
+            when (uiState.lobbyTemplateSaveStatus) {
+                MatchLobbyTemplateSaveStatus.SAVED -> Text(
+                    text = stringResource(R.string.match_lobby_screenshot_save_template_success),
+                )
+                MatchLobbyTemplateSaveStatus.FAILED -> Text(
+                    text = stringResource(R.string.match_lobby_screenshot_save_template_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                null -> Unit
             }
         }
     }

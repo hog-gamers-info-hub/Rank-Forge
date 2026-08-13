@@ -25,6 +25,11 @@ enum class MatchLobbyScreenshotIntakeError {
     REMOVE_FAILED,
 }
 
+enum class MatchLobbyTemplateSaveStatus {
+    SAVED,
+    FAILED,
+}
+
 data class MatchLobbyScreenshotSlotUiState(
     val index: Int,
     val selectedScreenshotUri: String? = null,
@@ -67,11 +72,27 @@ data class MatchLobbyScreenshotIntakeUiState(
     val slots: List<MatchLobbyScreenshotSlotUiState> = defaultMatchLobbyScreenshotSlots(),
     val pendingCropNavigationSlotIndex: Int? = null,
     val intakeError: MatchLobbyScreenshotIntakeError? = null,
+    val isSavingLobbyTemplate: Boolean = false,
+    val lobbyTemplateSaveStatus: MatchLobbyTemplateSaveStatus? = null,
 ) {
     val isFinalized: Boolean
         get() = status == MatchStatus.FINALIZED
 
     fun slot(index: Int): MatchLobbyScreenshotSlotUiState? = slots.firstOrNull { it.index == index }
+
+    val canSaveLobbyForNextMatches: Boolean
+        get() = isAvailable &&
+            status == MatchStatus.DRAFT &&
+            !isSavingLobbyTemplate &&
+            slots.size == 3 &&
+            slots.all { slot ->
+                slot.index in 1..3 &&
+                    slot.hasLinkedAsset &&
+                    !slot.isLocalFileMissing &&
+                    !slot.selectedScreenshotUri.isNullOrBlank() &&
+                    slot.hasConfirmedCrop &&
+                    !slot.isBusy
+            }
 
     fun replaceSlot(
         index: Int,

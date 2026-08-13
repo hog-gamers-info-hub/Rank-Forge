@@ -15,6 +15,9 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetDao
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetDao
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
+import com.hoggamers.rankforge.data.local.RoomTournamentLobbyTemplateAssetRepository
+import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetDao
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataDao
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataDao
@@ -100,6 +103,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindMatchLobbyScreenshotAssetRepository(
         repository: RoomMatchLobbyScreenshotAssetRepository,
     ): MatchLobbyScreenshotAssetRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentLobbyTemplateAssetRepository(
+        repository: RoomTournamentLobbyTemplateAssetRepository,
+    ): TournamentLobbyTemplateAssetRepository
 }
 
 @Module
@@ -124,6 +133,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_8_9,
         RankForgeDatabase.MIGRATION_9_10,
         RankForgeDatabase.MIGRATION_10_11,
+        RankForgeDatabase.MIGRATION_11_12,
     ).build()
 
     @Provides
@@ -149,6 +159,11 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideMatchLobbyScreenshotAssetDao(database: RankForgeDatabase): MatchLobbyScreenshotAssetDao =
         database.matchLobbyScreenshotAssetDao()
+
+    @Provides
+    @Singleton
+    fun provideTournamentLobbyTemplateAssetDao(database: RankForgeDatabase): TournamentLobbyTemplateAssetDao =
+        database.tournamentLobbyTemplateAssetDao()
 
     @Provides
     @Singleton

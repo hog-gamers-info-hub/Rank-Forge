@@ -131,6 +131,42 @@ class LocalImagePreserver(
         )
     }
 
+    suspend fun snapshotLobbyTemplate(
+        tournamentId: String,
+        generation: String,
+        lobbyScreenshotIndex: Int,
+        sourceFile: File,
+        extension: String,
+    ): LocalImagePreservationResult {
+        if (lobbyScreenshotIndex !in 1..3) {
+            return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        return copyFileToDirectory(
+            directory = lobbyTemplateDirectory(tournamentId, generation, lobbyScreenshotIndex),
+            sourceFile = sourceFile,
+            extension = extension,
+        )
+    }
+
+    suspend fun copyLobbyTemplateToMatch(
+        tournamentId: String,
+        lobbyScreenshotIndex: Int,
+        matchId: String,
+        templateRelativePath: String,
+        extension: String,
+    ): LocalImagePreservationResult {
+        if (lobbyScreenshotIndex !in 1..3) {
+            return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        val sourceFile = resolveRelativePath(templateRelativePath)
+            ?: return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.SOURCE_READ_FAILED)
+        return copyFileToDirectory(
+            directory = lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex),
+            sourceFile = sourceFile,
+            extension = extension,
+        )
+    }
+
     private suspend fun preserveToDirectory(
         directory: File,
         selectedUri: String,
@@ -232,6 +268,60 @@ class LocalImagePreserver(
             LocalImagePreservationResult.PreservedWithCleanupFailure(targetFile)
         } else {
             LocalImagePreservationResult.Preserved(targetFile)
+        }
+    }
+
+    private suspend fun copyFileToDirectory(
+        directory: File,
+        sourceFile: File,
+        extension: String,
+    ): LocalImagePreservationResult = withContext(ioDispatcher) {
+        if (!runCatching { sourceFile.isFile && sourceFile.canRead() && sourceFile.length() > 0L }
+                .getOrDefault(false)
+        ) {
+            return@withContext LocalImagePreservationResult.Failed(
+                LocalImagePreservationFailure.SOURCE_READ_FAILED,
+            )
+        }
+        if (extension.isBlank() || !runCatching { fileOperations.ensureDirectory(directory) }.getOrDefault(false)) {
+            return@withContext LocalImagePreservationResult.Failed(
+                LocalImagePreservationFailure.COPY_FAILED,
+            )
+        }
+        val temporaryFile = try {
+            fileOperations.createTempFile(directory)
+        } catch (_: IOException) {
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        } catch (_: RuntimeException) {
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        try {
+            sourceFile.inputStream().use { source ->
+                fileOperations.openOutput(temporaryFile).use { output ->
+                    source.copyTo(output)
+                    output.flush()
+                    if (output is FileOutputStream) output.fd.sync()
+                }
+            }
+        } catch (exception: CancellationException) {
+            safeDelete(temporaryFile)
+            throw exception
+        } catch (_: IOException) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        } catch (_: RuntimeException) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        val targetFile = File(directory, "original.$extension")
+        if (!runCatching { fileOperations.atomicMove(temporaryFile, targetFile) }.getOrDefault(false)) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.ATOMIC_MOVE_FAILED)
+        }
+        if (cleanupStaleFiles(directory, targetFile)) {
+            LocalImagePreservationResult.Preserved(targetFile)
+        } else {
+            LocalImagePreservationResult.PreservedWithCleanupFailure(targetFile)
         }
     }
 
@@ -360,6 +450,25 @@ class LocalImagePreserver(
         "original.$extension",
     )
 
+    fun lobbyTemplateRelativePath(
+        tournamentId: String,
+        generation: String,
+        lobbyScreenshotIndex: Int,
+        extension: String,
+    ): String =
+        "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/lobby-template/${encodeSegment(generation)}/" +
+            "$lobbyScreenshotIndex/original.$extension"
+
+    fun lobbyTemplatePreservedFile(
+        tournamentId: String,
+        generation: String,
+        lobbyScreenshotIndex: Int,
+        extension: String,
+    ): File = File(
+        lobbyTemplateDirectory(tournamentId, generation, lobbyScreenshotIndex),
+        "original.$extension",
+    )
+
     fun relativePathFor(file: File): String? {
         val rootPath = runCatching { File(appPrivateRoot, SCREENSHOTS_DIRECTORY).canonicalFile.toPath() }
             .getOrNull()
@@ -404,6 +513,15 @@ class LocalImagePreserver(
     ): File = File(
         File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
         "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}/lobby/$lobbyScreenshotIndex",
+    )
+
+    private fun lobbyTemplateDirectory(
+        tournamentId: String,
+        generation: String,
+        lobbyScreenshotIndex: Int,
+    ): File = File(
+        File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
+        "${encodeSegment(tournamentId)}/lobby-template/${encodeSegment(generation)}/$lobbyScreenshotIndex",
     )
 
     private fun roleDirectoryName(role: MatchResultScreenshotRole): String = when (role) {

@@ -11,6 +11,18 @@ import javax.inject.Singleton
 abstract class ScreenshotWorkflowModule {
     @Binds
     @Singleton
+    abstract fun bindApplyLobbyTemplateAction(
+        useCase: ApplyLobbyTemplateToMatchUseCase,
+    ): ApplyLobbyTemplateAction
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchLobbyScreenshotUploadCheckpointAction(
+        checkpoint: MatchLobbyScreenshotUploadCheckpoint,
+    ): MatchLobbyScreenshotUploadCheckpointAction
+
+    @Binds
+    @Singleton
     abstract fun bindScreenshotOwnerProvider(
         provider: AuthStateScreenshotOwnerProvider,
     ): ScreenshotOwnerProvider
