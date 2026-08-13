@@ -14,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Clock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +23,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -145,6 +145,37 @@ class SavedLobbyTemplateUseCasesTest {
     }
 
     @Test
+    fun replacementCancellationCleansNewGenerationAndPreservesActiveTemplate() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-cancellation").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val previous = templateRepository.getByTournamentId(tournamentId)
+        val previousFiles = allTemplateOriginals(root)
+        var stagedFileCountAtReplacement = 0
+        templateRepository.beforeReplace = {
+            stagedFileCountAtReplacement = allTemplateOriginals(root).size
+        }
+        templateRepository.cancelOnReplace = true
+
+        var thrownCancellation: CancellationException? = null
+        try {
+            save(tournamentId, sourceMatchId)
+        } catch (cancellation: CancellationException) {
+            thrownCancellation = cancellation
+        }
+
+        assertNotNull(thrownCancellation)
+        assertEquals(6, stagedFileCountAtReplacement)
+        assertEquals(previous, templateRepository.getByTournamentId(tournamentId))
+        previousFiles.forEach { assertTrue(it.isFile) }
+        assertEquals(previousFiles.toSet(), allTemplateOriginals(root).toSet())
+    }
+
+    @Test
     fun successfulResaveCleansPreviousGenerationOnlyAfterReplacement() = runBlocking {
         val root = Files.createTempDirectory("saved-lobby-template-resave").toFile()
         val repository = FakeLobbyRepository()
@@ -254,9 +285,13 @@ class SavedLobbyTemplateUseCasesTest {
     private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
         private val state = MutableStateFlow<List<TournamentLobbyTemplateAssetEntity>>(emptyList())
         var throwOnReplace: Boolean = false
+        var cancelOnReplace: Boolean = false
+        var beforeReplace: (() -> Unit)? = null
         override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> = state
         override suspend fun getByTournamentId(tournamentId: String) = state.value.filter { it.tournamentId == tournamentId }
         override suspend fun replaceForTournament(tournamentId: String, assets: List<TournamentLobbyTemplateAssetEntity>) {
+            beforeReplace?.invoke()
+            if (cancelOnReplace) throw CancellationException("replacement cancelled")
             if (throwOnReplace) error("replacement failed")
             state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
         }

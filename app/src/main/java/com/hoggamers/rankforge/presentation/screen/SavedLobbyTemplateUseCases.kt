@@ -19,6 +19,8 @@ import java.time.Clock
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 sealed interface SaveLobbyTemplateResult {
     data object Saved : SaveLobbyTemplateResult
@@ -83,13 +85,13 @@ class SaveLobbyTemplateUseCase @Inject constructor(
                     is LocalImagePreservationResult.Preserved -> copy.file
                     is LocalImagePreservationResult.PreservedWithCleanupFailure -> copy.file
                     is LocalImagePreservationResult.Failed -> {
-                        localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+                        cleanupTemplateGenerationBestEffort(tournamentId, generation)
                         return SaveLobbyTemplateResult.Failed
                     }
                 }
                 val relativePath = localImagePreserver.relativePathFor(copiedFile)
                     ?: run {
-                        localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+                        cleanupTemplateGenerationBestEffort(tournamentId, generation)
                         return SaveLobbyTemplateResult.Failed
                     }
                 snapshots += TournamentLobbyTemplateAssetEntity(
@@ -115,20 +117,20 @@ class SaveLobbyTemplateUseCase @Inject constructor(
                 )
             }
         } catch (cancellation: CancellationException) {
-            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            cleanupTemplateGenerationBestEffort(tournamentId, generation)
             throw cancellation
         } catch (_: Throwable) {
-            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            cleanupTemplateGenerationBestEffort(tournamentId, generation)
             return SaveLobbyTemplateResult.Failed
         }
         val replacementResult = try {
             templateRepository.replaceForTournament(tournamentId, snapshots)
             SaveLobbyTemplateResult.Saved
         } catch (cancellation: CancellationException) {
-            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            cleanupTemplateGenerationBestEffort(tournamentId, generation)
             throw cancellation
         } catch (_: Throwable) {
-            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            cleanupTemplateGenerationBestEffort(tournamentId, generation)
             return SaveLobbyTemplateResult.Failed
         }
         if (replacementResult == SaveLobbyTemplateResult.Saved) {
@@ -142,10 +144,25 @@ class SaveLobbyTemplateUseCase @Inject constructor(
                 .distinct()
                 .filter { it != generation }
                 .forEach { previousGeneration ->
-                    localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, previousGeneration)
+                    cleanupTemplateGenerationBestEffort(tournamentId, previousGeneration)
                 }
         }
         return replacementResult
+    }
+
+    private suspend fun cleanupTemplateGenerationBestEffort(
+        tournamentId: String,
+        generation: String,
+    ) {
+        withContext(NonCancellable) {
+            try {
+                localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Cleanup must not change the save result or remove the active generation.
+            }
+        }
     }
 
     private fun prepareAsset(
