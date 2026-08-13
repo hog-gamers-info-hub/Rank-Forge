@@ -3,11 +3,14 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -100,5 +103,51 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsNotEnabled()
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun linkedLocalSlotShowsPreviewAndMissingSlotDoesNot() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            when (slot.index) {
+                                1 -> slot.copy(
+                                    hasLinkedAsset = true,
+                                    selectedScreenshotUri = "file:///private/lobby-1.png",
+                                    selectedScreenshotWidth = 1920,
+                                    selectedScreenshotHeight = 1080,
+                                    confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                    cropProfileId = "lobby",
+                                )
+                                2 -> slot.copy(
+                                    hasLinkedAsset = true,
+                                    isLocalFileMissing = true,
+                                    selectedScreenshotUri = "file:///private/lobby-2.png",
+                                )
+                                3 -> slot.copy(
+                                    hasLinkedAsset = true,
+                                    selectedScreenshotUri = "file:///private/lobby-3.png",
+                                )
+                                else -> slot
+                            }
+                        },
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 2)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 3)
+            .assertCountEquals(0)
     }
 }

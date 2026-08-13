@@ -13,6 +13,10 @@ import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudFailure
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudPayload
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataFailureCode
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
@@ -35,6 +39,10 @@ import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
 import java.time.LocalDate
 import java.nio.file.Files
 import java.io.File
@@ -362,6 +370,74 @@ class MatchReviewViewModelTest {
             screenshotObjectPath("user-id", matchId, "png"),
             viewModel.uiState.value.screenshotUploadObjectPath,
         )
+    }
+
+    @Test
+    fun restoredResultAssetExposesOnlyTheExistingLocalPreviewFile() = runTest {
+        val preserver = localImagePreserver()
+        val relativePath = "screenshots/$TOURNAMENT_ID/$matchId/result/upper/original.png"
+        val file = preserver.resolveRelativePath(relativePath)!!.apply {
+            parentFile.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        val assetRepository = FakeMatchResultScreenshotAssetRepository(
+            listOf(resultScreenshotAsset(relativePath)),
+        )
+        val viewModel = reviewViewModel(
+            localImagePreserver = preserver,
+            matchResultScreenshotAssetRepository = assetRepository,
+        )
+
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        val slot = viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        assertEquals(file.toURI().toString(), slot.localPreviewUri)
+        assertTrue(slot.hasLinkedAsset)
+        assertFalse(slot.isLocalFileMissing)
+    }
+
+    @Test
+    fun missingRestoredResultAssetHasNoPreviewAndKeepsMissingState() = runTest {
+        val relativePath = "screenshots/$TOURNAMENT_ID/$matchId/result/upper/missing.png"
+        val viewModel = reviewViewModel(
+            matchResultScreenshotAssetRepository = FakeMatchResultScreenshotAssetRepository(
+                listOf(resultScreenshotAsset(relativePath)),
+            ),
+        )
+
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        val slot = viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        assertNull(slot.localPreviewUri)
+        assertTrue(slot.isLocalFileMissing)
+    }
+
+    @Test
+    fun freshlyPreservedResultPreviewUsesLocalFileAndSurvivesRestoredMerge() = runTest {
+        val selectedUri = "content://picker/result-preview"
+        val preserver = localImagePreserver(mapOf(selectedUri to byteArrayOf(4, 5, 6)))
+        val assetRepository = FakeMatchResultScreenshotAssetRepository()
+        val viewModel = reviewViewModel(
+            screenshotDuplicateDetector = duplicateDetector(mapOf(selectedUri to byteArrayOf(4, 5, 6))),
+            localImagePreserver = preserver,
+            matchResultScreenshotAssetRepository = assetRepository,
+            screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
+        )
+
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, selectedUri)
+        advanceUntilIdle()
+
+        val previewUri = viewModel.uiState.value.resultScreenshots
+            .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            .localPreviewUri
+        assertNotNull(previewUri)
+        assertTrue(previewUri!!.startsWith("file:"))
+        assertFalse(previewUri == selectedUri)
+        assertTrue(assetRepository.assets.value.isNotEmpty())
     }
 
     @Test
@@ -1074,6 +1150,8 @@ class MatchReviewViewModelTest {
         screenshotMetadataCloudDataSource: ScreenshotMetadataCloudDataSource =
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
         screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+        matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
+            com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository(),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
@@ -1089,6 +1167,40 @@ class MatchReviewViewModelTest {
         screenshotMetadataRepository = screenshotMetadataRepository,
         screenshotMetadataCloudDataSource = screenshotMetadataCloudDataSource,
         screenshotOwnerProvider = screenshotOwnerProvider,
+        matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
+    )
+
+    private fun resultScreenshotAsset(
+        localRelativePath: String,
+        role: MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+    ) = MatchResultScreenshotAssetEntity(
+        tournamentId = TOURNAMENT_ID,
+        matchId = matchId,
+        screenshotKind = OcrScreenshotKind.MATCH_RESULT.name,
+        screenshotRole = role.name,
+        ownerUserId = "owner-id",
+        localRelativePath = localRelativePath,
+        fileExtension = "png",
+        mimeType = "image/png",
+        originalWidth = 1920,
+        originalHeight = 1080,
+        byteSize = 3,
+        sha256 = "a".repeat(64),
+        localStatus = ScreenshotLocalStatus.PRESERVED.name,
+        uploadStatus = ScreenshotUploadStatus.PENDING.name,
+        uploadFailureCode = null,
+        storageBucket = null,
+        storageObjectPath = null,
+        cropProfileId = null,
+        cropLeft = null,
+        cropTop = null,
+        cropRight = null,
+        cropBottom = null,
+        createdAt = 1L,
+        updatedAt = 1L,
+        preservedAt = 1L,
+        uploadedAt = null,
+        revision = 1L,
     )
 
     private class RecordingScreenshotStorageUploader(
@@ -1133,6 +1245,72 @@ class MatchReviewViewModelTest {
         private val ownerId: String?,
     ) : ScreenshotOwnerProvider {
         override suspend fun currentOwnerUserId(): String? = ownerId
+    }
+
+    private class FakeMatchResultScreenshotAssetRepository(
+        initialAssets: List<MatchResultScreenshotAssetEntity> = emptyList(),
+    ) : MatchResultScreenshotAssetRepository {
+        val assets = MutableStateFlow(initialAssets)
+
+        override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = assets
+
+        override fun observeByIdentity(
+            identity: MatchResultScreenshotIdentity,
+        ): Flow<MatchResultScreenshotAssetEntity?> =
+            MutableStateFlow(assets.value.firstOrNull { it.matches(identity) })
+
+        override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? =
+            assets.value.firstOrNull { it.matches(identity) }
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
+            MutableStateFlow(assets.value.filter { it.tournamentId == tournamentId })
+
+        override suspend fun findDuplicateFingerprint(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+        ): MatchResultScreenshotAssetEntity? = assets.value.firstOrNull {
+            it.tournamentId == identity.tournamentId &&
+                it.sha256 == sha256 &&
+                !it.matches(identity)
+        }
+
+        override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult {
+            assets.value = assets.value.filterNot { it.matches(asset.identity()) } + asset
+            return MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
+
+        override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
+
+        override suspend fun persistConfirmedCrop(
+            identity: MatchResultScreenshotIdentity,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult = MatchResultScreenshotCropSaveResult.Saved
+
+        override suspend fun clearConfirmedCrop(
+            identity: MatchResultScreenshotIdentity,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult = MatchResultScreenshotCropSaveResult.Saved
+
+        override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) {
+            assets.value = assets.value.filterNot { it.matches(identity) }
+        }
+
+        override suspend fun deleteByMatchId(matchId: String) {
+            assets.value = assets.value.filterNot { it.matchId == matchId }
+        }
+
+        private fun MatchResultScreenshotAssetEntity.matches(identity: MatchResultScreenshotIdentity): Boolean =
+            tournamentId == identity.tournamentId && matchId == identity.matchId && screenshotRole == identity.role.name
+
+        private fun MatchResultScreenshotAssetEntity.identity(): MatchResultScreenshotIdentity =
+            MatchResultScreenshotIdentity(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                role = MatchResultScreenshotRole.valueOf(screenshotRole),
+            )
     }
 
     private class FakeScreenshotMetadataCloudDataSource(
@@ -1223,4 +1401,3 @@ class MatchReviewViewModelTest {
         }
     }
 }
-

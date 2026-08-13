@@ -1878,7 +1878,8 @@ private fun MatchResultScreenshotAssetEntity.toSlotUiState(
         .getOrDefault(ScreenshotLocalStatus.MISSING)
     val upload = runCatching { ScreenshotUploadStatus.valueOf(uploadStatus) }
         .getOrDefault(ScreenshotUploadStatus.FAILED)
-    val fileIsPresent = localImagePreserver.resolveRelativePath(localRelativePath)?.let { file ->
+    val localFile = localImagePreserver.resolveRelativePath(localRelativePath)
+    val fileIsPresent = localFile?.let { file ->
         runCatching { file.isFile && file.length() > 0L }.getOrDefault(false)
     } == true
     val effectiveLocal = if (fileIsPresent) local else ScreenshotLocalStatus.MISSING
@@ -1886,6 +1887,7 @@ private fun MatchResultScreenshotAssetEntity.toSlotUiState(
         role = role,
         hasLinkedAsset = effectiveLocal != ScreenshotLocalStatus.MISSING,
         localRelativePath = localRelativePath,
+        localPreviewUri = localFile?.takeIf { fileIsPresent }?.toURI()?.toString(),
         fingerprint = sha256,
         originalWidth = originalWidth,
         originalHeight = originalHeight,
@@ -1955,7 +1957,7 @@ private fun mergeResultScreenshotSlots(
 ): List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots().map { ordered ->
     val restoredSlot = restored.slot(ordered.role)
     val currentSlot = current.slot(ordered.role)
-    if (currentSlot.isBusy || currentSlot.selectedScreenshotUri != null || currentSlot.imageValidationError != null) {
+    val mergedSlot = if (currentSlot.isBusy || currentSlot.selectedScreenshotUri != null || currentSlot.imageValidationError != null) {
         restoredSlot.copy(
             selectedScreenshotUri = currentSlot.selectedScreenshotUri,
             selectedScreenshotMimeType = currentSlot.selectedScreenshotMimeType,
@@ -1976,6 +1978,7 @@ private fun mergeResultScreenshotSlots(
     } else {
         restoredSlot
     }
+    mergedSlot.copy(localPreviewUri = currentSlot.localPreviewUri ?: mergedSlot.localPreviewUri)
 }
 
 private fun LocalImagePreservationFailure.toUiError(): ScreenshotPreservationError = when (this) {

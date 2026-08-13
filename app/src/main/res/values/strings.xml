@@ -431,6 +431,7 @@
     <string name="match_review_result_screenshot_select_action">Select screenshot %1$d</string>
     <string name="match_review_result_screenshot_replace_action">Replace screenshot %1$d</string>
     <string name="match_review_result_screenshot_ready">Screenshot ready.</string>
+    <string name="match_review_result_screenshot_preview_description">Result Screenshot %1$d preview</string>
     <string name="match_review_result_screenshot_crop_required">Crop required.</string>
     <string name="match_review_result_screenshot_crop_ready">Crop ready.</string>
     <string name="match_review_result_screenshot_crop_action">Crop screenshot</string>
@@ -572,6 +573,7 @@
     <string name="match_lobby_screenshot_crop_action">Crop/Edit</string>
     <string name="match_lobby_screenshot_remove_action">Remove</string>
     <string name="match_lobby_screenshot_selected">Image selected and preserved.</string>
+    <string name="match_lobby_screenshot_preview_description">Lobby Screenshot %1$d preview</string>
     <string name="match_lobby_screenshot_loading">Loading...</string>
     <string name="match_lobby_screenshot_saving">Saving...</string>
     <string name="match_lobby_screenshot_finalized_read_only">This match is finalized. Lobby screenshots are read-only.</string>
@@ -594,6 +596,7 @@
     <string name="match_lobby_screenshot_save_failed">The Lobby screenshot could not be saved.</string>
     <string name="match_lobby_screenshot_cleanup_failed">The screenshot could not be cleaned up.</string>
     <string name="match_lobby_screenshot_missing_local_file">The preserved local Lobby screenshot is missing.</string>
+    <string name="local_screenshot_preview_unavailable">Preview unavailable.</string>
     <string name="match_lobby_screenshot_missing_asset">Select and preserve this Lobby screenshot before cropping.</string>
     <string name="match_lobby_screenshot_invalid_crop">The crop is invalid.</string>
     <string name="match_lobby_screenshot_crop_title">Crop Lobby Screenshot %1$d</string>

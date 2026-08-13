@@ -100,6 +100,7 @@ data class MatchResultScreenshotSlotUiState(
     val hasLinkedAsset: Boolean = false,
     val linkedScreenshotUri: String? = null,
     val localRelativePath: String? = null,
+    val localPreviewUri: String? = null,
     val fingerprint: String? = null,
     val originalWidth: Int? = null,
     val originalHeight: Int? = null,
@@ -225,4 +226,3 @@ data class MatchReviewRowUiState(
     val killsInput: String = "",
     val validationErrors: Set<MatchResultValidationError> = emptySet(),
 )
-
