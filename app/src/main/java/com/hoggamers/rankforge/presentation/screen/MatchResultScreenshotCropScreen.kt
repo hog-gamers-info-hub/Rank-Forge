@@ -1,18 +1,22 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -26,6 +30,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 const val MATCH_RESULT_SCREENSHOT_CROP_SCREEN_TEST_TAG = "match_result_screenshot_crop_screen"
 const val MATCH_RESULT_SCREENSHOT_CROP_EDITOR_TEST_TAG = "match_result_screenshot_crop_editor"
 const val MATCH_RESULT_SCREENSHOT_CROP_CANCEL_TEST_TAG = "match_result_screenshot_crop_cancel"
+const val MATCH_RESULT_SCREENSHOT_CROP_LOADING_TEST_TAG = "match_result_screenshot_crop_loading"
 
 @Composable
 fun MatchResultScreenshotCropRoute(
@@ -59,9 +64,30 @@ fun MatchResultScreenshotCropScreen(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    if (uiState.isLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .testTag(MATCH_RESULT_SCREENSHOT_CROP_SCREEN_TEST_TAG),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.testTag(MATCH_RESULT_SCREENSHOT_CROP_LOADING_TEST_TAG),
+                )
+                Text(text = stringResource(R.string.match_result_screenshot_crop_loading))
+            }
+        }
+        return
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(RankForgeSpacing.Medium)
             .testTag(MATCH_RESULT_SCREENSHOT_CROP_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
@@ -92,9 +118,7 @@ fun MatchResultScreenshotCropScreen(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (uiState.isLoading) {
-            Text(text = stringResource(R.string.match_result_screenshot_crop_loading))
-        } else if (
+        if (
             uiState.imageUri != null &&
             uiState.originalWidth != null &&
             uiState.originalHeight != null

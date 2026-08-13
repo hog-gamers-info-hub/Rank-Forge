@@ -5,10 +5,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -23,8 +30,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
@@ -89,6 +100,10 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_r
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG = "match_review_result_screenshots_pager"
+const val MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX = "match_review_result_screenshots_indicator_"
+const val MATCH_REVIEW_RESULT_SCREENSHOTS_PREVIOUS_PAGE_TEST_TAG = "match_review_result_screenshots_previous_page"
+const val MATCH_REVIEW_RESULT_SCREENSHOTS_NEXT_PAGE_TEST_TAG = "match_review_result_screenshots_next_page"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 
 @Composable
@@ -410,40 +425,12 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
             )
         }
-        MatchResultScreenshotSlotSection(
-            screenshotNumber = 1,
-            slot = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+        ResultScreenshotPager(
+            resultScreenshots = uiState.resultScreenshots,
             isEditable = uiState.isEditable,
-            onSelectScreenshot = {
-                onSelectResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
-            },
-            onOpenCrop = {
-                onOpenResultScreenshotCrop(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
-            },
-            onRetryUpload = {
-                onRetryResultScreenshotUpload(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
-            },
-            onRemoveScreenshot = {
-                onRemoveResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
-            },
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        MatchResultScreenshotSlotSection(
-            screenshotNumber = 2,
-            slot = uiState.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-            isEditable = uiState.isEditable,
-            onSelectScreenshot = {
-                onSelectResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            },
-            onOpenCrop = {
-                onOpenResultScreenshotCrop(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            },
-            onRetryUpload = {
-                onRetryResultScreenshotUpload(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            },
-            onRemoveScreenshot = {
-                onRemoveResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            },
+            onSelectScreenshot = onSelectResultScreenshot,
+            onOpenCrop = onOpenResultScreenshotCrop,
+            onRemoveScreenshot = onRemoveResultScreenshot,
         )
         if (showLegacyManualReviewContent && uiState.isEditable) {
             Button(
@@ -580,14 +567,96 @@ private fun MatchReviewContent(
 }
 
 @Composable
-private fun MatchResultScreenshotSlotSection(
+private fun ResultScreenshotPager(
+    resultScreenshots: List<MatchResultScreenshotSlotUiState>,
+    isEditable: Boolean,
+    onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onOpenCrop: (MatchResultScreenshotRole) -> Unit,
+    onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+) {
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val currentPage = pagerState.currentPage.coerceIn(0, 1)
+    val activeRole = resultScreenshotRoleForPage(currentPage)
+    val activeSlot = resultScreenshots.slot(activeRole)
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(
+                R.string.match_review_result_screenshot_slot_label,
+                currentPage + 1,
+                2,
+            ),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
+        ) { page ->
+            val role = resultScreenshotRoleForPage(page)
+            ResultScreenshotPage(
+                screenshotNumber = page + 1,
+                slot = resultScreenshots.slot(role),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (currentPage > 0) {
+                Text(
+                    text = stringResource(R.string.match_review_result_screenshot_previous_page_affordance),
+                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PREVIOUS_PAGE_TEST_TAG),
+                )
+            }
+            (0..1).forEach { page ->
+                Text(
+                    text = stringResource(
+                        if (page == currentPage) {
+                            R.string.match_review_result_screenshot_selected_page_indicator
+                        } else {
+                            R.string.match_review_result_screenshot_unselected_page_indicator
+                        },
+                    ),
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + (page + 1))
+                        .semantics { selected = page == currentPage },
+                )
+            }
+            if (currentPage < 1) {
+                Text(
+                    text = stringResource(R.string.match_review_result_screenshot_next_page_affordance),
+                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_NEXT_PAGE_TEST_TAG),
+                )
+            }
+        }
+        if (isEditable) {
+            ResultScreenshotActionRow(
+                role = activeRole,
+                slot = activeSlot,
+                onSelectScreenshot = onSelectScreenshot,
+                onOpenCrop = onOpenCrop,
+                onRemoveScreenshot = onRemoveScreenshot,
+            )
+        }
+    }
+}
+
+private fun resultScreenshotRoleForPage(page: Int): MatchResultScreenshotRole = when (page) {
+    0 -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
+    else -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+}
+
+@Composable
+private fun ResultScreenshotPage(
     screenshotNumber: Int,
     slot: MatchResultScreenshotSlotUiState,
-    isEditable: Boolean,
-    onSelectScreenshot: () -> Unit,
-    onOpenCrop: () -> Unit,
-    onRetryUpload: () -> Unit,
-    onRemoveScreenshot: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -601,40 +670,52 @@ private fun MatchResultScreenshotSlotSection(
             ),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(
-            text = stringResource(R.string.match_review_result_screenshot_title, screenshotNumber),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = stringResource(
-                if (screenshotNumber == 1) {
-                    R.string.match_review_result_screenshot_1_guidance
-                } else {
-                    R.string.match_review_result_screenshot_2_guidance
-                },
-            ),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (slot.hasLinkedAsset &&
-            !slot.isLocalFileMissing &&
-            slot.hasConfirmedCrop &&
-            !slot.localPreviewUri.isNullOrBlank()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp),
         ) {
-            LocalScreenshotPreview(
-                imageUri = slot.localPreviewUri,
-                crop = slot.confirmedCrop,
-                contentDescription = stringResource(
-                    R.string.match_review_result_screenshot_preview_description,
-                    screenshotNumber,
+            Text(
+                text = stringResource(
+                    if (screenshotNumber == 1) {
+                        R.string.match_review_result_screenshot_1_guidance
+                    } else {
+                        R.string.match_review_result_screenshot_2_guidance
+                    },
                 ),
-                sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
-                sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                testTag = if (screenshotNumber == 1) {
-                    MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
-                } else {
-                    MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
-                },
+                style = MaterialTheme.typography.bodySmall,
             )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (
+                slot.hasLinkedAsset &&
+                    !slot.isLocalFileMissing &&
+                    slot.hasConfirmedCrop
+            ) {
+                slot.localPreviewUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                    LocalScreenshotPreview(
+                        imageUri = imageUri,
+                        crop = slot.confirmedCrop,
+                        contentDescription = stringResource(
+                            R.string.match_review_result_screenshot_preview_description,
+                            screenshotNumber,
+                        ),
+                        sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                        sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                        modifier = Modifier.fillMaxSize(),
+                        testTag = if (screenshotNumber == 1) {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                        } else {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                        },
+                    )
+                }
+            }
         }
         if (slot.isValidationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_validating))
@@ -703,86 +784,52 @@ private fun MatchResultScreenshotSlotSection(
                 text = stringResource(error.toMessageRes()),
                 color = MaterialTheme.colorScheme.error,
             )
-            if (isEditable && slot.hasLinkedAsset) {
-                TextButton(
-                    onClick = onRetryUpload,
-                    enabled = !slot.isUploadInProgress,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.match_review_screenshot_upload_retry_action))
-                }
-            }
         }
-        if (isEditable) {
-            Button(
-                onClick = onSelectScreenshot,
-                enabled = !slot.isBusy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(
-                        when {
-                            screenshotNumber == 1 && slot.hasLinkedAsset ->
-                                MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG
-                            screenshotNumber == 1 -> MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG
-                            screenshotNumber == 2 && slot.hasLinkedAsset ->
-                                MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG
-                            else -> MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG
-                        },
-                    ),
-            ) {
-                Text(
-                    stringResource(
-                        if (slot.hasLinkedAsset) {
-                            R.string.match_review_result_screenshot_replace_action
-                        } else {
-                            R.string.match_review_result_screenshot_select_action
-                        },
-                        screenshotNumber,
-                    ),
-                )
-            }
-            if (slot.hasLinkedAsset) {
-                TextButton(
-                    onClick = onOpenCrop,
-                    enabled = !slot.isBusy && !slot.isLocalFileMissing,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(
-                            if (screenshotNumber == 1) {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG
-                            } else {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG
-                            },
-                        ),
-                ) {
-                    Text(
-                        stringResource(
-                            if (slot.hasConfirmedCrop) {
-                                R.string.match_review_result_screenshot_edit_crop_action
-                            } else {
-                                R.string.match_review_result_screenshot_crop_action
-                            },
-                        ),
-                    )
-                }
+    }
+}
 
-                TextButton(
-                    onClick = onRemoveScreenshot,
-                    enabled = !slot.isBusy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(
-                            if (screenshotNumber == 1) {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG
-                            } else {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG
-                            },
-                        ),
-                ) {
-                    Text(stringResource(R.string.match_review_unlink_screenshot_action))
-                }
-            }
-        }
+@Composable
+private fun ResultScreenshotActionRow(
+    role: MatchResultScreenshotRole,
+    slot: MatchResultScreenshotSlotUiState,
+    onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onOpenCrop: (MatchResultScreenshotRole) -> Unit,
+    onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+) {
+    val isUpper = role == MatchResultScreenshotRole.MATCH_RESULT_UPPER
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Button(
+            onClick = { onSelectScreenshot(role) },
+            enabled = !slot.isBusy,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(
+                    if (slot.hasLinkedAsset) {
+                        if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG
+                        else MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG
+                    } else {
+                        if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG
+                        else MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG
+                    },
+                ),
+        ) { Text(stringResource(R.string.match_review_result_screenshot_replace_short_action)) }
+        Button(
+            onClick = { onOpenCrop(role) },
+            enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG else MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG),
+        ) { Text(stringResource(R.string.match_review_result_screenshot_crop_short_action)) }
+        Button(
+            onClick = { onRemoveScreenshot(role) },
+            enabled = slot.hasLinkedAsset && !slot.isBusy,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG else MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG),
+        ) { Text(stringResource(R.string.match_review_result_screenshot_remove_short_action)) }
     }
 }
 
