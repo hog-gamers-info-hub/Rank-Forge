@@ -432,7 +432,7 @@ private fun MatchReviewContent(
             onOpenCrop = onOpenResultScreenshotCrop,
             onRemoveScreenshot = onRemoveResultScreenshot,
         )
-        if (showLegacyManualReviewContent && uiState.isEditable) {
+        if (uiState.isEditable) {
             Button(
                 onClick = onOpenOcrReview,
                 enabled = uiState.canOpenOcrReview,
@@ -442,6 +442,8 @@ private fun MatchReviewContent(
             ) {
                 Text(stringResource(R.string.match_ocr_review_title))
             }
+        }
+        if (showLegacyManualReviewContent && uiState.isEditable) {
             Button(
                 onClick = onEnterPlacements,
                 modifier = Modifier
