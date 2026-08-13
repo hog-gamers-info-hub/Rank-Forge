@@ -176,7 +176,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
             activeSlotIndex?.let { activeIndex ->
-                uiState.slots.firstOrNull { it.index == activeIndex }?.let { slot ->
+                selectedSlots.firstOrNull { it.index == activeIndex }?.let { slot ->
                     LobbyScreenshotActions(
                         slot = slot,
                         isFinalized = uiState.isFinalized,

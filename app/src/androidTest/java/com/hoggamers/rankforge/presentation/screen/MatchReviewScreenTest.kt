@@ -15,6 +15,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -373,6 +377,58 @@ class MatchReviewScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
             .assertIsSelected()
+    }
+
+    @Test
+    fun removingLastSelectedResultClearsPagerAndActions() {
+        composeTestRule.setContent {
+            var state by remember {
+                mutableStateOf(
+                    availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                )
+            }
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = state,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    onRemoveResultScreenshot = { role ->
+                        state = state.copy(
+                            resultScreenshots = state.resultScreenshots.map { slot ->
+                                if (slot.role == role) {
+                                    slot.copy(hasLinkedAsset = false, selectedScreenshotUri = null)
+                                } else {
+                                    slot
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test

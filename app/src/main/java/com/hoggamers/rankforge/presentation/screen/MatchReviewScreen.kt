@@ -705,9 +705,10 @@ private fun RowScope.resultScreenshotSelectorButton(
 ) {
     val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
     val hasSelection = slot.hasSelection()
+    val isActive = hasSelection && activeRole == role
     val buttonModifier = modifier
             .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + screenshotNumber)
-            .semantics { selected = hasSelection && activeRole == role }
+            .semantics { selected = isActive }
     val content: @Composable RowScope.() -> Unit = {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = stringResource(R.string.match_review_result_screenshot_slot_short_label, screenshotNumber))
@@ -722,7 +723,7 @@ private fun RowScope.resultScreenshotSelectorButton(
             )
         }
     }
-    if (activeRole == role) {
+    if (isActive) {
         Button(
             onClick = { onActivate(role, hasSelection) },
             enabled = hasSelection || (isEditable && !slot.isBusy),

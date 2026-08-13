@@ -14,6 +14,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
@@ -168,6 +172,56 @@ class MatchLobbyScreenshotIntakeScreenTest {
             assertEquals(listOf(1), cropIndexes)
             assertEquals(listOf(1), removeIndexes)
         }
+    }
+
+    @Test
+    fun removingLastSelectedSlotClearsPagerAndActions() {
+        val selectedSlot = defaultMatchLobbyScreenshotSlots().first().copy(
+            hasLinkedAsset = true,
+            selectedScreenshotUri = "file:///private/lobby-1.png",
+        )
+        composeTestRule.setContent {
+            var state by remember {
+                mutableStateOf(
+                    MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = listOf(selectedSlot) + defaultMatchLobbyScreenshotSlots().drop(1),
+                    ),
+                )
+            }
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = state,
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = { index ->
+                        state = state.copy(
+                            slots = state.slots.map { slot ->
+                                if (slot.index == index) {
+                                    slot.copy(hasLinkedAsset = false, selectedScreenshotUri = null)
+                                } else {
+                                    slot
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
     }
 
     @Test
