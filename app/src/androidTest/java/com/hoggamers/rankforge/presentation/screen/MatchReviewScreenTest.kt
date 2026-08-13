@@ -3,12 +3,17 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -50,8 +55,9 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Result Screenshot 1").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Result Screenshot 2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("Back to Tournament Details").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
@@ -95,6 +101,11 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
     }
 
     @Test
@@ -126,6 +137,186 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun resultPagerUsesStaticRoleBoundActionsAndReturnsToFirstPage() {
+        val selectedRoles = mutableListOf<MatchResultScreenshotRole>()
+        val cropRoles = mutableListOf<MatchResultScreenshotRole>()
+        val removedRoles = mutableListOf<MatchResultScreenshotRole>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 0.5),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 0.5, 1.0),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onSelectResultScreenshot = { selectedRoles += it },
+                    onOpenResultScreenshotCrop = { cropRoles += it },
+                    onRemoveResultScreenshot = { removedRoles += it },
+                )
+            }
+        }
+
+        val pager = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+        val initialActionY = composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .fetchSemanticsNode().positionInRoot.y
+        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
+            .assertIsSelected()
+        composeTestRule.onNodeWithText("Replace").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Crop").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG).performClick()
+
+        pager.performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Screenshot 2 of 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 2)
+            .assertIsSelected()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG).performClick()
+        assertEquals(
+            initialActionY,
+            composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
+                .fetchSemanticsNode().positionInRoot.y,
+        )
+
+        pager.performTouchInput { swipeRight() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                ),
+                selectedRoles,
+            )
+            assertEquals(
+                listOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                ),
+                cropRoles,
+            )
+            assertEquals(
+                listOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                ),
+                removedRoles,
+            )
+        }
+    }
+
+    @Test
+    fun resultPagerActionStateFollowsBusyMissingActiveSlot() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                            ),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                isLocalFileMissing = true,
+                                isUploadInProgress = true,
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG)
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun resultPreviewViewportRemainsStableAcrossCropAspectRatios() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 0.5),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 0.5, 1.0),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        val pager = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+        val initialHeight = pager.fetchSemanticsNode().size.height
+        pager.performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        assertEquals(initialHeight, pager.fetchSemanticsNode().size.height)
+    }
+
+    @Test
     fun linkedResultScreenshotTwoShowsItsConfirmedCropPreview() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -151,8 +342,10 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -183,6 +376,9 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
     }
@@ -498,8 +694,10 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
             .performClick()
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
             .performClick()
 
@@ -509,8 +707,7 @@ class MatchReviewScreenTest {
         }
     }
     @Test
-    fun uploadFailureShowsRetryActionWhileKeepingLinkedStateVisible() {
-        var retryCount = 0
+    fun uploadFailureKeepsErrorVisibleWithoutRetryAction() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -527,9 +724,6 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onRetryResultScreenshotUpload = {
-                        if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) retryCount++
-                    },
                 )
             }
         }
@@ -540,10 +734,10 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithText("The screenshot upload could not reach cloud storage. Try again.")
             .performScrollTo()
             .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithText("Retry screenshot upload")
-            .performScrollTo()
-            .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, retryCount) }
+            .assertDoesNotExist()
     }
 
     @Test
@@ -757,6 +951,7 @@ class MatchReviewScreenTest {
         isPreservationInProgress: Boolean = false,
         preservationError: ScreenshotPreservationError? = null,
         isLocalFileMissing: Boolean = false,
+        isUploadInProgress: Boolean = false,
         uploadStatus: ScreenshotMetadataUploadUiStatus? = null,
         uploadError: ScreenshotUploadError? = null,
         confirmedCrop: OcrNormalizedCropRect? = null,
@@ -777,6 +972,7 @@ class MatchReviewScreenTest {
         isPreservationInProgress = isPreservationInProgress,
         preservationError = preservationError,
         isLocalFileMissing = isLocalFileMissing,
+        isUploadInProgress = isUploadInProgress,
         uploadStatus = uploadStatus,
         uploadError = uploadError,
         confirmedCrop = confirmedCrop,
