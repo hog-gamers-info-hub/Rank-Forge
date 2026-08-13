@@ -50,6 +50,24 @@ class DraftMatchCloudSyncMapperTest {
     }
 
     @Test
+    fun mapsNewEmptyDraftToOneMatchPayloadWithoutResultRows() {
+        val emptyDraft = snapshot().copy(
+            matches = listOf(
+                snapshot().matches.first().copy(
+                    placements = emptyList(),
+                    kills = emptyList(),
+                ),
+            ),
+        )
+
+        val result = DraftMatchCloudSyncMapper.map(emptyDraft) as DraftMatchCloudSyncMappingResult.Success
+
+        assertEquals(1, result.payloads.matches.size)
+        assertEquals(0, result.payloads.matchResults.size)
+        assertEquals("draft", result.payloads.matches.single().status)
+    }
+
+    @Test
     fun rejectsInvalidTournamentUuidAndInvalidDraftResultRows() {
         val invalidTournament = snapshot().copy(
             tournament = snapshot().tournament.copy(id = "not-a-uuid"),

@@ -51,6 +51,8 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentDetailsViewModelTest {
@@ -142,7 +144,8 @@ class TournamentDetailsViewModelTest {
     fun gappedTeamSlotsBlockCalculatePointsWithoutConfirmation() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", mapOf(1 to "Alpha", 3 to "Charlie"))
-        val viewModel = detailsViewModel()
+        val syncAction = RecordingDraftMatchCloudSyncAction()
+        val viewModel = detailsViewModel(syncAction)
         viewModel.load("stable-id")
         advanceUntilIdle()
 
@@ -152,6 +155,55 @@ class TournamentDetailsViewModelTest {
         assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
         assertEquals(CalculatePointsMessage.INVALID_TEAM_SLOTS, viewModel.uiState.value.calculatePointsMessage)
         assertNull(viewModel.uiState.value.matchReviewRequest)
+        assertTrue(syncAction.tournamentIds.isEmpty())
+    }
+
+    @Test
+    fun matchLimitRejectionDoesNotSyncOrNavigate() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        repository.setMatches(
+            "stable-id",
+            (1..MAX_MATCHES_PER_TOURNAMENT).map { matchNumber ->
+                Match(
+                    id = "match-$matchNumber",
+                    tournamentId = "stable-id",
+                    matchNumber = matchNumber,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                )
+            },
+        )
+        val syncAction = RecordingDraftMatchCloudSyncAction()
+        val viewModel = detailsViewModel(syncAction)
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.calculatePointsMessage)
+        assertNull(viewModel.uiState.value.matchReviewRequest)
+        assertTrue(syncAction.tournamentIds.isEmpty())
+    }
+
+    @Test
+    fun rejectedCreationDoesNotSyncOrNavigate() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        repository.rejectMatchCreation = true
+        val syncAction = RecordingDraftMatchCloudSyncAction()
+        val viewModel = detailsViewModel(syncAction)
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertEquals(CalculatePointsMessage.MATCH_CREATION_FAILED, viewModel.uiState.value.calculatePointsMessage)
+        assertNull(viewModel.uiState.value.matchReviewRequest)
+        assertTrue(syncAction.tournamentIds.isEmpty())
     }
 
     @Test
@@ -183,11 +235,80 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun successfulCreationSyncsExactlyOnceBeforeReviewRequest() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        var localMatchExistsWhenSyncStarts = false
+        val syncAction = RecordingDraftMatchCloudSyncAction(
+            result = DraftMatchCloudSyncResult.Success,
+            onInvoke = {
+                localMatchExistsWhenSyncStarts = repository.observeMatchesByTournamentId("stable-id")
+                    .first()
+                    .isNotEmpty()
+            },
+        )
+        val viewModel = detailsViewModel(syncAction)
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        val match = repository.observeMatchesByTournamentId("stable-id").first().single()
+        assertEquals(listOf("stable-id"), syncAction.tournamentIds)
+        assertTrue(localMatchExistsWhenSyncStarts)
+        assertEquals(MatchReviewRequest("stable-id", match.id), viewModel.uiState.value.matchReviewRequest)
+    }
+
+    @Test
+    fun networkFailureAfterCreationKeepsLocalMatchAndReviewNavigation() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        val syncAction = RecordingDraftMatchCloudSyncAction(
+            result = DraftMatchCloudSyncResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        val viewModel = detailsViewModel(syncAction)
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        val match = repository.observeMatchesByTournamentId("stable-id").first().single()
+        assertEquals(listOf("stable-id"), syncAction.tournamentIds)
+        assertEquals(MatchReviewRequest("stable-id", match.id), viewModel.uiState.value.matchReviewRequest)
+        assertNull(viewModel.uiState.value.calculatePointsMessage)
+    }
+
+    @Test
+    fun authenticationRequiredAfterCreationKeepsLocalMatchAndReviewNavigation() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        val syncAction = RecordingDraftMatchCloudSyncAction(
+            result = DraftMatchCloudSyncResult.AuthenticationRequired,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        val viewModel = detailsViewModel(syncAction)
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        val match = repository.observeMatchesByTournamentId("stable-id").first().single()
+        assertEquals(listOf("stable-id"), syncAction.tournamentIds)
+        assertEquals(MatchReviewRequest("stable-id", match.id), viewModel.uiState.value.matchReviewRequest)
+        assertNull(viewModel.uiState.value.calculatePointsMessage)
+    }
+
+    @Test
     fun repeatedCalculatePointsWhileMatchCreationIsPendingDoesNotDuplicate() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
         repository.blockMatchCreation = true
-        val viewModel = detailsViewModel()
+        val syncAction = RecordingDraftMatchCloudSyncAction()
+        val viewModel = detailsViewModel(syncAction)
         viewModel.load("stable-id")
         advanceUntilIdle()
 
@@ -204,6 +325,7 @@ class TournamentDetailsViewModelTest {
 
         assertEquals(1, repository.observeMatchesByTournamentId("stable-id").first().size)
         assertNotNull(viewModel.uiState.value.matchReviewRequest)
+        assertEquals(listOf("stable-id"), syncAction.tournamentIds)
     }
 
     @Test
@@ -392,7 +514,9 @@ class TournamentDetailsViewModelTest {
         assertEquals(null, viewModel.uiState.value.googleSheetsExportResult)
     }
 
-    private fun detailsViewModel() = TournamentDetailsViewModel(
+    private fun detailsViewModel(
+        syncDraftMatches: DraftMatchCloudSyncAction = RecordingDraftMatchCloudSyncAction(),
+    ) = TournamentDetailsViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
@@ -401,6 +525,7 @@ class TournamentDetailsViewModelTest {
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
         createNextMatch = CreateNextMatchUseCase(repository),
+        syncDraftMatches = syncDraftMatches,
     )
 
     private fun tournament(id: String) = Tournament(
@@ -428,6 +553,7 @@ class TournamentDetailsViewModelTest {
         private val matchesState = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
         val releaseMatchCreation = CompletableDeferred<Unit>()
         var blockMatchCreation = false
+        var rejectMatchCreation = false
 
         override suspend fun create(tournament: Tournament) {
             state.value = state.value + tournament
@@ -490,6 +616,9 @@ class TournamentDetailsViewModelTest {
 
         override suspend fun createDraftMatch(match: Match): com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult {
             if (blockMatchCreation) releaseMatchCreation.await()
+            if (rejectMatchCreation) {
+                return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.DUPLICATE_MATCH_NUMBER)
+            }
             val current = matchesState.value[match.tournamentId].orEmpty()
             if (current.size >= MAX_MATCHES_PER_TOURNAMENT) {
                 return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)
@@ -512,5 +641,21 @@ class TournamentDetailsViewModelTest {
                 exportedMatchCount = rows.firstOrNull()?.exportedMatchCount ?: 0,
                 rowsWritten = rows.size,
             )
+    }
+
+    private class RecordingDraftMatchCloudSyncAction(
+        private val result: DraftMatchCloudSyncResult = DraftMatchCloudSyncResult.Success,
+        private val queueRecordingResult: QueueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        private val onInvoke: suspend () -> Unit = {},
+    ) : DraftMatchCloudSyncAction {
+        val tournamentIds = mutableListOf<String>()
+
+        override suspend fun invoke(
+            tournamentId: String,
+        ): QueueAwareActionResult<DraftMatchCloudSyncResult> {
+            tournamentIds += tournamentId
+            onInvoke()
+            return QueueAwareActionResult(result, queueRecordingResult)
+        }
     }
 }
