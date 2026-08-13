@@ -50,6 +50,13 @@ class SaveLobbyTemplateUseCase @Inject constructor(
         tournamentId: String,
         sourceMatchId: String,
     ): SaveLobbyTemplateResult {
+        val previousTemplates = try {
+            templateRepository.getByTournamentId(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return SaveLobbyTemplateResult.Failed
+        }
         val assets = (1..3).map { index ->
             assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, index))
         }
@@ -63,51 +70,82 @@ class SaveLobbyTemplateUseCase @Inject constructor(
         val generation = UUID.randomUUID().toString()
         val now = clock.millis()
         val snapshots = mutableListOf<TournamentLobbyTemplateAssetEntity>()
-        validAssets.forEach { preparedAsset ->
-            val copy = localImagePreserver.snapshotLobbyTemplate(
-                tournamentId = tournamentId,
-                generation = generation,
-                lobbyScreenshotIndex = preparedAsset.index,
-                sourceFile = preparedAsset.file,
-                extension = preparedAsset.asset.fileExtension,
-            )
-            val copiedFile = when (copy) {
-                is LocalImagePreservationResult.Preserved -> copy.file
-                is LocalImagePreservationResult.PreservedWithCleanupFailure -> copy.file
-                is LocalImagePreservationResult.Failed -> return SaveLobbyTemplateResult.Failed
+        try {
+            validAssets.forEach { preparedAsset ->
+                val copy = localImagePreserver.snapshotLobbyTemplate(
+                    tournamentId = tournamentId,
+                    generation = generation,
+                    lobbyScreenshotIndex = preparedAsset.index,
+                    sourceFile = preparedAsset.file,
+                    extension = preparedAsset.asset.fileExtension,
+                )
+                val copiedFile = when (copy) {
+                    is LocalImagePreservationResult.Preserved -> copy.file
+                    is LocalImagePreservationResult.PreservedWithCleanupFailure -> copy.file
+                    is LocalImagePreservationResult.Failed -> {
+                        localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+                        return SaveLobbyTemplateResult.Failed
+                    }
+                }
+                val relativePath = localImagePreserver.relativePathFor(copiedFile)
+                    ?: run {
+                        localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+                        return SaveLobbyTemplateResult.Failed
+                    }
+                snapshots += TournamentLobbyTemplateAssetEntity(
+                    tournamentId = tournamentId,
+                    lobbyScreenshotIndex = preparedAsset.index,
+                    ownerUserId = preparedAsset.asset.ownerUserId,
+                    localRelativePath = relativePath,
+                    fileExtension = preparedAsset.asset.fileExtension,
+                    mimeType = preparedAsset.asset.mimeType,
+                    originalWidth = preparedAsset.asset.originalWidth,
+                    originalHeight = preparedAsset.asset.originalHeight,
+                    byteSize = preparedAsset.asset.byteSize,
+                    sha256 = preparedAsset.asset.sha256,
+                    cropProfileId = preparedAsset.crop.cropProfileId,
+                    cropLeft = preparedAsset.crop.crop.left,
+                    cropTop = preparedAsset.crop.crop.top,
+                    cropRight = preparedAsset.crop.crop.right,
+                    cropBottom = preparedAsset.crop.crop.bottom,
+                    sourceMatchId = sourceMatchId,
+                    savedAt = now,
+                    updatedAt = now,
+                    revision = 1L,
+                )
             }
-            val relativePath = localImagePreserver.relativePathFor(copiedFile)
-                ?: return SaveLobbyTemplateResult.Failed
-            snapshots += TournamentLobbyTemplateAssetEntity(
-                tournamentId = tournamentId,
-                lobbyScreenshotIndex = preparedAsset.index,
-                ownerUserId = preparedAsset.asset.ownerUserId,
-                localRelativePath = relativePath,
-                fileExtension = preparedAsset.asset.fileExtension,
-                mimeType = preparedAsset.asset.mimeType,
-                originalWidth = preparedAsset.asset.originalWidth,
-                originalHeight = preparedAsset.asset.originalHeight,
-                byteSize = preparedAsset.asset.byteSize,
-                sha256 = preparedAsset.asset.sha256,
-                cropProfileId = preparedAsset.crop.cropProfileId,
-                cropLeft = preparedAsset.crop.crop.left,
-                cropTop = preparedAsset.crop.crop.top,
-                cropRight = preparedAsset.crop.crop.right,
-                cropBottom = preparedAsset.crop.crop.bottom,
-                sourceMatchId = sourceMatchId,
-                savedAt = now,
-                updatedAt = now,
-                revision = 1L,
-            )
+        } catch (cancellation: CancellationException) {
+            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            throw cancellation
+        } catch (_: Throwable) {
+            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            return SaveLobbyTemplateResult.Failed
         }
-        return try {
+        val replacementResult = try {
             templateRepository.replaceForTournament(tournamentId, snapshots)
             SaveLobbyTemplateResult.Saved
         } catch (cancellation: CancellationException) {
+            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
             throw cancellation
         } catch (_: Throwable) {
-            SaveLobbyTemplateResult.Failed
+            localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+            return SaveLobbyTemplateResult.Failed
         }
+        if (replacementResult == SaveLobbyTemplateResult.Saved) {
+            previousTemplates
+                .mapNotNull { template ->
+                    localImagePreserver.lobbyTemplateGenerationFromRelativePath(
+                        tournamentId,
+                        template.localRelativePath,
+                    )
+                }
+                .distinct()
+                .filter { it != generation }
+                .forEach { previousGeneration ->
+                    localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, previousGeneration)
+                }
+        }
+        return replacementResult
     }
 
     private fun prepareAsset(

@@ -469,6 +469,56 @@ class LocalImagePreserver(
         "original.$extension",
     )
 
+    suspend fun cleanupLobbyTemplateGeneration(
+        tournamentId: String,
+        generation: String,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (tournamentId.isBlank() || generation.isBlank() || generation.contains('/') || generation.contains('\\')) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        val generationDirectory = lobbyTemplateGenerationDirectory(tournamentId, generation)
+        val slotDirectories = (1..3).map { index ->
+            File(generationDirectory, index.toString())
+        }
+        var success = true
+        slotDirectories.forEach { directory ->
+            val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+            if (files == null) {
+                success = false
+            } else {
+                files.filter { file ->
+                    file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
+                }.forEach { file ->
+                    if (!runCatching { fileOperations.delete(file) }.getOrDefault(false)) success = false
+                }
+            }
+        }
+        if (success) {
+            slotDirectories.asReversed().forEach { directory ->
+                if (directory.exists() && !runCatching { fileOperations.delete(directory) }.getOrDefault(false)) {
+                    success = false
+                }
+            }
+            if (generationDirectory.exists() && !runCatching { fileOperations.delete(generationDirectory) }.getOrDefault(false)) {
+                success = false
+            }
+        }
+        if (success) LocalImageCleanupResult.Cleaned else LocalImageCleanupResult.Failed
+    }
+
+    fun lobbyTemplateGenerationFromRelativePath(
+        tournamentId: String,
+        relativePath: String,
+    ): String? {
+        val prefix = "$SCREENSHOTS_DIRECTORY/${encodeSegment(tournamentId)}/lobby-template/"
+        if (!relativePath.startsWith(prefix)) return null
+        val remainder = relativePath.removePrefix(prefix).split('/')
+        if (remainder.size != 3 || remainder[1] !in setOf("1", "2", "3")) return null
+        if (!remainder[2].startsWith("original.")) return null
+        return decodeSegment(remainder[0])
+            ?.takeIf { it.isNotBlank() && !it.contains('/') && !it.contains('\\') }
+    }
+
     fun relativePathFor(file: File): String? {
         val rootPath = runCatching { File(appPrivateRoot, SCREENSHOTS_DIRECTORY).canonicalFile.toPath() }
             .getOrNull()
@@ -524,6 +574,14 @@ class LocalImagePreserver(
         "${encodeSegment(tournamentId)}/lobby-template/${encodeSegment(generation)}/$lobbyScreenshotIndex",
     )
 
+    private fun lobbyTemplateGenerationDirectory(
+        tournamentId: String,
+        generation: String,
+    ): File = File(
+        File(appPrivateRoot, SCREENSHOTS_DIRECTORY),
+        "${encodeSegment(tournamentId)}/lobby-template/${encodeSegment(generation)}",
+    )
+
     private fun roleDirectoryName(role: MatchResultScreenshotRole): String = when (role) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER -> "upper"
         MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "lower"
@@ -558,6 +616,18 @@ class LocalImagePreserver(
             .joinToString(separator = "") { byte ->
                 "%02x".format(Locale.ROOT, byte.toInt() and 0xff)
             }
+
+        fun decodeSegment(value: String): String? {
+            if (value.isBlank() || value.length % 2 != 0 || value.any { it !in "0123456789abcdefABCDEF" }) {
+                return null
+            }
+            return runCatching {
+                value.chunked(2)
+                    .map { it.toInt(16).toByte() }
+                    .toByteArray()
+                    .toString(Charsets.UTF_8)
+            }.getOrNull()
+        }
     }
 }
 

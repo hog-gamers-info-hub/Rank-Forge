@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -19,7 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -89,6 +92,114 @@ class SavedLobbyTemplateUseCasesTest {
         }
     }
 
+    @Test
+    fun partialStagingFailurePreservesActiveTemplateAndCleansNewGeneration() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-partial").toFile()
+        val sourceRepository = FakeLobbyRepository()
+        val normalPreserver = preserver(root)
+        seedSourceAssets(normalPreserver, sourceRepository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(
+            sourceRepository,
+            templateRepository,
+            normalPreserver,
+            Clock.systemUTC(),
+        )
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val previous = templateRepository.getByTournamentId(tournamentId)
+        val previousFiles = previous.map { normalPreserver.resolveRelativePath(it.localRelativePath)!! }
+
+        val failingOps = FailingTemplateFileOperations(failAfterMoves = 1)
+        val failingPreserver = preserver(root, failingOps)
+        assertEquals(
+            SaveLobbyTemplateResult.Failed,
+            SaveLobbyTemplateUseCase(
+                sourceRepository,
+                templateRepository,
+                failingPreserver,
+                Clock.systemUTC(),
+            )(tournamentId, sourceMatchId),
+        )
+
+        assertEquals(previous, templateRepository.getByTournamentId(tournamentId))
+        previousFiles.forEach { assertTrue(it.isFile) }
+        assertEquals(previousFiles.toSet(), allTemplateOriginals(root).toSet())
+    }
+
+    @Test
+    fun roomReplacementFailurePreservesPreviousTemplateAndCleansStagedFiles() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-room-failure").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val previous = templateRepository.getByTournamentId(tournamentId)
+        val previousFiles = allTemplateOriginals(root)
+        templateRepository.throwOnReplace = true
+
+        assertEquals(SaveLobbyTemplateResult.Failed, save(tournamentId, sourceMatchId))
+        assertEquals(previous, templateRepository.getByTournamentId(tournamentId))
+        assertEquals(previousFiles.toSet(), allTemplateOriginals(root).toSet())
+    }
+
+    @Test
+    fun successfulResaveCleansPreviousGenerationOnlyAfterReplacement() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-resave").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val previous = templateRepository.getByTournamentId(tournamentId)
+        val previousFiles = previous.map { preserver.resolveRelativePath(it.localRelativePath)!! }
+
+        seedSourceAssets(preserver, repository, listOf("A", "D", "C"))
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val current = templateRepository.getByTournamentId(tournamentId)
+        assertTrue(current.all { preserver.resolveRelativePath(it.localRelativePath)?.isFile == true })
+        assertTrue(current.any { it.sha256 == "sha-D" })
+        previousFiles.forEach { assertFalse(it.isFile) }
+        assertEquals(3, allTemplateOriginals(root).size)
+    }
+
+    private suspend fun seedSourceAssets(
+        preserver: LocalImagePreserver,
+        repository: FakeLobbyRepository,
+        labels: List<String>,
+    ) {
+        labels.forEachIndexed { offset, label ->
+            val index = offset + 1
+            val source = preserver.lobbyPreservedFile(tournamentId, sourceMatchId, index, "png")
+            source.parentFile?.mkdirs()
+            source.writeBytes(label.toByteArray())
+            repository.saveOrReplace(
+                asset(index, sourceMatchId, preserver.relativePathFor(source)!!, "sha-$label"),
+            )
+        }
+    }
+
+    private fun preserver(
+        root: java.io.File,
+        fileOperations: LocalImageFileOperations = TestTemplateFileOperations(),
+    ) = LocalImagePreserver(
+        appPrivateRoot = root,
+        sourceStreamOpener = ImageSourceStreamOpener { byteArrayOf(1).inputStream() },
+        mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+        fileOperations = fileOperations,
+        ioDispatcher = Dispatchers.Unconfined,
+    )
+
+    private fun allTemplateOriginals(root: java.io.File): List<java.io.File> =
+        if (!root.exists()) emptyList() else Files.walk(root.toPath()).use { paths ->
+            paths.filter { it.fileName.toString().startsWith("original.") }
+                .filter { it.toString().replace('\\', '/').contains("/lobby-template/") }
+                .map { it.toFile() }
+                .toList()
+        }
+
     private fun asset(index: Int, matchId: String, path: String, sha: String) = MatchLobbyScreenshotAssetEntity(
         tournamentId = tournamentId,
         matchId = matchId,
@@ -142,10 +253,49 @@ class SavedLobbyTemplateUseCasesTest {
 
     private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
         private val state = MutableStateFlow<List<TournamentLobbyTemplateAssetEntity>>(emptyList())
+        var throwOnReplace: Boolean = false
         override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> = state
         override suspend fun getByTournamentId(tournamentId: String) = state.value.filter { it.tournamentId == tournamentId }
         override suspend fun replaceForTournament(tournamentId: String, assets: List<TournamentLobbyTemplateAssetEntity>) {
+            if (throwOnReplace) error("replacement failed")
             state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+        }
+    }
+
+    private open class TestTemplateFileOperations : LocalImageFileOperations {
+        override fun ensureDirectory(directory: java.io.File): Boolean =
+            directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+
+        override fun createTempFile(directory: java.io.File): java.io.File =
+            java.io.File.createTempFile("original-", ".tmp", directory)
+
+        override fun openOutput(file: java.io.File): java.io.OutputStream = file.outputStream()
+
+        override fun atomicMove(source: java.io.File, target: java.io.File): Boolean = try {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+
+        override fun listFiles(directory: java.io.File): List<java.io.File>? =
+            if (!directory.exists()) emptyList() else directory.listFiles()?.toList()
+
+        override fun delete(file: java.io.File): Boolean = !file.exists() || file.delete()
+    }
+
+    private class FailingTemplateFileOperations(
+        private val failAfterMoves: Int,
+    ) : TestTemplateFileOperations() {
+        private var moves = 0
+
+        override fun atomicMove(source: java.io.File, target: java.io.File): Boolean {
+            if (moves++ >= failAfterMoves) return false
+            return super.atomicMove(source, target)
         }
     }
 }
