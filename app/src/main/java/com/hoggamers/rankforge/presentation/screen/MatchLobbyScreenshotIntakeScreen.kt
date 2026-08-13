@@ -216,34 +216,38 @@ private fun LobbyScreenshotPage(
     ) {
         if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
             Text(text = stringResource(R.string.match_lobby_screenshot_selected))
-            if (slot.hasConfirmedCrop) {
-                slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        LocalScreenshotPreview(
-                            imageUri = imageUri,
-                            crop = slot.confirmedCrop,
-                            contentDescription = stringResource(
-                                R.string.match_lobby_screenshot_preview_description,
-                                slot.index,
-                            ),
-                            sourceImageWidth = slot.selectedScreenshotWidth,
-                            sourceImageHeight = slot.selectedScreenshotHeight,
-                            modifier = Modifier.fillMaxSize(),
-                            testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
-                        )
-                    }
-                }
-            }
         } else if (slot.isLocalFileMissing) {
             Text(
                 text = stringResource(R.string.match_lobby_screenshot_missing_local_file),
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (
+                slot.hasLinkedAsset &&
+                    !slot.isLocalFileMissing &&
+                    slot.hasConfirmedCrop
+            ) {
+                slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                    LocalScreenshotPreview(
+                        imageUri = imageUri,
+                        crop = slot.confirmedCrop,
+                        contentDescription = stringResource(
+                            R.string.match_lobby_screenshot_preview_description,
+                            slot.index,
+                        ),
+                        sourceImageWidth = slot.selectedScreenshotWidth,
+                        sourceImageHeight = slot.selectedScreenshotHeight,
+                        modifier = Modifier.fillMaxSize(),
+                        testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
+                    )
+                }
+            }
         }
         slot.imageValidationError?.let { error ->
             Text(text = stringResource(error.toStringRes()), color = MaterialTheme.colorScheme.error)

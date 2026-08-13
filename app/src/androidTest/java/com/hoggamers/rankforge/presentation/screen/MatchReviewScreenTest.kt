@@ -92,6 +92,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -164,6 +165,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                     onSelectResultScreenshot = { selectedRoles += it },
                     onOpenResultScreenshotCrop = { cropRoles += it },
                     onRemoveResultScreenshot = { removedRoles += it },
@@ -253,6 +255,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -333,6 +336,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -527,6 +531,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -558,6 +563,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -597,6 +603,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -635,6 +642,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                     onOpenResultScreenshotCrop = {
                         if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) cropCount++
                     },
@@ -719,6 +727,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
@@ -756,6 +765,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }

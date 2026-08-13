@@ -686,33 +686,35 @@ private fun ResultScreenshotPage(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        if (slot.hasLinkedAsset &&
-            !slot.isLocalFileMissing &&
-            slot.hasConfirmedCrop &&
-            !slot.localPreviewUri.isNullOrBlank()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
-                contentAlignment = Alignment.Center,
+            if (
+                slot.hasLinkedAsset &&
+                    !slot.isLocalFileMissing &&
+                    slot.hasConfirmedCrop
             ) {
-                LocalScreenshotPreview(
-                    imageUri = slot.localPreviewUri,
-                    crop = slot.confirmedCrop,
-                    contentDescription = stringResource(
-                        R.string.match_review_result_screenshot_preview_description,
-                        screenshotNumber,
-                    ),
-                    sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
-                    sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                    modifier = Modifier.fillMaxSize(),
-                    testTag = if (screenshotNumber == 1) {
-                        MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
-                    } else {
-                        MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
-                    },
-                )
+                slot.localPreviewUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                    LocalScreenshotPreview(
+                        imageUri = imageUri,
+                        crop = slot.confirmedCrop,
+                        contentDescription = stringResource(
+                            R.string.match_review_result_screenshot_preview_description,
+                            screenshotNumber,
+                        ),
+                        sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                        sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                        modifier = Modifier.fillMaxSize(),
+                        testTag = if (screenshotNumber == 1) {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                        } else {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                        },
+                    )
+                }
             }
         }
         if (slot.isValidationInProgress) {
