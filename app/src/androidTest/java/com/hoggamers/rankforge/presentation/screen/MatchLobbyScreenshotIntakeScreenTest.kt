@@ -206,14 +206,13 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 2)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 2)
-            .assertIsDisplayed()
-            .performClick()
-
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Screenshot 2 of 3").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 2)
+            .assertIsDisplayed()
+            .performClick()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(R.string.match_lobby_screenshot_missing_local_file),
         ).assertIsDisplayed()

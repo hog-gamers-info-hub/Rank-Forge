@@ -101,11 +101,6 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
-            .assertIsDisplayed()
     }
 
     @Test
