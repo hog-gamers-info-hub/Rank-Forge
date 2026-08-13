@@ -296,14 +296,13 @@ interface MatchResultScreenshotAssetDao {
     @Query(
         """
         SELECT * FROM match_result_screenshot_assets
-        WHERE tournament_id = :tournamentId
+        WHERE match_id = :matchId
             AND sha256 = :sha256
-            AND NOT (match_id = :matchId AND screenshot_role = :screenshotRole)
+            AND screenshot_role != :screenshotRole
         LIMIT 1
         """,
     )
     suspend fun readDuplicateFingerprint(
-        tournamentId: String,
         sha256: String,
         matchId: String,
         screenshotRole: String,
@@ -453,14 +452,13 @@ interface MatchLobbyScreenshotAssetDao {
     @Query(
         """
         SELECT * FROM match_lobby_screenshot_assets
-        WHERE tournament_id = :tournamentId
+        WHERE match_id = :matchId
             AND sha256 = :sha256
-            AND NOT (match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex)
+            AND lobby_screenshot_index != :lobbyScreenshotIndex
         LIMIT 1
         """,
     )
     suspend fun readDuplicateFingerprint(
-        tournamentId: String,
         sha256: String,
         matchId: String,
         lobbyScreenshotIndex: Int,

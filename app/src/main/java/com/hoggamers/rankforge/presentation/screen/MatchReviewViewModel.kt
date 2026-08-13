@@ -634,15 +634,10 @@ class MatchReviewViewModel @Inject constructor(
                         } else {
                             null
                         },
-                        isUploadInProgress = true,
+                        isUploadInProgress = false,
                         uploadError = null,
                     )
                 }
-                uploadMatchResultScreenshot(
-                    identity = identity,
-                    selectedUri = selectedUri,
-                    preservedFile = preservedFile,
-                )
                 requestResultScreenshotCropNavigationIfReady(
                     identity = identity,
                     selectedUri = selectedUri,

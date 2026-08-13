@@ -49,7 +49,6 @@ class MatchResultScreenshotAssetDaoTest {
             assertEquals(
                 lower,
                 dao.readDuplicateFingerprint(
-                    tournamentId = "tournament-1",
                     sha256 = lower.sha256,
                     matchId = "match-1",
                     screenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER.name,
@@ -166,6 +165,16 @@ class MatchResultScreenshotAssetDaoTest {
 
             assertEquals(
                 MatchResultScreenshotAssetSaveResult.DuplicateFingerprint(upper),
+                repository.saveOrReplace(
+                    asset(
+                        matchId = "match-1",
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        sha256 = upper.sha256,
+                    ),
+                ),
+            )
+            assertEquals(
+                MatchResultScreenshotAssetSaveResult.Saved,
                 repository.saveOrReplace(
                     asset(
                         matchId = "match-2",

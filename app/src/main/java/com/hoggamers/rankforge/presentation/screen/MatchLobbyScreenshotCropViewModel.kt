@@ -5,9 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotStorageUploader
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
@@ -36,6 +41,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
+    private val storageUploader: MatchLobbyScreenshotStorageUploader = NoOpMatchLobbyScreenshotStorageUploader(),
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
@@ -117,6 +123,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
 
     fun confirmCrop(onConfirmed: () -> Unit) {
         val current = _uiState.value
+        if (current.isSaving) return
         val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
         val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
         val index = current.lobbyScreenshotIndex ?: return
@@ -158,12 +165,12 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                     draftEdited = false
                     _uiState.update {
                         it.copy(
-                            isSaving = false,
                             confirmedCrop = current.draftCrop,
                             error = null,
                         )
                     }
-                    syncCloudMetadata(identity)
+                    uploadAndSyncCheckpoint(identity)
+                    _uiState.update { it.copy(isSaving = false) }
                     onConfirmed()
                 }
                 MatchLobbyScreenshotCropSaveResult.MissingAsset ->
@@ -175,7 +182,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         }
     }
 
-    private suspend fun syncCloudMetadata(identity: MatchLobbyScreenshotIdentity) {
+    private suspend fun uploadAndSyncCheckpoint(identity: MatchLobbyScreenshotIdentity) {
         val latest = try {
             assetRepository.getByIdentity(identity)
         } catch (cancellation: CancellationException) {
@@ -185,40 +192,105 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         } ?: return
         if (latest.identityOrNull() != identity) return
         val submittedSha256 = latest.sha256
-        val result = try {
-            cloudDataSource.upsert(latest)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            MatchLobbyScreenshotAssetCloudResult.Failed(
-                MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED,
-            )
+        val localFile = localImagePreserver.resolveRelativePath(latest.localRelativePath)
+        val readable = localFile?.let { runCatching { it.isFile && it.canRead() && it.length() > 0L }.getOrDefault(false) } == true
+        if (!readable) {
+            markUploadFailure(identity, submittedSha256, MatchLobbyScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED.name)
+            return
         }
-        if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
-            val newest = try {
-                assetRepository.getByIdentity(identity)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                null
-            } ?: return
-            if (newest.identityOrNull() != identity || newest.sha256 != submittedSha256) return
-            val failedAt = clock.millis()
+
+        val storageResult = if (
+            latest.uploadStatus == com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.UPLOADED.name &&
+            !latest.storageBucket.isNullOrBlank() &&
+            !latest.storageObjectPath.isNullOrBlank()
+        ) {
+            null
+        } else {
             try {
-                assetRepository.saveOrReplace(
-                    newest.copy(
-                        uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name,
-                        uploadFailureCode = result.failure.name,
-                        updatedAt = failedAt,
-                        revision = newest.revision + 1L,
-                    ),
+                storageUploader.upload(
+                    tournamentId = identity.tournamentId,
+                    matchId = identity.matchId,
+                    lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+                    localFile = localFile,
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                // Cloud failure must not prevent confirmed crop navigation.
+                MatchLobbyScreenshotStorageUploadResult.Failed(
+                    MatchLobbyScreenshotStorageUploadFailure.UPLOAD_FAILED,
+                )
             }
         }
+
+        when (storageResult) {
+            is MatchLobbyScreenshotStorageUploadResult.Failed -> {
+                markUploadFailure(identity, submittedSha256, storageResult.failure.name)
+                return
+            }
+            is MatchLobbyScreenshotStorageUploadResult.Uploaded -> {
+                val current = readLatestAsset(identity)
+                if (current?.identityOrNull() != identity || current.sha256 != submittedSha256) return
+                val uploadedAt = clock.millis()
+                val uploaded = current.copy(
+                    storageBucket = com.hoggamers.rankforge.data.cloud.OCR_SCREENSHOTS_BUCKET,
+                    storageObjectPath = storageResult.objectPath,
+                    uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.UPLOADED.name,
+                    uploadFailureCode = null,
+                    uploadedAt = uploadedAt,
+                    updatedAt = uploadedAt,
+                    revision = current.revision + 1L,
+                )
+                if (assetRepository.saveOrReplace(uploaded) !is MatchLobbyScreenshotAssetSaveResult.Saved) return
+            }
+            null -> Unit
+        }
+
+        val updated = readLatestAsset(identity)
+        if (updated?.identityOrNull() != identity || updated.sha256 != submittedSha256) return
+        val cloudResult = try {
+            cloudDataSource.upsert(updated)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyScreenshotAssetCloudResult.Failed(MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED)
+        }
+        if (cloudResult is MatchLobbyScreenshotAssetCloudResult.Failed) {
+            markUploadFailure(identity, submittedSha256, cloudResult.failure.name)
+        }
+    }
+
+    private suspend fun markUploadFailure(
+        identity: MatchLobbyScreenshotIdentity,
+        submittedSha256: String,
+        failureCode: String,
+    ) {
+        val latest = readLatestAsset(identity) ?: return
+        if (latest.identityOrNull() != identity || latest.sha256 != submittedSha256) return
+        val failedAt = clock.millis()
+        try {
+            assetRepository.saveOrReplace(
+                latest.copy(
+                    uploadStatus = com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name,
+                    uploadFailureCode = failureCode,
+                    updatedAt = failedAt,
+                    revision = latest.revision + 1L,
+                ),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Cloud failure must not prevent confirmed crop navigation.
+        }
+    }
+
+    private suspend fun readLatestAsset(
+        identity: MatchLobbyScreenshotIdentity,
+    ): MatchLobbyScreenshotAssetEntity? = try {
+        assetRepository.getByIdentity(identity)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 
     private fun markMissingIfNeeded(identity: MatchLobbyScreenshotIdentity) {

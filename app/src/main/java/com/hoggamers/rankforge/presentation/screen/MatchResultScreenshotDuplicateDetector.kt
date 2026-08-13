@@ -33,8 +33,8 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
         NoOpMatchResultScreenshotAssetRepository(),
 ) {
     private val lock = Any()
-    private val fingerprintOwnersByTournament =
-        mutableMapOf<String, MutableMap<String, MatchResultScreenshotIdentity>>()
+    private val fingerprintOwnersByMatch =
+        mutableMapOf<MatchScope, MutableMap<String, MatchResultScreenshotIdentity>>()
 
     suspend fun link(
         identity: MatchResultScreenshotIdentity,
@@ -72,7 +72,7 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
         }
 
         return synchronized(lock) {
-            val owners = fingerprintOwnersByTournament.getOrPut(identity.tournamentId) { mutableMapOf() }
+            val owners = fingerprintOwnersByMatch.getOrPut(identity.scope()) { mutableMapOf() }
             when (val owner = owners[fingerprint]) {
                 null -> {
                     if (currentFingerprint == fingerprint) {
@@ -104,14 +104,14 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
         if (fingerprint == null) {
             return@synchronized MatchResultScreenshotDuplicateUnlinkResult.Unlinked
         }
-        val owners = fingerprintOwnersByTournament[identity.tournamentId]
+        val owners = fingerprintOwnersByMatch[identity.scope()]
             ?: return@synchronized MatchResultScreenshotDuplicateUnlinkResult.Unlinked
         when (val owner = owners[fingerprint]) {
             null -> MatchResultScreenshotDuplicateUnlinkResult.Unlinked
             identity -> {
                 owners.remove(fingerprint)
                 if (owners.isEmpty()) {
-                    fingerprintOwnersByTournament.remove(identity.tournamentId)
+                    fingerprintOwnersByMatch.remove(identity.scope())
                 }
                 MatchResultScreenshotDuplicateUnlinkResult.Unlinked
             }
@@ -125,7 +125,7 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
         newFingerprint: String,
         previousFingerprint: String?,
     ): Boolean = synchronized(lock) {
-        val owners = fingerprintOwnersByTournament[identity.tournamentId] ?: return@synchronized false
+        val owners = fingerprintOwnersByMatch[identity.scope()] ?: return@synchronized false
         if (owners[newFingerprint] != identity) return@synchronized false
         if (previousFingerprint != null) {
             val previousOwner = owners[previousFingerprint]
@@ -136,8 +136,15 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
             owners[previousFingerprint] = identity
         }
         if (owners.isEmpty()) {
-            fingerprintOwnersByTournament.remove(identity.tournamentId)
+            fingerprintOwnersByMatch.remove(identity.scope())
         }
         true
     }
+
+    private fun MatchResultScreenshotIdentity.scope() = MatchScope(tournamentId, matchId)
+
+    private data class MatchScope(
+        val tournamentId: String,
+        val matchId: String,
+    )
 }

@@ -49,7 +49,7 @@ class MatchResultScreenshotDuplicateDetectorTest {
     }
 
     @Test
-    fun otherMatchDuplicateInSameTournamentIsRejectedButOtherTournamentIsAllowed() = runTest {
+    fun otherMatchDuplicateInSameTournamentIsAllowed() = runTest {
         val detector = detector(mapOf("one" to "same".encodeToByteArray(), "two" to "same".encodeToByteArray()))
         val first = identity(tournamentId = "tournament-1", matchId = "match-1")
         val second = identity(tournamentId = "tournament-1", matchId = "match-2")
@@ -57,15 +57,12 @@ class MatchResultScreenshotDuplicateDetectorTest {
 
         detector.link(first, "one", currentFingerprint = null)
 
-        assertEquals(
-            MatchResultScreenshotDuplicateLinkResult.LinkedToOtherIdentity(first),
-            detector.link(second, "two", currentFingerprint = null),
-        )
+        assertTrue(detector.link(second, "two", currentFingerprint = null) is MatchResultScreenshotDuplicateLinkResult.Linked)
         assertTrue(detector.link(otherTournament, "two", currentFingerprint = null) is MatchResultScreenshotDuplicateLinkResult.Linked)
     }
 
     @Test
-    fun freshDetectorRejectsPersistedDuplicateAfterRestart() = runTest {
+    fun freshDetectorAllowsPersistedDuplicateInAnotherMatchAfterRestart() = runTest {
         val bytesByUri = mapOf("same" to "same".encodeToByteArray())
         val fingerprint = fingerprintGenerator(bytesByUri).fingerprint("same") as ImageSourceFingerprintResult.Success
         val existing = identity(matchId = "match-1")
@@ -76,9 +73,9 @@ class MatchResultScreenshotDuplicateDetectorTest {
             ),
         )
 
-        assertEquals(
-            MatchResultScreenshotDuplicateLinkResult.LinkedToOtherIdentity(existing),
-            detector.link(identity(matchId = "match-2"), "same", currentFingerprint = null),
+        assertTrue(
+            detector.link(identity(matchId = "match-2"), "same", currentFingerprint = null)
+                is MatchResultScreenshotDuplicateLinkResult.Linked,
         )
     }
 
@@ -207,9 +204,9 @@ class MatchResultScreenshotDuplicateDetectorTest {
         ): MatchResultScreenshotAssetEntity? {
             failure?.let { throw it }
             return assets.firstOrNull { asset ->
-                asset.tournamentId == identity.tournamentId &&
+                asset.matchId == identity.matchId &&
                     asset.sha256 == sha256 &&
-                    !asset.matches(identity)
+                    asset.screenshotRole != identity.role.name
             }
         }
 

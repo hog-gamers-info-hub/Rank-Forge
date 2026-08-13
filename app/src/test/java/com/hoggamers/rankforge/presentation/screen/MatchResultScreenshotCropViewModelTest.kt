@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudFailure
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploader
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
@@ -18,6 +20,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
@@ -68,14 +71,19 @@ class MatchResultScreenshotCropViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
-        matchId = (CreateMatchUseCase(tournamentRepository)(
-            CreateMatchInput(
+        tournamentRepository.saveTeamNames(CROP_TOURNAMENT_ID, mapOf(1 to "Team 1"))
+        matchId = "crop-match-id"
+        tournamentRepository.createDraftMatch(
+            Match(
+                id = matchId,
                 tournamentId = CROP_TOURNAMENT_ID,
-                matchNumber = "1",
+                matchNumber = 1,
                 date = LocalDate.of(2026, 8, 7),
                 mapName = "Bermuda",
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
             ),
-        ) as CreateMatchResult.Created).match.id
+        )
+        Unit
     }
 
     @After
@@ -127,6 +135,62 @@ class MatchResultScreenshotCropViewModelTest {
         assertEquals(ScreenshotUploadStatus.FAILED.name, saved.uploadStatus)
         assertEquals(MatchResultScreenshotAssetCloudFailure.WRITE_FAILED.name, saved.uploadFailureCode)
         assertTrue(viewModel.uiState.value.confirmedCrop == crop)
+    }
+
+    @Test
+    fun confirmCropPersistsBeforeUploadingOriginalAndUpsertsCombinedMetadata() = runTest {
+        val root = Files.createTempDirectory("rank-forge-crop-upload").toFile()
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = root,
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(4, 5, 6))
+        val repository = FakeCropAssetRepository(
+            asset(
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                relativePath = preserver.relativePathFor(file)!!,
+            ).copy(
+                uploadStatus = ScreenshotUploadStatus.PENDING.name,
+                storageBucket = null,
+                storageObjectPath = null,
+                uploadedAt = null,
+            ),
+        )
+        val uploader = RecordingResultStorageUploader(repository)
+        val cloud = RecordingCropCloudDataSource()
+        val viewModel = MatchResultScreenshotCropViewModel(
+            observeMatches = ObserveMatchesUseCase(tournamentRepository),
+            assetRepository = repository,
+            cloudDataSource = cloud,
+            localImagePreserver = preserver,
+            storageUploader = uploader,
+        )
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_LOWER.name)
+        advanceUntilIdle()
+        val crop = OcrNormalizedCropRect(0.2, 0.1, 0.8, 0.9)
+        var confirmations = 0
+        viewModel.onCropChanged(crop)
+        viewModel.confirmCrop { confirmations++ }
+        advanceUntilIdle()
+
+        assertEquals(1, uploader.calls.size)
+        assertEquals(file, uploader.calls.single().localFile)
+        assertEquals(crop.left, uploader.cropAtUpload!!.cropLeft!!, 0.0)
+        assertEquals(1, cloud.upserts.size)
+        assertEquals(crop.left, cloud.upserts.single().cropLeft!!, 0.0)
+        assertEquals("cloud/result/lower/original.png", cloud.upserts.single().storageObjectPath)
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER))?.uploadStatus)
+        assertEquals(1, confirmations)
     }
 
 
@@ -348,6 +412,45 @@ class MatchResultScreenshotCropViewModelTest {
         override suspend fun deleteByIdentity(
             identity: MatchResultScreenshotIdentity,
         ): MatchResultScreenshotAssetCloudResult = MatchResultScreenshotAssetCloudResult.Success
+    }
+
+    private class RecordingCropCloudDataSource : MatchResultScreenshotAssetCloudDataSource {
+        val upserts = mutableListOf<MatchResultScreenshotAssetEntity>()
+
+        override suspend fun upsert(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetCloudResult {
+            upserts += asset
+            return MatchResultScreenshotAssetCloudResult.Success
+        }
+
+        override suspend fun deleteByIdentity(
+            identity: MatchResultScreenshotIdentity,
+        ): MatchResultScreenshotAssetCloudResult = MatchResultScreenshotAssetCloudResult.Success
+    }
+
+    private class RecordingResultStorageUploader(
+        private val repository: FakeCropAssetRepository,
+    ) : MatchResultScreenshotStorageUploader {
+        data class Call(val localFile: java.io.File)
+
+        val calls = mutableListOf<Call>()
+        var cropAtUpload: MatchResultScreenshotAssetEntity? = null
+
+        override suspend fun upload(
+            tournamentId: String?,
+            matchId: String?,
+            role: MatchResultScreenshotRole?,
+            localFile: java.io.File?,
+        ): MatchResultScreenshotStorageUploadResult {
+            cropAtUpload = repository.getByIdentity(
+                MatchResultScreenshotIdentity(
+                    tournamentId = tournamentId!!,
+                    matchId = matchId!!,
+                    role = role!!,
+                ),
+            )
+            calls += Call(localFile!!)
+            return MatchResultScreenshotStorageUploadResult.Uploaded("cloud/result/lower/original.png")
+        }
     }
 
     private class FakeCropAssetRepository(

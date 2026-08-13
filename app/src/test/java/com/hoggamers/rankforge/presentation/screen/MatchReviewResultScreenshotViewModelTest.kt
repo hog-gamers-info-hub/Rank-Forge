@@ -19,6 +19,8 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -75,14 +77,19 @@ class MatchReviewResultScreenshotViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
-        matchId = (CreateMatchUseCase(tournamentRepository)(
-            CreateMatchInput(
+        tournamentRepository.saveTeamNames(RESULT_TOURNAMENT_ID, mapOf(1 to "Team 1"))
+        matchId = "result-match-id"
+        tournamentRepository.createDraftMatch(
+            Match(
+                id = matchId,
                 tournamentId = RESULT_TOURNAMENT_ID,
-                matchNumber = "1",
+                matchNumber = 1,
                 date = LocalDate.of(2026, 8, 7),
                 mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
             ),
-        ) as CreateMatchResult.Created).match.id
+        )
+        Unit
     }
 
     @After
@@ -91,7 +98,7 @@ class MatchReviewResultScreenshotViewModelTest {
     }
 
     @Test
-    fun upperPickerResultSavesUpperOnlyAndUploadsUpper() = runTest {
+    fun upperPickerResultSavesUpperOnlyAndLeavesUploadPendingBeforeCrop() = runTest {
         val upperUri = "content://picker/upper"
         val bytesByUri = mapOf(upperUri to byteArrayOf(1, 2, 3))
         val assetRepository = FakeMatchResultScreenshotAssetRepository()
@@ -114,7 +121,11 @@ class MatchReviewResultScreenshotViewModelTest {
         assertFalse(lower.hasLinkedAsset)
         assertNotNull(assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER)))
         assertNull(assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER)))
-        assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), uploader.calls.map { it.role })
+        assertTrue(uploader.calls.isEmpty())
+        assertEquals(
+            ScreenshotUploadStatus.PENDING.name,
+            assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))?.uploadStatus,
+        )
         assertEquals(
             MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP,
             viewModel.uiState.value.navigation,
@@ -201,7 +212,7 @@ class MatchReviewResultScreenshotViewModelTest {
 
 
     @Test
-    fun authorizationUploadFailureStillRequestsUpperCropNavigation() = runTest {
+    fun authorizationUploadIsDeferredUntilCropConfirmation() = runTest {
         val upperUri = "content://picker/upper-auth-denied"
         val assetRepository = FakeMatchResultScreenshotAssetRepository()
         val uploader = RecordingMatchResultScreenshotStorageUploader(
@@ -224,7 +235,8 @@ class MatchReviewResultScreenshotViewModelTest {
         val upper = viewModel.uiState.value.resultScreenshots
             .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
         assertTrue(upper.hasLinkedAsset)
-        assertEquals(ScreenshotUploadError.AUTHORIZATION, upper.uploadError)
+        assertNull(upper.uploadError)
+        assertTrue(uploader.calls.isEmpty())
         assertEquals(
             MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP,
             viewModel.uiState.value.navigation,

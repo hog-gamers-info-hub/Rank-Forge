@@ -95,7 +95,6 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
         sha256: String,
     ): MatchResultScreenshotAssetEntity? =
         dao.readDuplicateFingerprint(
-            tournamentId = identity.tournamentId,
             sha256 = sha256,
             matchId = identity.matchId,
             screenshotRole = identity.role.name,
@@ -167,7 +166,9 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
         updatedAt: Long,
     ): MatchResultScreenshotCropSaveResult {
         val asset = getByIdentity(identity) ?: return MatchResultScreenshotCropSaveResult.MissingAsset
-        if (asset.identityOrNull() == null) return MatchResultScreenshotCropSaveResult.InvalidIdentity
+        val storedIdentity = asset.identityOrNull()
+            ?: return MatchResultScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return MatchResultScreenshotCropSaveResult.InvalidIdentity
         val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
             ?: return MatchResultScreenshotCropSaveResult.InvalidCrop
         return when (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.MatchResult)) {
@@ -192,7 +193,10 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
         identity: MatchResultScreenshotIdentity,
         updatedAt: Long,
     ): MatchResultScreenshotCropSaveResult {
-        if (getByIdentity(identity) == null) return MatchResultScreenshotCropSaveResult.MissingAsset
+        val asset = getByIdentity(identity) ?: return MatchResultScreenshotCropSaveResult.MissingAsset
+        val storedIdentity = asset.identityOrNull()
+            ?: return MatchResultScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return MatchResultScreenshotCropSaveResult.InvalidIdentity
         dao.clearConfirmedCrop(identity.matchId, identity.role.name, updatedAt)
         return MatchResultScreenshotCropSaveResult.Saved
     }
