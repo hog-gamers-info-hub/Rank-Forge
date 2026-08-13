@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
@@ -75,7 +77,10 @@ class MatchLobbyScreenshotCropViewModelTest {
         file.parentFile.mkdirs()
         file.writeBytes(byteArrayOf(1, 2, 3))
         assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!))
-        val viewModel = viewModel(preserver)
+        val uploader = RecordingLobbyStorageUploader(
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/1/original.png"),
+        )
+        val viewModel = viewModel(preserver, storageUploader = uploader)
         viewModel.load(tournamentId, matchId, 1)
         advanceUntilIdle()
         val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
@@ -89,6 +94,8 @@ class MatchLobbyScreenshotCropViewModelTest {
             OcrNormalizedCropRect(it.cropLeft!!, it.cropTop!!, it.cropRight!!, it.cropBottom!!)
         })
         assertEquals("lobby", assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.cropProfileId)
+        assertEquals(1, uploader.calls.size)
+        assertEquals("cloud/lobby/1/original.png", assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.storageObjectPath)
         assertNull(viewModel.uiState.value.error)
     }
 
@@ -107,7 +114,7 @@ class MatchLobbyScreenshotCropViewModelTest {
             ),
         )
         val cloud = FakeCloudDataSource()
-        val viewModel = viewModel(preserver, cloud)
+        val viewModel = viewModel(preserver, cloud, RecordingLobbyStorageUploader())
         viewModel.load(tournamentId, matchId, 1)
         advanceUntilIdle()
         viewModel.onCropChanged(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
@@ -130,7 +137,10 @@ class MatchLobbyScreenshotCropViewModelTest {
         file.writeBytes(byteArrayOf(1, 2, 3))
         assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!))
         val cloud = FakeCloudDataSource(MatchLobbyScreenshotAssetCloudResult.Failed(MatchLobbyScreenshotAssetCloudFailure.NETWORK))
-        val viewModel = viewModel(preserver, cloud)
+        val uploader = RecordingLobbyStorageUploader(
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/1/original.png"),
+        )
+        val viewModel = viewModel(preserver, cloud, uploader)
         viewModel.load(tournamentId, matchId, 1)
         advanceUntilIdle()
         val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
@@ -144,6 +154,8 @@ class MatchLobbyScreenshotCropViewModelTest {
         assertEquals(crop.left, saved?.cropLeft)
         assertEquals(com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name, saved?.uploadStatus)
         assertEquals(MatchLobbyScreenshotAssetCloudFailure.NETWORK.name, saved?.uploadFailureCode)
+        assertEquals("cloud/lobby/1/original.png", saved?.storageObjectPath)
+        assertEquals(1, uploader.calls.size)
     }
 
     @Test
@@ -157,7 +169,10 @@ class MatchLobbyScreenshotCropViewModelTest {
         val cloudStarted = CompletableDeferred<Unit>()
         val cloudResult = CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>()
         val cloud = SuspendingCloudDataSource(cloudStarted, cloudResult)
-        val viewModel = viewModel(preserver, cloud)
+        val uploader = RecordingLobbyStorageUploader(
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/lobby/1/original.png"),
+        )
+        val viewModel = viewModel(preserver, cloud, uploader)
         viewModel.load(tournamentId, matchId, 1)
         advanceUntilIdle()
         viewModel.onCropChanged(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
@@ -219,11 +234,13 @@ class MatchLobbyScreenshotCropViewModelTest {
     private fun viewModel(
         preserver: LocalImagePreserver,
         cloud: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
+        storageUploader: MatchLobbyScreenshotStorageUploader = RecordingLobbyStorageUploader(),
     ) = MatchLobbyScreenshotCropViewModel(
         observeMatches = ObserveMatchesUseCase(tournamentRepository),
         assetRepository = assetRepository,
         localImagePreserver = preserver,
         clock = java.time.Clock.systemUTC(),
+        storageUploader = storageUploader,
         cloudDataSource = cloud,
     )
 
@@ -310,5 +327,23 @@ class MatchLobbyScreenshotCropViewModelTest {
 
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
             MatchLobbyScreenshotAssetCloudResult.Success
+    }
+
+    private class RecordingLobbyStorageUploader(
+        private val result: MatchLobbyScreenshotStorageUploadResult =
+            MatchLobbyScreenshotStorageUploadResult.Uploaded("cloud/default.png"),
+    ) : MatchLobbyScreenshotStorageUploader {
+        val calls = mutableListOf<Triple<String?, String?, Int?>>()
+
+        override suspend fun upload(
+            tournamentId: String?,
+            matchId: String?,
+            lobbyScreenshotIndex: Int?,
+            localFile: java.io.File?,
+        ): MatchLobbyScreenshotStorageUploadResult {
+            calls += Triple(tournamentId, matchId, lobbyScreenshotIndex)
+            assertTrue(localFile?.isFile == true)
+            return result
+        }
     }
 }

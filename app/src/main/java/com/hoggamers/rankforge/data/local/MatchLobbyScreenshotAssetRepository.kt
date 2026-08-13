@@ -90,7 +90,6 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         sha256: String,
     ): MatchLobbyScreenshotAssetEntity? =
         dao.readDuplicateFingerprint(
-            tournamentId = identity.tournamentId,
             sha256 = sha256,
             matchId = identity.matchId,
             lobbyScreenshotIndex = identity.lobbyScreenshotIndex,

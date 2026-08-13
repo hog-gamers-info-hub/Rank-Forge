@@ -73,8 +73,12 @@ class MatchLobbyScreenshotAssetDaoTest {
 
             assertEquals(MatchLobbyScreenshotAssetSaveResult.Saved, repository.saveOrReplace(first))
             assertEquals(
-                MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(first),
+                MatchLobbyScreenshotAssetSaveResult.Saved,
                 repository.saveOrReplace(asset(matchId = "match-2", index = 1, sha256 = first.sha256)),
+            )
+            assertEquals(
+                MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(first),
+                repository.saveOrReplace(asset(matchId = "match-1", index = 2, sha256 = first.sha256)),
             )
             assertEquals(
                 MatchLobbyScreenshotAssetSaveResult.Saved,

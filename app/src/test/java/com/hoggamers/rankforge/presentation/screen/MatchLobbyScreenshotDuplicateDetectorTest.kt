@@ -20,7 +20,7 @@ import org.junit.Test
 
 class MatchLobbyScreenshotDuplicateDetectorTest {
     @Test
-    fun lobbyFingerprintsAreScopedToIdentityAndTournament() = runTest {
+    fun lobbyFingerprintsAreScopedToMatch() = runTest {
         val detector = detector(mapOf("one" to "same".encodeToByteArray(), "two" to "same".encodeToByteArray()))
         val first = identity("tournament-1", "match-1", 1)
         val secondIndex = identity("tournament-1", "match-1", 2)
@@ -37,7 +37,7 @@ class MatchLobbyScreenshotDuplicateDetectorTest {
             detector.link(secondIndex, "two", null),
         )
         assertEquals(
-            MatchLobbyScreenshotDuplicateLinkResult.LinkedToOtherIdentity(first),
+            MatchLobbyScreenshotDuplicateLinkResult.Linked("same".encodeToByteArray().sha256()),
             detector.link(secondMatch, "two", null),
         )
         assertTrue(detector.link(otherTournament, "two", null) is MatchLobbyScreenshotDuplicateLinkResult.Linked)
@@ -70,7 +70,7 @@ class MatchLobbyScreenshotDuplicateDetectorTest {
             FakeRepository(listOf(persisted)),
         )
         assertEquals(
-            MatchLobbyScreenshotDuplicateLinkResult.LinkedToOtherIdentity(identity("tournament-1", "match-1", 1)),
+            MatchLobbyScreenshotDuplicateLinkResult.Linked("same".encodeToByteArray().sha256()),
             detector.link(identity("tournament-1", "match-2", 1), "same", null),
         )
         assertEquals(
@@ -136,7 +136,7 @@ class MatchLobbyScreenshotDuplicateDetectorTest {
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String): MatchLobbyScreenshotAssetEntity? {
             if (fail.get()) error("repository failure")
-            return assets.firstOrNull { it.tournamentId == identity.tournamentId && it.sha256 == sha256 && !(it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex) }
+            return assets.firstOrNull { it.matchId == identity.matchId && it.sha256 == sha256 && it.lobbyScreenshotIndex != identity.lobbyScreenshotIndex }
         }
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.Saved
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit

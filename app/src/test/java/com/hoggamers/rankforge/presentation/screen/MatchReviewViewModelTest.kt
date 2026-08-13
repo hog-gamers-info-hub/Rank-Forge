@@ -30,6 +30,7 @@ import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -90,14 +91,19 @@ class MatchReviewViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
-        matchId = (CreateMatchUseCase(repository)(
-            CreateMatchInput(
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to "Team 1"))
+        matchId = "review-match-id"
+        repository.createDraftMatch(
+            Match(
+                id = matchId,
                 tournamentId = TOURNAMENT_ID,
-                matchNumber = "1",
+                matchNumber = 1,
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
             ),
-        ) as CreateMatchResult.Created).match.id
+        )
+        Unit
     }
 
     @After
@@ -421,6 +427,12 @@ class MatchReviewViewModelTest {
         val assetRepository = FakeMatchResultScreenshotAssetRepository()
         val viewModel = reviewViewModel(
             screenshotDuplicateDetector = duplicateDetector(mapOf(selectedUri to byteArrayOf(4, 5, 6))),
+            matchResultScreenshotDuplicateDetector = MatchResultScreenshotDuplicateDetector(
+                ImageSourceFingerprintGenerator(
+                    ImageSourceStreamOpener { byteArrayOf(4, 5, 6).inputStream() },
+                    Dispatchers.Unconfined,
+                ),
+            ),
             localImagePreserver = preserver,
             matchResultScreenshotAssetRepository = assetRepository,
             screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
@@ -1143,6 +1155,10 @@ class MatchReviewViewModelTest {
         },
         ),
         screenshotDuplicateDetector: ScreenshotDuplicateDetector = duplicateDetector(),
+        matchResultScreenshotDuplicateDetector: MatchResultScreenshotDuplicateDetector =
+            MatchResultScreenshotDuplicateDetector(
+                ImageSourceFingerprintGenerator(ImageSourceStreamOpener { null }),
+            ),
         localImagePreserver: LocalImagePreserver = localImagePreserver(),
         screenshotStorageUploader: ScreenshotStorageUploader =
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotStorageUploader(),
@@ -1162,6 +1178,7 @@ class MatchReviewViewModelTest {
         finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         imageCandidateValidator = imageCandidateValidator,
         screenshotDuplicateDetector = screenshotDuplicateDetector,
+        matchResultScreenshotDuplicateDetector = matchResultScreenshotDuplicateDetector,
         localImagePreserver = localImagePreserver,
         screenshotStorageUploader = screenshotStorageUploader,
         screenshotMetadataRepository = screenshotMetadataRepository,
