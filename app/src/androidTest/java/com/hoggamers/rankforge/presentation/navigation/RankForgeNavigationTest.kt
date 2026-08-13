@@ -66,6 +66,8 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
@@ -1815,6 +1817,12 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         }
+        val draftMatchSyncAction = DraftMatchCloudSyncAction {
+            QueueAwareActionResult(
+                primaryResult = DraftMatchCloudSyncResult.Success,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
         return NavigationViewModels(
             repository = repository,
             creationViewModel = createCreationViewModel(repository, uploadAction),
@@ -1829,6 +1837,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
                     validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
                     createNextMatch = CreateNextMatchUseCase(repository),
+                    syncDraftMatches = draftMatchSyncAction,
                 ).also {
                     it.load(tournamentId)
                 }

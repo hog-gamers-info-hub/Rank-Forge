@@ -24,8 +24,10 @@ import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchFailure
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +47,7 @@ class TournamentDetailsViewModel @Inject constructor(
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
+    private val syncDraftMatches: DraftMatchCloudSyncAction,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
@@ -195,14 +198,23 @@ class TournamentDetailsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             when (val result = createNextMatch(tournamentId)) {
-                is CreateNextMatchResult.Created -> _uiState.update {
-                    it.copy(
-                        isCreatingMatch = false,
-                        matchReviewRequest = MatchReviewRequest(
-                            tournamentId = result.match.tournamentId,
-                            matchId = result.match.id,
-                        ),
-                    )
+                is CreateNextMatchResult.Created -> {
+                    try {
+                        syncDraftMatches(result.match.tournamentId)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        // Local match creation remains authoritative for navigation.
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isCreatingMatch = false,
+                            matchReviewRequest = MatchReviewRequest(
+                                tournamentId = result.match.tournamentId,
+                                matchId = result.match.id,
+                            ),
+                        )
+                    }
                 }
                 is CreateNextMatchResult.Rejected -> _uiState.update {
                     it.copy(
