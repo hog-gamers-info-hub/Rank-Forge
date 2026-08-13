@@ -12,8 +12,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +30,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -47,6 +52,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
@@ -100,10 +107,8 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_r
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX = "match_review_result_screenshot_slot_"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG = "match_review_result_screenshots_pager"
-const val MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX = "match_review_result_screenshots_indicator_"
-const val MATCH_REVIEW_RESULT_SCREENSHOTS_PREVIOUS_PAGE_TEST_TAG = "match_review_result_screenshots_previous_page"
-const val MATCH_REVIEW_RESULT_SCREENSHOTS_NEXT_PAGE_TEST_TAG = "match_review_result_screenshots_next_page"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 
 @Composable
@@ -425,7 +430,7 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
             )
         }
-        ResultScreenshotPager(
+        ResultScreenshotSelector(
             resultScreenshots = uiState.resultScreenshots,
             isEditable = uiState.isEditable,
             onSelectScreenshot = onSelectResultScreenshot,
@@ -569,90 +574,171 @@ private fun MatchReviewContent(
 }
 
 @Composable
-private fun ResultScreenshotPager(
+private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
 ) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
-    val currentPage = pagerState.currentPage.coerceIn(0, 1)
-    val activeRole = resultScreenshotRoleForPage(currentPage)
-    val activeSlot = resultScreenshots.slot(activeRole)
+    val roles = listOf(
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+    )
+    val selectedPages = roles.mapNotNull { role ->
+        resultScreenshots.slot(role)
+            .takeIf { it.hasSelection() }
+            ?.let { slot -> role to slot }
+    }
+    val selectedRoles = selectedPages.map { it.first }
+    var activeRoleName by rememberSaveable { mutableStateOf<String?>(null) }
+    val activeRole = when (activeRoleName) {
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER.name -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        MatchResultScreenshotRole.MATCH_RESULT_LOWER.name -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+        else -> null
+    }
+    val pagerState = rememberPagerState(pageCount = { selectedPages.size })
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(selectedRoles) {
+        if (selectedRoles.isEmpty()) {
+            activeRoleName = null
+            return@LaunchedEffect
+        }
+        val activePage = activeRole?.let(selectedRoles::indexOf) ?: -1
+        val targetPage = if (activePage >= 0) activePage else 0
+        activeRoleName = selectedRoles[targetPage].name
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+    }
+    LaunchedEffect(pagerState, selectedRoles) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                selectedRoles.getOrNull(page)?.let { activeRoleName = it.name }
+            }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        Text(
-            text = stringResource(
-                R.string.match_review_result_screenshot_slot_label,
-                currentPage + 1,
-                2,
-            ),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
-        ) { page ->
-            val role = resultScreenshotRoleForPage(page)
-            ResultScreenshotPage(
-                screenshotNumber = page + 1,
-                slot = resultScreenshots.slot(role),
-            )
-        }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (currentPage > 0) {
-                Text(
-                    text = stringResource(R.string.match_review_result_screenshot_previous_page_affordance),
-                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PREVIOUS_PAGE_TEST_TAG),
-                )
-            }
-            (0..1).forEach { page ->
-                Text(
-                    text = stringResource(
-                        if (page == currentPage) {
-                            R.string.match_review_result_screenshot_selected_page_indicator
-                        } else {
-                            R.string.match_review_result_screenshot_unselected_page_indicator
-                        },
-                    ),
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + (page + 1))
-                        .semantics { selected = page == currentPage },
-                )
-            }
-            if (currentPage < 1) {
-                Text(
-                    text = stringResource(R.string.match_review_result_screenshot_next_page_affordance),
-                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_NEXT_PAGE_TEST_TAG),
-                )
+            resultScreenshotSelectorButton(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                slot = resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                activeRole = activeRole,
+                isEditable = isEditable,
+                onActivate = { role, hasSelection ->
+                    val targetPage = selectedRoles.indexOf(role)
+                    if (hasSelection && targetPage >= 0) {
+                        activeRoleName = role.name
+                        scope.launch { pagerState.animateScrollToPage(targetPage) }
+                    } else if (!hasSelection) {
+                        onSelectScreenshot(role)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            resultScreenshotSelectorButton(
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                slot = resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                activeRole = activeRole,
+                isEditable = isEditable,
+                onActivate = { role, hasSelection ->
+                    val targetPage = selectedRoles.indexOf(role)
+                    if (hasSelection && targetPage >= 0) {
+                        activeRoleName = role.name
+                        scope.launch { pagerState.animateScrollToPage(targetPage) }
+                    } else if (!hasSelection) {
+                        onSelectScreenshot(role)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (selectedPages.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
+            ) { page ->
+                selectedPages.getOrNull(page)?.let { (role, slot) ->
+                    ResultScreenshotPage(
+                        screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
+                        slot = slot,
+                    )
+                }
             }
         }
-        if (isEditable) {
-            ResultScreenshotActionRow(
-                role = activeRole,
-                slot = activeSlot,
-                onSelectScreenshot = onSelectScreenshot,
-                onOpenCrop = onOpenCrop,
-                onRemoveScreenshot = onRemoveScreenshot,
-            )
+        activeRole?.let { role ->
+            val slot = resultScreenshots.slot(role)
+            if (slot.hasSelection() && isEditable) {
+                ResultScreenshotActionRow(
+                    role = role,
+                    slot = slot,
+                    onSelectScreenshot = onSelectScreenshot,
+                    onOpenCrop = onOpenCrop,
+                    onRemoveScreenshot = onRemoveScreenshot,
+                )
+            }
         }
     }
 }
 
-private fun resultScreenshotRoleForPage(page: Int): MatchResultScreenshotRole = when (page) {
-    0 -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
-    else -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+private fun MatchResultScreenshotSlotUiState.hasSelection(): Boolean =
+    hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
+
+@Composable
+private fun RowScope.resultScreenshotSelectorButton(
+    role: MatchResultScreenshotRole,
+    slot: MatchResultScreenshotSlotUiState,
+    activeRole: MatchResultScreenshotRole?,
+    isEditable: Boolean,
+    onActivate: (MatchResultScreenshotRole, Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
+    val hasSelection = slot.hasSelection()
+    val buttonModifier = modifier
+            .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + screenshotNumber)
+            .semantics { selected = hasSelection && activeRole == role }
+    val content: @Composable RowScope.() -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = stringResource(R.string.match_review_result_screenshot_slot_short_label, screenshotNumber))
+            Text(
+                text = stringResource(
+                    if (hasSelection) {
+                        R.string.screenshot_slot_selected_status
+                    } else {
+                        R.string.screenshot_slot_empty_status
+                    },
+                ),
+            )
+        }
+    }
+    if (activeRole == role) {
+        Button(
+            onClick = { onActivate(role, hasSelection) },
+            enabled = hasSelection || (isEditable && !slot.isBusy),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            modifier = buttonModifier,
+            content = content,
+        )
+    } else {
+        OutlinedButton(
+            onClick = { onActivate(role, hasSelection) },
+            enabled = hasSelection || (isEditable && !slot.isBusy),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            modifier = buttonModifier,
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -672,34 +758,14 @@ private fun ResultScreenshotPage(
             ),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(72.dp),
-        ) {
-            Text(
-                text = stringResource(
-                    if (screenshotNumber == 1) {
-                        R.string.match_review_result_screenshot_1_guidance
-                    } else {
-                        R.string.match_review_result_screenshot_2_guidance
-                    },
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (
-                slot.hasLinkedAsset &&
-                    !slot.isLocalFileMissing &&
-                    slot.hasConfirmedCrop
-            ) {
-                slot.localPreviewUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+        if (slot.hasLinkedAsset && !slot.isLocalFileMissing && slot.hasConfirmedCrop) {
+            slot.localPreviewUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f),
+                    contentAlignment = Alignment.Center,
+                ) {
                     LocalScreenshotPreview(
                         imageUri = imageUri,
                         crop = slot.confirmedCrop,

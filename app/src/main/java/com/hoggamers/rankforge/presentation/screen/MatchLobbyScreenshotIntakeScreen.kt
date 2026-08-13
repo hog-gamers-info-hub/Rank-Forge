@@ -10,15 +10,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
@@ -30,16 +37,16 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG = "match_lobby_screenshot_intake_screen"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX = "match_lobby_screenshot_select_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX = "match_lobby_screenshot_crop_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX = "match_lobby_screenshot_remove_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX = "match_lobby_screenshot_preview_"
-const val MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG = "match_lobby_screenshot_pager"
-const val MATCH_LOBBY_SCREENSHOT_INTAKE_INDICATOR_TEST_TAG_PREFIX = "match_lobby_screenshot_indicator_"
-const val MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIOUS_PAGE_TEST_TAG = "match_lobby_screenshot_previous_page"
-const val MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_PAGE_TEST_TAG = "match_lobby_screenshot_next_page"
+const val MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX = "match_lobby_screenshot_slot_"
+const val MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG = "match_lobby_screenshot_intake_pager"
 
 @Composable
 fun MatchLobbyScreenshotIntakeRoute(
@@ -100,106 +107,84 @@ fun MatchLobbyScreenshotIntakeScreen(
             Text(text = stringResource(R.string.match_lobby_screenshot_finalized_read_only), color = MaterialTheme.colorScheme.error)
         }
         if (uiState.slots.isNotEmpty()) {
-            val pagerState = rememberPagerState(pageCount = { uiState.slots.size })
-            val currentPage = pagerState.currentPage.coerceIn(0, uiState.slots.lastIndex)
-            val activeSlot = uiState.slots.getOrNull(currentPage)
-            Text(
-                text = stringResource(
-                    R.string.match_lobby_screenshot_slot_label,
-                    uiState.slots[currentPage].index,
-                    uiState.slots.size,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
-            ) { page ->
-                LobbyScreenshotPage(
-                    slot = uiState.slots[page],
-                )
+            var activeSlotIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+            val selectedSlots = uiState.slots.filter { slot ->
+                slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
             }
+            val selectedSlotIndices = selectedSlots.map { it.index }
+            val pagerState = rememberPagerState(pageCount = { selectedSlots.size })
+            val scope = rememberCoroutineScope()
+
+            LaunchedEffect(selectedSlotIndices) {
+                if (selectedSlotIndices.isEmpty()) {
+                    activeSlotIndex = null
+                    return@LaunchedEffect
+                }
+                val activePage = activeSlotIndex?.let(selectedSlotIndices::indexOf) ?: -1
+                val targetPage = if (activePage >= 0) activePage else 0
+                activeSlotIndex = selectedSlotIndices[targetPage]
+                if (pagerState.currentPage != targetPage) {
+                    pagerState.scrollToPage(targetPage)
+                }
+            }
+            LaunchedEffect(pagerState, selectedSlotIndices) {
+                snapshotFlow { pagerState.currentPage }
+                    .distinctUntilChanged()
+                    .collect { page ->
+                        selectedSlotIndices.getOrNull(page)?.let { activeSlotIndex = it }
+                    }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (currentPage > 0) {
-                    Text(
-                        text = stringResource(R.string.match_lobby_screenshot_previous_page_affordance),
-                        modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIOUS_PAGE_TEST_TAG),
-                    )
-                }
-                uiState.slots.indices.forEach { page ->
-                    Text(
-                        text = stringResource(
-                            if (page == currentPage) {
-                                R.string.match_lobby_screenshot_selected_page_indicator
-                            } else {
-                                R.string.match_lobby_screenshot_unselected_page_indicator
-                            },
-                        ),
-                        modifier = Modifier
-                            .padding(horizontal = 4.dp)
-                            .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_INDICATOR_TEST_TAG_PREFIX + (page + 1))
-                            .semantics { selected = page == currentPage },
-                    )
-                }
-                if (currentPage < uiState.slots.lastIndex) {
-                    Text(
-                        text = stringResource(R.string.match_lobby_screenshot_next_page_affordance),
-                        modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_PAGE_TEST_TAG),
+                uiState.slots.forEach { slot ->
+                    val hasSelection = slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
+                    val targetPage = selectedSlotIndices.indexOf(slot.index)
+                    val onClick: () -> Unit = {
+                        if (hasSelection && targetPage >= 0) {
+                            activeSlotIndex = slot.index
+                            scope.launch { pagerState.animateScrollToPage(targetPage) }
+                        } else if (!hasSelection) {
+                            onSelect(slot.index)
+                        }
+                        Unit
+                    }
+                    LobbyScreenshotSelectorButton(
+                        slot = slot,
+                        hasSelection = hasSelection,
+                        isActive = hasSelection && activeSlotIndex == slot.index,
+                        enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isBusy),
+                        onClick = onClick,
                     )
                 }
             }
-            activeSlot?.let { slot ->
-                if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = { onSelect(slot.index) },
-                            enabled = uiState.isAvailable && !uiState.isFinalized && !slot.isBusy,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
-                        ) { Text(text = stringResource(R.string.match_lobby_screenshot_replace_action)) }
-                        Button(
-                            onClick = { onCrop(slot.index) },
-                            enabled = !uiState.isFinalized && !slot.isBusy,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
-                        ) { Text(text = stringResource(R.string.match_lobby_screenshot_crop_action)) }
-                        Button(
-                            onClick = { onRemove(slot.index) },
-                            enabled = !uiState.isFinalized && !slot.isBusy,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index),
-                        ) { Text(text = stringResource(R.string.match_lobby_screenshot_remove_action)) }
-                    }
-                } else {
-                    Button(
-                        onClick = { onSelect(slot.index) },
-                        enabled = uiState.isAvailable && !uiState.isFinalized && !slot.isBusy,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
-                    ) {
-                        Text(
-                            text = stringResource(
-                                if (slot.hasLinkedAsset) {
-                                    R.string.match_lobby_screenshot_replace_action
-                                } else {
-                                    R.string.match_lobby_screenshot_select_action
-                                },
-                            ),
+
+            if (selectedSlots.isNotEmpty()) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
+                ) { page ->
+                    selectedSlots.getOrNull(page)?.let { slot ->
+                        LobbyScreenshotDetail(
+                            slot = slot,
                         )
                     }
+                }
+            }
+            activeSlotIndex?.let { activeIndex ->
+                uiState.slots.firstOrNull { it.index == activeIndex }?.let { slot ->
+                    LobbyScreenshotActions(
+                        slot = slot,
+                        isFinalized = uiState.isFinalized,
+                        isAvailable = uiState.isAvailable,
+                        onSelect = onSelect,
+                        onCrop = onCrop,
+                        onRemove = onRemove,
+                    )
                 }
             }
         }
@@ -207,7 +192,52 @@ fun MatchLobbyScreenshotIntakeScreen(
 }
 
 @Composable
-private fun LobbyScreenshotPage(
+private fun RowScope.LobbyScreenshotSelectorButton(
+    slot: MatchLobbyScreenshotSlotUiState,
+    hasSelection: Boolean,
+    isActive: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val modifier = Modifier
+        .weight(1f)
+        .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + slot.index)
+        .semantics { selected = isActive }
+    val content: @Composable RowScope.() -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = stringResource(R.string.match_lobby_screenshot_slot_short_label, slot.index))
+            Text(
+                text = stringResource(
+                    if (hasSelection) {
+                        R.string.screenshot_slot_selected_status
+                    } else {
+                        R.string.screenshot_slot_empty_status
+                    },
+                ),
+            )
+        }
+    }
+    if (isActive) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            modifier = modifier,
+            content = content,
+        )
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            modifier = modifier,
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun LobbyScreenshotDetail(
     slot: MatchLobbyScreenshotSlotUiState,
 ) {
     Column(
@@ -222,18 +252,14 @@ private fun LobbyScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (
-                slot.hasLinkedAsset &&
-                    !slot.isLocalFileMissing &&
-                    slot.hasConfirmedCrop
-            ) {
-                slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+        if (slot.hasLinkedAsset && !slot.isLocalFileMissing && slot.hasConfirmedCrop) {
+            slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f),
+                    contentAlignment = Alignment.Center,
+                ) {
                     LocalScreenshotPreview(
                         imageUri = imageUri,
                         crop = slot.confirmedCrop,
@@ -257,6 +283,55 @@ private fun LobbyScreenshotPage(
         }
         slot.preservationError?.let { error ->
             Text(text = stringResource(error.toStringRes()), color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun LobbyScreenshotActions(
+    slot: MatchLobbyScreenshotSlotUiState,
+    isFinalized: Boolean,
+    isAvailable: Boolean,
+    onSelect: (Int) -> Unit,
+    onCrop: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+) {
+    if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { onSelect(slot.index) },
+                enabled = isAvailable && !isFinalized && !slot.isBusy,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
+            ) { Text(text = stringResource(R.string.match_lobby_screenshot_replace_action)) }
+            Button(
+                onClick = { onCrop(slot.index) },
+                enabled = !isFinalized && !slot.isBusy,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
+            ) { Text(text = stringResource(R.string.match_lobby_screenshot_crop_action)) }
+            Button(
+                onClick = { onRemove(slot.index) },
+                enabled = !isFinalized && !slot.isBusy,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index),
+            ) { Text(text = stringResource(R.string.match_lobby_screenshot_remove_action)) }
+        }
+    } else {
+        Button(
+            onClick = { onSelect(slot.index) },
+            enabled = isAvailable && !isFinalized && !slot.isBusy,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
+        ) {
+            Text(text = stringResource(R.string.match_lobby_screenshot_replace_action))
         }
     }
 }

@@ -56,8 +56,7 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Back to Tournament Details").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
@@ -108,6 +107,50 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun emptyResultSelectorsInvokeTheirExplicitRoleCallbacks() {
+        val selectedRoles = mutableListOf<MatchResultScreenshotRole>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    onSelectResultScreenshot = { selectedRoles += it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .assertIsNotSelected()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+            .assertIsNotSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
+            .assertIsNotSelected()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                ),
+                selectedRoles,
+            )
+        }
+    }
+
+    @Test
     fun legacyReviewContainsOnlyOneOcrAction() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -152,8 +195,9 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
@@ -179,16 +223,19 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
     }
 
     @Test
-    fun resultPagerUsesStaticRoleBoundActionsAndReturnsToFirstPage() {
+    fun resultSelectorUsesStaticRoleBoundActionsForActiveSlots() {
         val selectedRoles = mutableListOf<MatchResultScreenshotRole>()
         val cropRoles = mutableListOf<MatchResultScreenshotRole>()
         val removedRoles = mutableListOf<MatchResultScreenshotRole>()
@@ -228,13 +275,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        val pager = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-        val initialActionY = composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .fetchSemanticsNode().positionInRoot.y
-        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
-            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Replace").assertIsDisplayed()
         composeTestRule.onNodeWithText("Crop").assertIsDisplayed()
         composeTestRule.onNodeWithText("Remove").assertIsDisplayed()
@@ -242,27 +284,11 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG).performClick()
 
-        pager.performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Screenshot 2 of 2").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 1)
-            .assertIsNotSelected()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_INDICATOR_TEST_TAG_PREFIX + 2)
-            .assertIsSelected()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG).performClick()
-        assertEquals(
-            initialActionY,
-            composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
-                .fetchSemanticsNode().positionInRoot.y,
-        )
-
-        pager.performTouchInput { swipeRight() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Screenshot 1 of 2").assertIsDisplayed()
         composeTestRule.runOnIdle {
             assertEquals(
                 listOf(
@@ -289,7 +315,106 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun resultPagerActionStateFollowsBusyMissingActiveSlot() {
+    fun selectedResultRolesSwipeAndHighlightTheirExplicitRoles() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeRight() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsSelected()
+    }
+
+    @Test
+    fun lowerOnlySelectedResultMapsPagerPageToLowerRole() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .assertIsNotSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun resultSelectorActionStateFollowsBusyMissingActiveSlot() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -315,11 +440,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
             .assertIsNotEnabled()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG)
@@ -358,15 +480,22 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
 
-        val pager = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-        val initialHeight = pager.fetchSemanticsNode().size.height
-        pager.performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        assertEquals(initialHeight, pager.fetchSemanticsNode().size.height)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+        val initialHeight = composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .fetchSemanticsNode().size.height
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
+        val secondHeight = composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .fetchSemanticsNode().size.height
+        assertEquals(initialHeight, secondHeight)
     }
 
     @Test
@@ -396,9 +525,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertIsDisplayed()
     }
@@ -426,13 +554,13 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
     }
@@ -528,6 +656,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
                     onSelectResultScreenshot = {
                         if (it == MatchResultScreenshotRole.MATCH_RESULT_UPPER) photoPickerActionCount++
                     },
@@ -535,10 +664,17 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
+            .assertIsSelected()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG)
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.runOnIdle { assertEquals(1, photoPickerActionCount) }
     }
 
@@ -551,6 +687,7 @@ class MatchReviewScreenTest {
                         resultScreenshots = listOf(
                             resultSlot(
                                 role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                selectedScreenshotUri = "content://picker/selected",
                                 isPhotoPickerRequestActive = true,
                             ),
                             resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
@@ -563,6 +700,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()
@@ -591,6 +730,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Select a PNG, JPEG, or WebP image.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -623,6 +764,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Checking the selected screenshot for duplicates.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -663,6 +806,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Preserving screenshot locally.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -705,6 +850,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
@@ -743,18 +890,20 @@ class MatchReviewScreenTest {
                             MatchResultScreenshotRole.MATCH_RESULT_LOWER -> lowerRemoveCount++
                         }
                     },
+                    showLegacyManualReviewContent = false,
                 )
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
             .performClick()
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
             .assertIsDisplayed()
             .performClick()
@@ -787,6 +936,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Screenshot ready.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -825,6 +976,8 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 1)
+            .performClick()
         composeTestRule.onNodeWithText("Screenshot ready.")
             .performScrollTo()
             .assertIsDisplayed()
