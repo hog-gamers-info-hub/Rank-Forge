@@ -552,6 +552,42 @@ interface MatchLobbyScreenshotAssetDao {
 }
 
 @Dao
+interface TournamentLobbyTemplateAssetDao {
+    @Query(
+        """
+        SELECT * FROM tournament_lobby_template_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY lobby_screenshot_index ASC
+        """,
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM tournament_lobby_template_assets
+        WHERE tournament_id = :tournamentId
+        ORDER BY lobby_screenshot_index ASC
+        """,
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<TournamentLobbyTemplateAssetEntity>
+
+    @Upsert
+    suspend fun upsertAll(assets: List<TournamentLobbyTemplateAssetEntity>)
+
+    @Query("DELETE FROM tournament_lobby_template_assets WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
+
+    @Transaction
+    suspend fun replaceForTournament(
+        tournamentId: String,
+        assets: List<TournamentLobbyTemplateAssetEntity>,
+    ) {
+        deleteByTournamentId(tournamentId)
+        upsertAll(assets)
+    }
+}
+
+@Dao
 interface MatchOcrEvidenceDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMatchEvidence(entity: MatchOcrEvidenceEntity)

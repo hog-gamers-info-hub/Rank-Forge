@@ -37,6 +37,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val clock: Clock,
+    private val saveLobbyTemplate: SaveLobbyTemplateUseCase,
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
@@ -89,7 +90,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         status = match.status,
                         slots = defaultMatchLobbyScreenshotSlots().map { emptySlot ->
                             assets.firstOrNull {
-                                it.lobbyScreenshotIndex == emptySlot.index && it.matchId == matchId
+                                it.lobbyScreenshotIndex == emptySlot.index &&
+                                    it.matchId == matchId &&
+                                    it.tournamentId == tournamentId
                             }?.toUiState(emptySlot.index) ?: emptySlot
                         },
                         pendingCropNavigationSlotIndex = _uiState.value.pendingCropNavigationSlotIndex,
@@ -172,6 +175,39 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
 
     fun onCropNavigationHandled() {
         _uiState.update { it.copy(pendingCropNavigationSlotIndex = null) }
+    }
+
+    fun saveLobbyForNextMatches() {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        if (!current.canSaveLobbyForNextMatches) return
+        _uiState.update {
+            it.copy(
+                isSavingLobbyTemplate = true,
+                lobbyTemplateSaveStatus = null,
+            )
+        }
+        viewModelScope.launch {
+            val result = try {
+                saveLobbyTemplate(tournamentId, matchId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                SaveLobbyTemplateResult.Failed
+            }
+            _uiState.update {
+                it.copy(
+                    isSavingLobbyTemplate = false,
+                    lobbyTemplateSaveStatus = when (result) {
+                        SaveLobbyTemplateResult.Saved -> MatchLobbyTemplateSaveStatus.SAVED
+                        SaveLobbyTemplateResult.NotReady,
+                        SaveLobbyTemplateResult.Failed,
+                        -> MatchLobbyTemplateSaveStatus.FAILED
+                    },
+                )
+            }
+        }
     }
 
     fun requestCropEditor(index: Int) {
@@ -468,6 +504,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 if (transient?.isBusy == true) transient else restored
             },
             pendingCropNavigationSlotIndex = current.pendingCropNavigationSlotIndex,
+            isSavingLobbyTemplate = current.isSavingLobbyTemplate,
+            lobbyTemplateSaveStatus = current.lobbyTemplateSaveStatus,
         )
     }
 

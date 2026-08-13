@@ -48,6 +48,8 @@ class TournamentDetailsViewModel @Inject constructor(
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
+    private val applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
+    private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
@@ -199,12 +201,36 @@ class TournamentDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = createNextMatch(tournamentId)) {
                 is CreateNextMatchResult.Created -> {
+                    val inheritedLobby = try {
+                        applyLobbyTemplate(result.match.tournamentId, result.match.id) == ApplyLobbyTemplateResult.Applied
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        false
+                    }
                     try {
                         syncDraftMatches(result.match.tournamentId)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (_: Throwable) {
                         // Local match creation remains authoritative for navigation.
+                    }
+                    if (inheritedLobby) {
+                        (1..3).forEach { index ->
+                            try {
+                                lobbyUploadCheckpoint.run(
+                                    com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity(
+                                        tournamentId = result.match.tournamentId,
+                                        matchId = result.match.id,
+                                        lobbyScreenshotIndex = index,
+                                    ),
+                                )
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Throwable) {
+                                // Local inheritance and navigation remain authoritative.
+                            }
+                        }
                     }
                     _uiState.update {
                         it.copy(

@@ -121,6 +121,36 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun createdMatchAppliesTemplateSyncsDraftThenCheckpointsInheritedLobby() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        val events = mutableListOf<String>()
+        val apply = ApplyLobbyTemplateAction { _, matchId ->
+            events += "apply:$matchId"
+            ApplyLobbyTemplateResult.Applied
+        }
+        val upload = MatchLobbyScreenshotUploadCheckpointAction { identity ->
+            events += "upload:${identity.lobbyScreenshotIndex}"
+            MatchLobbyScreenshotUploadCheckpointResult.Completed
+        }
+        val sync = RecordingDraftMatchCloudSyncAction(onInvoke = { events += "sync" })
+        val viewModel = detailsViewModel(
+            syncDraftMatches = sync,
+            applyLobbyTemplate = apply,
+            lobbyUploadCheckpoint = upload,
+        )
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
+        assertTrue(events.first().startsWith("apply:"))
+        assertEquals(listOf("sync", "upload:1", "upload:2", "upload:3"), events.drop(1))
+    }
+
+    @Test
     fun useDefaultsPersistsRemainingNamesAndRequestsMatch() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })
@@ -516,6 +546,8 @@ class TournamentDetailsViewModelTest {
 
     private fun detailsViewModel(
         syncDraftMatches: DraftMatchCloudSyncAction = RecordingDraftMatchCloudSyncAction(),
+        applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
+        lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
     ) = TournamentDetailsViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -526,6 +558,8 @@ class TournamentDetailsViewModelTest {
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
         createNextMatch = CreateNextMatchUseCase(repository),
         syncDraftMatches = syncDraftMatches,
+        applyLobbyTemplate = applyLobbyTemplate,
+        lobbyUploadCheckpoint = lobbyUploadCheckpoint,
     )
 
     private fun tournament(id: String) = Tournament(

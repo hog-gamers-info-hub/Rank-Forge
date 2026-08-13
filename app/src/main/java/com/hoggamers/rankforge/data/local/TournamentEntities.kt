@@ -338,6 +338,61 @@ data class MatchLobbyScreenshotAssetEntity(
 )
 
 @Entity(
+    tableName = "tournament_lobby_template_assets",
+    primaryKeys = ["tournament_id", "lobby_screenshot_index"],
+    foreignKeys = [
+        ForeignKey(
+            entity = TournamentEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["tournament_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["tournament_id"]),
+        Index(value = ["sha256"]),
+    ],
+)
+data class TournamentLobbyTemplateAssetEntity(
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "lobby_screenshot_index")
+    val lobbyScreenshotIndex: Int,
+    @ColumnInfo(name = "owner_user_id")
+    val ownerUserId: String,
+    @ColumnInfo(name = "local_relative_path")
+    val localRelativePath: String,
+    @ColumnInfo(name = "file_extension")
+    val fileExtension: String,
+    @ColumnInfo(name = "mime_type")
+    val mimeType: String,
+    @ColumnInfo(name = "original_width")
+    val originalWidth: Int,
+    @ColumnInfo(name = "original_height")
+    val originalHeight: Int,
+    @ColumnInfo(name = "byte_size")
+    val byteSize: Long,
+    val sha256: String,
+    @ColumnInfo(name = "crop_profile_id")
+    val cropProfileId: String,
+    @ColumnInfo(name = "crop_left")
+    val cropLeft: Double,
+    @ColumnInfo(name = "crop_top")
+    val cropTop: Double,
+    @ColumnInfo(name = "crop_right")
+    val cropRight: Double,
+    @ColumnInfo(name = "crop_bottom")
+    val cropBottom: Double,
+    @ColumnInfo(name = "source_match_id")
+    val sourceMatchId: String,
+    @ColumnInfo(name = "saved_at")
+    val savedAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+    val revision: Long,
+)
+
+@Entity(
     tableName = "match_ocr_evidence",
     foreignKeys = [
         ForeignKey(

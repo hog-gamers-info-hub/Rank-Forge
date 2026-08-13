@@ -240,8 +240,13 @@ class MatchLobbyScreenshotCropViewModelTest {
         assetRepository = assetRepository,
         localImagePreserver = preserver,
         clock = java.time.Clock.systemUTC(),
-        storageUploader = storageUploader,
-        cloudDataSource = cloud,
+        uploadCheckpoint = MatchLobbyScreenshotUploadCheckpoint(
+            assetRepository = assetRepository,
+            localImagePreserver = preserver,
+            clock = java.time.Clock.systemUTC(),
+            storageUploader = storageUploader,
+            cloudDataSource = cloud,
+        ),
     )
 
     private fun preserver(root: java.io.File) = LocalImagePreserver(

@@ -304,6 +304,12 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             override suspend fun currentOwnerUserId(): String = "owner-1"
         },
         clock = java.time.Clock.systemUTC(),
+        saveLobbyTemplate = SaveLobbyTemplateUseCase(
+            assetRepository = lobbyRepository,
+            templateRepository = com.hoggamers.rankforge.data.local.NoOpTournamentLobbyTemplateAssetRepository(),
+            localImagePreserver = preserver,
+            clock = java.time.Clock.systemUTC(),
+        ),
         cloudDataSource = cloudDataSource,
     )
 

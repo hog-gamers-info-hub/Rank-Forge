@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(11, cursor.getInt(0))
+                assertEquals(12, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -97,6 +97,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'match_result_screenshot_assets'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'tournament_lobby_template_assets'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -497,7 +503,7 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
-    fun migrationFromVersion1ToVersion11PreservesLegacyStateAndFinalSchema() {
+    fun migrationFromVersion1ToVersion12PreservesLegacyStateAndFinalSchema() {
         val payload = """{"tournaments":[{"id":"legacy-tournament","name":"Legacy Cup"}]}"""
         createVersion1Database().use { database ->
             database.execSQL(
@@ -508,7 +514,7 @@ class RankForgeDatabaseMigrationTest {
 
         val migrated = migrationTestHelper().runMigrationsAndValidate(
             MIGRATION_DATABASE_NAME,
-            11,
+            12,
             true,
             RankForgeDatabase.MIGRATION_1_2,
             RankForgeDatabase.MIGRATION_2_3,
@@ -520,6 +526,7 @@ class RankForgeDatabaseMigrationTest {
             RankForgeDatabase.MIGRATION_8_9,
             RankForgeDatabase.MIGRATION_9_10,
             RankForgeDatabase.MIGRATION_10_11,
+            RankForgeDatabase.MIGRATION_11_12,
         )
 
         migrated.query("SELECT payload FROM rank_forge_state WHERE id = 1").use { cursor ->
@@ -535,6 +542,7 @@ class RankForgeDatabaseMigrationTest {
             "match_ocr_correction_snapshots",
             "match_result_screenshot_assets",
             "match_lobby_screenshot_assets",
+            "tournament_lobby_template_assets",
         ).forEach { table ->
             assertTrue(migrated.hasTable(table))
         }

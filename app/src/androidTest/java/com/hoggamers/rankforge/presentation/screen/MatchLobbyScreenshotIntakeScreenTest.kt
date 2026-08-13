@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -52,6 +53,9 @@ class MatchLobbyScreenshotIntakeScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
         (1..3).forEach { index ->
             composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + index)
                 .assertIsDisplayed()
@@ -172,6 +176,43 @@ class MatchLobbyScreenshotIntakeScreenTest {
             assertEquals(listOf(1), cropIndexes)
             assertEquals(listOf(1), removeIndexes)
         }
+    }
+
+    @Test
+    fun saveLobbyTemplateIsEnabledOnlyForThreeConfirmedDraftSlots() {
+        var saveCount = 0
+        val completeSlots = defaultMatchLobbyScreenshotSlots().map { slot ->
+            slot.copy(
+                hasLinkedAsset = true,
+                selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                selectedScreenshotWidth = 1920,
+                selectedScreenshotHeight = 1080,
+                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                cropProfileId = "lobby",
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.DRAFT,
+                        slots = completeSlots,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    onSaveLobbyForNextMatches = { saveCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, saveCount) }
     }
 
     @Test
