@@ -575,6 +575,10 @@
     <string name="ocr_visual_crop_invalid_dimensions">The original image dimensions are invalid.</string>
     <string name="ocr_visual_crop_empty_pixel_crop">The crop does not contain a usable pixel area.</string>
     <string name="match_lobby_screenshot_intake_title">Lobby Screenshots</string>
+    <string name="match_lobby_screenshot_slot_short_label">Screenshot %1$d</string>
+    <string name="match_review_result_screenshot_slot_short_label">Screenshot %1$d</string>
+    <string name="screenshot_slot_empty_status">Empty</string>
+    <string name="screenshot_slot_selected_status">Selected</string>
     <string name="match_lobby_screenshot_slot_label">Screenshot %1$d of %2$d</string>
     <string name="match_lobby_screenshot_selected_page_indicator">●</string>
     <string name="match_lobby_screenshot_unselected_page_indicator">○</string>
