@@ -86,23 +86,22 @@ fun MatchLobbyScreenshotIntakeScreen(
         }
         uiState.slots.forEach { slot ->
             Text(text = stringResource(R.string.match_lobby_screenshot_slot_label, slot.index), style = MaterialTheme.typography.titleMedium)
-            if (slot.hasLinkedAsset &&
-                !slot.isLocalFileMissing &&
-                slot.hasConfirmedCrop
-            ) {
+            if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
                 Text(text = stringResource(R.string.match_lobby_screenshot_selected))
-                slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
-                    LocalScreenshotPreview(
-                        imageUri = imageUri,
-                        crop = slot.confirmedCrop,
-                        contentDescription = stringResource(
-                            R.string.match_lobby_screenshot_preview_description,
-                            slot.index,
-                        ),
-                        sourceImageWidth = slot.selectedScreenshotWidth,
-                        sourceImageHeight = slot.selectedScreenshotHeight,
-                        testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
-                    )
+                if (slot.hasConfirmedCrop) {
+                    slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }?.let { imageUri ->
+                        LocalScreenshotPreview(
+                            imageUri = imageUri,
+                            crop = slot.confirmedCrop,
+                            contentDescription = stringResource(
+                                R.string.match_lobby_screenshot_preview_description,
+                                slot.index,
+                            ),
+                            sourceImageWidth = slot.selectedScreenshotWidth,
+                            sourceImageHeight = slot.selectedScreenshotHeight,
+                            testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
+                        )
+                    }
                 }
                 Button(
                     onClick = { onCrop(slot.index) },
