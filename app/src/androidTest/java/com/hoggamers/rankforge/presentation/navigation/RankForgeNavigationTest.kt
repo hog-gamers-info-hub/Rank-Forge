@@ -23,17 +23,31 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import android.graphics.Bitmap
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
+import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,13 +118,24 @@ import com.hoggamers.rankforge.presentation.screen.MatchCreationViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchPlacementViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotUploadCheckpointAction
+import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotUploadCheckpointResult
+import com.hoggamers.rankforge.presentation.screen.ScreenshotReconciliationScheduler
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewTestTags
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.MATCH_LOBBY_SCREENSHOT_CROP_CANCEL_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_RESULT_SCREENSHOT_CROP_CANCEL_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_RESULT_SCREENSHOT_CROP_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_RESULT_SCREENSHOT_CROP_EDITOR_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.OCR_VISUAL_CROP_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG
@@ -166,6 +191,11 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -1433,6 +1463,125 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
+    fun reviewMatchUpperResultCropCancelReturnsToSameReview() {
+        runResultCropNavigationCase(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            confirm = false,
+        )
+    }
+
+    @Test
+    fun reviewMatchLowerResultCropCancelReturnsToSameReview() {
+        runResultCropNavigationCase(
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            confirm = false,
+        )
+    }
+
+    @Test
+    fun reviewMatchUpperResultCropConfirmPersistsOnlyUpperAndReturnsToSameReview() {
+        runResultCropNavigationCase(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            confirm = true,
+        )
+    }
+
+    @Test
+    fun reviewMatchLowerResultCropConfirmPersistsOnlyLowerAndReturnsToSameReview() {
+        runResultCropNavigationCase(
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            confirm = true,
+        )
+    }
+
+    private fun runResultCropNavigationCase(
+        role: MatchResultScreenshotRole,
+        confirm: Boolean,
+    ) {
+        val fixture = createResultCropNavigationFixture(role)
+        lateinit var navController: NavHostController
+        composeTestRule.setContent {
+            navController = rememberNavController()
+            RankForgeTheme {
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = fixture.viewModels.creationViewModel,
+                    listViewModel = fixture.viewModels.listViewModel,
+                    detailsViewModelFactory = fixture.viewModels.detailsViewModel,
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchReviewViewModelFactory = { _, _ -> fixture.matchReviewViewModel },
+                    matchResultScreenshotCropViewModelFactory = { fixture.cropViewModel },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            navController.navigate(MatchReviewDestination(fixture.tournamentId, fixture.matchId))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+
+        if (role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+            composeTestRule
+                .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + "2")
+                .performScrollTo()
+                .performClick()
+            composeTestRule.waitForIdle()
+        }
+
+        val cropActionTag = when (role) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG
+        }
+        composeTestRule.onNodeWithTag(cropActionTag).performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_RESULT_SCREENSHOT_CROP_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            val destination = navController.currentBackStackEntry
+                ?.toRoute<MatchResultScreenshotCropDestination>()
+            assertEquals(fixture.tournamentId, destination?.tournamentId)
+            assertEquals(fixture.matchId, destination?.matchId)
+            assertEquals(role.name, destination?.screenshotRole)
+        }
+
+        if (confirm) {
+            composeTestRule.onNodeWithTag(MATCH_RESULT_SCREENSHOT_CROP_EDITOR_TEST_TAG).assertIsDisplayed()
+            composeTestRule.onNodeWithTag(OCR_VISUAL_CROP_CONFIRM_ACTION_TEST_TAG).performClick()
+            composeTestRule.waitForIdle()
+            assertNotNull(runBlocking { fixture.assetRepository.getByIdentity(fixture.identity(role))?.cropProfileId })
+        } else {
+            composeTestRule.onNodeWithTag(MATCH_RESULT_SCREENSHOT_CROP_CANCEL_TEST_TAG).performClick()
+            composeTestRule.waitForIdle()
+            assertNull(runBlocking { fixture.assetRepository.getByIdentity(fixture.identity(role))?.cropProfileId })
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchReviewDestination(fixture.tournamentId, fixture.matchId),
+                navController.currentBackStackEntry?.toRoute<MatchReviewDestination>(),
+            )
+        }
+
+        val otherRole = when (role) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        }
+        assertEquals(
+            fixture.initialAssets.getValue(otherRole),
+            runBlocking { fixture.assetRepository.getByIdentity(fixture.identity(otherRole)) },
+        )
+        if (confirm) {
+            assertEquals(
+                OcrCropValidationProfiles.MatchResult.id,
+                runBlocking { fixture.assetRepository.getByIdentity(fixture.identity(role))?.cropProfileId },
+            )
+        }
+    }
+
+    @Test
     fun linkedDraftScreenshotOpensOcrReviewAndReturnsToSameReviewAndDetails() {
         val viewModels = createNavigationViewModels()
         var activeMatchReviewViewModel: MatchReviewViewModel? = null
@@ -1809,6 +1958,168 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             ),
         )
 
+    private fun createResultCropNavigationFixture(
+        targetRole: MatchResultScreenshotRole,
+    ): ResultCropNavigationFixture {
+        val viewModels = createNavigationViewModels()
+        val tournamentId = "confirmed-id"
+        val matchId = "result-crop-${targetRole.name.lowercase()}"
+        runBlocking {
+            viewModels.repository.create(confirmedTournament())
+            viewModels.repository.saveTeamNames(
+                tournamentId,
+                mapOf(1 to "Team 1"),
+            )
+            viewModels.repository.createDraftMatch(
+                com.hoggamers.rankforge.domain.tournament.Match(
+                    id = matchId,
+                    tournamentId = tournamentId,
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                ),
+            )
+        }
+
+        val localImagePreserver = com.hoggamers.rankforge.presentation.screen.LocalImagePreserver(
+            appPrivateRoot = context.filesDir,
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader {
+                "image/png"
+            },
+            ioDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+        )
+        val otherRole = when (targetRole) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        }
+        val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
+        val initialAssets = mapOf(
+            targetRole to resultAsset(
+                localImagePreserver = localImagePreserver,
+                tournamentId = tournamentId,
+                matchId = matchId,
+                role = targetRole,
+                crop = null,
+            ),
+            otherRole to resultAsset(
+                localImagePreserver = localImagePreserver,
+                tournamentId = tournamentId,
+                matchId = matchId,
+                role = otherRole,
+                crop = crop,
+            ),
+        )
+        initialAssets.keys.forEach { role ->
+            val file = localImagePreserver.matchResultPreservedFile(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                role = role,
+                extension = "png",
+            )
+            file.parentFile?.mkdirs()
+            FileOutputStream(file).use { output ->
+                val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
+                try {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        }
+        val assetRepository = InMemoryMatchResultScreenshotAssetRepository(initialAssets.values.toList())
+        val matchReviewViewModel = MatchReviewViewModel(
+            getTournamentById = GetTournamentByIdUseCase(viewModels.repository),
+            observeMatches = ObserveMatchesUseCase(viewModels.repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(viewModels.repository),
+            observeRoster = ObserveRosterByTournamentUseCase(viewModels.repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(viewModels.repository),
+            validateMatchResult = ValidateMatchResultUseCase(),
+            finalizeMatch = FinalizeMatchUseCase(viewModels.repository, ValidateMatchResultUseCase()),
+            imageCandidateValidator = ImageCandidateValidator(
+                ImageCandidateMetadataReader {
+                    ImageCandidateReadResult.Metadata(
+                        "image/png",
+                        width = 1920,
+                        height = 1080,
+                    )
+                },
+            ),
+            screenshotDuplicateDetector = com.hoggamers.rankforge.presentation.screen.ScreenshotDuplicateDetector(
+                com.hoggamers.rankforge.presentation.screen.ImageSourceFingerprintGenerator(
+                    ImageSourceStreamOpener { uri -> uri.encodeToByteArray().inputStream() },
+                    kotlinx.coroutines.Dispatchers.Unconfined,
+                ),
+            ),
+            localImagePreserver = localImagePreserver,
+            matchResultScreenshotAssetRepository = assetRepository,
+        )
+        val cropViewModel = MatchResultScreenshotCropViewModel(
+            observeMatches = ObserveMatchesUseCase(viewModels.repository),
+            assetRepository = assetRepository,
+            localImagePreserver = localImagePreserver,
+            clock = Clock.fixed(
+                LocalDate.of(2026, 7, 24).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                ZoneOffset.UTC,
+            ),
+            uploadCheckpoint = MatchResultScreenshotUploadCheckpointAction {
+                MatchResultScreenshotUploadCheckpointResult.Skipped
+            },
+            reconciliationScheduler = ScreenshotReconciliationScheduler(),
+        )
+        return ResultCropNavigationFixture(
+            viewModels = viewModels,
+            matchReviewViewModel = matchReviewViewModel,
+            cropViewModel = cropViewModel,
+            assetRepository = assetRepository,
+            initialAssets = initialAssets,
+            tournamentId = tournamentId,
+            matchId = matchId,
+        )
+    }
+
+    private fun resultAsset(
+        localImagePreserver: com.hoggamers.rankforge.presentation.screen.LocalImagePreserver,
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+        crop: OcrNormalizedCropRect?,
+    ): MatchResultScreenshotAssetEntity = MatchResultScreenshotAssetEntity(
+        tournamentId = tournamentId,
+        matchId = matchId,
+        screenshotKind = OcrScreenshotKind.MATCH_RESULT.name,
+        screenshotRole = role.name,
+        ownerUserId = "owner-id",
+        localRelativePath = localImagePreserver.matchResultRelativePath(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = role,
+            extension = "png",
+        ),
+        fileExtension = "png",
+        mimeType = "image/png",
+        originalWidth = 1920,
+        originalHeight = 1080,
+        byteSize = 1,
+        sha256 = role.name.lowercase().padEnd(64, 'a'),
+        localStatus = ScreenshotLocalStatus.PRESERVED.name,
+        uploadStatus = ScreenshotUploadStatus.FAILED.name,
+        uploadFailureCode = null,
+        storageBucket = null,
+        storageObjectPath = null,
+        cropProfileId = crop?.let { OcrCropValidationProfiles.MatchResult.id },
+        cropLeft = crop?.left,
+        cropTop = crop?.top,
+        cropRight = crop?.right,
+        cropBottom = crop?.bottom,
+        createdAt = 1,
+        updatedAt = 1,
+        preservedAt = 1,
+        uploadedAt = null,
+        revision = 1,
+    )
+
     private fun createNavigationViewModels(): NavigationViewModels {
         val repository = InMemoryTournamentRepository()
         val uploadAction = TournamentCloudUploadAction {
@@ -1990,6 +2301,116 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         )
     }
 
+    private class InMemoryMatchResultScreenshotAssetRepository(
+        initialAssets: List<MatchResultScreenshotAssetEntity>,
+    ) : MatchResultScreenshotAssetRepository {
+        private val assets = MutableStateFlow(initialAssets)
+
+        override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
+            assets.map { values -> values.filter { it.matchId == matchId } }
+
+        override fun observeByIdentity(
+            identity: MatchResultScreenshotIdentity,
+        ): Flow<MatchResultScreenshotAssetEntity?> =
+            assets.map { values -> values.firstOrNull { it.matches(identity) } }
+
+        override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? =
+            assets.value.firstOrNull { it.matches(identity) }
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
+            assets.map { values -> values.filter { it.tournamentId == tournamentId } }
+
+        override suspend fun findDuplicateFingerprint(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+        ): MatchResultScreenshotAssetEntity? = null
+
+        override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult {
+            assets.value = assets.value.filterNot { it.matches(asset) } + asset
+            return MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) {
+            update(identity) { it.copy(localStatus = ScreenshotLocalStatus.MISSING.name, updatedAt = updatedAt) }
+        }
+
+        override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) {
+            update(identity) { it.copy(localStatus = ScreenshotLocalStatus.CLEANUP_FAILED.name, updatedAt = updatedAt) }
+        }
+
+        override suspend fun persistConfirmedCrop(
+            identity: MatchResultScreenshotIdentity,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult {
+            if (getByIdentity(identity) == null) return MatchResultScreenshotCropSaveResult.MissingAsset
+            update(identity) {
+                it.copy(
+                    cropProfileId = OcrCropValidationProfiles.MatchResult.id,
+                    cropLeft = crop.left,
+                    cropTop = crop.top,
+                    cropRight = crop.right,
+                    cropBottom = crop.bottom,
+                    updatedAt = updatedAt,
+                    revision = it.revision + 1,
+                )
+            }
+            return MatchResultScreenshotCropSaveResult.Saved
+        }
+
+        override suspend fun clearConfirmedCrop(
+            identity: MatchResultScreenshotIdentity,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult {
+            if (getByIdentity(identity) == null) return MatchResultScreenshotCropSaveResult.MissingAsset
+            update(identity) {
+                it.copy(
+                    cropProfileId = null,
+                    cropLeft = null,
+                    cropTop = null,
+                    cropRight = null,
+                    cropBottom = null,
+                    updatedAt = updatedAt,
+                    revision = it.revision + 1,
+                )
+            }
+            return MatchResultScreenshotCropSaveResult.Saved
+        }
+
+        override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) {
+            assets.value = assets.value.filterNot { it.matches(identity) }
+        }
+
+        override suspend fun deleteByMatchId(matchId: String) {
+            assets.value = assets.value.filterNot { it.matchId == matchId }
+        }
+
+        private fun update(
+            identity: MatchResultScreenshotIdentity,
+            transform: (MatchResultScreenshotAssetEntity) -> MatchResultScreenshotAssetEntity,
+        ) {
+            assets.value = assets.value.map { asset ->
+                if (asset.matches(identity)) transform(asset) else asset
+            }
+        }
+
+        private fun MatchResultScreenshotAssetEntity.matches(
+            identity: MatchResultScreenshotIdentity,
+        ): Boolean =
+            tournamentId == identity.tournamentId &&
+                matchId == identity.matchId &&
+                screenshotKind == identity.kind.name &&
+                screenshotRole == identity.role.name
+
+        private fun MatchResultScreenshotAssetEntity.matches(
+            asset: MatchResultScreenshotAssetEntity,
+        ): Boolean =
+            tournamentId == asset.tournamentId &&
+                matchId == asset.matchId &&
+                screenshotKind == asset.screenshotKind &&
+                screenshotRole == asset.screenshotRole
+    }
+
     private suspend fun createValidRoster(
         repository: InMemoryTournamentRepository,
         tournamentId: String,
@@ -2049,6 +2470,23 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         viewModel.onOrganizerNameChanged("Alex")
         viewModel.onOrganizerContactNumberChanged("123")
         viewModel.submit()
+    }
+
+    private data class ResultCropNavigationFixture(
+        val viewModels: NavigationViewModels,
+        val matchReviewViewModel: MatchReviewViewModel,
+        val cropViewModel: MatchResultScreenshotCropViewModel,
+        val assetRepository: InMemoryMatchResultScreenshotAssetRepository,
+        val initialAssets: Map<MatchResultScreenshotRole, MatchResultScreenshotAssetEntity>,
+        val tournamentId: String,
+        val matchId: String,
+    ) {
+        fun identity(role: MatchResultScreenshotRole): MatchResultScreenshotIdentity =
+            MatchResultScreenshotIdentity(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                role = role,
+            )
     }
 
     private data class NavigationViewModels(
