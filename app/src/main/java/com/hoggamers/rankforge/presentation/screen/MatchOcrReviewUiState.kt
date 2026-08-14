@@ -82,6 +82,7 @@ sealed interface MatchOcrReviewUiState {
         val correctionDraft: MatchOcrReviewCorrectionDraft? = null,
         val finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
+        val teamNamesBySlot: Map<Int, String> = emptyMap(),
     ) : MatchOcrReviewUiState
 
     data class Empty(
