@@ -268,6 +268,50 @@ data class MatchResultScreenshotAssetEntity(
 )
 
 @Entity(
+    tableName = "match_result_ocr_cache",
+    primaryKeys = ["match_id", "screenshot_role"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["tournament_id"])],
+)
+data class MatchResultOcrCacheEntity(
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "screenshot_role")
+    val screenshotRole: String,
+    @ColumnInfo(name = "screenshot_sha256")
+    val screenshotSha256: String,
+    @ColumnInfo(name = "original_width")
+    val originalWidth: Int,
+    @ColumnInfo(name = "original_height")
+    val originalHeight: Int,
+    @ColumnInfo(name = "crop_profile_id")
+    val cropProfileId: String,
+    @ColumnInfo(name = "crop_left")
+    val cropLeft: Double,
+    @ColumnInfo(name = "crop_top")
+    val cropTop: Double,
+    @ColumnInfo(name = "crop_right")
+    val cropRight: Double,
+    @ColumnInfo(name = "crop_bottom")
+    val cropBottom: Double,
+    @ColumnInfo(name = "ocr_pipeline_version")
+    val ocrPipelineVersion: Int,
+    @ColumnInfo(name = "processed_payload_json")
+    val processedPayloadJson: String,
+    @ColumnInfo(name = "cached_at")
+    val cachedAt: Long,
+)
+
+@Entity(
     tableName = "match_lobby_screenshot_assets",
     primaryKeys = ["match_id", "lobby_screenshot_index"],
     foreignKeys = [

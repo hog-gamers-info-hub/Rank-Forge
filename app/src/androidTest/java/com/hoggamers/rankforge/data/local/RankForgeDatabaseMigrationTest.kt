@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(12, cursor.getInt(0))
+                assertEquals(13, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -103,6 +103,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'tournament_lobby_template_assets'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'match_result_ocr_cache'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -569,6 +575,90 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion12AddsMatchResultOcrCacheWithoutDroppingExistingData() {
+        createVersion12Database().use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, creation_order) " +
+                    "VALUES ('tournament-cache', 'Cache Cup', '2026-08-14', 'Organizer', '123', 'DRAFT', 1)",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-cache', 'tournament-cache', 1, '2026-08-14', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                """
+                INSERT INTO match_result_screenshot_assets (
+                    tournament_id, match_id, screenshot_kind, screenshot_role, owner_user_id,
+                    local_relative_path, file_extension, mime_type, original_width, original_height,
+                    byte_size, sha256, local_status, upload_status, upload_failure_code,
+                    storage_bucket, storage_object_path, crop_profile_id, crop_left, crop_top,
+                    crop_right, crop_bottom, created_at, updated_at, preserved_at, uploaded_at, revision
+                ) VALUES (
+                    'tournament-cache', 'match-cache', 'MATCH_RESULT', 'MATCH_RESULT_UPPER', 'owner',
+                    'result.png', 'png', 'image/png', 1000, 800, 100, '${"a".repeat(64)}',
+                    'PRESERVED', 'PENDING', NULL, NULL, NULL, 'match-result', 0.0, 0.0,
+                    1.0, 1.0, 1, 1, 1, NULL, 1
+                )
+                """.trimIndent(),
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            13,
+            true,
+            RankForgeDatabase.MIGRATION_12_13,
+        )
+
+        migrated.query("SELECT id FROM tournaments WHERE id = 'tournament-cache'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        migrated.query("SELECT id FROM matches WHERE id = 'match-cache'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        migrated.query(
+            "SELECT match_id FROM match_result_screenshot_assets WHERE match_id = 'match-cache'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        assertTrue(migrated.hasTable("match_result_ocr_cache"))
+        assertTrue(migrated.hasIndex("index_match_result_ocr_cache_tournament_id"))
+        migrated.query("PRAGMA table_info('match_result_ocr_cache')").use { cursor ->
+            val columns = buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            assertTrue(
+                listOf(
+                    "tournament_id",
+                    "match_id",
+                    "screenshot_role",
+                    "screenshot_sha256",
+                    "original_width",
+                    "original_height",
+                    "crop_profile_id",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "ocr_pipeline_version",
+                    "processed_payload_json",
+                    "cached_at",
+                ).all(columns::contains),
+            )
+        }
+        migrated.query("SELECT COUNT(*) FROM match_result_ocr_cache").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("PRAGMA foreign_key_list('match_result_ocr_cache')").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("matches", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+            assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun ocrEvidenceSnapshotTransactionPersistsOriginalAndCorrectedRowsSeparately() = runBlocking {
         val database = createInMemoryDatabase()
 
@@ -959,6 +1049,12 @@ class RankForgeDatabaseMigrationTest {
         migrationTestHelper().createDatabase(
             MIGRATION_DATABASE_NAME,
             2,
+        )
+
+    private fun createVersion12Database(): SupportSQLiteDatabase =
+        migrationTestHelper().createDatabase(
+            MIGRATION_DATABASE_NAME,
+            12,
         )
 
     private fun createInMemoryDatabase(): RankForgeDatabase =

@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
+import com.hoggamers.rankforge.data.local.MatchResultOcrCacheDao
+import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetDao
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetDao
@@ -28,7 +30,9 @@ import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
+import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -134,6 +138,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_9_10,
         RankForgeDatabase.MIGRATION_10_11,
         RankForgeDatabase.MIGRATION_11_12,
+        RankForgeDatabase.MIGRATION_12_13,
     ).build()
 
     @Provides
@@ -154,6 +159,19 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideMatchResultScreenshotAssetDao(database: RankForgeDatabase): MatchResultScreenshotAssetDao =
         database.matchResultScreenshotAssetDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchResultOcrCacheDao(database: RankForgeDatabase): MatchResultOcrCacheDao =
+        database.matchResultOcrCacheDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchResultOcrCacheRepository(
+        dao: MatchResultOcrCacheDao,
+        codec: MatchResultOcrCacheCodec,
+        clock: Clock,
+    ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock)
 
     @Provides
     @Singleton

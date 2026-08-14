@@ -399,6 +399,28 @@ interface MatchResultScreenshotAssetDao {
 }
 
 @Dao
+interface MatchResultOcrCacheDao {
+    @Query(
+        """
+        SELECT * FROM match_result_ocr_cache
+        WHERE match_id = :matchId AND screenshot_role = :screenshotRole
+        """,
+    )
+    suspend fun readByMatchAndRole(
+        matchId: String,
+        screenshotRole: String,
+    ): MatchResultOcrCacheEntity?
+
+    @Upsert
+    suspend fun upsert(cache: MatchResultOcrCacheEntity)
+
+    @Query(
+        "DELETE FROM match_result_ocr_cache WHERE match_id = :matchId AND screenshot_role = :screenshotRole",
+    )
+    suspend fun deleteByMatchAndRole(matchId: String, screenshotRole: String)
+}
+
+@Dao
 interface MatchLobbyScreenshotAssetDao {
     @Query(
         """
