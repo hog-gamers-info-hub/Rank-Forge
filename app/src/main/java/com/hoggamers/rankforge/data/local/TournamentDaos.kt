@@ -314,6 +314,112 @@ interface MatchResultScreenshotAssetDao {
     @Query(
         """
         UPDATE match_result_screenshot_assets
+        SET storage_bucket = :storageBucket,
+            storage_object_path = :storageObjectPath,
+            upload_status = :uploadStatus,
+            upload_failure_code = NULL,
+            uploaded_at = :uploadedAt,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND screenshot_role = :screenshotRole
+            AND sha256 = :sha256
+        """,
+    )
+    suspend fun updateUploadSuccessIfFingerprintMatches(
+        tournamentId: String,
+        matchId: String,
+        screenshotRole: String,
+        sha256: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadStatus: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET storage_bucket = :storageBucket,
+            storage_object_path = :storageObjectPath,
+            upload_status = :uploadStatus,
+            upload_failure_code = NULL,
+            uploaded_at = :uploadedAt,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND screenshot_role = :screenshotRole
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateUploadSuccessIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        screenshotRole: String,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadStatus: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET upload_status = :uploadStatus,
+            upload_failure_code = :uploadFailureCode,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND screenshot_role = :screenshotRole
+            AND sha256 = :sha256
+        """,
+    )
+    suspend fun updateUploadFailureIfFingerprintMatches(
+        tournamentId: String,
+        matchId: String,
+        screenshotRole: String,
+        sha256: String,
+        uploadStatus: String,
+        uploadFailureCode: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
+        SET upload_status = :uploadStatus,
+            upload_failure_code = :uploadFailureCode,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND screenshot_role = :screenshotRole
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateUploadFailureIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        screenshotRole: String,
+        sha256: String,
+        expectedRevision: Long,
+        uploadStatus: String,
+        uploadFailureCode: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
         SET local_status = :localStatus,
             updated_at = :updatedAt,
             revision = revision + 1
@@ -488,6 +594,112 @@ interface MatchLobbyScreenshotAssetDao {
 
     @Upsert
     suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity)
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET storage_bucket = :storageBucket,
+            storage_object_path = :storageObjectPath,
+            upload_status = :uploadStatus,
+            upload_failure_code = NULL,
+            uploaded_at = :uploadedAt,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND lobby_screenshot_index = :lobbyScreenshotIndex
+            AND sha256 = :sha256
+        """,
+    )
+    suspend fun updateUploadSuccessIfFingerprintMatches(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        sha256: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadStatus: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET storage_bucket = :storageBucket,
+            storage_object_path = :storageObjectPath,
+            upload_status = :uploadStatus,
+            upload_failure_code = NULL,
+            uploaded_at = :uploadedAt,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND lobby_screenshot_index = :lobbyScreenshotIndex
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateUploadSuccessIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadStatus: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET upload_status = :uploadStatus,
+            upload_failure_code = :uploadFailureCode,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND lobby_screenshot_index = :lobbyScreenshotIndex
+            AND sha256 = :sha256
+        """,
+    )
+    suspend fun updateUploadFailureIfFingerprintMatches(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        sha256: String,
+        uploadStatus: String,
+        uploadFailureCode: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET upload_status = :uploadStatus,
+            upload_failure_code = :uploadFailureCode,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE match_id = :matchId
+            AND tournament_id = :tournamentId
+            AND lobby_screenshot_index = :lobbyScreenshotIndex
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateUploadFailureIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        sha256: String,
+        expectedRevision: Long,
+        uploadStatus: String,
+        uploadFailureCode: String,
+        updatedAt: Long,
+    ): Int
 
     @Query(
         """

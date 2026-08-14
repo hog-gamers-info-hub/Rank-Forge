@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.local
 
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
@@ -11,6 +12,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.sync.Mutex
 
 sealed interface MatchLobbyScreenshotAssetSaveResult {
     data object Saved : MatchLobbyScreenshotAssetSaveResult
@@ -45,6 +47,40 @@ interface MatchLobbyScreenshotAssetRepository {
 
     suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult
 
+    suspend fun updateUploadSuccessIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
+    suspend fun updateUploadFailureIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
+
+    suspend fun updateUploadSuccessIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
+    suspend fun updateUploadFailureIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long)
 
     suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long)
@@ -63,6 +99,46 @@ interface MatchLobbyScreenshotAssetRepository {
         identity: MatchLobbyScreenshotIdentity,
         updatedAt: Long,
     ): MatchLobbyScreenshotCropSaveResult
+}
+
+internal object ScreenshotAssetMutationCoordinator {
+    private val locks = Array(64) { Mutex() }
+
+    suspend fun <T> withLock(key: String, block: suspend () -> T): T {
+        val lock = locks[(key.hashCode() and Int.MAX_VALUE) % locks.size]
+        lock.lock()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    fun key(identity: MatchLobbyScreenshotIdentity): String =
+        "${identity.tournamentId}|${identity.matchId}|lobby:${identity.lobbyScreenshotIndex}"
+
+    fun key(identity: MatchResultScreenshotIdentity): String =
+        "${identity.tournamentId}|${identity.matchId}|result:${identity.role.name}"
+}
+
+internal object ScreenshotCloudReconciliationCoordinator {
+    private val locks = Array(64) { Mutex() }
+
+    suspend fun <T> withLock(key: String, block: suspend () -> T): T {
+        val lock = locks[(key.hashCode() and Int.MAX_VALUE) % locks.size]
+        lock.lock()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    fun key(identity: MatchLobbyScreenshotIdentity): String =
+        ScreenshotAssetMutationCoordinator.key(identity)
+
+    fun key(identity: MatchResultScreenshotIdentity): String =
+        ScreenshotAssetMutationCoordinator.key(identity)
 }
 
 @Singleton
@@ -97,24 +173,28 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
 
     override suspend fun saveOrReplace(
         asset: MatchLobbyScreenshotAssetEntity,
-    ): MatchLobbyScreenshotAssetSaveResult {
-        val identity = asset.identityOrNull() ?: return MatchLobbyScreenshotAssetSaveResult.InvalidIdentity
+    ): MatchLobbyScreenshotAssetSaveResult = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(
+            asset.identityOrNull() ?: return MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
+        ),
+    ) {
+        val identity = asset.identityOrNull() ?: return@withLock MatchLobbyScreenshotAssetSaveResult.InvalidIdentity
         val duplicate = try {
             findDuplicateFingerprint(identity, asset.sha256)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
-            return MatchLobbyScreenshotAssetSaveResult.StateConflict
+            return@withLock MatchLobbyScreenshotAssetSaveResult.StateConflict
         }
         if (duplicate != null) {
-            return MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
+            return@withLock MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
         }
         val existing = try {
             dao.readByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
-            return MatchLobbyScreenshotAssetSaveResult.StateConflict
+            return@withLock MatchLobbyScreenshotAssetSaveResult.StateConflict
         }
         val assetToSave = if (existing != null && existing.sha256 != asset.sha256) {
             asset.copy(
@@ -132,9 +212,89 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
-            return MatchLobbyScreenshotAssetSaveResult.StateConflict
+            return@withLock MatchLobbyScreenshotAssetSaveResult.StateConflict
         }
-        return MatchLobbyScreenshotAssetSaveResult.Saved
+        MatchLobbyScreenshotAssetSaveResult.Saved
+    }
+
+    override suspend fun updateUploadSuccessIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = dao.updateUploadSuccessIfFingerprintMatches(
+        tournamentId = identity.tournamentId,
+        matchId = identity.matchId,
+        lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+        sha256 = sha256,
+        storageBucket = storageBucket,
+        storageObjectPath = storageObjectPath,
+        uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+        uploadedAt = uploadedAt,
+        updatedAt = updatedAt,
+    ) > 0
+
+    override suspend fun updateUploadFailureIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = dao.updateUploadFailureIfFingerprintMatches(
+        tournamentId = identity.tournamentId,
+        matchId = identity.matchId,
+        lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+        sha256 = sha256,
+        uploadStatus = ScreenshotUploadStatus.FAILED.name,
+        uploadFailureCode = failureCode,
+        updatedAt = updatedAt,
+    ) > 0
+
+    override suspend fun updateUploadSuccessIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
+        dao.updateUploadSuccessIfGenerationMatches(
+            tournamentId = identity.tournamentId,
+            matchId = identity.matchId,
+            lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+            sha256 = sha256,
+            expectedRevision = expectedRevision,
+            storageBucket = storageBucket,
+            storageObjectPath = storageObjectPath,
+            uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+            uploadedAt = uploadedAt,
+            updatedAt = updatedAt,
+        ) > 0
+    }
+
+    override suspend fun updateUploadFailureIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
+        dao.updateUploadFailureIfGenerationMatches(
+            tournamentId = identity.tournamentId,
+            matchId = identity.matchId,
+            lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+            sha256 = sha256,
+            expectedRevision = expectedRevision,
+            uploadStatus = ScreenshotUploadStatus.FAILED.name,
+            uploadFailureCode = failureCode,
+            updatedAt = updatedAt,
+        ) > 0
     }
 
     override suspend fun markLocalMissing(
@@ -173,20 +333,22 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         identity: MatchLobbyScreenshotIdentity,
         crop: OcrNormalizedCropRect,
         updatedAt: Long,
-    ): MatchLobbyScreenshotCropSaveResult {
+    ): MatchLobbyScreenshotCropSaveResult = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
         val asset = try {
             dao.readByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
-            return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
-        } ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
+            return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        } ?: return@withLock MatchLobbyScreenshotCropSaveResult.MissingAsset
         val storedIdentity = asset.identityOrNull()
-            ?: return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
-        if (storedIdentity != identity) return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+            ?: return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
         val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
-            ?: return MatchLobbyScreenshotCropSaveResult.InvalidCrop
-        return when (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.Lobby)) {
+            ?: return@withLock MatchLobbyScreenshotCropSaveResult.InvalidCrop
+        when (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.Lobby)) {
             is OcrCropValidationResult.Invalid -> MatchLobbyScreenshotCropSaveResult.InvalidCrop
             is OcrCropValidationResult.Valid -> {
                 dao.updateConfirmedCrop(
@@ -207,19 +369,21 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
     override suspend fun clearConfirmedCrop(
         identity: MatchLobbyScreenshotIdentity,
         updatedAt: Long,
-    ): MatchLobbyScreenshotCropSaveResult {
+    ): MatchLobbyScreenshotCropSaveResult = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
         val asset = try {
             dao.readByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
-            return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
-        } ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
+            return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        } ?: return@withLock MatchLobbyScreenshotCropSaveResult.MissingAsset
         val storedIdentity = asset.identityOrNull()
-            ?: return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
-        if (storedIdentity != identity) return MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+            ?: return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
+        if (storedIdentity != identity) return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
         dao.clearConfirmedCrop(identity.matchId, identity.lobbyScreenshotIndex, updatedAt)
-        return MatchLobbyScreenshotCropSaveResult.Saved
+        MatchLobbyScreenshotCropSaveResult.Saved
     }
 }
 
@@ -245,6 +409,40 @@ class NoOpMatchLobbyScreenshotAssetRepository : MatchLobbyScreenshotAssetReposit
     override suspend fun saveOrReplace(
         asset: MatchLobbyScreenshotAssetEntity,
     ): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.Saved
+
+    override suspend fun updateUploadSuccessIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
+    override suspend fun updateUploadSuccessIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
+    override suspend fun updateUploadFailureIfGenerationMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
+
+    override suspend fun updateUploadFailureIfFingerprintMatches(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
 
     override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
 

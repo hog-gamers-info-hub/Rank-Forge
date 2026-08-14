@@ -22,7 +22,9 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.nio.file.Files
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -181,7 +183,7 @@ class MatchLobbyScreenshotCropViewModelTest {
         advanceUntilIdle()
 
         assertTrue(cloudStarted.isCompleted)
-        assertEquals(0, confirmations)
+        assertEquals(1, confirmations)
         val afterCrop = assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))!!
         val uploaded = afterCrop.copy(
             uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
@@ -235,19 +237,26 @@ class MatchLobbyScreenshotCropViewModelTest {
         preserver: LocalImagePreserver,
         cloud: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
         storageUploader: MatchLobbyScreenshotStorageUploader = RecordingLobbyStorageUploader(),
-    ) = MatchLobbyScreenshotCropViewModel(
-        observeMatches = ObserveMatchesUseCase(tournamentRepository),
-        assetRepository = assetRepository,
-        localImagePreserver = preserver,
-        clock = java.time.Clock.systemUTC(),
-        uploadCheckpoint = MatchLobbyScreenshotUploadCheckpoint(
+    ): MatchLobbyScreenshotCropViewModel {
+        val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
             assetRepository = assetRepository,
             localImagePreserver = preserver,
             clock = java.time.Clock.systemUTC(),
             storageUploader = storageUploader,
             cloudDataSource = cloud,
-        ),
-    )
+        )
+        return MatchLobbyScreenshotCropViewModel(
+            observeMatches = ObserveMatchesUseCase(tournamentRepository),
+            assetRepository = assetRepository,
+            localImagePreserver = preserver,
+            clock = java.time.Clock.systemUTC(),
+            uploadCheckpoint = checkpoint,
+            reconciliationScheduler = ScreenshotReconciliationScheduler(
+                scope = CoroutineScope(SupervisorJob() + dispatcher),
+                testOnly = true,
+            ),
+        )
+    }
 
     private fun preserver(root: java.io.File) = LocalImagePreserver(
         appPrivateRoot = root,
@@ -295,6 +304,26 @@ class MatchLobbyScreenshotCropViewModelTest {
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = state.asStateFlow()
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = null
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult { state.value = state.value.filterNot { it.matchId == asset.matchId && it.lobbyScreenshotIndex == asset.lobbyScreenshotIndex } + asset; return MatchLobbyScreenshotAssetSaveResult.Saved }
+        override suspend fun updateUploadSuccessIfFingerprintMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256) return false
+            return saveOrReplace(current.copy(storageBucket = storageBucket, storageObjectPath = storageObjectPath, uploadStatus = ScreenshotUploadStatus.UPLOADED.name, uploadFailureCode = null, uploadedAt = uploadedAt, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
+        }
+        override suspend fun updateUploadFailureIfFingerprintMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, failureCode: String, updatedAt: Long): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256) return false
+            return saveOrReplace(current.copy(uploadStatus = ScreenshotUploadStatus.FAILED.name, uploadFailureCode = failureCode, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
+        }
+        override suspend fun updateUploadSuccessIfGenerationMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, expectedRevision: Long, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256 || current.revision != expectedRevision) return false
+            return saveOrReplace(current.copy(storageBucket = storageBucket, storageObjectPath = storageObjectPath, uploadStatus = ScreenshotUploadStatus.UPLOADED.name, uploadFailureCode = null, uploadedAt = uploadedAt, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
+        }
+        override suspend fun updateUploadFailureIfGenerationMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, expectedRevision: Long, failureCode: String, updatedAt: Long): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256 || current.revision != expectedRevision) return false
+            return saveOrReplace(current.copy(uploadStatus = ScreenshotUploadStatus.FAILED.name, uploadFailureCode = failureCode, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
+        }
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit

@@ -31,8 +31,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -43,7 +46,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -114,11 +116,10 @@ class MatchResultScreenshotCropViewModelTest {
                 relativePath = preserver.relativePathFor(file)!!,
             ),
         )
-        val viewModel = MatchResultScreenshotCropViewModel(
-            observeMatches = ObserveMatchesUseCase(tournamentRepository),
-            assetRepository = repository,
-            cloudDataSource = FailingCropCloudDataSource(),
-            localImagePreserver = preserver,
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = FailingCropCloudDataSource(),
             clock = Clock.fixed(Instant.ofEpochMilli(50L), ZoneOffset.UTC),
         )
 
@@ -167,11 +168,10 @@ class MatchResultScreenshotCropViewModelTest {
         )
         val uploader = RecordingResultStorageUploader(repository)
         val cloud = RecordingCropCloudDataSource()
-        val viewModel = MatchResultScreenshotCropViewModel(
-            observeMatches = ObserveMatchesUseCase(tournamentRepository),
-            assetRepository = repository,
-            cloudDataSource = cloud,
-            localImagePreserver = preserver,
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = cloud,
             storageUploader = uploader,
         )
 
@@ -218,11 +218,10 @@ class MatchResultScreenshotCropViewModelTest {
                 relativePath = preserver.relativePathFor(file)!!,
             ).copy(matchId = missingMatchId),
         )
-        val viewModel = MatchResultScreenshotCropViewModel(
-            observeMatches = ObserveMatchesUseCase(tournamentRepository),
-            assetRepository = repository,
-            cloudDataSource = FailingCropCloudDataSource(),
-            localImagePreserver = preserver,
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = FailingCropCloudDataSource(),
         )
 
         viewModel.load(
@@ -278,11 +277,10 @@ class MatchResultScreenshotCropViewModelTest {
                 relativePath = preserver.relativePathFor(file)!!,
             ),
         )
-        val viewModel = MatchResultScreenshotCropViewModel(
-            observeMatches = ObserveMatchesUseCase(tournamentRepository),
-            assetRepository = repository,
-            cloudDataSource = FailingCropCloudDataSource(),
-            localImagePreserver = preserver,
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = FailingCropCloudDataSource(),
         )
 
         viewModel.load(
@@ -328,11 +326,10 @@ class MatchResultScreenshotCropViewModelTest {
                 relativePath = preserver.relativePathFor(file)!!,
             ),
         )
-        val viewModel = MatchResultScreenshotCropViewModel(
-            observeMatches = ObserveMatchesUseCase(tournamentRepository),
-            assetRepository = repository,
-            cloudDataSource = CancellingCropCloudDataSource(),
-            localImagePreserver = preserver,
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = CancellingCropCloudDataSource(),
         )
         var confirmedCallbackCalled = false
 
@@ -353,7 +350,83 @@ class MatchResultScreenshotCropViewModelTest {
         assertEquals(crop.left, saved.cropLeft!!, 0.0)
         assertEquals(ScreenshotUploadStatus.UPLOADED.name, saved.uploadStatus)
         assertNull(saved.uploadFailureCode)
-        assertFalse(confirmedCallbackCalled)
+        assertTrue(confirmedCallbackCalled)
+    }
+
+    @Test
+    fun confirmCropCallbackDoesNotWaitForSuspendedCloudMetadata() = runTest {
+        val root = Files.createTempDirectory("rank-forge-crop-nonblocking").toFile()
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = root,
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val repository = FakeCropAssetRepository(
+            asset(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                relativePath = preserver.relativePathFor(file)!!,
+            ),
+        )
+        val cloudStarted = CompletableDeferred<Unit>()
+        val cloudResult = CompletableDeferred<MatchResultScreenshotAssetCloudResult>()
+        val viewModel = viewModel(
+            repository = repository,
+            preserver = preserver,
+            cloud = SuspendingResultCropCloudDataSource(cloudStarted, cloudResult),
+        )
+        var confirmations = 0
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+        viewModel.onCropChanged(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
+        viewModel.confirmCrop { confirmations++ }
+        advanceUntilIdle()
+
+        assertTrue(cloudStarted.isCompleted)
+        assertEquals(1, confirmations)
+        assertEquals(
+            ScreenshotUploadStatus.UPLOADED.name,
+            repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))?.uploadStatus,
+        )
+
+        cloudResult.complete(MatchResultScreenshotAssetCloudResult.Success)
+        advanceUntilIdle()
+    }
+
+    private fun viewModel(
+        repository: FakeCropAssetRepository,
+        preserver: LocalImagePreserver,
+        cloud: MatchResultScreenshotAssetCloudDataSource = FailingCropCloudDataSource(),
+        storageUploader: MatchResultScreenshotStorageUploader? = null,
+        clock: Clock = Clock.systemUTC(),
+    ): MatchResultScreenshotCropViewModel {
+        val checkpoint = MatchResultScreenshotUploadCheckpoint(
+            assetRepository = repository,
+            localImagePreserver = preserver,
+            clock = clock,
+            storageUploader = storageUploader ?: RecordingResultStorageUploader(repository),
+            cloudDataSource = cloud,
+        )
+        return MatchResultScreenshotCropViewModel(
+            observeMatches = ObserveMatchesUseCase(tournamentRepository),
+            assetRepository = repository,
+            localImagePreserver = preserver,
+            clock = clock,
+            uploadCheckpoint = checkpoint,
+            reconciliationScheduler = ScreenshotReconciliationScheduler(
+                scope = CoroutineScope(SupervisorJob() + dispatcher),
+                testOnly = true,
+            ),
+        )
     }
 
     private fun identity(role: MatchResultScreenshotRole) = MatchResultScreenshotIdentity(
@@ -427,6 +500,20 @@ class MatchResultScreenshotCropViewModelTest {
         ): MatchResultScreenshotAssetCloudResult = MatchResultScreenshotAssetCloudResult.Success
     }
 
+    private class SuspendingResultCropCloudDataSource(
+        private val started: CompletableDeferred<Unit>,
+        private val result: CompletableDeferred<MatchResultScreenshotAssetCloudResult>,
+    ) : MatchResultScreenshotAssetCloudDataSource {
+        override suspend fun upsert(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetCloudResult {
+            started.complete(Unit)
+            return result.await()
+        }
+
+        override suspend fun deleteByIdentity(
+            identity: MatchResultScreenshotIdentity,
+        ): MatchResultScreenshotAssetCloudResult = MatchResultScreenshotAssetCloudResult.Success
+    }
+
     private class RecordingResultStorageUploader(
         private val repository: FakeCropAssetRepository,
     ) : MatchResultScreenshotStorageUploader {
@@ -487,6 +574,90 @@ class MatchResultScreenshotCropViewModelTest {
                 it.matchId == asset.matchId && it.screenshotRole == asset.screenshotRole
             } + asset
             return MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun updateUploadSuccessIfFingerprintMatches(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+            storageBucket: String,
+            storageObjectPath: String,
+            uploadedAt: Long,
+            updatedAt: Long,
+        ): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256) return false
+            return saveOrReplace(
+                current.copy(
+                    storageBucket = storageBucket,
+                    storageObjectPath = storageObjectPath,
+                    uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                    uploadFailureCode = null,
+                    uploadedAt = uploadedAt,
+                    updatedAt = updatedAt,
+                    revision = current.revision + 1L,
+                ),
+            ) is MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun updateUploadFailureIfFingerprintMatches(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+            failureCode: String,
+            updatedAt: Long,
+        ): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256) return false
+            return saveOrReplace(
+                current.copy(
+                    uploadStatus = ScreenshotUploadStatus.FAILED.name,
+                    uploadFailureCode = failureCode,
+                    updatedAt = updatedAt,
+                    revision = current.revision + 1L,
+                ),
+            ) is MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun updateUploadSuccessIfGenerationMatches(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+            expectedRevision: Long,
+            storageBucket: String,
+            storageObjectPath: String,
+            uploadedAt: Long,
+            updatedAt: Long,
+        ): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256 || current.revision != expectedRevision) return false
+            return saveOrReplace(
+                current.copy(
+                    storageBucket = storageBucket,
+                    storageObjectPath = storageObjectPath,
+                    uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                    uploadFailureCode = null,
+                    uploadedAt = uploadedAt,
+                    updatedAt = updatedAt,
+                    revision = current.revision + 1L,
+                ),
+            ) is MatchResultScreenshotAssetSaveResult.Saved
+        }
+
+        override suspend fun updateUploadFailureIfGenerationMatches(
+            identity: MatchResultScreenshotIdentity,
+            sha256: String,
+            expectedRevision: Long,
+            failureCode: String,
+            updatedAt: Long,
+        ): Boolean {
+            val current = getByIdentity(identity) ?: return false
+            if (current.sha256 != sha256 || current.revision != expectedRevision) return false
+            return saveOrReplace(
+                current.copy(
+                    uploadStatus = ScreenshotUploadStatus.FAILED.name,
+                    uploadFailureCode = failureCode,
+                    updatedAt = updatedAt,
+                    revision = current.revision + 1L,
+                ),
+            ) is MatchResultScreenshotAssetSaveResult.Saved
         }
 
         override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit

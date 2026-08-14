@@ -1,16 +1,16 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudFailure
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadFailure
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
-import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
-import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotAssetCloudDataSource
-import com.hoggamers.rankforge.data.cloud.NoOpMatchLobbyScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudFailure
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadFailure
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadResult
+import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotAssetCloudDataSource
+import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.OCR_SCREENSHOTS_BUCKET
-import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
-import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.ScreenshotCloudReconciliationCoordinator
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.local.identityOrNull
@@ -19,26 +19,31 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
-import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import java.io.File
 import java.time.Clock
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 
-sealed interface MatchLobbyScreenshotUploadCheckpointResult {
-    data object Completed : MatchLobbyScreenshotUploadCheckpointResult
-    data object Skipped : MatchLobbyScreenshotUploadCheckpointResult
-    data object Failed : MatchLobbyScreenshotUploadCheckpointResult
+sealed interface MatchResultScreenshotUploadCheckpointResult {
+    data object Completed : MatchResultScreenshotUploadCheckpointResult
+    data object Skipped : MatchResultScreenshotUploadCheckpointResult
+    data object Failed : MatchResultScreenshotUploadCheckpointResult
 }
 
-class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
-    private val assetRepository: MatchLobbyScreenshotAssetRepository,
+fun interface MatchResultScreenshotUploadCheckpointAction {
+    suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult
+}
+
+class MatchResultScreenshotUploadCheckpoint @Inject constructor(
+    private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
-    private val storageUploader: MatchLobbyScreenshotStorageUploader = NoOpMatchLobbyScreenshotStorageUploader(),
-    private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
-) : MatchLobbyScreenshotUploadCheckpointAction {
-    override suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult =
+    private val storageUploader: MatchResultScreenshotStorageUploader = NoOpMatchResultScreenshotStorageUploader(),
+    private val cloudDataSource: MatchResultScreenshotAssetCloudDataSource =
+        NoOpMatchResultScreenshotAssetCloudDataSource(),
+) : MatchResultScreenshotUploadCheckpointAction {
+    override suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult =
         ScreenshotCloudReconciliationCoordinator.withLock(
             ScreenshotCloudReconciliationCoordinator.key(identity),
         ) {
@@ -46,12 +51,12 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
         }
 
     private suspend fun reconcile(
-        identity: MatchLobbyScreenshotIdentity,
-    ): MatchLobbyScreenshotUploadCheckpointResult {
+        identity: MatchResultScreenshotIdentity,
+    ): MatchResultScreenshotUploadCheckpointResult {
         for (pass in 0 until MAX_RECONCILIATION_PASSES) {
-            val current = readLatestAsset(identity) ?: return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+            val current = readLatestAsset(identity) ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (current.identityOrNull() != identity || !current.hasConfirmedCrop()) {
-                return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+                return MatchResultScreenshotUploadCheckpointResult.Skipped
             }
             val localFile = localImagePreserver.resolveRelativePath(current.localRelativePath)
             if (!isReadable(localFile)) {
@@ -59,10 +64,10 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
                         identity,
                         current.sha256,
                         current.revision,
-                        MatchLobbyScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED.name,
+                        MatchResultScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED.name,
                     )
                 ) continue
-                return MatchLobbyScreenshotUploadCheckpointResult.Failed
+                return MatchResultScreenshotUploadCheckpointResult.Failed
             }
 
             val storageResult = if (hasRecordedStorageObject(current)) {
@@ -85,14 +90,14 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
                 upload(identity, localFile!!)
             }
             when (storageResult) {
-                is MatchLobbyScreenshotStorageUploadResult.Failed -> {
+                is MatchResultScreenshotStorageUploadResult.Failed -> {
                     if (!markUploadFailure(identity, current.sha256, current.revision, storageResult.failure.name)) {
                         continue
                     }
-                    return MatchLobbyScreenshotUploadCheckpointResult.Failed
+                    return MatchResultScreenshotUploadCheckpointResult.Failed
                 }
 
-                is MatchLobbyScreenshotStorageUploadResult.Uploaded -> {
+                is MatchResultScreenshotStorageUploadResult.Uploaded -> {
                     if (!assetRepository.updateUploadSuccessIfGenerationMatches(
                             identity = identity,
                             sha256 = current.sha256,
@@ -109,64 +114,64 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
             }
 
             val beforeCloud = readLatestAsset(identity)
-                ?: return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+                ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (beforeCloud.identityOrNull() != identity || !beforeCloud.hasConfirmedCrop()) {
-                return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+                return MatchResultScreenshotUploadCheckpointResult.Skipped
             }
             if (beforeCloud.uploadStatus != ScreenshotUploadStatus.UPLOADED.name ||
                 beforeCloud.uploadFailureCode != null
             ) continue
             when (val cloudResult = upsert(beforeCloud)) {
-                is MatchLobbyScreenshotAssetCloudResult.Failed -> {
+                is MatchResultScreenshotAssetCloudResult.Failed -> {
                     if (!markUploadFailure(identity, beforeCloud.sha256, beforeCloud.revision, cloudResult.failure.name)) {
                         continue
                     }
-                    return MatchLobbyScreenshotUploadCheckpointResult.Failed
+                    return MatchResultScreenshotUploadCheckpointResult.Failed
                 }
 
-                MatchLobbyScreenshotAssetCloudResult.Success -> Unit
+                MatchResultScreenshotAssetCloudResult.Success -> Unit
             }
 
             val afterCloud = readLatestAsset(identity)
-                ?: return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+                ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (afterCloud.identityOrNull() != identity || !afterCloud.hasConfirmedCrop()) {
-                return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+                return MatchResultScreenshotUploadCheckpointResult.Skipped
             }
             if (sameEligibleGeneration(beforeCloud, afterCloud)) {
-                return MatchLobbyScreenshotUploadCheckpointResult.Completed
+                return MatchResultScreenshotUploadCheckpointResult.Completed
             }
         }
-        return MatchLobbyScreenshotUploadCheckpointResult.Skipped
+        return MatchResultScreenshotUploadCheckpointResult.Skipped
     }
 
     private suspend fun upload(
-        identity: MatchLobbyScreenshotIdentity,
+        identity: MatchResultScreenshotIdentity,
         localFile: File,
-    ): MatchLobbyScreenshotStorageUploadResult = try {
+    ): MatchResultScreenshotStorageUploadResult = try {
         storageUploader.upload(
             tournamentId = identity.tournamentId,
             matchId = identity.matchId,
-            lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+            role = identity.role,
             localFile = localFile,
         )
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
-        MatchLobbyScreenshotStorageUploadResult.Failed(MatchLobbyScreenshotStorageUploadFailure.UPLOAD_FAILED)
+        MatchResultScreenshotStorageUploadResult.Failed(MatchResultScreenshotStorageUploadFailure.UPLOAD_FAILED)
     }
 
     private suspend fun upsert(
-        asset: MatchLobbyScreenshotAssetEntity,
-    ): MatchLobbyScreenshotAssetCloudResult = try {
+        asset: MatchResultScreenshotAssetEntity,
+    ): MatchResultScreenshotAssetCloudResult = try {
         cloudDataSource.upsert(asset)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
-        MatchLobbyScreenshotAssetCloudResult.Failed(MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED)
+        MatchResultScreenshotAssetCloudResult.Failed(MatchResultScreenshotAssetCloudFailure.WRITE_FAILED)
     }
 
     private suspend fun markUploadFailure(
-        identity: MatchLobbyScreenshotIdentity,
+        identity: MatchResultScreenshotIdentity,
         sha256: String,
         expectedRevision: Long,
         failureCode: String,
@@ -185,8 +190,8 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
     }
 
     private suspend fun readLatestAsset(
-        identity: MatchLobbyScreenshotIdentity,
-    ): MatchLobbyScreenshotAssetEntity? = try {
+        identity: MatchResultScreenshotIdentity,
+    ): MatchResultScreenshotAssetEntity? = try {
         assetRepository.getByIdentity(identity)
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -194,20 +199,20 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
         null
     }
 
-    private fun MatchLobbyScreenshotAssetEntity.hasConfirmedCrop(): Boolean =
-        cropProfileId == OcrCropValidationProfiles.Lobby.id && validCrop(
+    private fun MatchResultScreenshotAssetEntity.hasConfirmedCrop(): Boolean =
+        cropProfileId == OcrCropValidationProfiles.MatchResult.id && validCrop(
             originalWidth,
             originalHeight,
             cropLeft,
             cropTop,
             cropRight,
             cropBottom,
-            OcrCropValidationProfiles.Lobby,
+            OcrCropValidationProfiles.MatchResult,
         )
 
     private fun sameEligibleGeneration(
-        first: MatchLobbyScreenshotAssetEntity,
-        second: MatchLobbyScreenshotAssetEntity,
+        first: MatchResultScreenshotAssetEntity,
+        second: MatchResultScreenshotAssetEntity,
     ): Boolean = first.identityOrNull() == second.identityOrNull() &&
         first.sha256 == second.sha256 &&
         first.revision == second.revision &&
@@ -220,7 +225,7 @@ class MatchLobbyScreenshotUploadCheckpoint @Inject constructor(
         first.storageBucket == second.storageBucket &&
         first.storageObjectPath == second.storageObjectPath
 
-    private fun hasRecordedStorageObject(asset: MatchLobbyScreenshotAssetEntity): Boolean =
+    private fun hasRecordedStorageObject(asset: MatchResultScreenshotAssetEntity): Boolean =
         !asset.storageBucket.isNullOrBlank() && !asset.storageObjectPath.isNullOrBlank()
 
     private fun isReadable(file: File?): Boolean = file?.let {

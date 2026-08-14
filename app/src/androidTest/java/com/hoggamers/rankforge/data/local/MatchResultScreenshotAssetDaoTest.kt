@@ -127,6 +127,42 @@ class MatchResultScreenshotAssetDaoTest {
     }
 
     @Test
+    fun generationCasRejectsStaleRevisionWithoutChangingTheAsset() = runBlocking {
+        val database = createDatabase()
+        try {
+            insertTournamentAndMatches(database)
+            val dao = database.matchResultScreenshotAssetDao()
+            val stored = asset(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                sha256 = "f".repeat(64),
+            )
+            dao.upsert(stored)
+
+            assertEquals(
+                0,
+                dao.updateUploadSuccessIfGenerationMatches(
+                    tournamentId = stored.tournamentId,
+                    matchId = stored.matchId,
+                    screenshotRole = stored.screenshotRole,
+                    sha256 = stored.sha256,
+                    expectedRevision = stored.revision + 1,
+                    storageBucket = "ocr-screenshots",
+                    storageObjectPath = "stale/path.png",
+                    uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                    uploadedAt = 2,
+                    updatedAt = 2,
+                ),
+            )
+            assertEquals(
+                stored,
+                dao.readByMatchAndRole(stored.matchId, stored.screenshotRole),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun repositoryProtectsDuplicateFingerprintsAndPersistsCropPerRole() = runBlocking {
         val database = createDatabase()
         try {

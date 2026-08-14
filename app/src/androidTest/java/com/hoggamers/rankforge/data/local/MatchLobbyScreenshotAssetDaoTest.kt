@@ -179,6 +179,36 @@ class MatchLobbyScreenshotAssetDaoTest {
         }
     }
 
+    @Test
+    fun generationCasRejectsStaleRevisionWithoutChangingTheAsset() = runBlocking {
+        val database = createDatabase()
+        try {
+            insertTournamentAndMatches(database)
+            val dao = database.matchLobbyScreenshotAssetDao()
+            val stored = asset(index = 1, sha256 = "f".repeat(64))
+            dao.upsert(stored)
+
+            assertEquals(
+                0,
+                dao.updateUploadSuccessIfGenerationMatches(
+                    tournamentId = stored.tournamentId,
+                    matchId = stored.matchId,
+                    lobbyScreenshotIndex = stored.lobbyScreenshotIndex,
+                    sha256 = stored.sha256,
+                    expectedRevision = stored.revision + 1,
+                    storageBucket = "ocr-screenshots",
+                    storageObjectPath = "stale/path.png",
+                    uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                    uploadedAt = 2,
+                    updatedAt = 2,
+                ),
+            )
+            assertEquals(stored, dao.readByMatchAndIndex(stored.matchId, stored.lobbyScreenshotIndex))
+        } finally {
+            database.close()
+        }
+    }
+
     private fun createDatabase(): RankForgeDatabase =
         Room.inMemoryDatabaseBuilder(context, RankForgeDatabase::class.java)
             .allowMainThreadQueries()
