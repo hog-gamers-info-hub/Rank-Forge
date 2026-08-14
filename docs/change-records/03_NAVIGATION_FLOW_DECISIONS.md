@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — Slice D Implementation Authorized
+CR-003 Decisions Approved — CR-003.2 Implementation Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. The approved Slice D implementation remains in progress; CR-003 is not Complete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D and CR-003.1 are complete; CR-003 remains incomplete.
 
-Only the approved Slice D scope recorded below is authorized for implementation.
+Only the approved CR-003.2 scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1234,6 +1234,8 @@ Intended flow: DEFINED
 Navigation gaps: IDENTIFIED
 CR-003 Slice D implementation PR: #277 — MERGED
 CR-003 Slice D status: COMPLETE
+CR-003.1 implementation PR: #279 — MERGED
+CR-003.1 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1244,51 +1246,49 @@ Slice D verification:
 - Corresponding Storage objects were present.
 - No duplicate child rows were observed.
 
-The next action is:
+CR-003.1 verification:
 
-CR-003.1 — OCR Entry Gate implementation authorized
+- Connected `MatchReviewScreenTest`: PASS.
+- Both `MATCH_RESULT_UPPER` and `MATCH_RESULT_LOWER` are required before OCR Review.
+- Local-first behavior was preserved.
+- Full JVM: 1174 tests, 57 established failures in the same 9 baseline classes.
+- `assembleDebug`: PASS.
+- `assembleDebugAndroidTest`: PASS.
 
-Read-only audit finding:
+The current gate is:
 
-`MatchReviewUiState.canOpenOcrReview` currently uses `resultScreenshots.any { ... }`,
-so one ready authoritative Result screenshot can enable OCR Review.
+CR-003.2 — Match Result Crop Navigation Coverage implementation authorized
 
-Approved CR-003.1 behavior:
+Approved CR-003.2 scope:
 
-OCR Review is enabled only when both required roles are ready:
+Verify navigation for both Result screenshot crop destinations:
 
-- `MATCH_RESULT_UPPER`
-- `MATCH_RESULT_LOWER`
+1. Match Review → `MATCH_RESULT_UPPER` crop → Cancel → same Match Review.
+2. Match Review → `MATCH_RESULT_UPPER` crop → Confirm → same Match Review.
+3. Match Review → `MATCH_RESULT_LOWER` crop → Cancel → same Match Review.
+4. Match Review → `MATCH_RESULT_LOWER` crop → Confirm → same Match Review.
 
-For each required role, readiness requires:
+Required invariants:
 
-- linked asset exists;
-- correct confirmed Match Result crop exists;
-- screenshot is not busy;
-- local file is not missing.
+- Same `tournamentId` is preserved.
+- Same `matchId` is preserved.
+- Upper and Lower remain independent.
+- Cancel must not corrupt the other role.
+- Confirm must persist or retain the correct role crop.
+- Returning from either crop destination lands on the same Match Review.
+- Existing Back behavior remains correct.
 
-The editable draft match, valid `tournamentId`, and valid `matchId` requirements remain.
+Implementation rule:
 
-Required focused tests:
+Start as test-only. Do not modify production navigation unless a focused test
+proves an actual defect. If a production defect is proven, stop and report the
+exact failing workflow, exact production cause, and smallest proposed fix.
 
-1. Neither role ready → disabled.
-2. Upper only ready → disabled.
-3. Lower only ready → disabled.
-4. Both roles ready → enabled.
-5. Upper local file missing → disabled.
-6. Lower local file missing → disabled.
-7. Upper busy → disabled.
-8. Lower busy → disabled.
-9. Wrong or missing Upper crop profile → disabled.
-10. Wrong or missing Lower crop profile → disabled.
-11. `openOcrReview` cannot emit navigation unless both roles are ready.
-12. Both roles ready → existing `OCR_REVIEW` navigation is emitted exactly as before.
+Out of scope: OCR gate changes, authentication, activity recreation, Room/schema/
+migrations, Supabase, screenshot upload/recovery, OCR processing, scoring,
+finalization/export, and Phase 13.
 
-Keep CR-003.1 limited to this logic and focused-test slice. Do not redesign Result
-screenshots, OCR processing, navigation routes, Room, Supabase, or the paused OCR
-checkpoint branch.
-
-No work outside the approved CR-003.1 scope above is authorized by this record.
+No work outside the approved CR-003.2 scope above is authorized by this record.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1359,4 +1359,4 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D complete; CR-003.1 OCR Entry Gate implementation authorized.
+- CR-003 incomplete; Slice D and CR-003.1 complete; CR-003.2 Match Result Crop Navigation Coverage implementation authorized.
