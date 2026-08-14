@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — CR-003.2 Implementation Authorized
+CR-003 Decisions Approved — CR-003.3 Test-First Implementation Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D and CR-003.1 are complete; CR-003 remains incomplete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, and CR-003.2 are complete; CR-003 remains incomplete.
 
-Only the approved CR-003.2 scope recorded below is authorized for implementation.
+Only the approved CR-003.3 scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1236,6 +1236,8 @@ CR-003 Slice D implementation PR: #277 — MERGED
 CR-003 Slice D status: COMPLETE
 CR-003.1 implementation PR: #279 — MERGED
 CR-003.1 status: COMPLETE
+CR-003.2 implementation/test PR: #281 — MERGED
+CR-003.2 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1255,40 +1257,64 @@ CR-003.1 verification:
 - `assembleDebug`: PASS.
 - `assembleDebugAndroidTest`: PASS.
 
+CR-003.2 verification:
+
+- Upper Result Crop → Cancel → same Match Review: PASS.
+- Lower Result Crop → Cancel → same Match Review: PASS.
+- Upper Result Crop → Confirm → same Match Review: PASS.
+- Lower Result Crop → Confirm → same Match Review: PASS.
+- Exact `tournamentId`, `matchId`, and Upper/Lower role were preserved.
+- Confirmed crop persisted for the correct role and the opposite role remained unchanged.
+- Connected physical-device verification passed for all four focused cases.
+- `assembleDebugAndroidTest`: PASS.
+- `git diff --check`: PASS.
+- Production changes: NONE; implementation was test-only.
+
 The current gate is:
 
-CR-003.2 — Match Result Crop Navigation Coverage implementation authorized
+CR-003.3 — Authentication Return Flow implementation authorized; TEST-FIRST
 
-Approved CR-003.2 scope:
+Read-only audit finding:
 
-Verify navigation for both Result screenshot crop destinations:
+- `RankForgeAppContent` already gates the root UI by authentication state:
+  signed-in content, session-loading screen, or `AuthScreen`.
+- Email/password success sets signed-in state; Google browser launch alone does
+  not. Google success becomes signed in only through authoritative Supabase
+  `AuthState.SignedIn` observation, including startup session restoration.
+- Existing `AuthNavigationTest` verifies generic signed-out → signed-in auth
+  removal, but the full CR-003.3 requirements are not yet covered.
+- No production authentication/navigation defect is currently proven.
 
-1. Match Review → `MATCH_RESULT_UPPER` crop → Cancel → same Match Review.
-2. Match Review → `MATCH_RESULT_UPPER` crop → Confirm → same Match Review.
-3. Match Review → `MATCH_RESULT_LOWER` crop → Cancel → same Match Review.
-4. Match Review → `MATCH_RESULT_LOWER` crop → Confirm → same Match Review.
+Approved CR-003.3 strategy:
 
-Required invariants:
+Start test-first. Preserve the existing state-driven architecture unless
+focused tests prove an actual defect; do not introduce a navigation event merely
+because older decision text mentions one.
 
-- Same `tournamentId` is preserved.
-- Same `matchId` is preserved.
-- Upper and Lower remain independent.
-- Cancel must not corrupt the other role.
-- Confirm must persist or retain the correct role crop.
-- Returning from either crop destination lands on the same Match Review.
-- Existing Back behavior remains correct.
+Required focused coverage:
 
-Implementation rule:
+- Startup restored session → Tournament List with no interactive-auth return.
+- Successful email login and immediately-authenticated sign-up → Authentication
+  closes and Tournament List is reached exactly once.
+- Confirmation-required or failed email auth → remain on Authentication with no
+  navigation.
+- Google launch, browser cancellation, or abandonment without a callback →
+  remain on Authentication; launch is not authentication success.
+- Successful Google callback / authoritative `AuthState.SignedIn` → Tournament
+  List exactly once.
+- Repeated signed-in/auth-state emissions do not duplicate or replay navigation.
 
-Start as test-only. Do not modify production navigation unless a focused test
-proves an actual defect. If a production defect is proven, stop and report the
-exact failing workflow, exact production cause, and smallest proposed fix.
+Use focused `AuthViewModelTest` and `AuthNavigationTest` coverage, using
+`RankForgeNavigationTest` only where real NavHost/back-stack inspection is
+necessary. If tests prove a production defect, stop and report the workflow,
+cause, smallest fix, and exact production files before implementing it.
 
-Out of scope: OCR gate changes, authentication, activity recreation, Room/schema/
-migrations, Supabase, screenshot upload/recovery, OCR processing, scoring,
-finalization/export, and Phase 13.
+Out of scope: CR-003.1 OCR gate changes, CR-003.2 crop navigation, activity
+recreation, tournament/match workflows, Room/schema/migrations, Supabase,
+screenshot upload/recovery, OCR processing, scoring/finalization, exports, and
+Phase 13.
 
-No work outside the approved CR-003.2 scope above is authorized by this record.
+No work outside the approved CR-003.3 scope above is authorized by this record.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1359,4 +1385,5 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D and CR-003.1 complete; CR-003.2 Match Result Crop Navigation Coverage implementation authorized.
+- CR-003 incomplete; Slice D, CR-003.1, and CR-003.2 complete; CR-003.3
+  Authentication Return Flow implementation authorized, test-first.
