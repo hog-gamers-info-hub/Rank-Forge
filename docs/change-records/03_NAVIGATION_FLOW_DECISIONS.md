@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — CR-003.4 Test-First Implementation Authorized
+CR-003 Decisions Approved — CR-003.5 Remaining Parent Navigation Fixes Authorized; TEST-FIRST
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, and CR-003.3 are complete; CR-003 remains incomplete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, CR-003.3, and CR-003.4 are complete; CR-003 remains incomplete.
 
-Only the approved CR-003.4 scope recorded below is authorized for implementation.
+Only the approved CR-003.5 scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1240,6 +1240,8 @@ CR-003.2 implementation/test PR: #281 — MERGED
 CR-003.2 status: COMPLETE
 CR-003.3 implementation/test PR: #283 — MERGED
 CR-003.3 status: COMPLETE
+CR-003.4 implementation/test PR: #285 — MERGED
+CR-003.4 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1283,57 +1285,80 @@ CR-003.3 verification:
 - Existing state-driven authentication architecture was retained.
 - Production changes: NONE.
 
+CR-003.4 verification:
+
+- Genuine `ActivityScenario.recreate()` coverage was added.
+- Tournament Details retained the exact `tournamentId`.
+- Match Review retained the exact `tournamentId` and `matchId`.
+- Persisted Room workflow data survived recreation.
+- Logical Back destinations were preserved.
+- Both focused tests passed on physical device I2019 - 14.
+- No production navigation defect was found.
+- No `app/src/main` production changes were required.
+
 The current gate is:
 
-CR-003.4 — Recreation and Back-Stack Verification implementation authorized; TEST-FIRST
+CR-003.5 — Remaining Parent Navigation Fixes implementation authorized; TEST-FIRST
 
 Read-only audit finding:
 
-- Rank-Forge destinations are typed `@Serializable` routes.
-- Tournament-scoped destinations carry `tournamentId`; match-scoped destinations
-  carry `tournamentId` and `matchId`.
-- `RankForgeNavHost` uses Navigation Compose `NavHost` / `NavHostController`.
-- `MainActivity` recreates `RankForgeApp` from `onCreate`.
-- Existing navigation tests mainly inject Compose content into a generic
-  `ComponentActivity`; focused Activity recreation coverage is not yet present.
-- No broad `SavedStateHandle` refactor is currently justified.
+- CR-003.5 is intentionally narrow.
+- Production changes are not pre-authorized.
+- Parent/back-stack production code may change only if a focused navigation test
+  proves an actual user-visible failure.
+- No broad navigation refactor is approved.
 
-Approved CR-003.4 scope:
+Existing parent behavior already substantially covered includes:
 
-After Activity recreation, verify the current destination, exact route
-arguments, tournament and match identity, persisted workflow data, and Back
-navigation to the correct logical parent.
+- Tournament Creation → Team Entry → created Tournament Details.
+- Roster Review → Roster Screenshot Crop → Roster Review.
+- Match Result Crop → Match Review.
+- Match OCR Review → Match Review.
+- Correction submit/discard → Match Review.
+- Match Review → Tournament Details.
+- Activity recreation for Tournament Details and Match Review.
 
-Minimum focused coverage:
+Approved CR-003.5 test-first scope:
 
-- Tournament List → Tournament Details(`tournamentId`) → Activity recreation →
-  same Tournament Details with the same `tournamentId`, persisted tournament,
-  and Back to Tournament List.
-- Tournament Details → Match Review(`tournamentId`, `matchId`) → Activity
-  recreation → same Match Review with both exact IDs, persisted match, and Back
-  or Details navigation to the same Tournament Details.
-- Add a child-route case only if a focused test proves it is necessary.
+1. Finalized Match Review → Match Correction → Back → same Match Review.
 
-Before implementation, verify that the test harness exercises true Activity
-recreation. Do not assume `setContent` content is restored after
-`ActivityScenario.recreate()`; production `MainActivity` calls `RankForgeApp()`
-from `onCreate`.
+Required identity assertions:
 
-Start test-first. Production changes are prohibited unless a focused recreation
-test proves an actual user-visible defect. If proven, stop and report the exact
-workflow, expected and actual destination/arguments/state, root cause, smallest
-fix, and production files before implementing it.
+- Exact `tournamentId` preserved.
+- Exact `matchId` preserved.
+- Same finalized match context restored.
 
-Do not introduce broad `SavedStateHandle` adoption, custom global navigation
-persistence, a replacement navigation framework, new restoration destinations,
-Room/schema/migration changes, process-death architecture, or unrelated
-ViewModel refactors.
+This specifically covers correction Back behavior, separate from the already
+covered correction submit/discard behavior.
 
-Out of scope: authentication behavior, CR-003.1 OCR gate changes, CR-003.2 crop
-navigation, screenshot recovery, Supabase, Room schema/migrations, OCR,
-scoring, finalization, exports, and Phase 13.
+2. Tournament Details → Tournament Standings → Back → same Tournament Details.
 
-No work outside the approved CR-003.4 scope above is authorized by this record.
+Required assertions:
+
+- Exact `tournamentId` preserved.
+- Correct Tournament Details restored.
+- No fallback to Tournament List or unrelated tournament.
+
+Use the existing `RankForgeNavHost` / Navigation Compose architecture.
+
+Test-first rule:
+
+- Start with focused Compose navigation tests.
+- If both parent flows pass, make no production change; CR-003.5 may close as
+  test-only.
+- If either test fails, stop and document the exact starting and child
+  destinations, expected and actual destinations and IDs, root cause, smallest
+  proposed production fix, and exact production files required.
+- Do not implement a production fix without separate approval.
+
+Out of scope: authentication, OCR readiness, screenshot crop logic, screenshot
+recovery, recreation infrastructure except reusing existing test support, Room
+schema/migrations, Supabase, scoring, finalization semantics, export behavior,
+Match Google Sheets export, Phase 13, and checkpointed OCR work.
+
+CR-003.6 remains the separate Match Google Sheets Export slice.
+
+No work outside the approved CR-003.5 scope above is authorized by this record.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1396,6 +1421,10 @@ Completion Record
 
 Implementation PR(s):
 - #277 — CR-003 Slice D automatic offline screenshot recovery (merged)
+- #279 — CR-003.1 OCR Entry Gate (merged)
+- #281 — CR-003.2 Match Result Crop Navigation Coverage (merged)
+- #283 — CR-003.3 Authentication Return Flow (merged)
+- #285 — CR-003.4 Recreation and Back-Stack Verification (merged)
 
 Documentation closure PR:
 - TBD
@@ -1404,6 +1433,6 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, and CR-003.3 complete;
-  CR-003.4 Recreation and Back-Stack Verification implementation authorized,
-  test-first.
+- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, CR-003.3, and CR-003.4
+  complete; CR-003.5 Remaining Parent Navigation Fixes implementation
+  authorized, test-first.
