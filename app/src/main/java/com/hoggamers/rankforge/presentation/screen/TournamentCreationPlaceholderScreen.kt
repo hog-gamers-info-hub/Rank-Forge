@@ -197,9 +197,13 @@ fun TournamentCreationScreen(
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
 
-        if (uiState.submissionError != null) {
+        uiState.submissionError?.let { error ->
+            val message = when (error) {
+                TournamentCreationSubmissionError.CLOUD_SYNC_PENDING -> R.string.upload_tournament_queued
+                TournamentCreationSubmissionError.UNKNOWN -> R.string.tournament_creation_error
+            }
             Text(
-                text = stringResource(R.string.tournament_creation_error),
+                text = stringResource(message),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -219,7 +223,15 @@ fun TournamentCreationScreen(
                 Spacer(modifier = Modifier.padding(horizontal = RankForgeSpacing.Small))
                 Text(text = stringResource(R.string.tournament_creation_submitting))
             } else {
-                Text(text = stringResource(R.string.create_tournament_action))
+                Text(
+                    text = stringResource(
+                        if (uiState.cloudConfirmationPending) {
+                            R.string.upload_tournament_action
+                        } else {
+                            R.string.create_tournament_action
+                        },
+                    ),
+                )
             }
         }
     }

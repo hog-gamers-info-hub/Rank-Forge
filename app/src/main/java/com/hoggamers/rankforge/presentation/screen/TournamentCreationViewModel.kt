@@ -2,11 +2,13 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentInput
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentResult
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
-import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentField
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -24,7 +26,10 @@ class TournamentCreationViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TournamentCreationUiState())
     val uiState: StateFlow<TournamentCreationUiState> = _uiState.asStateFlow()
 
+    private var pendingCloudTournamentId: String? = null
+
     fun onTournamentNameChanged(value: String) {
+        if (_uiState.value.cloudConfirmationPending) return
         _uiState.update {
             it.copy(
                 tournamentName = value,
@@ -35,6 +40,7 @@ class TournamentCreationViewModel @Inject constructor(
     }
 
     fun onTournamentDateChanged(value: java.time.LocalDate) {
+        if (_uiState.value.cloudConfirmationPending) return
         _uiState.update {
             it.copy(
                 tournamentDate = value,
@@ -45,6 +51,7 @@ class TournamentCreationViewModel @Inject constructor(
     }
 
     fun onOrganizerNameChanged(value: String) {
+        if (_uiState.value.cloudConfirmationPending) return
         _uiState.update {
             it.copy(
                 organizerName = value,
@@ -55,6 +62,7 @@ class TournamentCreationViewModel @Inject constructor(
     }
 
     fun onOrganizerContactNumberChanged(value: String) {
+        if (_uiState.value.cloudConfirmationPending) return
         _uiState.update {
             it.copy(
                 organizerContactNumber = value,
@@ -67,10 +75,16 @@ class TournamentCreationViewModel @Inject constructor(
     fun submit() {
         if (_uiState.value.isSubmitting || _uiState.value.navigation != null) return
 
+        val existingTournamentId = pendingCloudTournamentId
         val currentState = _uiState.value
         _uiState.update { it.copy(isSubmitting = true, submissionError = null) }
         viewModelScope.launch {
             try {
+                if (existingTournamentId != null) {
+                    confirmCloudTournament(existingTournamentId)
+                    return@launch
+                }
+
                 when (
                     val result = createTournament(
                         CreateTournamentInput(
@@ -89,19 +103,8 @@ class TournamentCreationViewModel @Inject constructor(
                     }
 
                     is CreateTournamentResult.Created -> {
-                        try {
-                            uploadTournament(result.tournament.id)
-                        } catch (cancellation: CancellationException) {
-                            throw cancellation
-                        } catch (_: Throwable) {
-                            // Local creation remains successful when the immediate cloud attempt throws.
-                        }
-                        _uiState.update {
-                            it.copy(
-                                isSubmitting = false,
-                                navigation = TournamentCreationNavigation.Created(result.tournament.id),
-                            )
-                        }
+                        pendingCloudTournamentId = result.tournament.id
+                        confirmCloudTournament(result.tournament.id)
                     }
                 }
             } catch (cancellation: CancellationException) {
@@ -110,10 +113,53 @@ class TournamentCreationViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isSubmitting = false,
+                        cloudConfirmationPending = pendingCloudTournamentId != null,
                         submissionError = TournamentCreationSubmissionError.UNKNOWN,
                     )
                 }
             }
+        }
+    }
+
+    private suspend fun confirmCloudTournament(tournamentId: String) {
+        val uploadResult = try {
+            uploadTournament(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    cloudConfirmationPending = true,
+                    submissionError = TournamentCreationSubmissionError.UNKNOWN,
+                )
+            }
+            return
+        }
+
+        if (uploadResult.primaryResult is TournamentCloudUploadResult.Success) {
+            pendingCloudTournamentId = null
+            _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    cloudConfirmationPending = false,
+                    submissionError = null,
+                    navigation = TournamentCreationNavigation.Created(tournamentId),
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isSubmitting = false,
+                cloudConfirmationPending = true,
+                submissionError = if (uploadResult.queueRecordingResult == QueueRecordingResult.RECORDED) {
+                    TournamentCreationSubmissionError.CLOUD_SYNC_PENDING
+                } else {
+                    TournamentCreationSubmissionError.UNKNOWN
+                },
+            )
         }
     }
 

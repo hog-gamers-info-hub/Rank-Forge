@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 
 enum class TournamentCreationSubmissionError {
+    CLOUD_SYNC_PENDING,
     UNKNOWN,
 }
 
@@ -23,6 +24,7 @@ data class TournamentCreationUiState(
     val organizerContactNumber: String = "",
     val validationErrors: Map<TournamentField, TournamentValidationError> = emptyMap(),
     val isSubmitting: Boolean = false,
+    val cloudConfirmationPending: Boolean = false,
     val submissionError: TournamentCreationSubmissionError? = null,
     val showDiscardDialog: Boolean = false,
     val navigation: TournamentCreationNavigation? = null,

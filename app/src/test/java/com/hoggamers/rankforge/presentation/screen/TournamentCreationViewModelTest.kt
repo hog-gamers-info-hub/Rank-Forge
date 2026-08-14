@@ -57,6 +57,7 @@ class TournamentCreationViewModelTest {
     fun initialStateIsIdleAndClean() {
         assertFalse(viewModel.uiState.value.isDirty)
         assertFalse(viewModel.uiState.value.isSubmitting)
+        assertFalse(viewModel.uiState.value.cloudConfirmationPending)
         assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
     }
 
@@ -154,11 +155,12 @@ class TournamentCreationViewModelTest {
             TournamentCreationNavigation.Created(repository.records.single().id),
             viewModel.uiState.value.navigation,
         )
+        assertFalse(viewModel.uiState.value.cloudConfirmationPending)
         assertNull(viewModel.uiState.value.submissionError)
     }
 
     @Test
-    fun networkFailureStillNavigatesAndRetainsLocalCreation() = runTest {
+    fun networkFailureBlocksNavigationAndRetainsLocalCreation() = runTest {
         uploadAction.result = QueueAwareActionResult(
             primaryResult = TournamentCloudUploadResult.NetworkFailure,
             queueRecordingResult = QueueRecordingResult.RECORDED,
@@ -170,12 +172,16 @@ class TournamentCreationViewModelTest {
 
         assertEquals(1, repository.records.size)
         assertEquals(1, uploadAction.tournamentIds.size)
-        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
-        assertNull(viewModel.uiState.value.submissionError)
+        assertNull(viewModel.uiState.value.navigation)
+        assertTrue(viewModel.uiState.value.cloudConfirmationPending)
+        assertEquals(
+            TournamentCreationSubmissionError.CLOUD_SYNC_PENDING,
+            viewModel.uiState.value.submissionError,
+        )
     }
 
     @Test
-    fun queuePersistenceFailureStillNavigatesAndRetainsLocalCreation() = runTest {
+    fun queuePersistenceFailureBlocksNavigationAndRetainsLocalCreation() = runTest {
         uploadAction.result = QueueAwareActionResult(
             primaryResult = TournamentCloudUploadResult.NetworkFailure,
             queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
@@ -186,12 +192,13 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.records.size)
-        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
-        assertNull(viewModel.uiState.value.submissionError)
+        assertNull(viewModel.uiState.value.navigation)
+        assertTrue(viewModel.uiState.value.cloudConfirmationPending)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
     }
 
     @Test
-    fun unexpectedCloudExceptionStillNavigatesAndRetainsLocalCreation() = runTest {
+    fun unexpectedCloudExceptionBlocksNavigationAndRetainsLocalCreation() = runTest {
         uploadAction.throwable = IllegalStateException("cloud unavailable")
         fillValidForm()
 
@@ -199,8 +206,59 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.records.size)
-        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+        assertNull(viewModel.uiState.value.navigation)
+        assertTrue(viewModel.uiState.value.cloudConfirmationPending)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun retryAfterCloudFailureReusesSameLocalTournamentAndNavigatesAfterSuccess() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val tournamentId = repository.records.single().id
+        assertNull(viewModel.uiState.value.navigation)
+        assertTrue(viewModel.uiState.value.cloudConfirmationPending)
+
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.Success(1),
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertEquals(listOf(tournamentId, tournamentId), uploadAction.tournamentIds)
+        assertEquals(
+            TournamentCreationNavigation.Created(tournamentId),
+            viewModel.uiState.value.navigation,
+        )
+        assertFalse(viewModel.uiState.value.cloudConfirmationPending)
         assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun pendingCloudConfirmationPreventsEditingTheAlreadyCreatedTournamentForm() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        viewModel.onTournamentNameChanged("Different Cup")
+        viewModel.onOrganizerNameChanged("Different Organizer")
+
+        assertEquals("Summer Cup", viewModel.uiState.value.tournamentName)
+        assertEquals("Alex", viewModel.uiState.value.organizerName)
     }
 
     @Test
@@ -235,6 +293,7 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isSubmitting)
+        assertFalse(viewModel.uiState.value.cloudConfirmationPending)
         assertNotNull(viewModel.uiState.value.submissionError)
         assertEquals(0, repository.records.size)
         assertNull(viewModel.uiState.value.navigation)
