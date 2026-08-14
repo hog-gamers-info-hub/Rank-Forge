@@ -303,6 +303,60 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun upperReadyOnlyCannotOpenOcrReview() = runTest {
+        val viewModel = reviewViewModelWithReadyResultRoles(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.openOcrReview()
+
+        assertFalse(viewModel.uiState.value.canOpenOcrReview)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun lowerReadyOnlyCannotOpenOcrReview() = runTest {
+        val viewModel = reviewViewModelWithReadyResultRoles(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.openOcrReview()
+
+        assertFalse(viewModel.uiState.value.canOpenOcrReview)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun bothResultRolesReadyOpenOcrReview() = runTest {
+        val viewModel = reviewViewModelWithReadyResultRoles(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.openOcrReview()
+
+        assertTrue(viewModel.uiState.value.canOpenOcrReview)
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun handledOcrReviewNavigationIsCleared() = runTest {
+        val viewModel = reviewViewModelWithReadyResultRoles(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.openOcrReview()
+        viewModel.onNavigationHandled()
+
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
     fun invalidScreenshotDoesNotExposeOcrReviewNavigation() = runTest {
         val viewModel = reviewViewModel(
             imageCandidateValidator = ImageCandidateValidator(
@@ -1186,6 +1240,30 @@ class MatchReviewViewModelTest {
         screenshotOwnerProvider = screenshotOwnerProvider,
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
     )
+
+    private fun reviewViewModelWithReadyResultRoles(
+        vararg roles: MatchResultScreenshotRole,
+    ): MatchReviewViewModel {
+        val preserver = localImagePreserver()
+        val assets = roles.map { role ->
+            val relativePath = "screenshots/$TOURNAMENT_ID/$matchId/result/${role.name}/original.png"
+            preserver.resolveRelativePath(relativePath)!!.apply {
+                parentFile?.mkdirs()
+                writeBytes(byteArrayOf(1, 2, 3))
+            }
+            resultScreenshotAsset(relativePath, role).copy(
+                cropProfileId = "match-result",
+                cropLeft = 0.1,
+                cropTop = 0.1,
+                cropRight = 0.9,
+                cropBottom = 0.9,
+            )
+        }
+        return reviewViewModel(
+            localImagePreserver = preserver,
+            matchResultScreenshotAssetRepository = FakeMatchResultScreenshotAssetRepository(assets),
+        )
+    }
 
     private fun resultScreenshotAsset(
         localRelativePath: String,

@@ -91,7 +91,12 @@ class MatchReviewScreenTest {
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
                                 cropProfileId = "match-result",
                             ),
-                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
                         ),
                     ),
                     onEnterPlacements = {},
@@ -108,6 +113,95 @@ class MatchReviewScreenTest {
             .assertIsEnabled()
             .performClick()
         composeTestRule.runOnIdle { assertEquals(1, ocrReviewCount) }
+    }
+
+    @Test
+    fun simplifiedReviewOcrActionIsDisabledWhenOnlyUpperIsReady() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun simplifiedReviewOcrActionIsDisabledWhenOnlyLowerIsReady() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun simplifiedReviewOcrActionIsEnabledWhenBothRolesAreReady() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertIsEnabled()
     }
 
     @Test

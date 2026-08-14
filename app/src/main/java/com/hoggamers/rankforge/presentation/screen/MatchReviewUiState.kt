@@ -193,13 +193,18 @@ data class MatchReviewUiState(
         get() = isEditable &&
             !tournamentId.isNullOrBlank() &&
             !matchId.isNullOrBlank() &&
-            resultScreenshots.any { slot ->
-                slot.hasLinkedAsset &&
-                    slot.hasConfirmedCrop &&
-                    !slot.isBusy &&
-                    !slot.isLocalFileMissing
-            }
+            resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_UPPER) &&
+            resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
 }
+
+private fun List<MatchResultScreenshotSlotUiState>.isOcrReady(
+    role: MatchResultScreenshotRole,
+): Boolean = firstOrNull { it.role == role }?.let { slot ->
+    slot.hasLinkedAsset &&
+        slot.hasConfirmedCrop &&
+        !slot.isBusy &&
+        !slot.isLocalFileMissing
+} == true
 
 fun defaultMatchResultScreenshotSlots(): List<MatchResultScreenshotSlotUiState> = listOf(
     MatchResultScreenshotSlotUiState(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
