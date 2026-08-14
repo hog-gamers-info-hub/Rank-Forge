@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — CR-003.3 Test-First Implementation Authorized
+CR-003 Decisions Approved — CR-003.4 Test-First Implementation Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, and CR-003.2 are complete; CR-003 remains incomplete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, and CR-003.3 are complete; CR-003 remains incomplete.
 
-Only the approved CR-003.3 scope recorded below is authorized for implementation.
+Only the approved CR-003.4 scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1238,6 +1238,8 @@ CR-003.1 implementation PR: #279 — MERGED
 CR-003.1 status: COMPLETE
 CR-003.2 implementation/test PR: #281 — MERGED
 CR-003.2 status: COMPLETE
+CR-003.3 implementation/test PR: #283 — MERGED
+CR-003.3 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1270,51 +1272,68 @@ CR-003.2 verification:
 - `git diff --check`: PASS.
 - Production changes: NONE; implementation was test-only.
 
+CR-003.3 verification:
+
+- `AuthViewModelTest`: 25/25 PASS.
+- Nine focused `AuthNavigationTest` connected tests: PASS.
+- `assembleDebugAndroidTest`: PASS.
+- Real email/password login: PASS.
+- Real Google OAuth callback: PASS.
+- Google browser Back/cancel: PASS.
+- Existing state-driven authentication architecture was retained.
+- Production changes: NONE.
+
 The current gate is:
 
-CR-003.3 — Authentication Return Flow implementation authorized; TEST-FIRST
+CR-003.4 — Recreation and Back-Stack Verification implementation authorized; TEST-FIRST
 
 Read-only audit finding:
 
-- `RankForgeAppContent` already gates the root UI by authentication state:
-  signed-in content, session-loading screen, or `AuthScreen`.
-- Email/password success sets signed-in state; Google browser launch alone does
-  not. Google success becomes signed in only through authoritative Supabase
-  `AuthState.SignedIn` observation, including startup session restoration.
-- Existing `AuthNavigationTest` verifies generic signed-out → signed-in auth
-  removal, but the full CR-003.3 requirements are not yet covered.
-- No production authentication/navigation defect is currently proven.
+- Rank-Forge destinations are typed `@Serializable` routes.
+- Tournament-scoped destinations carry `tournamentId`; match-scoped destinations
+  carry `tournamentId` and `matchId`.
+- `RankForgeNavHost` uses Navigation Compose `NavHost` / `NavHostController`.
+- `MainActivity` recreates `RankForgeApp` from `onCreate`.
+- Existing navigation tests mainly inject Compose content into a generic
+  `ComponentActivity`; focused Activity recreation coverage is not yet present.
+- No broad `SavedStateHandle` refactor is currently justified.
 
-Approved CR-003.3 strategy:
+Approved CR-003.4 scope:
 
-Start test-first. Preserve the existing state-driven architecture unless
-focused tests prove an actual defect; do not introduce a navigation event merely
-because older decision text mentions one.
+After Activity recreation, verify the current destination, exact route
+arguments, tournament and match identity, persisted workflow data, and Back
+navigation to the correct logical parent.
 
-Required focused coverage:
+Minimum focused coverage:
 
-- Startup restored session → Tournament List with no interactive-auth return.
-- Successful email login and immediately-authenticated sign-up → Authentication
-  closes and Tournament List is reached exactly once.
-- Confirmation-required or failed email auth → remain on Authentication with no
-  navigation.
-- Google launch, browser cancellation, or abandonment without a callback →
-  remain on Authentication; launch is not authentication success.
-- Successful Google callback / authoritative `AuthState.SignedIn` → Tournament
-  List exactly once.
-- Repeated signed-in/auth-state emissions do not duplicate or replay navigation.
+- Tournament List → Tournament Details(`tournamentId`) → Activity recreation →
+  same Tournament Details with the same `tournamentId`, persisted tournament,
+  and Back to Tournament List.
+- Tournament Details → Match Review(`tournamentId`, `matchId`) → Activity
+  recreation → same Match Review with both exact IDs, persisted match, and Back
+  or Details navigation to the same Tournament Details.
+- Add a child-route case only if a focused test proves it is necessary.
 
-Use focused `AuthViewModelTest` and `AuthNavigationTest` coverage, using
-`RankForgeNavigationTest` only where real NavHost/back-stack inspection is
-necessary. If tests prove a production defect, stop and report the workflow,
-cause, smallest fix, and exact production files before implementing it.
+Before implementation, verify that the test harness exercises true Activity
+recreation. Do not assume `setContent` content is restored after
+`ActivityScenario.recreate()`; production `MainActivity` calls `RankForgeApp()`
+from `onCreate`.
 
-Out of scope: CR-003.1 OCR gate changes, CR-003.2 crop navigation, activity
-recreation, tournament/match workflows, Room/schema/migrations, Supabase,
-screenshot upload/recovery, OCR processing, scoring/finalization, exports, and
-Phase 13.
+Start test-first. Production changes are prohibited unless a focused recreation
+test proves an actual user-visible defect. If proven, stop and report the exact
+workflow, expected and actual destination/arguments/state, root cause, smallest
+fix, and production files before implementing it.
 
-No work outside the approved CR-003.3 scope above is authorized by this record.
+Do not introduce broad `SavedStateHandle` adoption, custom global navigation
+persistence, a replacement navigation framework, new restoration destinations,
+Room/schema/migration changes, process-death architecture, or unrelated
+ViewModel refactors.
+
+Out of scope: authentication behavior, CR-003.1 OCR gate changes, CR-003.2 crop
+navigation, screenshot recovery, Supabase, Room schema/migrations, OCR,
+scoring, finalization, exports, and Phase 13.
+
+No work outside the approved CR-003.4 scope above is authorized by this record.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1385,5 +1404,6 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D, CR-003.1, and CR-003.2 complete; CR-003.3
-  Authentication Return Flow implementation authorized, test-first.
+- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, and CR-003.3 complete;
+  CR-003.4 Recreation and Back-Stack Verification implementation authorized,
+  test-first.
