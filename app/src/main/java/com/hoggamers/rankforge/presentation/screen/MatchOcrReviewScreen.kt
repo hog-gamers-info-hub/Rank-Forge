@@ -33,6 +33,7 @@ object MatchOcrReviewTestTags {
     const val LOADING = "match_ocr_review_loading"
     const val EMPTY = "match_ocr_review_empty"
     const val ERROR = "match_ocr_review_error"
+    const val EMPTY_CONTENT = "match_ocr_review_empty_content"
     const val READY_CONTENT = "match_ocr_review_ready_content"
     const val PREVIEW = "match_ocr_review_match_result_preview"
     const val ROW_LIST = "match_ocr_review_row_list"
@@ -51,6 +52,7 @@ object MatchOcrReviewTestTags {
     private const val ROW_PREFIX = "match_ocr_review_row_"
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
+    fun previewRow(position: Int): String = "${PREVIEW}_row_$position"
     fun placement(rowIndex: Int): String = "${row(rowIndex)}_placement"
     fun playerName(rowIndex: Int): String = "${row(rowIndex)}_player_name"
     fun kills(rowIndex: Int): String = "${row(rowIndex)}_kills"
@@ -148,15 +150,22 @@ private fun MatchOcrReviewEmptyState(
     RankForgeScreenContainer(
         modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
     ) {
-        Text(
-            text = stringResource(R.string.match_ocr_review_empty_title),
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.EMPTY),
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        Text(text = stringResource(R.string.match_ocr_review_empty_message))
-        MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
-        MatchOcrReviewBackAction(onBack)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .testTag(MatchOcrReviewTestTags.EMPTY_CONTENT),
+        ) {
+            Text(
+                text = stringResource(R.string.match_ocr_review_empty_title),
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.EMPTY),
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Text(text = stringResource(R.string.match_ocr_review_empty_message))
+            MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
+            MatchOcrReviewBackAction(onBack)
+        }
     }
 }
 
@@ -194,15 +203,14 @@ private fun MatchOcrReviewReadyState(
 ) {
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
     RankForgeScreenContainer(
-        modifier = Modifier
-            .testTag(MatchOcrReviewTestTags.SCREEN)
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .testTag(MatchOcrReviewTestTags.READY_CONTENT),
             verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
         ) {
@@ -327,6 +335,7 @@ private fun MatchResultOcrPreviewSection(
                     text = "Position ${row.position} (${row.sourceLabel}, ${row.role.name}) " +
                         "placement=${row.placementText}",
                     style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag(MatchOcrReviewTestTags.previewRow(row.position)),
                 )
                 (1..4).forEach { slot ->
                     val playerSlot = row.slots.firstOrNull { it.slot == slot }
