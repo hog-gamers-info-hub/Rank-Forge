@@ -1232,14 +1232,63 @@ Current state:
 Read-only audit: COMPLETE
 Intended flow: DEFINED
 Navigation gaps: IDENTIFIED
-CR-003 decisions: APPROVED FOR SLICE D IMPLEMENTATION
-Slice D implementation: NOT STARTED
+CR-003 Slice D implementation PR: #277 — MERGED
+CR-003 Slice D status: COMPLETE
+CR-003 status: INCOMPLETE
+
+Slice D verification:
+
+- Offline Match 3 parent-first screenshot recovery was verified.
+- Lobby Screenshot 1 and Result Upper automatically recovered after reconnect.
+- Hosted metadata reached `UPLOADED`.
+- Corresponding Storage objects were present.
+- No duplicate child rows were observed.
 
 The next action is:
 
-Slice D — implement automatic foreground retry for locally persisted Lobby and match-result screenshots after parent recovery.
+CR-003.1 — OCR Entry Gate implementation authorized
 
-No work outside the approved Slice D scope below is authorized by this record.
+Read-only audit finding:
+
+`MatchReviewUiState.canOpenOcrReview` currently uses `resultScreenshots.any { ... }`,
+so one ready authoritative Result screenshot can enable OCR Review.
+
+Approved CR-003.1 behavior:
+
+OCR Review is enabled only when both required roles are ready:
+
+- `MATCH_RESULT_UPPER`
+- `MATCH_RESULT_LOWER`
+
+For each required role, readiness requires:
+
+- linked asset exists;
+- correct confirmed Match Result crop exists;
+- screenshot is not busy;
+- local file is not missing.
+
+The editable draft match, valid `tournamentId`, and valid `matchId` requirements remain.
+
+Required focused tests:
+
+1. Neither role ready → disabled.
+2. Upper only ready → disabled.
+3. Lower only ready → disabled.
+4. Both roles ready → enabled.
+5. Upper local file missing → disabled.
+6. Lower local file missing → disabled.
+7. Upper busy → disabled.
+8. Lower busy → disabled.
+9. Wrong or missing Upper crop profile → disabled.
+10. Wrong or missing Lower crop profile → disabled.
+11. `openOcrReview` cannot emit navigation unless both roles are ready.
+12. Both roles ready → existing `OCR_REVIEW` navigation is emitted exactly as before.
+
+Keep CR-003.1 limited to this logic and focused-test slice. Do not redesign Result
+screenshots, OCR processing, navigation routes, Room, Supabase, or the paused OCR
+checkpoint branch.
+
+No work outside the approved CR-003.1 scope above is authorized by this record.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1300,10 +1349,8 @@ g. Retries are idempotent and must not create duplicate Storage or metadata reco
 
 Completion Record
 
-To be filled after implementation:
-
 Implementation PR(s):
-- TBD
+- #277 — CR-003 Slice D automatic offline screenshot recovery (merged)
 
 Documentation closure PR:
 - TBD
@@ -1312,4 +1359,4 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- TBD
+- CR-003 incomplete; Slice D complete; CR-003.1 OCR Entry Gate implementation authorized.
