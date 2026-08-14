@@ -281,6 +281,13 @@
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_empty_title">No OCR evidence</string>
     <string name="match_ocr_review_empty_message">No OCR review evidence is available for this match.</string>
+    <string name="match_ocr_review_compact_position">Position - %1$s</string>
+    <string name="match_ocr_review_compact_team">Slot - %1$s | Team name - %2$s</string>
+    <string name="match_ocr_review_compact_player">%1$d. %2$s - [%3$s]</string>
+    <string name="match_ocr_review_compact_not_detected">Not detected</string>
+    <string name="match_ocr_review_compact_unknown_kill">?</string>
+    <string name="match_ocr_review_compact_not_matched">Not matched</string>
+    <string name="match_ocr_review_compact_not_named">Not named</string>
     <string name="match_ocr_review_error_title">OCR review unavailable</string>
     <string name="match_ocr_review_match_value">Match: %1$s</string>
     <string name="match_ocr_review_row_count_value">Rows: %1$d</string>

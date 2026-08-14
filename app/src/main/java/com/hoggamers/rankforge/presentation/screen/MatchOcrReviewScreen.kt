@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -11,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,10 +23,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
@@ -36,6 +42,7 @@ object MatchOcrReviewTestTags {
     const val EMPTY_CONTENT = "match_ocr_review_empty_content"
     const val READY_CONTENT = "match_ocr_review_ready_content"
     const val PREVIEW = "match_ocr_review_match_result_preview"
+    const val COMPACT_LIST = "match_ocr_review_compact_list"
     const val ROW_LIST = "match_ocr_review_row_list"
     const val BACK_ACTION = "match_ocr_review_back_action"
     const val CORRECTION_ROOT = "match_ocr_review_correction_root"
@@ -53,6 +60,11 @@ object MatchOcrReviewTestTags {
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
     fun previewRow(position: Int): String = "${PREVIEW}_row_$position"
+    fun compactRow(position: Int): String = "${COMPACT_LIST}_row_$position"
+    fun compactPlacement(position: Int): String = "${compactRow(position)}_placement"
+    fun compactTeam(position: Int): String = "${compactRow(position)}_team"
+    fun compactPlayer(position: Int, slot: Int): String = "${compactRow(position)}_player_$slot"
+    fun compactPlayerRow(position: Int, row: Int): String = "${compactRow(position)}_players_$row"
     fun placement(rowIndex: Int): String = "${row(rowIndex)}_placement"
     fun playerName(rowIndex: Int): String = "${row(rowIndex)}_player_name"
     fun kills(rowIndex: Int): String = "${row(rowIndex)}_kills"
@@ -147,8 +159,12 @@ private fun MatchOcrReviewEmptyState(
     uiState: MatchOcrReviewUiState.Empty,
     onBack: () -> Unit,
 ) {
+    val preview = uiState.matchResultOcrPreview
+    val hasUsefulPreview = preview is MatchResultOcrPreviewUiState.Ready && preview.rows.isNotEmpty()
     RankForgeScreenContainer(
         modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
+        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+        verticalArrangement = Arrangement.Top,
     ) {
         Column(
             modifier = Modifier
@@ -156,14 +172,26 @@ private fun MatchOcrReviewEmptyState(
                 .verticalScroll(rememberScrollState())
                 .testTag(MatchOcrReviewTestTags.EMPTY_CONTENT),
         ) {
-            Text(
-                text = stringResource(R.string.match_ocr_review_empty_title),
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.testTag(MatchOcrReviewTestTags.EMPTY),
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            Text(text = stringResource(R.string.match_ocr_review_empty_message))
-            MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
+            if (hasUsefulPreview) {
+                Text(
+                    text = stringResource(R.string.match_ocr_review_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                MatchOcrReviewCompactPreviewList(
+                    preview = preview,
+                    reviewRowsByPosition = emptyMap(),
+                    teamNamesBySlot = emptyMap(),
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.match_ocr_review_empty_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.testTag(MatchOcrReviewTestTags.EMPTY),
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                Text(text = stringResource(R.string.match_ocr_review_empty_message))
+                MatchResultOcrPreviewSection(preview)
+            }
             MatchOcrReviewBackAction(onBack)
         }
     }
@@ -202,6 +230,10 @@ private fun MatchOcrReviewReadyState(
     onDismissFinalizeWarnings: () -> Unit,
 ) {
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
+    val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+        ?.rows
+        .orEmpty()
+        .associateBy { it.position }
     RankForgeScreenContainer(
         modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
@@ -218,49 +250,6 @@ private fun MatchOcrReviewReadyState(
                 text = stringResource(R.string.match_ocr_review_title),
                 style = MaterialTheme.typography.headlineMedium,
             )
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_match_value,
-                    uiState.matchDisplayLabel ?: uiState.matchId,
-                ),
-            )
-            Text(text = stringResource(R.string.match_ocr_review_row_count_value, uiState.rowCount))
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_summary_value,
-                    uiState.blockerCount,
-                    uiState.warningCount,
-                    if (uiState.manualReviewRequired) {
-                        stringResource(R.string.match_ocr_review_yes)
-                    } else {
-                        stringResource(R.string.match_ocr_review_no)
-                    },
-                ),
-            )
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_safety_summary_value,
-                    uiState.safeRowCount,
-                    uiState.reviewRequiredRowCount,
-                    uiState.manualRequiredRowCount,
-                ),
-            )
-            if (uiState.hasUnavailableEvidence) {
-                Text(
-                    text = stringResource(R.string.match_ocr_review_unavailable_evidence_warning),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
-            if (
-                uiState.correctionDraft != null &&
-                uiState.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready
-            ) {
-                Text(
-                    text = "OCR preview is editable below. Team slots still require manual confirmation.",
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-            }
             uiState.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewCorrectionSummary(
                     correctionDraft = correctionDraft,
@@ -278,6 +267,8 @@ private fun MatchOcrReviewReadyState(
                 uiState.rows.forEach { row ->
                     MatchOcrReviewRow(
                         row = row,
+                        previewRow = previewRowsByPosition[row.rowIndex + 1],
+                        teamNamesBySlot = uiState.teamNamesBySlot,
                         correctionDraft = correctionRowsByIndex[row.rowIndex],
                         onPlacementChanged = onPlacementChanged,
                         onKillsChanged = onKillsChanged,
@@ -297,6 +288,139 @@ private fun MatchOcrReviewReadyState(
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
     }
+}
+
+@Composable
+private fun MatchOcrReviewCompactPreviewList(
+    preview: MatchResultOcrPreviewUiState.Ready,
+    reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.COMPACT_LIST),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        preview.rows.forEachIndexed { index, previewRow ->
+            MatchOcrReviewCompactRow(
+                previewRow = previewRow,
+                reviewRow = reviewRowsByPosition[previewRow.position],
+                teamNamesBySlot = teamNamesBySlot,
+            )
+            if (index < preview.rows.lastIndex) HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun MatchOcrReviewCompactRow(
+    previewRow: MatchResultOcrPreviewRowUiState,
+    reviewRow: MatchOcrReviewRowUiState?,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
+    val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
+        ?.toIntOrNull()
+        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+    val slotLabel = suggestedSlot?.toString()
+        ?: stringResource(R.string.match_ocr_review_compact_not_matched)
+    val teamNameLabel = if (suggestedSlot == null) {
+        stringResource(R.string.match_ocr_review_compact_not_matched)
+    } else {
+        teamNamesBySlot[suggestedSlot]
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.match_ocr_review_compact_not_named)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.compactRow(previewRow.position)),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_compact_position, placement),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactPlacement(previewRow.position)),
+        )
+        Text(
+            text = stringResource(
+                R.string.match_ocr_review_compact_team,
+                slotLabel,
+                teamNameLabel,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(previewRow.position)),
+        )
+        CompactPlayerRow(previewRow, row = 1, leftSlot = 1, rightSlot = 3)
+        CompactPlayerRow(previewRow, row = 2, leftSlot = 2, rightSlot = 4)
+    }
+}
+
+private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPreviewRowUiState =
+    MatchResultOcrPreviewRowUiState(
+        position = rowIndex + 1,
+        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        sourceLabel = "",
+        placementText = detectedPlacementDisplayValue,
+        slots = (1..4).map { slot ->
+            MatchResultOcrPreviewSlotUiState(
+                slot = slot,
+                playerText = if (slot == 1) detectedPlayerNameEvidenceLabel else "",
+                playerOcrText = "",
+                playerStatusLabel = "",
+                killText = if (slot == 1) detectedKillDisplayValue else "",
+                killOcrText = "",
+                killStatusLabel = "",
+            )
+        },
+    )
+
+@Composable
+private fun CompactPlayerRow(
+    previewRow: MatchResultOcrPreviewRowUiState,
+    row: Int,
+    leftSlot: Int,
+    rightSlot: Int,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.compactPlayerRow(previewRow.position, row)),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        CompactPlayerCell(previewRow, leftSlot, Modifier.weight(1f))
+        CompactPlayerCell(previewRow, rightSlot, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CompactPlayerCell(
+    previewRow: MatchResultOcrPreviewRowUiState,
+    slot: Int,
+    modifier: Modifier,
+) {
+    val player = previewRow.slots.firstOrNull { it.slot == slot }
+    val playerName = player?.playerText?.trim().orEmpty().ifBlank {
+        stringResource(R.string.match_ocr_review_compact_not_detected)
+    }
+    val kill = player?.killText?.trim().orEmpty().ifBlank {
+        stringResource(R.string.match_ocr_review_compact_unknown_kill)
+    }
+    Text(
+        text = stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill),
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
+    )
 }
 
 @Composable
@@ -416,6 +540,8 @@ private fun MatchOcrReviewCorrectionSummary(
 @Composable
 private fun MatchOcrReviewRow(
     row: MatchOcrReviewRowUiState,
+    previewRow: MatchResultOcrPreviewRowUiState?,
+    teamNamesBySlot: Map<Int, String>,
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
@@ -429,94 +555,11 @@ private fun MatchOcrReviewRow(
             .testTag(MatchOcrReviewTestTags.row(row.rowIndex)),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_row_title,
-                row.rowIndex + 1,
-                row.expectedPlacementLabel,
-            ),
-            style = MaterialTheme.typography.titleMedium,
+        MatchOcrReviewCompactRow(
+            previewRow = previewRow ?: row.toCompactPreviewRow(),
+            reviewRow = row,
+            teamNamesBySlot = teamNamesBySlot,
         )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_placement_value,
-                row.detectedPlacementDisplayValue,
-                row.placementStatusLabel,
-            ),
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.placement(row.rowIndex)),
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_kills_value,
-                row.detectedKillDisplayValue,
-                row.killStatusLabel,
-            ),
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.kills(row.rowIndex)),
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_player_name_value,
-                row.detectedPlayerNameEvidenceLabel,
-                row.playerNameStatusLabel,
-            ),
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.playerName(row.rowIndex)),
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_confidence_value,
-                row.confidenceScoreDisplayValue,
-                row.confidenceTierLabel,
-            ),
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.confidence(row.rowIndex)),
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_safety_value,
-                row.suggestedTeamSlotDisplayValue,
-                row.assignmentSafetyStatusLabel,
-            ),
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.safety(row.rowIndex)),
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MatchOcrReviewTestTags.suggestions(row.rowIndex)),
-        ) {
-            Text(text = stringResource(R.string.match_ocr_review_suggestions_title))
-            row.topThreeSuggestionsSummary.forEach { suggestion ->
-                Text(text = suggestion)
-            }
-        }
-        if (row.warningLabels.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MatchOcrReviewTestTags.warning(row.rowIndex)),
-            ) {
-                Text(
-                    text = stringResource(R.string.match_ocr_review_warnings_title),
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-                row.warningLabels.forEach { warning ->
-                    Text(text = stringResource(R.string.match_ocr_review_warning_value, warning))
-                }
-            }
-        }
-        if (row.blockerLabels.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MatchOcrReviewTestTags.blocking(row.rowIndex)),
-            ) {
-                Text(
-                    text = stringResource(R.string.match_ocr_review_blockers_title),
-                    color = MaterialTheme.colorScheme.error,
-                )
-                row.blockerLabels.forEach { blocker ->
-                    Text(text = stringResource(R.string.match_ocr_review_blocker_value, blocker))
-                }
-            }
-        }
         if (correctionDraft != null) {
             MatchOcrReviewCorrectionFields(
                 correctionDraft = correctionDraft,

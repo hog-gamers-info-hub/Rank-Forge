@@ -118,10 +118,10 @@ class MatchOcrReviewViewModel @Inject constructor(
                 )
             }
             val preview = mapPreviewResults(roleResults)
-            val candidateTeams = loadCandidateTeams(tournamentId)
+            val teamContext = loadTeamContext(tournamentId)
             val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
                 preview = preview,
-                candidateTeams = candidateTeams,
+                candidateTeams = teamContext.candidateTeams,
             )
             _uiState.update { state ->
                 when (state) {
@@ -132,6 +132,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                                 matchId = matchId,
                                 preview = preview,
                                 reviewRows = matchedRows,
+                                teamNamesBySlot = teamContext.teamNamesBySlot,
                             ) ?: state.copy(matchResultOcrPreview = preview)
                         } else {
                             state
@@ -418,6 +419,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         matchId: String,
         preview: MatchResultOcrPreviewUiState,
         reviewRows: List<MatchOcrReviewRowUiState>?,
+        teamNamesBySlot: Map<Int, String>,
     ): MatchOcrReviewUiState.Ready? {
         val rows = reviewRows ?: MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
@@ -438,31 +440,41 @@ class MatchOcrReviewViewModel @Inject constructor(
             hasUnavailableEvidence = true,
             correctionDraft = correctionDraft,
             matchResultOcrPreview = preview,
+            teamNamesBySlot = teamNamesBySlot,
         )
     }
 
-    private suspend fun loadCandidateTeams(tournamentId: String): List<TeamCandidateRosterInput> = try {
-        val persistedSlotNumbers = observeTournamentSlots(tournamentId)
-            .first()
-            .map { it.slotNumber }
-            .distinct()
+    private suspend fun loadTeamContext(tournamentId: String): OcrReviewTeamContext = try {
+        val persistedSlots = observeTournamentSlots(tournamentId).first()
+        val persistedSlotNumbers = persistedSlots.map { it.slotNumber }.distinct()
         val candidateSlotNumbers = persistedSlotNumbers.ifEmpty { TeamSlot.SLOT_NUMBERS.toList() }
         val rosterBySlot = observeRoster(tournamentId).first()
         if (rosterBySlot.values.flatten().none { it.displayName.isNotBlank() }) {
-            emptyList()
+            OcrReviewTeamContext(
+                candidateTeams = emptyList(),
+                teamNamesBySlot = persistedSlots.associate { it.slotNumber to it.teamName },
+            )
         } else {
-            candidateSlotNumbers.map { slotNumber ->
-                TeamCandidateRosterInput(
-                    teamSlot = slotNumber,
-                    rosterPlayerNames = rosterBySlot[slotNumber].orEmpty().map { it.displayName },
-                )
-            }
+            OcrReviewTeamContext(
+                candidateTeams = candidateSlotNumbers.map { slotNumber ->
+                    TeamCandidateRosterInput(
+                        teamSlot = slotNumber,
+                        rosterPlayerNames = rosterBySlot[slotNumber].orEmpty().map { it.displayName },
+                    )
+                },
+                teamNamesBySlot = persistedSlots.associate { it.slotNumber to it.teamName },
+            )
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
-        emptyList()
+        OcrReviewTeamContext(emptyList(), emptyMap())
     }
+
+    private data class OcrReviewTeamContext(
+        val candidateTeams: List<TeamCandidateRosterInput>,
+        val teamNamesBySlot: Map<Int, String>,
+    )
 }
 
 private val NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER = MatchResultOcrPreviewRunner {

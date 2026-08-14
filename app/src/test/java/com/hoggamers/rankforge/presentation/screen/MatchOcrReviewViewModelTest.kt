@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
@@ -9,10 +11,22 @@ import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceReason
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestion
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -144,6 +158,27 @@ class MatchOcrReviewViewModelTest {
         val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
         assertEquals(TOURNAMENT_ID, state.tournamentId)
         assertEquals(MATCH_ID, state.matchId)
+    }
+
+    @Test
+    fun loadSurfacesPersistedTeamNamesWithoutChangingMatchingResult() = runTest(dispatcher) {
+        val repository = createRepository()
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(5 to "ETR ESPORTS"))
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = completePreviewRunner(),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals("ETR ESPORTS", state.teamNamesBySlot[5])
+        assertEquals(12, state.rows.size)
+        assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
     }
 
     @Test
@@ -399,6 +434,10 @@ class MatchOcrReviewViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
+        repository.saveTeamNames(
+            tournamentId = TOURNAMENT_ID,
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "Team $slotNumber" },
+        )
         repository.createDraftMatch(
             Match(
                 id = MATCH_ID,
@@ -527,6 +566,81 @@ class MatchOcrReviewViewModelTest {
                 )
             },
         )
+
+    private fun completePreviewRunner(): MatchResultOcrPreviewRunner =
+        MatchResultOcrPreviewRunner { identity ->
+            val positions = if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1..10 else 11..12
+            MatchResultOcrPreviewProcessingResult.Processed(
+                extraction = MatchResultOcrExtractionResult(
+                    role = identity.role,
+                    fields = emptyList(),
+                    rows = positions.map { position ->
+                        MatchResultOcrRow(
+                            position = position,
+                            source = if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+                                MatchResultOcrRowSource.UPPER_TEMPLATE
+                            } else if (position == 11) {
+                                MatchResultOcrRowSource.LOWER_ROW_A
+                            } else {
+                                MatchResultOcrRowSource.LOWER_ROW_B
+                            },
+                            placement = ocrField(
+                                id = "placement-$position",
+                                type = MatchResultOcrFieldType.PLACEMENT,
+                                position = position,
+                                slot = null,
+                                text = position.toString(),
+                            ),
+                            playerSlots = (1..4).map { slot ->
+                                MatchResultOcrPlayerSlot(
+                                    slot = slot,
+                                    player = ocrField(
+                                        id = "player-$position-$slot",
+                                        type = MatchResultOcrFieldType.PLAYER,
+                                        position = position,
+                                        slot = slot,
+                                        text = "Player $position-$slot",
+                                    ),
+                                    kill = ocrField(
+                                        id = "kill-$position-$slot",
+                                        type = MatchResultOcrFieldType.KILL,
+                                        position = position,
+                                        slot = slot,
+                                        text = slot.toString(),
+                                    ),
+                                )
+                            },
+                        )
+                    },
+                ),
+                pixelCrop = OcrPixelCropRect(0, 0, 1, 1),
+                cropWidth = 1,
+                cropHeight = 1,
+            )
+        }
+
+    private fun ocrField(
+        id: String,
+        type: MatchResultOcrFieldType,
+        position: Int,
+        slot: Int?,
+        text: String,
+    ): MatchResultOcrField = MatchResultOcrField(
+        id = id,
+        type = type,
+        position = position,
+        visualRow = null,
+        slot = slot,
+        canonicalRect = MatchResultOcrRect(0.0, 0.0, 1.0, 1.0),
+        mappedRect = MatchResultOcrRect(0.0, 0.0, 1.0, 1.0),
+        ocrText = text,
+        resolvedText = text,
+        status = if (type == MatchResultOcrFieldType.KILL) {
+            MatchResultOcrFieldStatus.DIRECT_NUMERIC
+        } else {
+            MatchResultOcrFieldStatus.DIRECT_TEXT
+        },
+    )
 
     private companion object {
         const val TOURNAMENT_ID = "synthetic-tournament"

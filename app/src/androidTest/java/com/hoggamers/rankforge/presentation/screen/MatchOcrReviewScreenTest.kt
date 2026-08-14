@@ -136,64 +136,104 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("No OCR evidence").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(1)).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(11)).assertIsNotDisplayed()
+        composeTestRule.onNodeWithText("OCR review").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("No OCR evidence").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(11)).assertIsNotDisplayed()
         repeat(4) {
             composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY_CONTENT)
                 .performTouchInput { swipeUp() }
         }
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(11)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(11)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).assertIsDisplayed()
     }
 
     @Test
-    fun rowDisplaysPlacementKillsPlayerConfidenceSafetyAndSuggestions() {
+    fun compactRowDisplaysPlacementTeamAndPlayersInVisualSlotOrder() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchOcrReviewScreen(
-                    uiState = readyState(),
+                    uiState = readyState(
+                        preview = compactPreview(),
+                        teamNamesBySlot = mapOf(5 to "ETR ESPORTS"),
+                        rows = defaultReadyRows().map { row ->
+                            if (row.rowIndex == 0) row.copy(suggestedTeamSlotDisplayValue = "5") else row
+                        },
+                    ),
                     onBack = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
-        composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.placement(0))
-            .assertTextEquals("Placement: 1 (Accepted)")
-        composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.kills(0))
-            .assertTextEquals("Kills: 3 (Accepted)")
-        composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.playerName(0))
-            .assertTextEquals("Player evidence: Synthetic Unit 1 (Accepted)")
-        composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.confidence(0))
-            .assertTextEquals("Confidence: 96 (Automatic candidate)")
-        composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.safety(0))
-            .assertTextEquals("Suggested slot: 1; safety: Safe automatic assignment")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.suggestions(0)).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Rank 1: Slot 1, confidence 96, matches 4, coverage 100")
-            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Position - 1")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - 5 | Team name - ETR ESPORTS")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 1))
+            .assertTextEquals("1. Player One - [2]")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 3))
+            .assertTextEquals("3. Player Three - [8]")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 2))
+            .assertTextEquals("2. Player Two - [7]")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 4))
+            .assertTextEquals("4. Player Four - [8]")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
     }
 
     @Test
-    fun warningAndBlockerLabelsAreDisplayedAsText() {
+    fun compactRowsDistinguishUnnamedAndUnmatchedTeams() {
+        val rows = defaultReadyRows().map { row ->
+            when (row.rowIndex) {
+                0, 1 -> row.copy(suggestedTeamSlotDisplayValue = "5")
+                2 -> row.copy(suggestedTeamSlotDisplayValue = "Unavailable")
+                else -> row
+            }
+        }
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchOcrReviewScreen(
-                    uiState = readyState(),
+                    uiState = readyState(
+                        preview = compactPreview(1..3),
+                        teamNamesBySlot = mapOf(5 to ""),
+                        rows = rows,
+                    ),
                     onBack = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.warning(1)).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Warning: Safety: Review required").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.blocking(2)).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Blocker: Placement: Missing").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - 5 | Team name - Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(2))
+            .assertTextEquals("Slot - 5 | Team name - Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(3))
+            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+    }
+
+    @Test
+    fun rawOcrAndMatchingDiagnosticsAreHiddenFromCompactRows() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(preview = compactPreview()),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithText("MATCH_RESULT_UPPER").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("MATCH_RESULT_LOWER").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Roles:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("placement=").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Confidence:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Suggested slot:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Rank 1:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Safety:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warning:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Blocker:").assertCountEquals(0)
     }
 
     @Test
@@ -634,12 +674,29 @@ class MatchOcrReviewScreenTest {
     private fun readyState(
         correctionDraft: MatchOcrReviewCorrectionDraft? = null,
         finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
+        preview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
+        teamNamesBySlot: Map<Int, String> = emptyMap(),
+        rows: List<MatchOcrReviewRowUiState> = defaultReadyRows(),
     ): MatchOcrReviewUiState.Ready = MatchOcrReviewUiState.Ready(
         tournamentId = "synthetic-tournament",
         matchId = "synthetic-match",
         matchDisplayLabel = "Synthetic Match",
-        rowCount = 12,
-        rows = (0..11).map { rowIndex ->
+        rowCount = rows.size,
+        rows = rows,
+        blockerCount = 1,
+        warningCount = 1,
+        safeRowCount = 10,
+        manualRequiredRowCount = 1,
+        reviewRequiredRowCount = 1,
+        manualReviewRequired = true,
+        hasUnavailableEvidence = false,
+        correctionDraft = correctionDraft,
+        finalization = finalization,
+        matchResultOcrPreview = preview,
+        teamNamesBySlot = teamNamesBySlot,
+    )
+
+    private fun defaultReadyRows(): List<MatchOcrReviewRowUiState> = (0..11).map { rowIndex ->
             MatchOcrReviewRowUiState(
                 rowIndex = rowIndex,
                 expectedPlacementLabel = (rowIndex + 1).toString(),
@@ -679,17 +736,7 @@ class MatchOcrReviewScreenTest {
                 originalParsedKillValue = if (rowIndex == 0) 3 else rowIndex,
                 originalSuggestedTeamSlot = rowIndex + 1,
             )
-        },
-        blockerCount = 1,
-        warningCount = 1,
-        safeRowCount = 10,
-        manualRequiredRowCount = 1,
-        reviewRequiredRowCount = 1,
-        manualReviewRequired = true,
-        hasUnavailableEvidence = false,
-        correctionDraft = correctionDraft,
-        finalization = finalization,
-    )
+        }
 
     private fun emptyStateWithLongPreview(): MatchOcrReviewUiState.Empty =
         MatchOcrReviewUiState.Empty(
@@ -726,6 +773,34 @@ class MatchOcrReviewScreenTest {
                 ignoredLowerRows = emptyList(),
                 manualReviewRows = emptyList(),
             ),
+        )
+
+    private fun compactPreview(positions: IntRange = 1..12): MatchResultOcrPreviewUiState.Ready =
+        MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            rows = positions.map { position ->
+                MatchResultOcrPreviewRowUiState(
+                    position = position,
+                    role = if (position <= 10) {
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                    } else {
+                        MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                    },
+                    sourceLabel = "PREVIEW",
+                    placementText = position.toString(),
+                    slots = listOf(
+                        MatchResultOcrPreviewSlotUiState(1, "Player One", "", "", "2", "", ""),
+                        MatchResultOcrPreviewSlotUiState(2, "Player Two", "", "", "7", "", ""),
+                        MatchResultOcrPreviewSlotUiState(3, "Player Three", "", "", "8", "", ""),
+                        MatchResultOcrPreviewSlotUiState(4, "Player Four", "", "", "8", "", ""),
+                    ),
+                )
+            },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
         )
 
     private fun correctionDraft(
