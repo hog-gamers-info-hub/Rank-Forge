@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-Audit Complete — Decisions Pending Approval
+CR-003 Decisions Approved — Slice D Implementation Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. The approved Slice D implementation remains in progress; CR-003 is not Complete.
 
-No implementation work is approved until this decision record is reviewed and explicitly approved.
+Only the approved Slice D scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1232,14 +1232,71 @@ Current state:
 Read-only audit: COMPLETE
 Intended flow: DEFINED
 Navigation gaps: IDENTIFIED
-Implementation: NOT STARTED
+CR-003 decisions: APPROVED FOR SLICE D IMPLEMENTATION
+Slice D implementation: NOT STARTED
 
-The next action after approving this document is:
+The next action is:
 
-CR-003.1 — require both authoritative result screenshots
-before Match OCR Review can be opened
+Slice D — implement automatic foreground retry for locally persisted Lobby and match-result screenshots after parent recovery.
 
-No production code should be changed before this decision record is approved.
+No work outside the approved Slice D scope below is authorized by this record.
+
+28. Approved Offline-First and Slice D Decisions
+
+28.1 Global Offline-First Navigation Rule
+
+- Successful LOCAL persistence is the navigation gate.
+- Immediate Supabase confirmation must never block tournament, team, match, screenshot, crop, or review navigation.
+- Failed cloud operations preserve local state and recover automatically when connectivity and authentication become available.
+- Stable tournament and match IDs must be preserved.
+- Retries must be idempotent and must not create duplicates.
+
+28.2 Verified Slice A — Tournament Creation
+
+- Offline tournament creation persists locally and navigation continues to Enter Teams.
+- The existing `TOURNAMENT_UPLOAD` foreground retry uploads the same tournament after connectivity returns.
+- Verification found no duplicate tournament.
+
+28.3 Verified Slice B — Team Names
+
+- Team names persist locally offline and the local workflow continues.
+- Existing tournament snapshot retry uploads the latest team-slot names after reconnect.
+- Verification found all 12 slots and no duplicate tournament.
+
+28.4 Verified Slice C — Calculate Points
+
+- Calculate Points creates the next match locally before cloud sync.
+- `DRAFT_MATCH_SYNC` failure does not block Match Review.
+- Existing foreground queue retry uploads the same match after reconnect.
+- Verification found no duplicate Match 1.
+
+28.5 Slice D Audit Finding — Screenshot Recovery Gap
+
+- Lobby and match-result screenshots are preserved locally before cloud upload.
+- Confirmed crops remain local when Storage or cloud metadata upload fails, so the local screenshot/crop workflow continues offline.
+- Physical-device verification found that offline Match 2 later uploaded automatically, but offline-confirmed Lobby Screenshot 1 and Result Screenshot Upper did not upload after reconnect; no corresponding hosted metadata rows or Storage objects appeared.
+- The existing persistent `SyncQueueOperationType` does not include screenshot upload operations.
+
+28.6 Approved Slice D Behavior
+
+On foreground connectivity restoration:
+
+a. Existing parent tournament/match queue recovery runs first.
+b. Eligible locally persisted screenshot assets are then retried.
+c. Screenshot retry preserves the existing `tournamentId`, `matchId`, Lobby index or result role, fingerprint, crop metadata, and local file.
+d. Only the correct existing parent match may receive the screenshot.
+e. Successful retry uploads the Storage object and upserts the corresponding cloud metadata.
+f. Failures remain local and retryable and never interrupt navigation.
+g. Retries are idempotent and must not create duplicate Storage or metadata records.
+
+28.7 Slice D Scope Boundary
+
+- Scope is limited to Lobby screenshots and match-result screenshots.
+- Reuse the existing foreground connectivity mechanism.
+- Reuse existing screenshot Storage uploaders, cloud data sources, local repositories, and upload checkpoint behavior where practical.
+- Do not add a new background worker.
+- Do not redesign Room, Supabase schema, RLS, Storage policies, tournament/match revisions, OCR, scoring, or navigation.
+- Parent recovery must occur before screenshot-child recovery.
 
 Completion Record
 
