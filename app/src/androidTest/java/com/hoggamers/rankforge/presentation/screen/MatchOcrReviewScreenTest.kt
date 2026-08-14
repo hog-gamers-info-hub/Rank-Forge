@@ -214,6 +214,71 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
+    fun lobbyPlayersAppearBeforeResultRowsInDeterministicPlayerOrder() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        preview = compactPreview(1..1),
+                        teamNamesBySlot = mapOf(1 to "ABC ESPORTS"),
+                        lobbyPlayers = listOf(
+                            MatchOcrReviewLobbySlotUiState(
+                                slotNumber = 1,
+                                players = listOf(
+                                    MatchOcrReviewLobbyPlayerUiState(1, "Player One"),
+                                    MatchOcrReviewLobbyPlayerUiState(2, "Player Two"),
+                                    MatchOcrReviewLobbyPlayerUiState(3, "Player Three"),
+                                    MatchOcrReviewLobbyPlayerUiState(4, null),
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Lobby Players").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 1))
+            .assertTextEquals("1. Player One")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 3))
+            .assertTextEquals("3. Player Three")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 2))
+            .assertTextEquals("2. Player Two")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 4))
+            .assertTextEquals("4. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
+    }
+
+    @Test
+    fun emptyUsefulPreviewUsesPersistedLobbyTeamNamesAndBlankFallback() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "synthetic-tournament",
+                        matchId = "synthetic-match",
+                        matchResultOcrPreview = compactPreview(1..1),
+                        teamNamesBySlot = mapOf(1 to "ETR ESPORTS", 2 to ""),
+                        lobbyPlayers = listOf(
+                            MatchOcrReviewLobbySlotUiState(1, emptyList()),
+                            MatchOcrReviewLobbySlotUiState(2, emptyList()),
+                        ),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1))
+            .assertTextContains("Slot - 1 | Team name - ETR ESPORTS")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
+            .assertTextContains("Slot - 2 | Team name - Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
+    }
+
+    @Test
     fun rawOcrAndMatchingDiagnosticsAreHiddenFromCompactRows() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -676,6 +741,7 @@ class MatchOcrReviewScreenTest {
         finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
         preview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         teamNamesBySlot: Map<Int, String> = emptyMap(),
+        lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
         rows: List<MatchOcrReviewRowUiState> = defaultReadyRows(),
     ): MatchOcrReviewUiState.Ready = MatchOcrReviewUiState.Ready(
         tournamentId = "synthetic-tournament",
@@ -694,6 +760,7 @@ class MatchOcrReviewScreenTest {
         finalization = finalization,
         matchResultOcrPreview = preview,
         teamNamesBySlot = teamNamesBySlot,
+        lobbyPlayers = lobbyPlayers,
     )
 
     private fun defaultReadyRows(): List<MatchOcrReviewRowUiState> = (0..11).map { rowIndex ->

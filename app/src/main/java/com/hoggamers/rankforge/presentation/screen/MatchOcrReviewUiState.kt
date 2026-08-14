@@ -16,6 +16,16 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 
+data class MatchOcrReviewLobbyPlayerUiState(
+    val playerNumber: Int,
+    val playerName: String?,
+)
+
+data class MatchOcrReviewLobbySlotUiState(
+    val slotNumber: Int,
+    val players: List<MatchOcrReviewLobbyPlayerUiState>,
+)
+
 sealed interface MatchResultOcrPreviewUiState {
     data object NotRequested : MatchResultOcrPreviewUiState
     data object Processing : MatchResultOcrPreviewUiState
@@ -83,12 +93,15 @@ sealed interface MatchOcrReviewUiState {
         val finalization: MatchOcrReviewFinalizationUiState = MatchOcrReviewFinalizationUiState(),
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
+        val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
     ) : MatchOcrReviewUiState
 
     data class Empty(
         val tournamentId: String? = null,
         val matchId: String? = null,
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
+        val teamNamesBySlot: Map<Int, String> = emptyMap(),
+        val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
     ) : MatchOcrReviewUiState
 
     data class Error(
