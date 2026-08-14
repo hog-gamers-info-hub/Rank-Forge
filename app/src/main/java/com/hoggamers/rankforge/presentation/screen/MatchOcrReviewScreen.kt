@@ -42,6 +42,7 @@ object MatchOcrReviewTestTags {
     const val EMPTY_CONTENT = "match_ocr_review_empty_content"
     const val READY_CONTENT = "match_ocr_review_ready_content"
     const val PREVIEW = "match_ocr_review_match_result_preview"
+    const val LOBBY_PLAYERS = "match_ocr_review_lobby_players"
     const val COMPACT_LIST = "match_ocr_review_compact_list"
     const val ROW_LIST = "match_ocr_review_row_list"
     const val BACK_ACTION = "match_ocr_review_back_action"
@@ -60,6 +61,8 @@ object MatchOcrReviewTestTags {
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
     fun previewRow(position: Int): String = "${PREVIEW}_row_$position"
+    fun lobbySlot(slot: Int): String = "${LOBBY_PLAYERS}_slot_$slot"
+    fun lobbyPlayer(slot: Int, player: Int): String = "${lobbySlot(slot)}_player_$player"
     fun compactRow(position: Int): String = "${COMPACT_LIST}_row_$position"
     fun compactPlacement(position: Int): String = "${compactRow(position)}_placement"
     fun compactTeam(position: Int): String = "${compactRow(position)}_team"
@@ -177,11 +180,6 @@ private fun MatchOcrReviewEmptyState(
                     text = stringResource(R.string.match_ocr_review_title),
                     style = MaterialTheme.typography.headlineMedium,
                 )
-                MatchOcrReviewCompactPreviewList(
-                    preview = preview,
-                    reviewRowsByPosition = emptyMap(),
-                    teamNamesBySlot = emptyMap(),
-                )
             } else {
                 Text(
                     text = stringResource(R.string.match_ocr_review_empty_title),
@@ -190,6 +188,20 @@ private fun MatchOcrReviewEmptyState(
                 )
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
                 Text(text = stringResource(R.string.match_ocr_review_empty_message))
+            }
+            if (uiState.lobbyPlayers.isNotEmpty()) {
+                MatchOcrReviewLobbyPlayersSection(
+                    lobbyPlayers = uiState.lobbyPlayers,
+                    teamNamesBySlot = uiState.teamNamesBySlot,
+                )
+            }
+            if (hasUsefulPreview) {
+                MatchOcrReviewCompactPreviewList(
+                    preview = preview,
+                    reviewRowsByPosition = emptyMap(),
+                    teamNamesBySlot = emptyMap(),
+                )
+            } else {
                 MatchResultOcrPreviewSection(preview)
             }
             MatchOcrReviewBackAction(onBack)
@@ -250,12 +262,25 @@ private fun MatchOcrReviewReadyState(
                 text = stringResource(R.string.match_ocr_review_title),
                 style = MaterialTheme.typography.headlineMedium,
             )
+            if (uiState.lobbyPlayers.isNotEmpty()) {
+                MatchOcrReviewLobbyPlayersSection(
+                    lobbyPlayers = uiState.lobbyPlayers,
+                    teamNamesBySlot = uiState.teamNamesBySlot,
+                )
+            }
             uiState.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewCorrectionSummary(
                     correctionDraft = correctionDraft,
                     finalization = uiState.finalization,
                     onResetAllCorrections = onResetAllCorrections,
                     onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+                )
+            }
+            (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)?.let { resultPreview ->
+                MatchOcrReviewCompactPreviewList(
+                    preview = resultPreview,
+                    reviewRowsByPosition = uiState.rows.associateBy { it.rowIndex + 1 },
+                    teamNamesBySlot = uiState.teamNamesBySlot,
                 )
             }
             Column(
@@ -288,6 +313,84 @@ private fun MatchOcrReviewReadyState(
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
     }
+}
+
+@Composable
+private fun MatchOcrReviewLobbyPlayersSection(
+    lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.LOBBY_PLAYERS),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_lobby_players_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        lobbyPlayers.sortedBy { it.slotNumber }.forEach { slot ->
+            val teamName = teamNamesBySlot[slot.slotNumber]
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.match_ocr_review_compact_not_named)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.match_ocr_review_compact_team,
+                        slot.slotNumber,
+                        teamName,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                LobbyPlayerRow(slot, leftPlayer = 1, rightPlayer = 3)
+                LobbyPlayerRow(slot, leftPlayer = 2, rightPlayer = 4)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LobbyPlayerRow(
+    slot: MatchOcrReviewLobbySlotUiState,
+    leftPlayer: Int,
+    rightPlayer: Int,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        LobbyPlayerCell(slot, leftPlayer, Modifier.weight(1f))
+        LobbyPlayerCell(slot, rightPlayer, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun LobbyPlayerCell(
+    slot: MatchOcrReviewLobbySlotUiState,
+    playerNumber: Int,
+    modifier: Modifier,
+) {
+    val playerName = slot.players.firstOrNull { it.playerNumber == playerNumber }
+        ?.playerName
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.match_ocr_review_compact_not_detected)
+    Text(
+        text = stringResource(R.string.match_ocr_review_lobby_player, playerNumber, playerName),
+        modifier = modifier.testTag(MatchOcrReviewTestTags.lobbyPlayer(slot.slotNumber, playerNumber)),
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

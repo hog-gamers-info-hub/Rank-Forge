@@ -278,6 +278,8 @@
     <string name="match_validation_invalid_kills">Kills are invalid.</string>
     <string name="review_match_action">Review match</string>
     <string name="match_ocr_review_title">OCR review</string>
+    <string name="match_ocr_review_lobby_players_title">Lobby Players</string>
+    <string name="match_ocr_review_lobby_player">%1$d. %2$s</string>
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_empty_title">No OCR evidence</string>
     <string name="match_ocr_review_empty_message">No OCR review evidence is available for this match.</string>

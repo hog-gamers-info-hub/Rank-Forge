@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrSlot
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
@@ -179,6 +183,77 @@ class MatchOcrReviewViewModelTest {
         assertEquals("ETR ESPORTS", state.teamNamesBySlot[5])
         assertEquals(12, state.rows.size)
         assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
+    }
+
+    @Test
+    fun lobbyPlayersCoexistWithResultPreviewAndUsePersistedTeamContext() = runTest(dispatcher) {
+        val repository = createRepository()
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to "ABC ESPORTS"))
+        val lobbyRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+            MatchLobbyPlayersOcrResult(
+                slots = listOf(
+                    MatchLobbyPlayersOcrSlot(
+                        slotNumber = 1,
+                        players = listOf(
+                            MatchLobbyPlayersOcrPlayer(1, "Lobby Player"),
+                            MatchLobbyPlayersOcrPlayer(2, null),
+                            MatchLobbyPlayersOcrPlayer(3, "Third Player"),
+                            MatchLobbyPlayersOcrPlayer(4, null),
+                        ),
+                    ),
+                ),
+            )
+        }
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = completePreviewRunner(),
+            matchLobbyPlayersOcrRunner = lobbyRunner,
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals("ABC ESPORTS", state.teamNamesBySlot[1])
+        assertEquals("Lobby Player", state.lobbyPlayers.first { it.slotNumber == 1 }
+            .players.first { it.playerNumber == 1 }.playerName)
+        assertEquals(12, state.rows.size)
+        assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
+    }
+
+    @Test
+    fun emptyStateWithUsefulResultPreviewStillCarriesPersistedLobbyTeamNames() = runTest(dispatcher) {
+        val repository = createRepository()
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(5 to "ETR ESPORTS"))
+        val lobbyRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+            MatchLobbyPlayersOcrResult(
+                slots = listOf(
+                    MatchLobbyPlayersOcrSlot(
+                        slotNumber = 5,
+                        players = (1..4).map { player -> MatchLobbyPlayersOcrPlayer(player, null) },
+                    ),
+                ),
+            )
+        }
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = partialPreviewRunner(),
+            matchLobbyPlayersOcrRunner = lobbyRunner,
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        assertEquals("ETR ESPORTS", state.teamNamesBySlot[5])
+        assertEquals(5, state.lobbyPlayers.single().slotNumber)
+        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready)
     }
 
     @Test
@@ -617,6 +692,15 @@ class MatchOcrReviewViewModelTest {
                 cropWidth = 1,
                 cropHeight = 1,
             )
+        }
+
+    private fun partialPreviewRunner(): MatchResultOcrPreviewRunner =
+        MatchResultOcrPreviewRunner { identity ->
+            when (val result = completePreviewRunner().process(identity)) {
+                is MatchResultOcrPreviewProcessingResult.Processed ->
+                    result.copy(extraction = result.extraction.copy(rows = result.extraction.rows.take(1)))
+                else -> result
+            }
         }
 
     private fun ocrField(
