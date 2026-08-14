@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — CR-003.5 Remaining Parent Navigation Fixes Authorized; TEST-FIRST
+CR-003 Decisions Approved — CR-003.6 Match Google Sheets Export Implementation Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, CR-003.3, and CR-003.4 are complete; CR-003 remains incomplete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, CR-003.3, CR-003.4, and CR-003.5 are complete; CR-003 remains incomplete.
 
-Only the approved CR-003.5 scope recorded below is authorized for implementation.
+Only the approved CR-003.6 scope recorded below is authorized for implementation.
 
 1. Purpose
 
@@ -1242,6 +1242,8 @@ CR-003.3 implementation/test PR: #283 — MERGED
 CR-003.3 status: COMPLETE
 CR-003.4 implementation/test PR: #285 — MERGED
 CR-003.4 status: COMPLETE
+CR-003.5 implementation/test PR: #287 — MERGED
+CR-003.5 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1296,69 +1298,121 @@ CR-003.4 verification:
 - No production navigation defect was found.
 - No `app/src/main` production changes were required.
 
+CR-003.5 verification:
+
+- Finalized Match Review → Match Correction → system Back → same Match Review: PASS on physical device I2019 - 14.
+- Exact `tournamentId` and `matchId` were preserved.
+- Finalized match context was preserved.
+- Tournament Details → Tournament Standings → Back → same Tournament Details: PASS on physical device I2019 - 14.
+- Exact `tournamentId` was preserved and no production navigation defect was found.
+- Production changes: NONE.
+
 The current gate is:
 
-CR-003.5 — Remaining Parent Navigation Fixes implementation authorized; TEST-FIRST
+CR-003.6 — Match Google Sheets Export implementation authorized
 
-Read-only audit finding:
+CR-003.6 read-only audit findings:
 
-- CR-003.5 is intentionally narrow.
-- Production changes are not pre-authorized.
-- Parent/back-stack production code may change only if a focused navigation test
-  proves an actual user-visible failure.
-- No broad navigation refactor is approved.
+1. Hosted backend capability already exists.
 
-Existing parent behavior already substantially covered includes:
+The deployed `supabase/functions/google-sheets-export` supports
+`operation = "export_match"` with `tournament_id`, `match_id`, and exactly 12
+match-result rows. It authenticates the Supabase user, validates tournament and
+match visibility, reads authoritative hosted match results, team slots, and
+players, validates the submitted payload, uses the existing export-operation
+idempotency mechanism, writes exactly 12 Match Results rows, verifies the
+Google write, and returns success or failure. No Edge Function redesign is
+authorized unless implementation testing proves a backend defect.
 
-- Tournament Creation → Team Entry → created Tournament Details.
-- Roster Review → Roster Screenshot Crop → Roster Review.
-- Match Result Crop → Match Review.
-- Match OCR Review → Match Review.
-- Correction submit/discard → Match Review.
-- Match Review → Tournament Details.
-- Activity recreation for Tournament Details and Match Review.
+2. Android contains partial match-export scaffolding.
 
-Approved CR-003.5 test-first scope:
+`AndroidExportType.MATCH_GOOGLE_SHEETS` and the result states
+`GoogleSheetsExporting`, `GoogleSheetsSuccess`, and `GoogleSheetsFailure`
+already exist. `AndroidExportCoordinator` currently exposes only
+`googleSheetsMatchUnavailable(...)`; match-specific exporting, success, and
+failure coordinator methods are not yet present.
 
-1. Finalized Match Review → Match Correction → Back → same Match Review.
+3. `MatchReviewUiState.googleSheetsExportResult` and
+`MatchReviewViewModel.prepareGoogleSheetsExport()` already exist, but the
+current ViewModel behavior returns `GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED`
+instead of invoking the deployed hosted match-export capability.
 
-Required identity assertions:
+4. `GoogleSheetsExportDataModule` binds only
+`GoogleSheetsStandingsExportRemoteDataSource`; no equivalent match remote data
+source binding exists.
 
-- Exact `tournamentId` preserved.
-- Exact `matchId` preserved.
-- Same finalized match context restored.
+5. Tournament standings export is the approved Android precedent:
+validated typed rows → authenticated remote data source → existing
+`google-sheets-export` Edge Function → exporting/success/failure state.
+`MatchCsvExporter` owns the authoritative finalized-match export validation and
+20-column schema and should be reused rather than duplicating scoring or
+validation rules.
 
-This specifically covers correction Back behavior, separate from the already
-covered correction submit/discard behavior.
+Approved CR-003.6 behavior:
 
-2. Tournament Details → Tournament Standings → Back → same Tournament Details.
+For a valid finalized Match Review:
 
-Required assertions:
+Match Google Sheets export request
+→ build exactly 12 approved match-export rows
+→ call the existing authenticated `google-sheets-export` Edge Function with
+  `operation = "export_match"`
+→ hosted authoritative-data validation
+→ Google Match Results export
+→ verified success or mapped failure.
 
-- Exact `tournamentId` preserved.
-- Correct Tournament Details restored.
-- No fallback to Tournament List or unrelated tournament.
+Successful results must preserve the same `tournamentId` and `matchId` and
+confirm exactly 12 rows written.
 
-Use the existing `RankForgeNavHost` / Navigation Compose architecture.
+Export eligibility requires nonblank valid context, an existing tournament and
+match, `FINALIZED` match status, valid finalized-match export data, and exactly
+12 valid rows. Draft matches and invalid finalized data must be blocked locally
+and must not call the remote exporter.
 
-Test-first rule:
+Required row fields are the existing Phase 10 schema:
 
-- Start with focused Compose navigation tests.
-- If both parent flows pass, make no production change; CR-003.5 may close as
-  test-only.
-- If either test fails, stop and document the exact starting and child
-  destinations, expected and actual destinations and IDs, root cause, smallest
-  proposed production fix, and exact production files required.
-- Do not implement a production fix without separate approval.
+`export_schema_version`, `export_type`, `tournament_id`, `tournament_name`,
+`match_id`, `match_label`, `match_finalized_at`, `row_number`, `placement`,
+`team_slot`, `team_name`, `player_1_name`, `player_2_name`, `player_3_name`,
+`player_4_name`, `placement_points`, `kills`, `kill_points`, `total_points`,
+and `correction_status`.
 
-Out of scope: authentication, OCR readiness, screenshot crop logic, screenshot
-recovery, recreation infrastructure except reusing existing test support, Room
-schema/migrations, Supabase, scoring, finalization semantics, export behavior,
-Match Google Sheets export, Phase 13, and checkpointed OCR work.
+Authorize the smallest Android match remote data source equivalent to the
+existing standings data source. Reuse `SupabaseAuthConfig`,
+`SupabaseAccessTokenProvider`, `GoogleSheetsExportHttpTransport`, the existing
+endpoint, and existing failure mapping. Requests must contain the exact
+`tournament_id`, exact `match_id`, and exactly 12 rows. Success is valid only
+when the response confirms `ok = true`, `operation = "export_match"`, matching
+IDs where supplied, and `rows_written = 12`.
 
-CR-003.6 remains the separate Match Google Sheets Export slice.
+Match Review must reject missing context, draft/non-finalized matches, and
+invalid finalized data locally; expose `GoogleSheetsExporting`; execute one
+request; map success to `GoogleSheetsSuccess`; map failures to
+`GoogleSheetsFailure`; preserve the result in
+`MatchReviewUiState.googleSheetsExportResult`; and prevent uncontrolled
+duplicate concurrent requests. Add only the smallest action/status integration
+to the retained finalized Match Review export surface. Do not re-enable hidden
+legacy/manual controls in normal simplified navigation.
 
-No work outside the approved CR-003.5 scope above is authorized by this record.
+Preserve Supabase authentication, RLS, authoritative hosted-data validation,
+export idempotency, and Google write verification. Do not add direct Google
+credentials to Android. No new migration, RLS, Storage, or Google credential
+architecture is authorized without a concrete blocker.
+
+Required focused tests cover the remote request/response and failure cases,
+ViewModel eligibility/exporting/success/failure/exact-ID/concurrency behavior,
+and Compose finalized-only action/status behavior. Before closing CR-003.6,
+verify on physical device I2019 - 14 against hosted Supabase that an
+authenticated finalized match exports exactly 12 Match Results rows with no
+duplicate write and a visible success state.
+
+Out of scope: navigation destinations, authentication flow, screenshot
+recovery, OCR, scoring, finalization or correction semantics, Tournament
+Google Sheets behavior except safe shared reuse, Room schema/migrations,
+Supabase schema/RLS, Edge Function changes without a proven blocker, Phase 13,
+and checkpointed OCR work.
+
+CR-003.7 remains the separate final full-workflow verification and closure
+slice. CR-003 remains incomplete.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1425,6 +1479,7 @@ Implementation PR(s):
 - #281 — CR-003.2 Match Result Crop Navigation Coverage (merged)
 - #283 — CR-003.3 Authentication Return Flow (merged)
 - #285 — CR-003.4 Recreation and Back-Stack Verification (merged)
+- #287 — CR-003.5 Remaining Parent Navigation Fixes (merged)
 
 Documentation closure PR:
 - TBD
@@ -1433,6 +1488,6 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, CR-003.3, and CR-003.4
-  complete; CR-003.5 Remaining Parent Navigation Fixes implementation
-  authorized, test-first.
+- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, CR-003.3, CR-003.4, and
+  CR-003.5 complete; CR-003.6 Match Google Sheets Export implementation
+  authorized.
