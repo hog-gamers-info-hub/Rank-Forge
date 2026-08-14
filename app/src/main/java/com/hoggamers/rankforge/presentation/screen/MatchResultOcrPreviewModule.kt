@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
+import com.hoggamers.rankforge.data.ocr.matchresult.CachingMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
@@ -23,13 +25,21 @@ object MatchResultOcrPreviewModule {
     @Singleton
     fun provideMatchResultOcrPreviewRunner(
         assetRepository: MatchResultScreenshotAssetRepository,
+        cacheRepository: MatchResultOcrCacheRepository,
         localImagePreserver: LocalImagePreserver,
-    ): MatchResultOcrPreviewRunner = AndroidMatchResultOcrPreviewProcessor(
-        assetRepository = assetRepository,
-        localFileResolver = MatchResultOcrPreviewLocalFileResolver(
-            localImagePreserver::resolveRelativePath,
-        ),
-    )
+    ): MatchResultOcrPreviewRunner {
+        val delegate = AndroidMatchResultOcrPreviewProcessor(
+            assetRepository = assetRepository,
+            localFileResolver = MatchResultOcrPreviewLocalFileResolver(
+                localImagePreserver::resolveRelativePath,
+            ),
+        )
+        return CachingMatchResultOcrPreviewRunner(
+            assetRepository = assetRepository,
+            cacheRepository = cacheRepository,
+            delegate = delegate,
+        )
+    }
 }
 
 object MatchResultOcrPreviewTeamSuggestionMapper {

@@ -40,6 +40,7 @@ interface RankForgeStateDao {
         SyncRevisionEntity::class,
         ScreenshotMetadataEntity::class,
         MatchResultScreenshotAssetEntity::class,
+        MatchResultOcrCacheEntity::class,
         MatchLobbyScreenshotAssetEntity::class,
         TournamentLobbyTemplateAssetEntity::class,
         RosterScreenshotMetadataEntity::class,
@@ -47,7 +48,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -64,6 +65,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun syncRevisionDao(): SyncRevisionDao
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
     abstract fun matchResultScreenshotAssetDao(): MatchResultScreenshotAssetDao
+    abstract fun matchResultOcrCacheDao(): MatchResultOcrCacheDao
     abstract fun matchLobbyScreenshotAssetDao(): MatchLobbyScreenshotAssetDao
     abstract fun tournamentLobbyTemplateAssetDao(): TournamentLobbyTemplateAssetDao
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
@@ -473,6 +475,37 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_tournament_lobby_template_assets_sha256` " +
                         "ON `tournament_lobby_template_assets` (`sha256`)",
+                )
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_result_ocr_cache` (
+                        `tournament_id` TEXT NOT NULL,
+                        `match_id` TEXT NOT NULL,
+                        `screenshot_role` TEXT NOT NULL,
+                        `screenshot_sha256` TEXT NOT NULL,
+                        `original_width` INTEGER NOT NULL,
+                        `original_height` INTEGER NOT NULL,
+                        `crop_profile_id` TEXT NOT NULL,
+                        `crop_left` REAL NOT NULL,
+                        `crop_top` REAL NOT NULL,
+                        `crop_right` REAL NOT NULL,
+                        `crop_bottom` REAL NOT NULL,
+                        `ocr_pipeline_version` INTEGER NOT NULL,
+                        `processed_payload_json` TEXT NOT NULL,
+                        `cached_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `screenshot_role`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_result_ocr_cache_tournament_id` " +
+                        "ON `match_result_ocr_cache` (`tournament_id`)",
                 )
             }
         }
