@@ -1244,6 +1244,135 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
+    fun finalizedMatchCorrectionBackReturnsToSameMatchReview() {
+        val viewModels = createNavigationViewModels()
+        val tournamentId = "confirmed-id"
+        val matchId = createFinalizedMatch(viewModels)
+        lateinit var navController: NavHostController
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    authUiState = AuthUiState(isSignedIn = true),
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    rosterScreenshotIntakeContent = { _, _ -> },
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchReviewDestination(tournamentId, matchId),
+                navController.currentBackStackEntry?.toRoute<MatchReviewDestination>(),
+            )
+        }
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("Start correction").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_CORRECTION_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchCorrectionDestination(tournamentId, matchId),
+                navController.currentBackStackEntry?.toRoute<MatchCorrectionDestination>(),
+            )
+        }
+
+        pressBackOnMainThread()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchReviewDestination(tournamentId, matchId),
+                navController.currentBackStackEntry?.toRoute<MatchReviewDestination>(),
+            )
+        }
+    }
+
+    @Test
+    fun tournamentStandingsBackReturnsToSameTournamentDetails() {
+        val viewModels = createNavigationViewModels()
+        val tournamentId = "confirmed-id"
+        createFinalizedMatch(viewModels)
+        lateinit var navController: NavHostController
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    authUiState = AuthUiState(isSignedIn = true),
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    standingsViewModelFactory = viewModels.standingsViewModel,
+                    rosterScreenshotIntakeContent = { _, _ -> },
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId)
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(OPEN_STANDINGS_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_STANDINGS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                TournamentStandingsDestination(tournamentId),
+                navController.currentBackStackEntry?.toRoute<TournamentStandingsDestination>(),
+            )
+        }
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.back_to_tournament_details_action))
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Confirmed Cup").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.runOnIdle {
+            assertEquals(
+                TournamentDetailsDestination(tournamentId),
+                navController.currentBackStackEntry?.toRoute<TournamentDetailsDestination>(),
+            )
+        }
+    }
+
+    @Test
     fun draftMatchDetailsNavigatesToPlacementEntry() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
@@ -2449,6 +2578,31 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
     )
+
+    private fun createFinalizedMatch(viewModels: NavigationViewModels): String = runBlocking {
+        val tournamentId = "confirmed-id"
+        viewModels.repository.create(confirmedTournament())
+        viewModels.repository.saveTeamNames(
+            tournamentId,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        val match = (
+            CreateMatchUseCase(viewModels.repository)(
+                CreateMatchInput(
+                    tournamentId = tournamentId,
+                    matchNumber = "1",
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                ),
+            ) as CreateMatchResult.Created
+        ).match
+        viewModels.repository.finalizeDraftMatch(
+            matchId = match.id,
+            placements = (1..12).map { MatchPlacement(it, it) },
+            kills = (1..12).map { MatchKill(it, it - 1) },
+        )
+        match.id
+    }
 
     private fun createCreationViewModel(
         repository: InMemoryTournamentRepository,
