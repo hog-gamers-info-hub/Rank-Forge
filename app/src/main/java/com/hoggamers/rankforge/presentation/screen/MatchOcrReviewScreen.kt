@@ -276,13 +276,6 @@ private fun MatchOcrReviewReadyState(
                     onFinalizeOcrCorrection = onFinalizeOcrCorrection,
                 )
             }
-            (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)?.let { resultPreview ->
-                MatchOcrReviewCompactPreviewList(
-                    preview = resultPreview,
-                    reviewRowsByPosition = uiState.rows.associateBy { it.rowIndex + 1 },
-                    teamNamesBySlot = uiState.teamNamesBySlot,
-                )
-            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
