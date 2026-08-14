@@ -14,9 +14,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.presentation.AUTH_SESSION_LOADING_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.RankForgeAppContent
 import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
@@ -24,6 +26,10 @@ import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthMode
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.presentation.navigation.RankForgeNavHost
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -157,4 +163,283 @@ class AuthNavigationTest {
         ).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }
+
+    @Test
+    fun startupRestoredSessionShowsRealTournamentListWithoutInteractiveTransition() {
+        val listViewModel = createListViewModel()
+        val restoredState = AuthUiState(
+            isSignedIn = true,
+            accountEmail = "restored@example.com",
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = restoredState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = restoredState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+    }
+
+    @Test
+    fun interactiveEmailLoginSuccessShowsRealTournamentListExactlyOnce() {
+        var authUiState by mutableStateOf(AuthUiState())
+        val listViewModel = createListViewModel()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authUiState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            authUiState = AuthUiState(
+                isSignedIn = true,
+                accountEmail = "login@example.com",
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+    }
+
+    @Test
+    fun interactiveAuthenticatedSignUpSuccessShowsRealTournamentListExactlyOnce() {
+        var authUiState by mutableStateOf(AuthUiState(mode = AuthMode.SignUp))
+        val listViewModel = createListViewModel()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authUiState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            authUiState = AuthUiState(
+                mode = AuthMode.SignUp,
+                isSignedIn = true,
+                accountEmail = "signup@example.com",
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+    }
+
+    @Test
+    fun confirmationRequiredSignUpKeepsAuthAndHidesRealTournamentList() {
+        val listViewModel = createListViewModel()
+        val authState = AuthUiState(
+            mode = AuthMode.SignUp,
+            statusMessage = com.hoggamers.rankforge.presentation.auth.AuthUiMessage.SignUpConfirmationRequired,
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun failedEmailAuthKeepsAuthAndHidesRealTournamentList() {
+        val listViewModel = createListViewModel()
+        val authState = AuthUiState(
+            errorMessage = com.hoggamers.rankforge.presentation.auth.AuthUiMessage.AuthenticationFailure(
+                com.hoggamers.rankforge.domain.auth.AuthFailureCategory.InvalidCredentials,
+            ),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun googleLaunchOnlyKeepsAuthAndHidesRealTournamentList() {
+        val listViewModel = createListViewModel()
+        val authState = AuthUiState(
+            statusMessage = com.hoggamers.rankforge.presentation.auth.AuthUiMessage.ExternalAuthenticationLaunched,
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun googleCallbackSuccessShowsRealTournamentListExactlyOnce() {
+        var authUiState by mutableStateOf(
+            AuthUiState(
+                statusMessage = com.hoggamers.rankforge.presentation.auth.AuthUiMessage.ExternalAuthenticationLaunched,
+            ),
+        )
+        val listViewModel = createListViewModel()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authUiState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            authUiState = AuthUiState(
+                isSignedIn = true,
+                accountEmail = "google@example.com",
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+    }
+
+    @Test
+    fun googleCancellationWithoutCallbackKeepsAuthAndHidesRealTournamentList() {
+        val listViewModel = createListViewModel()
+        val authState = AuthUiState()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun repeatedSignedInStateDoesNotDuplicateRealTournamentList() {
+        var authUiState by mutableStateOf(AuthUiState())
+        val listViewModel = createListViewModel()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = authUiState,
+                    authenticatedContent = {
+                        RankForgeNavHost(
+                            authUiState = authUiState,
+                            listViewModel = listViewModel,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            authUiState = AuthUiState(
+                isSignedIn = true,
+                accountEmail = "google@example.com",
+            )
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+
+        composeTestRule.runOnIdle {
+            authUiState = AuthUiState(
+                isSignedIn = true,
+                accountEmail = "google@example.com",
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertCountEquals(1)
+    }
+
+    private fun createListViewModel(): TournamentListViewModel =
+        TournamentListViewModel(
+            ObserveTournamentsUseCase(InMemoryTournamentRepository()),
+        )
 }

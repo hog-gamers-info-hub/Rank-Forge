@@ -32,6 +32,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -83,6 +84,17 @@ class AuthViewModelTest {
 
         assertTrue(viewModel.uiState.value.isSignedIn)
         assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
+        assertNull(viewModel.uiState.value.statusMessage)
+        assertEquals(1, recoveryCalls)
+
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "stored@example.com"),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
+        assertNull(viewModel.uiState.value.statusMessage)
         assertEquals(1, recoveryCalls)
     }
 
@@ -206,6 +218,8 @@ class AuthViewModelTest {
         assertTrue(viewModel.uiState.value.isSignedIn)
         assertEquals("user@example.com", viewModel.uiState.value.accountEmail)
         assertEquals(AuthUiMessage.SignedIn, viewModel.uiState.value.statusMessage)
+        assertEquals(1, repository.loginCalls)
+        assertNull(viewModel.uiState.value.errorMessage)
     }
 
     @Test
@@ -263,6 +277,64 @@ class AuthViewModelTest {
             AuthUiMessage.SignUpConfirmationRequired,
             viewModel.uiState.value.statusMessage,
         )
+    }
+
+    @Test
+    fun failedSignUpRemainsSignedOutWithControlledError() = runTest {
+        repository.signUpResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.InvalidCredentials),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setMode(AuthMode.SignUp)
+        viewModel.onEmailChanged("new@example.com")
+        viewModel.onPasswordChanged("password")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.InvalidCredentials),
+            viewModel.uiState.value.errorMessage,
+        )
+        assertNull(viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun googleLaunchWithoutCallbackRemainsSignedOutAndRetryable() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.signInWithGoogle()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.accountEmail)
+        assertEquals(AuthUiMessage.ExternalAuthenticationLaunched, viewModel.uiState.value.statusMessage)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun repeatedEquivalentSignedInObservationKeepsStableAuthenticatedState() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.onPasswordChanged("password")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val authenticatedState = viewModel.uiState.value
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "user-id", email = "user@example.com"),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals("user@example.com", viewModel.uiState.value.accountEmail)
+        assertEquals(authenticatedState.statusMessage, viewModel.uiState.value.statusMessage)
+        assertNull(viewModel.uiState.value.errorMessage)
     }
 
     @Test
