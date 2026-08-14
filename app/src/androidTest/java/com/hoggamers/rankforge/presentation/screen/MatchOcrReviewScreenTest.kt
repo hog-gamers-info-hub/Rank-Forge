@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
@@ -13,9 +14,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.AnnotatedString
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -98,6 +102,49 @@ class MatchOcrReviewScreenTest {
                 .performScrollTo()
                 .assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun readyStateSupportsGestureScrollingToLowerRowsAndBackAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(11)).assertIsNotDisplayed()
+        repeat(4) {
+            composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.READY_CONTENT)
+                .performTouchInput { swipeUp() }
+        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(11)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).assertIsDisplayed()
+    }
+
+    @Test
+    fun emptyStateWithLongReadyPreviewSupportsGestureScrolling() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = emptyStateWithLongPreview(),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("No OCR evidence").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(11)).assertIsNotDisplayed()
+        repeat(4) {
+            composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY_CONTENT)
+                .performTouchInput { swipeUp() }
+        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.previewRow(11)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).assertIsDisplayed()
     }
 
     @Test
@@ -643,6 +690,43 @@ class MatchOcrReviewScreenTest {
         correctionDraft = correctionDraft,
         finalization = finalization,
     )
+
+    private fun emptyStateWithLongPreview(): MatchOcrReviewUiState.Empty =
+        MatchOcrReviewUiState.Empty(
+            tournamentId = "synthetic-tournament",
+            matchId = "synthetic-match",
+            matchResultOcrPreview = MatchResultOcrPreviewUiState.Ready(
+                roles = listOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                ),
+                rows = (1..11).map { position ->
+                    MatchResultOcrPreviewRowUiState(
+                        position = position,
+                        role = if (position <= 6) {
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                        } else {
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                        },
+                        sourceLabel = "Synthetic OCR row $position",
+                        placementText = position.toString(),
+                        slots = (1..4).map { slot ->
+                            MatchResultOcrPreviewSlotUiState(
+                                slot = slot,
+                                playerText = "Player $position-$slot",
+                                playerOcrText = "Player $position-$slot",
+                                playerStatusLabel = "Accepted",
+                                killText = slot.toString(),
+                                killOcrText = slot.toString(),
+                                killStatusLabel = "Accepted",
+                            )
+                        },
+                    )
+                },
+                ignoredLowerRows = emptyList(),
+                manualReviewRows = emptyList(),
+            ),
+        )
 
     private fun correctionDraft(
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
