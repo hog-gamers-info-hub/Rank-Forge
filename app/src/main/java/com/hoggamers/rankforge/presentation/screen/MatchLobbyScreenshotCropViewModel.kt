@@ -31,7 +31,8 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
-    private val uploadCheckpoint: MatchLobbyScreenshotUploadCheckpoint,
+    private val uploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
+    private val reconciliationScheduler: ScreenshotReconciliationScheduler,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
     val uiState: StateFlow<MatchLobbyScreenshotCropUiState> = _uiState.asStateFlow()
@@ -158,7 +159,9 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    uploadCheckpoint.run(identity)
+                    reconciliationScheduler.schedule {
+                        uploadCheckpoint.run(identity)
+                    }
                     _uiState.update { it.copy(isSaving = false) }
                     onConfirmed()
                 }

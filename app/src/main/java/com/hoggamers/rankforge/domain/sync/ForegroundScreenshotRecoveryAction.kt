@@ -1,0 +1,11 @@
+package com.hoggamers.rankforge.domain.sync
+
+fun interface ForegroundScreenshotRecoveryAction {
+    suspend fun recoverAfterParentQueue()
+}
+
+object NoOpForegroundScreenshotRecoveryAction : ForegroundScreenshotRecoveryAction {
+    override suspend fun recoverAfterParentQueue() {
+        // Used by existing callers that do not provide screenshot recovery.
+    }
+}

@@ -4,6 +4,7 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import com.hoggamers.rankforge.domain.sync.ForegroundScreenshotRecoveryAction
 import javax.inject.Singleton
 
 @Module
@@ -20,6 +21,18 @@ abstract class ScreenshotWorkflowModule {
     abstract fun bindMatchLobbyScreenshotUploadCheckpointAction(
         checkpoint: MatchLobbyScreenshotUploadCheckpoint,
     ): MatchLobbyScreenshotUploadCheckpointAction
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchResultScreenshotUploadCheckpointAction(
+        checkpoint: MatchResultScreenshotUploadCheckpoint,
+    ): MatchResultScreenshotUploadCheckpointAction
+
+    @Binds
+    @Singleton
+    abstract fun bindForegroundScreenshotRecoveryAction(
+        useCase: RecoverScreenshotAssetsOnForegroundConnectivityUseCase,
+    ): ForegroundScreenshotRecoveryAction
 
     @Binds
     @Singleton

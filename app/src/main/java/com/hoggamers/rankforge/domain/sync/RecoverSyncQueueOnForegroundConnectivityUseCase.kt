@@ -13,6 +13,7 @@ fun interface ForegroundConnectivityRetryAction {
 class RecoverSyncQueueOnForegroundConnectivityUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val queueRecovery: ForegroundSyncQueueRecoveryAction,
+    private val screenshotRecovery: ForegroundScreenshotRecoveryAction = NoOpForegroundScreenshotRecoveryAction,
 ) : ForegroundConnectivityRetryAction {
     override suspend fun onConnectivityChanged(isNetworkAvailable: Boolean) {
         if (!isNetworkAvailable) return
@@ -20,6 +21,7 @@ class RecoverSyncQueueOnForegroundConnectivityUseCase @Inject constructor(
             val isSignedIn = authRepository.observeAuthState().first() is AuthState.SignedIn
             if (isSignedIn) {
                 queueRecovery.recoverAfterAuthenticatedSession()
+                screenshotRecovery.recoverAfterParentQueue()
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
