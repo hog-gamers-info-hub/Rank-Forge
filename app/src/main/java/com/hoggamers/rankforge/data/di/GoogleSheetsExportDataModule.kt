@@ -1,8 +1,10 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.export.GoogleSheetsExportHttpTransport
+import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.SupabaseAccessTokenProvider
+import com.hoggamers.rankforge.data.export.SupabaseGoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.SupabaseGoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.SupabaseSessionAccessTokenProvider
 import com.hoggamers.rankforge.data.export.UrlConnectionGoogleSheetsExportHttpTransport
@@ -32,4 +34,10 @@ abstract class GoogleSheetsExportDataModule {
     abstract fun bindGoogleSheetsStandingsExportRemoteDataSource(
         dataSource: SupabaseGoogleSheetsStandingsExportRemoteDataSource,
     ): GoogleSheetsStandingsExportRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindGoogleSheetsMatchExportRemoteDataSource(
+        dataSource: SupabaseGoogleSheetsMatchExportRemoteDataSource,
+    ): GoogleSheetsMatchExportRemoteDataSource
 }

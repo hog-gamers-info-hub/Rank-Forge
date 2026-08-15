@@ -14,6 +14,8 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchResul
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchWarning
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionRowInput
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -30,6 +32,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 
 @HiltViewModel
 class MatchOcrReviewViewModel @Inject constructor(
@@ -38,6 +42,13 @@ class MatchOcrReviewViewModel @Inject constructor(
     private val matchLobbyPlayersOcrRunner: MatchLobbyPlayersOcrRunner,
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val observeRoster: ObserveRosterByTournamentUseCase,
+    private val finalizedMatchCloudSync: FinalizedMatchCloudSyncAction =
+        FinalizedMatchCloudSyncAction {
+            QueueAwareActionResult(
+                primaryResult = FinalizedMatchCloudSyncResult.ValidationFailure,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
     val uiState: StateFlow<MatchOcrReviewUiState> = _uiState.asStateFlow()
@@ -58,6 +69,7 @@ class MatchOcrReviewViewModel @Inject constructor(
 
     internal constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
+        finalizedMatchCloudSync: FinalizedMatchCloudSyncAction,
         initialUiState: MatchOcrReviewUiState,
     ) : this(
         finalizeOcrCorrectionMatch,
@@ -65,6 +77,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
+        finalizedMatchCloudSync,
     ) {
         _uiState.value = initialUiState
     }
@@ -369,6 +382,21 @@ class MatchOcrReviewViewModel @Inject constructor(
                         ),
                     )
                 }
+            }
+            if (result is FinalizeOcrCorrectionMatchResult.Finalized) {
+                launchFinalizedMatchCloudSync(current.tournamentId)
+            }
+        }
+    }
+
+    private fun launchFinalizedMatchCloudSync(tournamentId: String) {
+        viewModelScope.launch {
+            try {
+                finalizedMatchCloudSync(tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Local finalization remains authoritative when cloud sync fails.
             }
         }
     }
