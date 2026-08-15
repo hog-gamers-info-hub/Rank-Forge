@@ -8,6 +8,7 @@ data class MatchCloudRestorationSnapshot(
     val tournamentId: String,
     val matches: List<Match>,
     val cloudRevision: CloudRevision? = null,
+    val ocrEvidence: List<PreservedMatchOcrEvidence> = emptyList(),
 )
 
 enum class MatchCloudRestorationFailureCategory { AUTHENTICATION, AUTHORIZATION, NETWORK, VALIDATION }

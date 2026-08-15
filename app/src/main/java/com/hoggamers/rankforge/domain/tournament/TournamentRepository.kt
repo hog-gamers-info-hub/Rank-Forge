@@ -59,6 +59,9 @@ interface TournamentRepository {
     fun observeMatchById(matchId: String): Flow<Match?> =
         kotlinx.coroutines.flow.flowOf(null)
 
+    /** Returns the authoritative OCR evidence already persisted for a match, if any. */
+    suspend fun readPreservedMatchOcrEvidence(matchId: String): PreservedMatchOcrEvidence? = null
+
     suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
         error("Match creation is not supported by this repository.")
 

@@ -47,6 +47,9 @@ class FinalizedMatchCloudSyncExecutor(
         matchResults: List<FinalizedMatchResultUploadPayload>,
         expectedRevision: Int,
     ) -> RevisionWriteResponse,
+    private val syncOcrEvidence: suspend (
+        evidence: List<FinalizedMatchOcrEvidenceUploadPayload>,
+    ) -> FinalizedMatchCloudSyncExecutionResult.Failure? = { null },
 ) {
     suspend fun execute(
         payloads: FinalizedMatchCloudSyncPayloads,
@@ -101,7 +104,15 @@ class FinalizedMatchCloudSyncExecutor(
             }
             val confirmedRevision = lastConfirmedRevision
             if (confirmedRevision != null && confirmedRevision > 0) {
-                FinalizedMatchCloudSyncExecutionResult.Success(confirmedRevision)
+                val evidenceFailure = if (payloads.ocrEvidence.isEmpty()) {
+                    null
+                } else {
+                    syncOcrEvidence(payloads.ocrEvidence)
+                }
+                evidenceFailure?.copy(
+                    completedStage = FinalizedMatchCloudSyncCompletedStage.MATCHES,
+                    confirmedCloudRevision = confirmedRevision,
+                ) ?: FinalizedMatchCloudSyncExecutionResult.Success(confirmedRevision)
             } else {
                 validationFailure(null)
             }

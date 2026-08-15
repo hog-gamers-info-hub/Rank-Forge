@@ -103,6 +103,71 @@ class FinalizedMatchCloudSyncExecutorTest {
     }
 
     @Test
+    fun uploadsOcrEvidenceOnlyAfterParentMatchRevisionIsConfirmed() = runBlocking {
+        val events = mutableListOf<String>()
+        var uploadedEvidence: List<FinalizedMatchOcrEvidenceUploadPayload> = emptyList()
+        val evidence = FinalizedMatchOcrEvidenceUploadPayload(
+            matchId = payloads().matches.single().id,
+            tournamentId = payloads().matches.single().tournamentId,
+            sourceScreenshotId = "MATCH_RESULT_UPPER",
+            preservedAt = "2026-08-15T12:34:56Z",
+            provenance = "OCR_REVIEW_FINALIZATION",
+        )
+        val executor = FinalizedMatchCloudSyncExecutor(
+            finalizeMatch = { _, _, _ ->
+                events += "match"
+                RevisionWriteResponse("success", 3)
+            },
+            writeDraftMatch = { _, _, _ -> error("bootstrap must not run") },
+            syncOcrEvidence = { payload ->
+                events += "ocr"
+                uploadedEvidence = payload
+                null
+            },
+        )
+
+        val result = executor.execute(
+            payloads().copy(ocrEvidence = listOf(evidence)),
+            expectedRevision = 2,
+        )
+
+        assertEquals(FinalizedMatchCloudSyncExecutionResult.Success(3), result)
+        assertEquals(listOf("match", "ocr"), events)
+        assertEquals(listOf(evidence), uploadedEvidence)
+    }
+
+    @Test
+    fun ocrEvidenceFailureRetainsConfirmedParentRevisionForRetry() = runBlocking {
+        val result = FinalizedMatchCloudSyncExecutor(
+            finalizeMatch = { _, _, _ -> RevisionWriteResponse("success", 3) },
+            writeDraftMatch = { _, _, _ -> error("bootstrap must not run") },
+            syncOcrEvidence = {
+                FinalizedMatchCloudSyncExecutionResult.Failure(
+                    completedStage = null,
+                    category = FinalizedMatchCloudSyncFailureCategory.NETWORK,
+                )
+            },
+        ).execute(
+            payloads().copy(
+                ocrEvidence = listOf(
+                    FinalizedMatchOcrEvidenceUploadPayload(
+                        matchId = payloads().matches.single().id,
+                        tournamentId = payloads().matches.single().tournamentId,
+                        sourceScreenshotId = null,
+                        preservedAt = "2026-08-15T12:34:56Z",
+                        provenance = "OCR_REVIEW_FINALIZATION",
+                    ),
+                ),
+            ),
+            expectedRevision = 2,
+        ) as FinalizedMatchCloudSyncExecutionResult.Failure
+
+        assertEquals(FinalizedMatchCloudSyncCompletedStage.MATCHES, result.completedStage)
+        assertEquals(FinalizedMatchCloudSyncFailureCategory.NETWORK, result.category)
+        assertEquals(3, result.confirmedCloudRevision)
+    }
+
+    @Test
     fun alreadyFinalizedWithoutRevisionReturnsValidationFailure() = runBlocking {
         val result = FinalizedMatchCloudSyncExecutor(
             finalizeMatch = { _, _, _ -> RevisionWriteResponse("already_finalized") },

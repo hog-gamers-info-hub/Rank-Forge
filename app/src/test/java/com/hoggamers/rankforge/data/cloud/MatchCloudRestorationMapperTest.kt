@@ -30,6 +30,67 @@ class MatchCloudRestorationMapperTest {
         assertEquals((1..12).toSet(), mapped.value.matches[1].placements.map { it.position }.toSet())
     }
 
+    @Test
+    fun restoresHistoricalOcrEvidenceWithRowsAndCorrectionsWithoutChangingMatchIdentity() {
+        val payload = validPayloads()
+        val finalizedId = payload.matches.last().id
+        val mapped = MatchCloudRestorationMapper.map(
+            payload.copy(
+                ocrEvidence = listOf(
+                    MatchOcrEvidenceCloudSnapshot(
+                        evidence = MatchOcrEvidenceCloudPayload(
+                            matchId = finalizedId,
+                            tournamentId = TOURNAMENT_ID,
+                            sourceScreenshotId = "MATCH_RESULT_UPPER",
+                            preservedAt = "2026-08-15T12:34:56Z",
+                            provenance = "OCR_REVIEW_FINALIZATION",
+                        ),
+                        rows = listOf(
+                            FinalizedMatchOcrEvidenceRowUploadPayload(
+                                matchId = finalizedId,
+                                tournamentId = TOURNAMENT_ID,
+                                rowIndex = 1,
+                                originalOcrText = "Alpha",
+                                originalPlacement = 2,
+                                originalKills = 4,
+                                originalSuggestedTeamSlot = 3,
+                                confidenceSummary = "HIGH",
+                                safetySummary = "SAFE",
+                                manualReviewRequired = true,
+                            ),
+                        ),
+                        correctionSnapshots = listOf(
+                            FinalizedMatchOcrCorrectionSnapshotUploadPayload(
+                                matchId = finalizedId,
+                                tournamentId = TOURNAMENT_ID,
+                                rowIndex = 1,
+                                correctedPlacement = 2,
+                                correctedKills = 4,
+                                correctedTeamSlot = 3,
+                                placementChanged = true,
+                                killsChanged = false,
+                                teamSlotChanged = true,
+                                preservedAt = "2026-08-15T12:34:56Z",
+                                provenance = "OCR_REVIEW_FINALIZATION",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ) as MatchCloudRestorationMappingResult.Success
+
+        val evidence = mapped.value.ocrEvidence.single()
+        assertEquals(finalizedId, mapped.value.matches.last().id)
+        assertEquals(finalizedId, evidence.matchId)
+        assertEquals(TOURNAMENT_ID, evidence.tournamentId)
+        assertEquals("MATCH_RESULT_UPPER", evidence.sourceScreenshotId)
+        assertEquals("OCR_REVIEW_FINALIZATION", evidence.provenance)
+        assertEquals(1, evidence.rows.single().rowIndex)
+        assertEquals("Alpha", evidence.rows.single().originalOcrText)
+        assertEquals(2, evidence.correctionSnapshots.single().correctedPlacement)
+        assertEquals(true, evidence.correctionSnapshots.single().placementChanged)
+    }
+
     @Test fun rejectsInvalidUuidStatusReferenceSlotKillsAndCrossTournamentPayloads() {
         val payload = validPayloads()
         val invalids = listOf(

@@ -66,6 +66,42 @@ class SyncFinalizedMatchesUseCaseTest {
     }
 
     @Test
+    fun authenticatedSyncIncludesPersistedOcrEvidenceForTheFinalizedMatch() = runTest {
+        val evidence = preservedEvidence()
+        val local = localRepository(evidence)
+        assertEquals(evidence, local.readPreservedMatchOcrEvidence("finalized-match"))
+        val cloud = RecordingCloudRepository(FinalizedMatchCloudSyncResult.Success(9))
+
+        SyncFinalizedMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(listOf(evidence), cloud.snapshot?.ocrEvidence)
+    }
+
+    @Test
+    fun cloudFailureLeavesFinalizedMatchAndOcrEvidenceLocallyAvailableForRetry() = runTest {
+        val evidence = preservedEvidence()
+        val local = localRepository(evidence)
+        assertEquals(evidence, local.readPreservedMatchOcrEvidence("finalized-match"))
+        val beforeMatches = local.observeMatchesByTournamentId(TOURNAMENT_ID).first()
+
+        val result = SyncFinalizedMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            cloudSyncRepository = RecordingCloudRepository(FinalizedMatchCloudSyncResult.NetworkFailure),
+            queueRecorder = testQueueRecorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, result.primaryResult)
+        assertEquals(beforeMatches, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
+        assertEquals(evidence, local.readPreservedMatchOcrEvidence("finalized-match"))
+    }
+
+    @Test
     fun partialFailurePersistsOnlyItsLastConfirmedRevision() = runTest {
         val local = localRepository()
         val result = SyncFinalizedMatchesUseCase(
@@ -159,7 +195,9 @@ class SyncFinalizedMatchesUseCaseTest {
         assertEquals(before, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
     }
 
-    private suspend fun localRepository(): InMemoryTournamentRepository = InMemoryTournamentRepository().also { repository ->
+    private suspend fun localRepository(
+        evidence: PreservedMatchOcrEvidence? = null,
+    ): InMemoryTournamentRepository = InMemoryTournamentRepository().also { repository ->
         repository.create(
             Tournament(
                 id = TOURNAMENT_ID,
@@ -170,6 +208,7 @@ class SyncFinalizedMatchesUseCaseTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to "Alpha"))
         repository.createDraftMatch(
             Match(
                 id = "finalized-match",
@@ -180,12 +219,52 @@ class SyncFinalizedMatchesUseCaseTest {
                 status = MatchStatus.DRAFT,
             ),
         )
-        repository.finalizeDraftMatch(
-            matchId = "finalized-match",
-            placements = TeamSlot.SLOT_NUMBERS.map { MatchPlacement(it, it) },
-            kills = TeamSlot.SLOT_NUMBERS.map { MatchKill(it, it - 1) },
-        )
+        if (evidence == null) {
+            repository.finalizeDraftMatch(
+                matchId = "finalized-match",
+                placements = TeamSlot.SLOT_NUMBERS.map { MatchPlacement(it, it) },
+                kills = TeamSlot.SLOT_NUMBERS.map { MatchKill(it, it - 1) },
+            )
+        } else {
+            repository.finalizeDraftMatchWithOcrEvidence(
+                matchId = "finalized-match",
+                placements = TeamSlot.SLOT_NUMBERS.map { MatchPlacement(it, it) },
+                kills = TeamSlot.SLOT_NUMBERS.map { MatchKill(it, it - 1) },
+                evidence = evidence,
+            )
+        }
     }
+
+    private fun preservedEvidence() = PreservedMatchOcrEvidence(
+        tournamentId = TOURNAMENT_ID,
+        matchId = "finalized-match",
+        sourceScreenshotId = "MATCH_RESULT_UPPER",
+        preservedAt = 1784896496000,
+        provenance = "OCR_REVIEW_FINALIZATION",
+        rows = listOf(
+            PreservedMatchOcrRowEvidence(
+                rowIndex = 1,
+                originalOcrText = "Alpha",
+                originalPlacement = 1,
+                originalKills = 2,
+                originalSuggestedTeamSlot = 1,
+                confidenceSummary = "HIGH",
+                safetySummary = "SAFE",
+                manualReviewRequired = false,
+            ),
+        ),
+        correctionSnapshots = listOf(
+            PreservedMatchOcrCorrectionSnapshot(
+                rowIndex = 1,
+                correctedPlacement = 1,
+                correctedKills = 2,
+                correctedTeamSlot = 1,
+                placementChanged = false,
+                killsChanged = false,
+                teamSlotChanged = false,
+            ),
+        ),
+    )
 
     private class RecordingCloudRepository(
         private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success(1),

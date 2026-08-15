@@ -23,6 +23,8 @@ import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRepository
+import com.hoggamers.rankforge.data.cloud.MatchOcrEvidenceCloudDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchOcrEvidenceCloudDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
@@ -171,6 +173,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindFinalizedMatchCloudSyncRemoteDataSource(
         dataSource: SupabaseFinalizedMatchCloudSyncRemoteDataSource,
     ): FinalizedMatchCloudSyncRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchOcrEvidenceCloudDataSource(
+        dataSource: SupabaseMatchOcrEvidenceCloudDataSource,
+    ): MatchOcrEvidenceCloudDataSource
 
     @Binds
     @Singleton

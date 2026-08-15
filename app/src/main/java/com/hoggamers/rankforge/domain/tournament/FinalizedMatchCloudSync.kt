@@ -7,6 +7,7 @@ data class FinalizedMatchCloudSyncSnapshot(
     val tournament: Tournament,
     val matches: List<Match>,
     val expectedCloudRevision: Int? = null,
+    val ocrEvidence: List<PreservedMatchOcrEvidence> = emptyList(),
 )
 
 enum class FinalizedMatchCloudSyncStage {

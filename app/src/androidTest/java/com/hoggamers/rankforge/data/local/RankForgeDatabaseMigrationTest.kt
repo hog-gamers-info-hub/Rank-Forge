@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.data.di.TournamentDataProvidersModule
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -840,6 +841,55 @@ class RankForgeDatabaseMigrationTest {
             assertEquals(matchOcrEvidence(), database.matchOcrEvidenceDao().readMatchEvidence("match-ocr"))
             assertEquals(12, database.matchOcrEvidenceDao().readRowEvidence("match-ocr").size)
             assertEquals(12, database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun roomRepositoryRestoresEvidenceAndReplacesStaleRowsTransactionally() = runBlocking {
+        val database = createInMemoryDatabase()
+
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(domainTournament())
+            repository.createDraftMatch(domainMatch())
+            repository.finalizeDraftMatchWithOcrEvidence(
+                matchId = "match-ocr",
+                placements = finalizedPlacements(),
+                kills = finalizedKills(),
+                evidence = preservedOcrEvidence(),
+            )
+
+            val restoredEvidence = preservedOcrEvidence().copy(
+                rows = preservedOcrEvidence().rows.take(1).map { it.copy(originalOcrText = "Restored OCR") },
+                correctionSnapshots = preservedOcrEvidence().correctionSnapshots.take(1),
+            )
+            val restoredMatch = domainMatch().copy(
+                status = MatchStatus.FINALIZED,
+                placements = finalizedPlacements(),
+                kills = finalizedKills(),
+            )
+            repository.replaceMatches(
+                MatchCloudRestorationSnapshot(
+                    tournamentId = "tournament-ocr",
+                    matches = listOf(restoredMatch),
+                    ocrEvidence = listOf(restoredEvidence),
+                ),
+            )
+            repository.replaceMatches(
+                MatchCloudRestorationSnapshot(
+                    tournamentId = "tournament-ocr",
+                    matches = listOf(restoredMatch),
+                    ocrEvidence = listOf(restoredEvidence),
+                ),
+            )
+
+            assertEquals(restoredEvidence, repository.readPreservedMatchOcrEvidence("match-ocr"))
+            assertEquals(1, database.matchOcrEvidenceDao().readRowEvidence("match-ocr").size)
+            assertEquals(1, database.matchOcrEvidenceDao().readCorrectionSnapshots("match-ocr").size)
+            assertEquals("Restored OCR", database.matchOcrEvidenceDao().readRowEvidence("match-ocr").single().originalOcrText)
+            assertEquals(MatchStatus.FINALIZED, repository.observeMatchById("match-ocr").first()!!.status)
         } finally {
             database.close()
         }

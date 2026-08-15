@@ -841,6 +841,15 @@ interface MatchOcrEvidenceDao {
     @Query("SELECT * FROM match_ocr_correction_snapshots WHERE match_id = :matchId ORDER BY row_index")
     suspend fun readCorrectionSnapshots(matchId: String): List<MatchOcrCorrectionSnapshotEntity>
 
+    @Query("DELETE FROM match_ocr_row_evidence WHERE match_id = :matchId")
+    suspend fun deleteRowEvidenceByMatchId(matchId: String)
+
+    @Query("DELETE FROM match_ocr_correction_snapshots WHERE match_id = :matchId")
+    suspend fun deleteCorrectionSnapshotsByMatchId(matchId: String)
+
+    @Query("DELETE FROM match_ocr_evidence WHERE match_id = :matchId")
+    suspend fun deleteMatchEvidenceByMatchId(matchId: String)
+
     @Transaction
     suspend fun insertSnapshot(
         matchEvidence: MatchOcrEvidenceEntity,
@@ -850,6 +859,19 @@ interface MatchOcrEvidenceDao {
         insertMatchEvidence(matchEvidence)
         insertRowEvidence(rowEvidence)
         insertCorrectionSnapshots(correctionSnapshots)
+    }
+
+    @Transaction
+    suspend fun replaceSnapshot(
+        matchId: String,
+        matchEvidence: MatchOcrEvidenceEntity,
+        rowEvidence: List<MatchOcrRowEvidenceEntity>,
+        correctionSnapshots: List<MatchOcrCorrectionSnapshotEntity>,
+    ) {
+        deleteRowEvidenceByMatchId(matchId)
+        deleteCorrectionSnapshotsByMatchId(matchId)
+        deleteMatchEvidenceByMatchId(matchId)
+        insertSnapshot(matchEvidence, rowEvidence, correctionSnapshots)
     }
 }
 

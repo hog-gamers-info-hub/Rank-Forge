@@ -369,6 +369,9 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         return result
     }
 
+    override suspend fun readPreservedMatchOcrEvidence(matchId: String): PreservedMatchOcrEvidence? =
+        preservedOcrEvidenceByMatch.value[matchId]
+
     fun readPreservedOcrEvidence(matchId: String): PreservedMatchOcrEvidence? =
         preservedOcrEvidenceByMatch.value[matchId]
 

@@ -5,9 +5,13 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnapshot
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.time.LocalDate
+import java.time.Instant
 import java.util.UUID
 
 data class MatchCloudRestorationPayloads(
@@ -15,6 +19,7 @@ data class MatchCloudRestorationPayloads(
     val matches: List<MatchCloudRestorePayload>,
     val results: List<MatchResultCloudRestorePayload>,
     val cloudRevision: Int,
+    val ocrEvidence: List<MatchOcrEvidenceCloudSnapshot> = emptyList(),
 )
 
 sealed interface MatchCloudRestorationMappingResult {
@@ -46,7 +51,81 @@ object MatchCloudRestorationMapper {
         if (payloads.results.any { it.matchId !in payloads.matches.map { match -> match.id }.toSet() }) return MatchCloudRestorationMappingResult.Invalid
         val cloudRevision = payloads.cloudRevision.takeIf { it > 0 }?.let(::CloudRevision)
             ?: return MatchCloudRestorationMappingResult.Invalid
-        return MatchCloudRestorationMappingResult.Success(MatchCloudRestorationSnapshot(payloads.tournamentId, matches.sortedBy { it.matchNumber }, cloudRevision))
+        if (payloads.ocrEvidence.map { it.evidence.matchId }.distinct().size != payloads.ocrEvidence.size) {
+            return MatchCloudRestorationMappingResult.Invalid
+        }
+        val ocrEvidence = payloads.ocrEvidence.map { snapshot ->
+            val evidence = snapshot.evidence
+            if (
+                evidence.tournamentId != payloads.tournamentId ||
+                matches.none { it.id == evidence.matchId && it.status == MatchStatus.FINALIZED } ||
+                evidence.provenance.isBlank() ||
+                snapshot.rows.any { row ->
+                    row.matchId != evidence.matchId ||
+                        row.tournamentId != evidence.tournamentId ||
+                        row.rowIndex < 0 ||
+                        row.originalPlacement?.let { it !in TeamSlot.SLOT_NUMBERS } == true ||
+                        row.originalKills?.let { it < 0 } == true ||
+                        row.originalSuggestedTeamSlot?.let { it !in TeamSlot.SLOT_NUMBERS } == true
+                } ||
+                snapshot.correctionSnapshots.any { correction ->
+                    correction.matchId != evidence.matchId ||
+                        correction.tournamentId != evidence.tournamentId ||
+                        correction.rowIndex < 0 ||
+                        correction.correctedPlacement !in TeamSlot.SLOT_NUMBERS ||
+                        correction.correctedKills < 0 ||
+                        correction.correctedTeamSlot !in TeamSlot.SLOT_NUMBERS
+                } ||
+                snapshot.rows.map { it.rowIndex }.distinct().size != snapshot.rows.size ||
+                snapshot.correctionSnapshots.map { it.rowIndex }.distinct().size != snapshot.correctionSnapshots.size
+            ) return MatchCloudRestorationMappingResult.Invalid
+            val preservedAt = runCatching { Instant.parse(evidence.preservedAt).toEpochMilli() }.getOrNull()
+                ?: return MatchCloudRestorationMappingResult.Invalid
+            PreservedMatchOcrEvidence(
+                tournamentId = evidence.tournamentId,
+                matchId = evidence.matchId,
+                sourceScreenshotId = evidence.sourceScreenshotId,
+                preservedAt = preservedAt,
+                provenance = evidence.provenance,
+                rows = snapshot.rows.sortedBy { it.rowIndex }.map { row ->
+                    PreservedMatchOcrRowEvidence(
+                        rowIndex = row.rowIndex,
+                        originalOcrText = row.originalOcrText,
+                        originalPlacement = row.originalPlacement,
+                        originalKills = row.originalKills,
+                        originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                        confidenceSummary = row.confidenceSummary,
+                        safetySummary = row.safetySummary,
+                        manualReviewRequired = row.manualReviewRequired,
+                    )
+                },
+                correctionSnapshots = snapshot.correctionSnapshots.sortedBy { it.rowIndex }.map { correction ->
+                    val correctionPreservedAt = runCatching {
+                        Instant.parse(correction.preservedAt).toEpochMilli()
+                    }.getOrNull()
+                    if (correctionPreservedAt != preservedAt || correction.provenance != evidence.provenance) {
+                        return MatchCloudRestorationMappingResult.Invalid
+                    }
+                    PreservedMatchOcrCorrectionSnapshot(
+                        rowIndex = correction.rowIndex,
+                        correctedPlacement = correction.correctedPlacement,
+                        correctedKills = correction.correctedKills,
+                        correctedTeamSlot = correction.correctedTeamSlot,
+                        placementChanged = correction.placementChanged,
+                        killsChanged = correction.killsChanged,
+                        teamSlotChanged = correction.teamSlotChanged,
+                    )
+                },
+            )
+        }
+        return MatchCloudRestorationMappingResult.Success(
+            MatchCloudRestorationSnapshot(
+                tournamentId = payloads.tournamentId,
+                matches = matches.sortedBy { it.matchNumber },
+                cloudRevision = cloudRevision,
+                ocrEvidence = ocrEvidence,
+            ),
+        )
     }
 
     private fun teamSlotNumber(tournamentId: UUID, teamSlotId: String): Int? = TeamSlot.SLOT_NUMBERS.firstOrNull {

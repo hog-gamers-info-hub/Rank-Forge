@@ -374,6 +374,12 @@ class RoomTournamentRepository @Inject constructor(
     override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) {
         require(snapshot.matches.all { it.tournamentId == snapshot.tournamentId })
         require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
+        require(snapshot.ocrEvidence.all { evidence ->
+            evidence.tournamentId == snapshot.tournamentId &&
+                snapshot.matches.any { match ->
+                    match.id == evidence.matchId && match.status == MatchStatus.FINALIZED
+                }
+        })
         awaitState()
         writeMutex.withLock {
             val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to snapshot.matches))
@@ -383,6 +389,13 @@ class RoomTournamentRepository @Inject constructor(
                     database.matchDao().upsert(match.toEntity())
                     database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
                     database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                }
+                snapshot.ocrEvidence.forEach { evidence ->
+                    database.matchOcrEvidenceDao().insertSnapshot(
+                        matchEvidence = evidence.toEntity(),
+                        rowEvidence = evidence.rows.map { it.toEntity(evidence) },
+                        correctionSnapshots = evidence.correctionSnapshots.map { it.toEntity(evidence) },
+                    )
                 }
                 snapshot.cloudRevision?.let { revision ->
                     database.syncRevisionDao().upsert(
@@ -663,6 +676,43 @@ class RoomTournamentRepository @Inject constructor(
                     placements = placements.map { it.toDomain() },
                     kills = kills.map { it.toDomain() },
                     correctionHistory = corrections.map { it.toDomain(json) },
+                )
+            },
+        )
+    }
+
+    override suspend fun readPreservedMatchOcrEvidence(
+        matchId: String,
+    ): PreservedMatchOcrEvidence? {
+        awaitState()
+        val evidence = database.matchOcrEvidenceDao().readMatchEvidence(matchId) ?: return null
+        return PreservedMatchOcrEvidence(
+            tournamentId = evidence.tournamentId,
+            matchId = evidence.matchId,
+            sourceScreenshotId = evidence.sourceScreenshotId,
+            preservedAt = evidence.preservedAt,
+            provenance = evidence.provenance,
+            rows = database.matchOcrEvidenceDao().readRowEvidence(matchId).map { row ->
+                PreservedMatchOcrRowEvidence(
+                    rowIndex = row.rowIndex,
+                    originalOcrText = row.originalOcrText,
+                    originalPlacement = row.originalPlacement,
+                    originalKills = row.originalKills,
+                    originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                    confidenceSummary = row.confidenceSummary,
+                    safetySummary = row.safetySummary,
+                    manualReviewRequired = row.manualReviewRequired,
+                )
+            },
+            correctionSnapshots = database.matchOcrEvidenceDao().readCorrectionSnapshots(matchId).map { snapshot ->
+                PreservedMatchOcrCorrectionSnapshot(
+                    rowIndex = snapshot.rowIndex,
+                    correctedPlacement = snapshot.correctedPlacement,
+                    correctedKills = snapshot.correctedKills,
+                    correctedTeamSlot = snapshot.correctedTeamSlot,
+                    placementChanged = snapshot.placementChanged,
+                    killsChanged = snapshot.killsChanged,
+                    teamSlotChanged = snapshot.teamSlotChanged,
                 )
             },
         )

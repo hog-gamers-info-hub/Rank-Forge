@@ -40,12 +40,16 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()
                 ?: return FinalizedMatchCloudSyncResult.ValidationFailure
+            val matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first()
             FinalizedMatchCloudSyncSnapshot(
                 tournament = tournament,
-                matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first(),
+                matches = matches,
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite(),
+                ocrEvidence = matches
+                    .filter { it.status == MatchStatus.FINALIZED }
+                    .mapNotNull { match -> tournamentRepository.readPreservedMatchOcrEvidence(match.id) },
             )
         } catch (cancellation: CancellationException) {
             throw cancellation

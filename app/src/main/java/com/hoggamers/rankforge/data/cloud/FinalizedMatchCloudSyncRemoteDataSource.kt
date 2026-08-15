@@ -11,13 +11,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 interface FinalizedMatchCloudSyncRemoteDataSource {
-    suspend fun sync(payloads: FinalizedMatchCloudSyncPayloads, expectedRevision: Int): FinalizedMatchCloudSyncExecutionResult
+    suspend fun sync(
+        payloads: FinalizedMatchCloudSyncPayloads,
+        expectedRevision: Int,
+    ): FinalizedMatchCloudSyncExecutionResult
 }
 
 @Singleton
 class SupabaseFinalizedMatchCloudSyncRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
+    private val ocrEvidenceCloud: MatchOcrEvidenceCloudDataSource,
 ) : FinalizedMatchCloudSyncRemoteDataSource {
     override suspend fun sync(payloads: FinalizedMatchCloudSyncPayloads, expectedRevision: Int): FinalizedMatchCloudSyncExecutionResult =
         withContext(Dispatchers.IO) {
@@ -63,6 +67,16 @@ class SupabaseFinalizedMatchCloudSyncRemoteDataSource @Inject constructor(
                                     ),
                                 ).decodeSingle()
                             },
+                            syncOcrEvidence = { evidence ->
+                                when (val result = ocrEvidenceCloud.upsert(evidence)) {
+                                    MatchOcrEvidenceCloudResult.Success -> null
+                                    is MatchOcrEvidenceCloudResult.Failed ->
+                                        FinalizedMatchCloudSyncExecutionResult.Failure(
+                                            completedStage = FinalizedMatchCloudSyncCompletedStage.MATCHES,
+                                            category = result.failure.toFinalizedFailureCategory(),
+                                        )
+                                }
+                            },
                         ).execute(payloads, expectedRevision)
                     } catch (cancellation: kotlinx.coroutines.CancellationException) {
                         throw cancellation
@@ -75,4 +89,13 @@ class SupabaseFinalizedMatchCloudSyncRemoteDataSource @Inject constructor(
                 }
             }
         }
+}
+
+private fun MatchOcrEvidenceCloudFailure.toFinalizedFailureCategory() = when (this) {
+    MatchOcrEvidenceCloudFailure.MISSING_AUTH_SESSION -> FinalizedMatchCloudSyncFailureCategory.AUTHENTICATION
+    MatchOcrEvidenceCloudFailure.AUTHORIZATION -> FinalizedMatchCloudSyncFailureCategory.AUTHORIZATION
+    MatchOcrEvidenceCloudFailure.NETWORK,
+    MatchOcrEvidenceCloudFailure.READ_FAILED,
+    -> FinalizedMatchCloudSyncFailureCategory.NETWORK
+    MatchOcrEvidenceCloudFailure.WRITE_FAILED -> FinalizedMatchCloudSyncFailureCategory.VALIDATION
 }

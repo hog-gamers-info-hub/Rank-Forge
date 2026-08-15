@@ -110,6 +110,40 @@ class RestoreMatchesUseCaseTest {
     }
 
     @Test
+    fun restorationPersistsCloudOcrEvidenceWithTheParentMatchBeforeChildRecovery() = runTest {
+        val local = RecordingLocalRepository()
+        val evidence = preservedEvidence()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(
+                MatchCloudRestorationRemoteResult.Success(
+                    snapshotWithMatch().copy(ocrEvidence = listOf(evidence)),
+                ),
+            ),
+            local,
+            RecordingTestQueueRepository().recorder(),
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(MatchCloudRestorationResult.Success, result)
+        assertEquals(listOf(evidence), local.restoredSnapshot?.ocrEvidence)
+        assertEquals(listOf(MATCH_ID), local.restoredSnapshot?.matches?.map { it.id })
+    }
+
+    @Test
+    fun restorationWithoutCloudOcrEvidenceSucceedsWithoutCreatingEvidence() = runTest {
+        val local = RecordingLocalRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(MatchCloudRestorationRemoteResult.Success(snapshotWithMatch())),
+            local,
+            RecordingTestQueueRepository().recorder(),
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(MatchCloudRestorationResult.Success, result)
+        assertTrue(local.restoredSnapshot?.ocrEvidence.orEmpty().isEmpty())
+    }
+
+    @Test
     fun screenshotCancellationPropagatesAfterParentPersistence() = runTest {
         val local = RecordingLocalRepository()
         val cancellation = CancellationException("cancelled")
@@ -145,6 +179,37 @@ class RestoreMatchesUseCaseTest {
         cloudRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(1),
     )
 
+    private fun preservedEvidence() = PreservedMatchOcrEvidence(
+        tournamentId = TOURNAMENT_ID,
+        matchId = MATCH_ID,
+        sourceScreenshotId = "MATCH_RESULT_UPPER",
+        preservedAt = 1784896496000,
+        provenance = "OCR_REVIEW_FINALIZATION",
+        rows = listOf(
+            PreservedMatchOcrRowEvidence(
+                rowIndex = 1,
+                originalOcrText = "Alpha",
+                originalPlacement = 2,
+                originalKills = 4,
+                originalSuggestedTeamSlot = 3,
+                confidenceSummary = "HIGH",
+                safetySummary = "SAFE",
+                manualReviewRequired = true,
+            ),
+        ),
+        correctionSnapshots = listOf(
+            PreservedMatchOcrCorrectionSnapshot(
+                rowIndex = 1,
+                correctedPlacement = 2,
+                correctedKills = 4,
+                correctedTeamSlot = 3,
+                placementChanged = true,
+                killsChanged = false,
+                teamSlotChanged = true,
+            ),
+        ),
+    )
+
     private class FakeCloudRepository(
         private val result: MatchCloudRestorationRemoteResult<MatchCloudRestorationSnapshot>,
     ) : MatchCloudRestorationRepository {
@@ -157,9 +222,11 @@ class RestoreMatchesUseCaseTest {
         private val events: MutableList<String> = mutableListOf(),
     ) : MatchRestorationLocalRepository {
         var restoreCalled = false
+        var restoredSnapshot: MatchCloudRestorationSnapshot? = null
         override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) {
             events += "parent"
             restoreCalled = true
+            restoredSnapshot = snapshot
         }
     }
 

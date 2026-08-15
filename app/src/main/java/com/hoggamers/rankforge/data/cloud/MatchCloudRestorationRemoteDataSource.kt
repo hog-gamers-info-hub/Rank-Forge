@@ -19,7 +19,11 @@ import kotlinx.serialization.Serializable
 
 interface MatchCloudRestorationRemoteDataSource { suspend fun readOwnedMatches(tournamentId: String): MatchCloudRestorationRemoteResult<MatchCloudRestorationPayloads> }
 
-@Singleton class SupabaseMatchCloudRestorationRemoteDataSource @Inject constructor(private val config: SupabaseAuthConfig, private val clientProvider: SupabaseClientProvider) : MatchCloudRestorationRemoteDataSource {
+@Singleton class SupabaseMatchCloudRestorationRemoteDataSource @Inject constructor(
+    private val config: SupabaseAuthConfig,
+    private val clientProvider: SupabaseClientProvider,
+    private val ocrEvidenceCloud: MatchOcrEvidenceCloudDataSource,
+) : MatchCloudRestorationRemoteDataSource {
     override suspend fun readOwnedMatches(tournamentId: String): MatchCloudRestorationRemoteResult<MatchCloudRestorationPayloads> {
         if (!config.isConfigured) return MatchCloudRestorationRemoteResult.Failure(MatchCloudRestorationFailureCategory.VALIDATION)
         if (clientProvider.client.auth.currentSessionOrNull() == null) return MatchCloudRestorationRemoteResult.Failure(MatchCloudRestorationFailureCategory.AUTHENTICATION)
@@ -28,8 +32,30 @@ interface MatchCloudRestorationRemoteDataSource { suspend fun readOwnedMatches(t
                 ?: return MatchCloudRestorationRemoteResult.Failure(MatchCloudRestorationFailureCategory.AUTHORIZATION)
             val matches = clientProvider.client.from("matches").select { filter { eq("tournament_id", tournamentId) } }.decodeList<MatchCloudRestorePayload>()
             val results = matches.flatMap { match -> clientProvider.client.from("match_results").select { filter { eq("match_id", match.id) } }.decodeList<MatchResultCloudRestorePayload>() }
-            MatchCloudRestorationRemoteResult.Success(MatchCloudRestorationPayloads(tournamentId, matches, results, tournament.revision))
+            val evidence = when (val read = ocrEvidenceCloud.readByTournamentAndMatchIds(tournamentId, matches.map { it.id }.toSet())) {
+                is MatchOcrEvidenceCloudReadResult.Success -> read.snapshots
+                is MatchOcrEvidenceCloudReadResult.Failed -> return MatchCloudRestorationRemoteResult.Failure(
+                    read.failure.toMatchRestorationFailureCategory(),
+                )
+            }
+            MatchCloudRestorationRemoteResult.Success(
+                MatchCloudRestorationPayloads(
+                    tournamentId = tournamentId,
+                    matches = matches,
+                    results = results,
+                    cloudRevision = tournament.revision,
+                    ocrEvidence = evidence,
+                ),
+            )
         } catch (c: CancellationException) { throw c } catch (t: Throwable) { MatchCloudRestorationRemoteResult.Failure(t.category()) }
     }
+}
+private fun MatchOcrEvidenceCloudFailure.toMatchRestorationFailureCategory() = when (this) {
+    MatchOcrEvidenceCloudFailure.MISSING_AUTH_SESSION -> MatchCloudRestorationFailureCategory.AUTHENTICATION
+    MatchOcrEvidenceCloudFailure.AUTHORIZATION -> MatchCloudRestorationFailureCategory.AUTHORIZATION
+    MatchOcrEvidenceCloudFailure.NETWORK,
+    MatchOcrEvidenceCloudFailure.READ_FAILED,
+    -> MatchCloudRestorationFailureCategory.NETWORK
+    MatchOcrEvidenceCloudFailure.WRITE_FAILED -> MatchCloudRestorationFailureCategory.VALIDATION
 }
 private fun Throwable.category(): MatchCloudRestorationFailureCategory { val m = message.orEmpty().lowercase(); return when { m.contains("42501") || m.contains("row-level security") || m.contains("forbidden") || m.contains("403") -> MatchCloudRestorationFailureCategory.AUTHORIZATION; m.contains("401") || m.contains("unauthorized") || m.contains("session") || m.contains("jwt") -> MatchCloudRestorationFailureCategory.AUTHENTICATION; this is IOException || m.contains("network") || m.contains("timeout") || m.contains("connection") -> MatchCloudRestorationFailureCategory.NETWORK; else -> MatchCloudRestorationFailureCategory.VALIDATION } }

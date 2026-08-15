@@ -9,6 +9,46 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class FinalizedMatchOcrEvidenceRowUploadPayload(
+    @SerialName("match_id") val matchId: String,
+    @SerialName("tournament_id") val tournamentId: String,
+    @SerialName("row_index") val rowIndex: Int,
+    @SerialName("original_ocr_text") val originalOcrText: String?,
+    @SerialName("original_placement") val originalPlacement: Int?,
+    @SerialName("original_kills") val originalKills: Int?,
+    @SerialName("original_suggested_team_slot") val originalSuggestedTeamSlot: Int?,
+    @SerialName("confidence_summary") val confidenceSummary: String?,
+    @SerialName("safety_summary") val safetySummary: String?,
+    @SerialName("manual_review_required") val manualReviewRequired: Boolean,
+)
+
+@Serializable
+data class FinalizedMatchOcrCorrectionSnapshotUploadPayload(
+    @SerialName("match_id") val matchId: String,
+    @SerialName("tournament_id") val tournamentId: String,
+    @SerialName("row_index") val rowIndex: Int,
+    @SerialName("corrected_placement") val correctedPlacement: Int,
+    @SerialName("corrected_kills") val correctedKills: Int,
+    @SerialName("corrected_team_slot") val correctedTeamSlot: Int,
+    @SerialName("placement_changed") val placementChanged: Boolean,
+    @SerialName("kills_changed") val killsChanged: Boolean,
+    @SerialName("team_slot_changed") val teamSlotChanged: Boolean,
+    @SerialName("preserved_at") val preservedAt: String,
+    val provenance: String,
+)
+
+@Serializable
+data class FinalizedMatchOcrEvidenceUploadPayload(
+    @SerialName("match_id") val matchId: String,
+    @SerialName("tournament_id") val tournamentId: String,
+    @SerialName("source_screenshot_id") val sourceScreenshotId: String?,
+    @SerialName("preserved_at") val preservedAt: String,
+    val provenance: String,
+    val rows: List<FinalizedMatchOcrEvidenceRowUploadPayload> = emptyList(),
+    val correctionSnapshots: List<FinalizedMatchOcrCorrectionSnapshotUploadPayload> = emptyList(),
+)
+
+@Serializable
 data class FinalizedMatchUploadPayload(
     val id: String,
     @SerialName("tournament_id") val tournamentId: String,
@@ -32,6 +72,7 @@ data class FinalizedMatchResultUploadPayload(
 data class FinalizedMatchCloudSyncPayloads(
     val matches: List<FinalizedMatchUploadPayload>,
     val matchResults: List<FinalizedMatchResultUploadPayload>,
+    val ocrEvidence: List<FinalizedMatchOcrEvidenceUploadPayload> = emptyList(),
 )
 
 sealed interface FinalizedMatchCloudSyncMappingResult {
@@ -73,6 +114,51 @@ object FinalizedMatchCloudSyncMapper {
                 cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
             ) ?: return FinalizedMatchCloudSyncMappingResult.Invalid
         }
+        val evidencePayloads = snapshot.ocrEvidence.map { evidence ->
+            val matchPayload = matchPayloadByLocalId[evidence.matchId]
+                ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+            if (
+                evidence.tournamentId != snapshot.tournament.id ||
+                evidence.rows.map { it.rowIndex }.distinct().size != evidence.rows.size ||
+                evidence.correctionSnapshots.map { it.rowIndex }.distinct().size != evidence.correctionSnapshots.size
+            ) return FinalizedMatchCloudSyncMappingResult.Invalid
+            FinalizedMatchOcrEvidenceUploadPayload(
+                matchId = matchPayload.id,
+                tournamentId = snapshot.tournament.id,
+                sourceScreenshotId = evidence.sourceScreenshotId,
+                preservedAt = evidence.preservedAt.toCloudTimestamp(),
+                provenance = evidence.provenance,
+                rows = evidence.rows.map { row ->
+                    FinalizedMatchOcrEvidenceRowUploadPayload(
+                        matchId = matchPayload.id,
+                        tournamentId = snapshot.tournament.id,
+                        rowIndex = row.rowIndex,
+                        originalOcrText = row.originalOcrText,
+                        originalPlacement = row.originalPlacement,
+                        originalKills = row.originalKills,
+                        originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                        confidenceSummary = row.confidenceSummary,
+                        safetySummary = row.safetySummary,
+                        manualReviewRequired = row.manualReviewRequired,
+                    )
+                },
+                correctionSnapshots = evidence.correctionSnapshots.map { correction ->
+                    FinalizedMatchOcrCorrectionSnapshotUploadPayload(
+                        matchId = matchPayload.id,
+                        tournamentId = snapshot.tournament.id,
+                        rowIndex = correction.rowIndex,
+                        correctedPlacement = correction.correctedPlacement,
+                        correctedKills = correction.correctedKills,
+                        correctedTeamSlot = correction.correctedTeamSlot,
+                        placementChanged = correction.placementChanged,
+                        killsChanged = correction.killsChanged,
+                        teamSlotChanged = correction.teamSlotChanged,
+                        preservedAt = evidence.preservedAt.toCloudTimestamp(),
+                        provenance = evidence.provenance,
+                    )
+                },
+            )
+        }
 
         return FinalizedMatchCloudSyncMappingResult.Success(
             FinalizedMatchCloudSyncPayloads(
@@ -80,6 +166,7 @@ object FinalizedMatchCloudSyncMapper {
                 matchResults = resultPayloads.sortedWith(
                     compareBy(FinalizedMatchResultUploadPayload::matchId, FinalizedMatchResultUploadPayload::teamSlotId),
                 ),
+                ocrEvidence = evidencePayloads.sortedBy { it.matchId },
             ),
         )
     }
