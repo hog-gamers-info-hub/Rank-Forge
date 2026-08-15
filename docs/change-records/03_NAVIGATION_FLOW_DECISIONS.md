@@ -1524,6 +1524,60 @@ Google Sheets export, exactly one successful export operation for the
 verification action, and `rows_written = 12`. Do not weaken RLS or Storage
 policies.
 
+27.1 CR-003.7 Connected Verification Blocker — Minimal Navigation Testability Seam
+
+Connected verification status:
+
+- `AuthNavigationTest`: 16/16 PASS.
+- `RankForgeRecreationTest`: 2/2 PASS.
+- `MatchReviewScreenTest`: 37/37 PASS after test-only repair.
+- `RankForgeNavigationTest`: 29/38 PASS; 9 methods remain.
+
+The read-only audit found zero genuine production defects. The remaining Hilt
+failures occur because plain `ComponentActivity` navigation tests cannot
+replace `RosterOcrReviewViewModel` inside `RosterReviewRoute` or
+`MatchLobbyScreenshotCropViewModel` inside `MatchLobbyScreenshotCropRoute`.
+The existing route functions already accept explicit ViewModels, but
+`RankForgeNavHost` does not expose corresponding injection factories.
+
+Authorize exactly one production file for a non-behavioral testability seam:
+
+`app/src/main/java/com/hoggamers/rankforge/presentation/navigation/RankForgeNavHost.kt`
+
+Permitted change only:
+
+1. Add an optional nullable factory parameter for
+   `RosterOcrReviewViewModel`.
+2. Add an optional nullable factory parameter for
+   `MatchLobbyScreenshotCropViewModel`.
+3. When supplied, pass each ViewModel into its existing route.
+4. When omitted, preserve the exact current `hiltViewModel()` behavior.
+
+No route semantics, destinations, Back behavior, navigation identity,
+production DI binding, or ViewModel implementation may change. This is a
+testability seam, not a product defect fix.
+
+Full Hilt instrumentation conversion was considered and rejected for this
+repair. Although Hilt Android testing dependencies exist, converting the
+navigation harness would be broader than the two optional pass-through
+factories, while the route functions already accept explicit ViewModels.
+
+Authorized implementation files for the remaining repair are exactly:
+
+1. `app/src/main/java/com/hoggamers/rankforge/presentation/navigation/RankForgeNavHost.kt`
+2. `app/src/androidTest/java/com/hoggamers/rankforge/presentation/navigation/RankForgeNavigationTest.kt`
+
+The already repaired `MatchReviewScreenTest.kt` may remain modified but
+requires no further change for this blocker. No other production file is
+authorized.
+
+After the seam and test repair, run the nine remaining methods as focused
+tests. `RankForgeNavigationTest` must reach 38/38 PASS while the previously
+verified `MatchReviewScreenTest` remains 37/37 PASS, `AuthNavigationTest`
+remains 16/16 PASS, and `RankForgeRecreationTest` remains 2/2 PASS.
+`assembleDebug`, `assembleDebugAndroidTest`, and `git diff --check` must also
+pass before the final physical end-to-end smoke test is authorized.
+
 Closure rule:
 
 CR-003 may be marked COMPLETE only after CR-003.7 verification passes. If a
