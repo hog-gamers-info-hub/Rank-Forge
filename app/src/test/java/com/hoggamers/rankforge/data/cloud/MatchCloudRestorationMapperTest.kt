@@ -9,6 +9,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchCloudRestorationMapperTest {
+    @Test fun mapsDraftWithBlankMapNameAndPreservesIt() {
+        val payload = validPayloads().let { payloads ->
+            payloads.copy(matches = payloads.matches.mapIndexed { index, match ->
+                if (index == 0) match.copy(mapName = "") else match
+            })
+        }
+
+        val mapped = MatchCloudRestorationMapper.map(payload) as MatchCloudRestorationMappingResult.Success
+
+        assertEquals("", mapped.value.matches.first().mapName)
+    }
+
     @Test fun mapsDraftWithPartialRowsAndFinalizedWithCompleteRows() {
         val mapped = MatchCloudRestorationMapper.map(validPayloads()) as MatchCloudRestorationMappingResult.Success
         assertEquals(2, mapped.value.matches.size)

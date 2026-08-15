@@ -31,7 +31,7 @@ object MatchCloudRestorationMapper {
         val matches = payloads.matches.map { payload ->
             val status = when (payload.status.lowercase()) { "draft" -> MatchStatus.DRAFT; "finalized" -> MatchStatus.FINALIZED; else -> return MatchCloudRestorationMappingResult.Invalid }
             if (payload.id.toUuidOrNull() == null || payload.tournamentId != payloads.tournamentId ||
-                payload.matchNumber !in 1..10 || payload.mapName.isBlank()) return MatchCloudRestorationMappingResult.Invalid
+                payload.matchNumber !in 1..10) return MatchCloudRestorationMappingResult.Invalid
             val date = runCatching { LocalDate.parse(payload.matchDate) }.getOrNull() ?: return MatchCloudRestorationMappingResult.Invalid
             val rows = payloads.results.filter { it.matchId == payload.id }
             if (rows.map { it.teamSlotId }.distinct().size != rows.size || rows.any { row ->

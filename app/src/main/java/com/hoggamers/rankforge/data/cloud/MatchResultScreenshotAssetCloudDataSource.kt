@@ -22,7 +22,13 @@ enum class MatchResultScreenshotAssetCloudFailure {
     CLOUD_MATCH_ID_UNAVAILABLE,
     NETWORK,
     AUTHORIZATION,
+    READ_FAILED,
     WRITE_FAILED,
+}
+
+sealed interface MatchResultScreenshotAssetCloudReadResult {
+    data class Success(val assets: List<MatchResultScreenshotAssetCloudPayload>) : MatchResultScreenshotAssetCloudReadResult
+    data class Failed(val failure: MatchResultScreenshotAssetCloudFailure) : MatchResultScreenshotAssetCloudReadResult
 }
 
 sealed interface MatchResultScreenshotAssetCloudResult {
@@ -69,6 +75,12 @@ interface MatchResultScreenshotAssetCloudDataSource {
     suspend fun deleteByIdentity(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultScreenshotAssetCloudResult
+
+    suspend fun readByTournamentAndMatchIds(
+        tournamentId: String,
+        matchIds: Set<String>,
+    ): MatchResultScreenshotAssetCloudReadResult =
+        MatchResultScreenshotAssetCloudReadResult.Success(emptyList())
 }
 
 @Singleton
@@ -77,6 +89,8 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
     private val currentUserId: suspend () -> String?,
     private val upsertPayload: suspend (MatchResultScreenshotAssetCloudPayload) -> Unit,
     private val deleteRole: suspend (String, String) -> Unit,
+    private val readAssets: suspend (String, Set<String>) -> List<MatchResultScreenshotAssetCloudPayload> =
+        { _, _ -> emptyList() },
 ) : MatchResultScreenshotAssetCloudDataSource {
     @Inject
     constructor(
@@ -98,7 +112,32 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
                 }
             }
         },
+        readAssets = { tournamentId, matchIds ->
+            clientProvider.client.from(TABLE_NAME).select {
+                filter { eq("tournament_id", tournamentId) }
+            }.decodeList<MatchResultScreenshotAssetCloudPayload>()
+                .filter { it.matchId in matchIds }
+        },
     )
+
+    override suspend fun readByTournamentAndMatchIds(
+        tournamentId: String,
+        matchIds: Set<String>,
+    ): MatchResultScreenshotAssetCloudReadResult = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext MatchResultScreenshotAssetCloudReadResult.Failed(
+            MatchResultScreenshotAssetCloudFailure.READ_FAILED,
+        )
+        if (currentUserId() == null) return@withContext MatchResultScreenshotAssetCloudReadResult.Failed(
+            MatchResultScreenshotAssetCloudFailure.MISSING_AUTH_SESSION,
+        )
+        try {
+            MatchResultScreenshotAssetCloudReadResult.Success(readAssets(tournamentId, matchIds))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            MatchResultScreenshotAssetCloudReadResult.Failed(throwable.toMatchResultScreenshotAssetCloudFailure())
+        }
+    }
 
     override suspend fun upsert(
         asset: MatchResultScreenshotAssetEntity,
