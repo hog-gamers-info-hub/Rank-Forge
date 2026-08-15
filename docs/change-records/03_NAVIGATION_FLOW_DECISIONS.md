@@ -2,11 +2,11 @@ CR-003 — Complete App Navigation Flow Decisions
 
 Status
 
-CR-003 Decisions Approved — CR-003.6 Match Google Sheets Export Implementation Authorized
+CR-003 Decisions Approved — CR-003.7 Full Workflow Verification and Closure Authorized
 
-CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, CR-003.3, CR-003.4, and CR-003.5 are complete; CR-003 remains incomplete.
+CR-003 defines the intended end-to-end Rank-Forge application navigation flow and identifies the smallest remaining navigation and workflow-integration gaps on main. Slice D, CR-003.1, CR-003.2, CR-003.3, CR-003.4, CR-003.5, and CR-003.6 are complete; CR-003 remains incomplete pending CR-003.7.
 
-Only the approved CR-003.6 scope recorded below is authorized for implementation.
+Only the approved CR-003.7 verification-and-closure scope recorded below is authorized. No new feature implementation is authorized by this update.
 
 1. Purpose
 
@@ -1244,6 +1244,8 @@ CR-003.4 implementation/test PR: #285 — MERGED
 CR-003.4 status: COMPLETE
 CR-003.5 implementation/test PR: #287 — MERGED
 CR-003.5 status: COMPLETE
+CR-003.6 implementation PR: #289 — MERGED
+CR-003.6 status: COMPLETE
 CR-003 status: INCOMPLETE
 
 Slice D verification:
@@ -1311,7 +1313,7 @@ The current gate is:
 
 CR-003.6 — Match Google Sheets Export implementation authorized
 
-CR-003.6 read-only audit findings:
+Historical CR-003.6 read-only audit findings:
 
 1. Hosted backend capability already exists.
 
@@ -1411,8 +1413,125 @@ Google Sheets behavior except safe shared reuse, Room schema/migrations,
 Supabase schema/RLS, Edge Function changes without a proven blocker, Phase 13,
 and checkpointed OCR work.
 
-CR-003.7 remains the separate final full-workflow verification and closure
-slice. CR-003 remains incomplete.
+CR-003.6 implementation and verification:
+
+- Implementation PR #289 was merged with the authorized 14-file Android
+  production/test scope: `MatchReviewScreenTest.kt`,
+  `GoogleSheetsExportDataModule.kt`, `AndroidExportCoordinator.kt`,
+  `MatchCsvExporter.kt`, `MatchOcrReviewViewModel.kt`, `MatchReviewScreen.kt`,
+  `MatchReviewViewModel.kt`, `AndroidExportCoordinatorTest.kt`,
+  `MatchCsvExporterTest.kt`, `MatchOcrReviewViewModelTest.kt`,
+  `MatchReviewViewModelTest.kt`, `SupabaseGoogleSheetsMatchExport.kt`,
+  `MatchExportRow.kt`, and `SupabaseGoogleSheetsMatchExportTest.kt`.
+- Focused CR-003.6 JVM tests: PASS; `MatchReviewViewModelTest`: 52 tests PASS.
+- Full JVM: 1196 tests, 57 known baseline failures in the same established 9
+  failing classes, with no new failing class.
+- `assembleDebug`: PASS.
+- `assembleDebugAndroidTest`: PASS.
+- Verification tournament: `f1e7a9b6-0543-4786-a328-fe927ca90814`.
+- Local Match 2 ID: `2c7ed56f-e9e3-44b3-a830-0b9ef0866438`.
+- Hosted Match 2 ID: `152837b7-65f3-3b03-a797-113848cbbf6d`.
+- Existing `MatchCloudIdentity` mapping from local to hosted Match 2 was
+  verified. The hosted match was finalized with 12 authoritative
+  `match_results` rows.
+- Android Google Sheets export succeeded; the Edge Function returned HTTP
+  200 for `export_match`; the export operation was `succeeded` with
+  `attempt_count = 1` and `rows_written = 12`.
+- Exactly one export operation was observed and no duplicate write occurred.
+- No backend, schema, migration, or Room change was required.
+- The earlier failed export sent the local Match ID directly. The correction
+  reused `MatchCloudIdentity` and was physically verified before merge.
+
+The current gate is:
+
+CR-003.7 — Full Workflow Verification and Closure AUTHORIZED
+
+CR-003.7 is verification-first/test-first. No speculative refactor is
+authorized. Production changes are allowed only if final verification proves
+a concrete CR-003 regression or workflow defect.
+
+CR-003.7 final verification contract:
+
+A. Repository baseline
+
+- Branch `main`.
+- Clean working tree.
+- HEAD synchronized with `origin/main` and includes PR #289.
+
+B. JVM verification
+
+Run `testDebugUnitTest`. The accepted baseline is exactly 1196 tests with 57
+failures, all within these established classes:
+
+1. `MatchRepositoryTest`
+2. `FinalizeMatchUseCaseTest`
+3. `FinalizeOcrCorrectionMatchUseCaseTest`
+4. `MatchCorrectionUseCaseTest`
+5. `SaveMatchKillsUseCaseTest`
+6. `SaveMatchPlacementsUseCaseTest`
+7. `MatchCorrectionViewModelTest`
+8. `MatchKillViewModelTest`
+9. `TournamentStandingsViewModelTest`
+
+Additional failures, a new failing class, or a CR-003-specific regression
+must not be treated as baseline.
+
+C. Build verification
+
+- `assembleDebug`.
+- `assembleDebugAndroidTest`.
+- `git diff --check`.
+
+D. Connected/device CR-003 regression coverage
+
+Verify the approved workflow remains intact, including:
+
+- Authentication startup/session behavior, interactive return, Google
+  callback, and Google cancellation.
+- Tournament creation, Team Entry parent behavior, and Tournament Details
+  identity preservation.
+- Match creation, exact `tournamentId`/`matchId` propagation, and Match
+  Review parent behavior.
+- Upper and Lower Result Screenshot crop Cancel and Confirm flows, same Match
+  Review return, and independent roles.
+- OCR Review entry requiring both authoritative result screenshot roles.
+- Tournament Details and Match Review activity recreation with route IDs and
+  persisted data preserved.
+- Match Correction → system Back → same finalized Match Review.
+- Standings → Back → same Tournament Details.
+- Simplified finalized Match Review retaining hidden legacy
+  Placement/Kill/Finalize/Correction controls and exposing Google Sheets
+  export for a valid finalized match.
+
+E. Physical end-to-end smoke workflow
+
+From final `main`, perform one real-user workflow on the physical device:
+
+Authentication/session → Home/Tournament List → Create Tournament → Team
+setup → Tournament Details → Calculate Points/Match Review → Lobby screenshots
+→ Result Upper and crop → Result Lower and crop → OCR Review → finalization
+→ Finalized Match Review → Google Sheets export → Back to the same Tournament
+Details.
+
+Local-first behavior remains required; cloud confirmation must not become a
+navigation gate.
+
+F. Hosted checks for the smoke workflow
+
+Where applicable verify stable tournament and hosted match identities, a
+finalized hosted match with 12 authoritative result rows, successful Match
+Google Sheets export, exactly one successful export operation for the
+verification action, and `rows_written = 12`. Do not weaken RLS or Storage
+policies.
+
+Closure rule:
+
+CR-003 may be marked COMPLETE only after CR-003.7 verification passes. If a
+real defect is found, CR-003 remains incomplete and only the smallest exact
+correction may be authorized and reverified. If verification passes, record
+the final evidence, reference all relevant implementation/test PRs, merge the
+documentation closure update, and return the repository to clean synchronized
+`main`.
 
 28. Approved Offline-First and Slice D Decisions
 
@@ -1480,6 +1599,7 @@ Implementation PR(s):
 - #283 — CR-003.3 Authentication Return Flow (merged)
 - #285 — CR-003.4 Recreation and Back-Stack Verification (merged)
 - #287 — CR-003.5 Remaining Parent Navigation Fixes (merged)
+- #289 — CR-003.6 Match Google Sheets Export (merged)
 
 Documentation closure PR:
 - TBD
@@ -1488,6 +1608,6 @@ Final merged main SHA:
 - TBD
 
 Final status:
-- CR-003 incomplete; Slice D, CR-003.1, CR-003.2, CR-003.3, CR-003.4, and
-  CR-003.5 complete; CR-003.6 Match Google Sheets Export implementation
-  authorized.
+- CR-003 incomplete pending CR-003.7; Slice D, CR-003.1, CR-003.2, CR-003.3,
+  CR-003.4, CR-003.5, and CR-003.6 Match Google Sheets Export complete;
+  CR-003.7 Full Workflow Verification and Closure authorized.
