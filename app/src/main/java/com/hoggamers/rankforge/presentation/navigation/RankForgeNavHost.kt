@@ -24,6 +24,7 @@ import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewRoute
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeRoute
 import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewModel
@@ -54,6 +55,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropRoute
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
@@ -82,6 +84,7 @@ fun RankForgeNavHost(
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
     rosterReviewViewModelFactory: ((String) -> RosterReviewViewModel)? = null,
+    rosterOcrReviewViewModelFactory: ((String) -> RosterOcrReviewViewModel)? = null,
     rosterScreenshotIntakeContent: @Composable (String, (Int) -> Unit) -> Unit = { tournamentId, onOpenCropEditor ->
         RosterScreenshotIntakeRoute(
             tournamentId = tournamentId,
@@ -103,6 +106,7 @@ fun RankForgeNavHost(
     matchReviewViewModelFactory: ((String, String) -> MatchReviewViewModel)? = null,
     showLegacyManualReviewContent: Boolean = false,
     matchResultScreenshotCropViewModelFactory: (() -> MatchResultScreenshotCropViewModel)? = null,
+    matchLobbyScreenshotCropViewModelFactory: ((String, String, Int) -> MatchLobbyScreenshotCropViewModel)? = null,
     matchOcrReviewViewModelFactory: ((String, String) -> MatchOcrReviewViewModel)? = null,
     matchCorrectionViewModelFactory: ((String, String) -> MatchCorrectionViewModel)? = null,
     onAuthGoogleSignIn: () -> Unit = {},
@@ -414,13 +418,38 @@ fun RankForgeNavHost(
                 }
             }
             val reviewViewModel = rosterReviewViewModelFactory?.invoke(destination.tournamentId)
-            if (reviewViewModel == null) {
+            val ocrReviewViewModel = rosterOcrReviewViewModelFactory?.invoke(destination.tournamentId)
+            if (reviewViewModel == null && ocrReviewViewModel == null) {
                 RosterReviewRoute(
                     tournamentId = destination.tournamentId,
                     onEditTeam = onEditTeam,
                     onEditRoster = onEditRoster,
                     onBackToTeamEntry = onBackToTeamEntry,
                     onConfirmed = onConfirmed,
+                    rosterScreenshotIntake = {
+                        rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
+                    },
+                )
+            } else if (reviewViewModel != null && ocrReviewViewModel == null) {
+                RosterReviewRoute(
+                    tournamentId = destination.tournamentId,
+                    onEditTeam = onEditTeam,
+                    onEditRoster = onEditRoster,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                    onConfirmed = onConfirmed,
+                    viewModel = reviewViewModel,
+                    rosterScreenshotIntake = {
+                        rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
+                    },
+                )
+            } else if (reviewViewModel == null) {
+                RosterReviewRoute(
+                    tournamentId = destination.tournamentId,
+                    onEditTeam = onEditTeam,
+                    onEditRoster = onEditRoster,
+                    onBackToTeamEntry = onBackToTeamEntry,
+                    onConfirmed = onConfirmed,
+                    rosterOcrViewModel = ocrReviewViewModel!!,
                     rosterScreenshotIntake = {
                         rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
                     },
@@ -433,6 +462,7 @@ fun RankForgeNavHost(
                     onBackToTeamEntry = onBackToTeamEntry,
                     onConfirmed = onConfirmed,
                     viewModel = reviewViewModel,
+                    rosterOcrViewModel = ocrReviewViewModel!!,
                     rosterScreenshotIntake = {
                         rosterScreenshotIntakeContent(destination.tournamentId, onOpenCropEditor)
                     },
@@ -661,13 +691,29 @@ fun RankForgeNavHost(
                     }
                 }
             }
-            MatchLobbyScreenshotCropRoute(
-                tournamentId = destination.tournamentId,
-                matchId = destination.matchId,
-                lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
-                onCancel = onBackToReview,
-                onConfirmed = onBackToReview,
+            val cropViewModel = matchLobbyScreenshotCropViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+                destination.lobbyScreenshotIndex,
             )
+            if (cropViewModel == null) {
+                MatchLobbyScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
+                    onCancel = onBackToReview,
+                    onConfirmed = onBackToReview,
+                )
+            } else {
+                MatchLobbyScreenshotCropRoute(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
+                    onCancel = onBackToReview,
+                    onConfirmed = onBackToReview,
+                    viewModel = cropViewModel,
+                )
+            }
         }
         composable<MatchResultScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchResultScreenshotCropDestination>()
@@ -710,14 +756,7 @@ fun RankForgeNavHost(
         composable<MatchOcrReviewDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchOcrReviewDestination>()
             val onBack: () -> Unit = {
-                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
-                if (!navController.popBackStack(reviewDestination, inclusive = false)) {
-                    navController.navigate(reviewDestination) {
-                        popUpTo(MatchOcrReviewDestination(destination.tournamentId, destination.matchId)) {
-                            inclusive = true
-                        }
-                    }
-                }
+                navController.popBackStack()
             }
             val ocrReviewViewModel = matchOcrReviewViewModelFactory?.invoke(
                 destination.tournamentId,
