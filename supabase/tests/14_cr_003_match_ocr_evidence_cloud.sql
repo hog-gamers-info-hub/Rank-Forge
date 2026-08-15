@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(30);
 
 select ok(to_regclass('public.match_ocr_evidence') is not null, 'match-level OCR evidence table exists');
 select ok(to_regclass('public.match_ocr_row_evidence') is not null, 'OCR row evidence table exists');
@@ -16,6 +16,39 @@ select ok(
     and has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'select,insert,update,delete')
     and has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'select,insert,update,delete'),
     'authenticated has the required OCR evidence table grants'
+);
+select ok(
+    has_table_privilege('authenticated', 'public.match_ocr_evidence', 'select')
+        and has_table_privilege('authenticated', 'public.match_ocr_evidence', 'insert')
+        and has_table_privilege('authenticated', 'public.match_ocr_evidence', 'update')
+        and has_table_privilege('authenticated', 'public.match_ocr_evidence', 'delete')
+        and not has_table_privilege('authenticated', 'public.match_ocr_evidence', 'truncate')
+        and not has_table_privilege('authenticated', 'public.match_ocr_evidence', 'references')
+        and not has_table_privilege('authenticated', 'public.match_ocr_evidence', 'trigger')
+        and not has_table_privilege('authenticated', 'public.match_ocr_evidence', 'maintain'),
+    'match-level OCR evidence grants are exact'
+);
+select ok(
+    has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'select')
+        and has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'insert')
+        and has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'update')
+        and has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'delete')
+        and not has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'truncate')
+        and not has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'references')
+        and not has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'trigger')
+        and not has_table_privilege('authenticated', 'public.match_ocr_row_evidence', 'maintain'),
+    'OCR row evidence grants are exact'
+);
+select ok(
+    has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'select')
+        and has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'insert')
+        and has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'update')
+        and has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'delete')
+        and not has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'truncate')
+        and not has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'references')
+        and not has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'trigger')
+        and not has_table_privilege('authenticated', 'public.match_ocr_correction_snapshots', 'maintain'),
+    'OCR correction snapshot grants are exact'
 );
 select ok(
     exists (
