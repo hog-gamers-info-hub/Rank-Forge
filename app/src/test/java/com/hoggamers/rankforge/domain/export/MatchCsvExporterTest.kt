@@ -52,6 +52,45 @@ class MatchCsvExporterTest {
     }
 
     @Test
+    fun buildMatchRowsUsesTheExactTypedPhase10Contract() {
+        val result = exporter.buildMatchRows(validInput()) as MatchExportRowsResult.Success
+
+        assertEquals(12, result.rows.size)
+        assertEquals((1..12).toList(), result.rows.map { it.rowNumber })
+        assertEquals(setOf(TOURNAMENT_ID), result.rows.map { it.tournamentId }.toSet())
+        assertEquals(setOf(MATCH_ID), result.rows.map { it.matchId }.toSet())
+        assertTrue(result.rows.all { it.matchFinalizedAt.isEmpty() })
+        assertEquals(setOf("original_finalized"), result.rows.map { it.correctionStatus }.toSet())
+        assertEquals(
+            PositionPointsEngine()(1),
+            result.rows.first().placementPoints,
+        )
+        assertEquals(
+            KillPointsEngine()(0),
+            result.rows.first().killPoints,
+        )
+        assertEquals(
+            MatchTotalEngine()(1, 0),
+            result.rows.first().totalPoints,
+        )
+    }
+
+    @Test
+    fun correctedTypedRowsAndCsvShareTheSameValidationFailureSet() {
+        val input = validInput(
+            match = validMatch(
+                status = MatchStatus.DRAFT,
+                correctionHistory = listOf(correctionRecord()),
+            ),
+        )
+
+        val rowsResult = exporter.buildMatchRows(input) as MatchExportRowsResult.Failure
+        val csvResult = exporter.export(input) as MatchCsvExportResult.Failure
+
+        assertEquals(csvResult.failures, rowsResult.failures)
+    }
+
+    @Test
     fun exportedRowsAreOrderedByPlacementAscending() {
         val input = validInput(
             match = validMatch(

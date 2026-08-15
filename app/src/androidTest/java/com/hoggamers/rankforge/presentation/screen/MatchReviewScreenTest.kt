@@ -20,6 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
+import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -1214,6 +1217,96 @@ class MatchReviewScreenTest {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun simplifiedFinalizedReviewShowsGoogleSheetsActionAndHidesLegacyControls() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun draftReviewDoesNotExposeGoogleSheetsAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun googleSheetsExportStatusesAreDeterministic() {
+        val coordinator = AndroidExportCoordinator()
+        val statuses = listOf(
+            AndroidExportResult.GoogleSheetsExporting(
+                coordinator.googleSheetsMatchExporting("tournament-id", "match-id").request,
+            ),
+            coordinator.googleSheetsMatchSuccess("tournament-id", "match-id", 1, 12),
+            coordinator.googleSheetsMatchFailure(
+                "tournament-id",
+                "match-id",
+                AndroidGoogleSheetsExportFailureReason.NETWORK_FAILURE,
+            ),
+            coordinator.blockGoogleSheetsMatch(
+                "tournament-id",
+                "match-id",
+                com.hoggamers.rankforge.data.export.AndroidExportBlockedReason.INVALID_FINALIZED_MATCH,
+            ),
+        )
+        val expectedText = listOf(
+            "Exporting to Google Sheets",
+            "Google Sheets export successful",
+            "Google Sheets export failed",
+            "Google Sheets export blocked",
+        )
+
+        statuses.forEachIndexed { index, status ->
+            composeTestRule.setContent {
+                RankForgeTheme {
+                    MatchReviewScreen(
+                        uiState = availableState().copy(
+                            status = MatchStatus.FINALIZED,
+                            googleSheetsExportResult = status,
+                        ),
+                        onEnterPlacements = {},
+                        onEnterKills = {},
+                        onBackToDetails = {},
+                        showLegacyManualReviewContent = false,
+                    )
+                }
+            }
+            composeTestRule.onNodeWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG)
+                .performScrollTo()
+                .assertIsDisplayed()
+            composeTestRule.onNodeWithText(expectedText[index]).assertIsDisplayed()
+        }
     }
 
     @Test

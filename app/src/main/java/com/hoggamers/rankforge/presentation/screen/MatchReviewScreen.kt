@@ -68,6 +68,8 @@ const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
 const val MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG = "match_review_csv_export_action"
 const val MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG = "match_review_csv_export_status"
+const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG = "match_review_google_sheets_export_action"
+const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG = "match_review_google_sheets_export_status"
 const val MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG = "match_review_correction_action"
 const val MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG = "match_review_correction_confirm_action"
 const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_history"
@@ -240,6 +242,7 @@ fun MatchReviewRoute(
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
+        onPrepareGoogleSheetsExport = viewModel::prepareGoogleSheetsExport,
         onFinalize = viewModel::finalizeMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onSelectResultScreenshot = viewModel::requestPhotoPicker,
@@ -265,6 +268,7 @@ fun MatchReviewScreen(
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
+    onPrepareGoogleSheetsExport: () -> Unit = {},
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
@@ -290,6 +294,7 @@ fun MatchReviewScreen(
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
+            onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
             onSelectResultScreenshot = onSelectResultScreenshot,
@@ -314,6 +319,7 @@ private fun MatchReviewContent(
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
+    onPrepareGoogleSheetsExport: () -> Unit,
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
@@ -489,6 +495,37 @@ private fun MatchReviewContent(
                     text = stringResource(R.string.match_review_finalize_blocked_message),
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+        }
+        if (uiState.status == MatchStatus.FINALIZED) {
+            Button(
+                onClick = onPrepareGoogleSheetsExport,
+                enabled = uiState.canPrepareMatchCsvExport &&
+                    uiState.googleSheetsExportResult !is AndroidExportResult.GoogleSheetsExporting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG),
+            ) {
+                Text(text = "Export to Google Sheets")
+            }
+            when (uiState.googleSheetsExportResult) {
+                is AndroidExportResult.GoogleSheetsExporting -> Text(
+                    text = "Exporting to Google Sheets",
+                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                )
+                is AndroidExportResult.GoogleSheetsSuccess -> Text(
+                    text = "Google Sheets export successful",
+                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                )
+                is AndroidExportResult.GoogleSheetsFailure -> Text(
+                    text = "Google Sheets export failed",
+                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                )
+                is AndroidExportResult.Blocked -> Text(
+                    text = "Google Sheets export blocked",
+                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                )
+                else -> Unit
             }
         }
         if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {

@@ -144,6 +144,58 @@ class AndroidExportCoordinator(
         reason = AndroidExportUnavailableReason.GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
     )
 
+    fun blockGoogleSheetsMatch(
+        tournamentId: String,
+        matchId: String,
+        reason: AndroidExportBlockedReason,
+    ): AndroidExportResult.Blocked = AndroidExportResult.Blocked(
+        request = AndroidExportRequest(
+            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+            matchId = matchId,
+        ),
+        reason = reason,
+    )
+
+    fun googleSheetsMatchExporting(
+        tournamentId: String,
+        matchId: String,
+    ): AndroidExportResult.GoogleSheetsExporting = AndroidExportResult.GoogleSheetsExporting(
+        request = AndroidExportRequest(
+            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+            matchId = matchId,
+        ),
+    )
+
+    fun googleSheetsMatchSuccess(
+        tournamentId: String,
+        matchId: String,
+        exportedMatchCount: Int,
+        rowsWritten: Int,
+    ): AndroidExportResult.GoogleSheetsSuccess = AndroidExportResult.GoogleSheetsSuccess(
+        request = AndroidExportRequest(
+            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+            matchId = matchId,
+        ),
+        exportedMatchCount = exportedMatchCount,
+        rowsWritten = rowsWritten,
+    )
+
+    fun googleSheetsMatchFailure(
+        tournamentId: String,
+        matchId: String,
+        reason: AndroidGoogleSheetsExportFailureReason,
+    ): AndroidExportResult.GoogleSheetsFailure = AndroidExportResult.GoogleSheetsFailure(
+        request = AndroidExportRequest(
+            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
+            tournamentId = tournamentId,
+            matchId = matchId,
+        ),
+        reason = reason,
+    )
+
     fun googleSheetsStandingsUnavailable(
         tournamentId: String,
     ): AndroidExportResult.Unavailable = AndroidExportResult.Unavailable(

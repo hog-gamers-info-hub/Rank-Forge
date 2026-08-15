@@ -27,6 +27,10 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
@@ -393,7 +397,12 @@ class MatchOcrReviewViewModelTest {
     @Test
     fun successStateAfterValidFinalization() = runTest(dispatcher) {
         val repository = createRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
+        val finalizedSync = RecordingFinalizedMatchCloudSync()
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = correctionDraft()),
+            finalizedMatchCloudSync = finalizedSync,
+        )
 
         viewModel.onFinalizeOcrCorrection()
         advanceUntilIdle()
@@ -402,12 +411,63 @@ class MatchOcrReviewViewModelTest {
         assertTrue(ready.finalization.isFinalized)
         assertEquals(null, ready.finalization.error)
         assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
+        assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
+    }
+
+    @Test
+    fun ocrLocalFinalizationDoesNotWaitForCloudSync() = runTest(dispatcher) {
+        val repository = createRepository()
+        val finalizedSync = RecordingFinalizedMatchCloudSync().also {
+            it.gate = kotlinx.coroutines.CompletableDeferred()
+        }
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = correctionDraft()),
+            finalizedMatchCloudSync = finalizedSync,
+        )
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
+        assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
+
+        finalizedSync.gate!!.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun ocrCloudFinalizationFailureDoesNotRevertLocalFinalization() = runTest(dispatcher) {
+        val repository = createRepository()
+        val finalizedSync = RecordingFinalizedMatchCloudSync(
+            FinalizedMatchCloudSyncResult.NetworkFailure,
+        )
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = correctionDraft()),
+            finalizedMatchCloudSync = finalizedSync,
+        )
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
+        assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
     }
 
     @Test
     fun deterministicErrorStateOnFinalizationFailure() = runTest(dispatcher) {
         val repository = InMemoryTournamentRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
+        val finalizedSync = RecordingFinalizedMatchCloudSync()
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = correctionDraft()),
+            finalizedMatchCloudSync = finalizedSync,
+        )
 
         viewModel.onFinalizeOcrCorrection()
         advanceUntilIdle()
@@ -415,12 +475,18 @@ class MatchOcrReviewViewModelTest {
         val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
         assertEquals(MatchOcrReviewFinalizationError.MISSING_TOURNAMENT, ready.finalization.error)
         assertFalse(ready.finalization.isFinalized)
+        assertTrue(finalizedSync.tournamentIds.isEmpty())
     }
 
     @Test
     fun repeatedFinalizeAfterSuccessIsIdempotentlyIgnoredByViewModel() = runTest(dispatcher) {
         val repository = createRepository()
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = correctionDraft()))
+        val finalizedSync = RecordingFinalizedMatchCloudSync()
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = correctionDraft()),
+            finalizedMatchCloudSync = finalizedSync,
+        )
 
         viewModel.onFinalizeOcrCorrection()
         advanceUntilIdle()
@@ -431,6 +497,7 @@ class MatchOcrReviewViewModelTest {
         assertTrue(ready.finalization.isFinalized)
         assertEquals(null, ready.finalization.error)
         assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
+        assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
     }
 
     @Test
@@ -485,11 +552,31 @@ class MatchOcrReviewViewModelTest {
     private fun viewModelWith(
         repository: InMemoryTournamentRepository,
         initialUiState: MatchOcrReviewUiState,
+        finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
     ): MatchOcrReviewViewModel =
         MatchOcrReviewViewModel(
             finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            finalizedMatchCloudSync = finalizedMatchCloudSync,
             initialUiState = initialUiState,
         )
+
+    private class RecordingFinalizedMatchCloudSync(
+        private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success(1),
+    ) : FinalizedMatchCloudSyncAction {
+        val tournamentIds = mutableListOf<String>()
+        var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+        override suspend fun invoke(
+            tournamentId: String,
+        ): QueueAwareActionResult<FinalizedMatchCloudSyncResult> {
+            tournamentIds += tournamentId
+            gate?.await()
+            return QueueAwareActionResult(
+                primaryResult = result,
+                queueRecordingResult = QueueRecordingResult.RECORDED,
+            )
+        }
+    }
 
     private fun createFinalizeUseCase(repository: InMemoryTournamentRepository): FinalizeOcrCorrectionMatchUseCase =
         FinalizeOcrCorrectionMatchUseCase(

@@ -40,9 +40,20 @@ class MatchCsvExporter(
     private val matchTotalEngine: MatchTotalEngine = MatchTotalEngine(),
 ) {
     fun export(input: MatchCsvExportInput): MatchCsvExportResult {
+        return when (val rowsResult = buildMatchRows(input)) {
+            is MatchExportRowsResult.Success -> MatchCsvExportResult.Success(
+                csv = (listOf(MATCH_CSV_HEADER) + rowsResult.rows.map { row ->
+                    row.orderedFields().toCsvRecord()
+                }).joinToString(CRLF),
+            )
+            is MatchExportRowsResult.Failure -> MatchCsvExportResult.Failure(rowsResult.failures)
+        }
+    }
+
+    fun buildMatchRows(input: MatchCsvExportInput): MatchExportRowsResult {
         val failures = input.validate()
         if (failures.isNotEmpty()) {
-            return MatchCsvExportResult.Failure(failures)
+            return MatchExportRowsResult.Failure(failures)
         }
 
         val teamSlotsByNumber = input.teamSlots
@@ -57,39 +68,36 @@ class MatchCsvExporter(
         } else {
             CORRECTED_FINALIZED
         }
-        val dataRows = input.match.placements
+        val rows = input.match.placements
             .sortedBy { it.position }
             .mapIndexed { index, placement ->
                 val kills = killsBySlot.getValue(placement.teamSlotNumber).kills
                 val players = rosterPlayersBySlot[placement.teamSlotNumber].orEmpty()
-                listOf(
-                    EXPORT_SCHEMA_VERSION,
-                    EXPORT_TYPE,
-                    input.tournament.id,
-                    input.tournament.name,
-                    input.match.id,
-                    "Match ${input.match.matchNumber}",
-                    "",
-                    (index + 1).toString(),
-                    placement.position.toString(),
-                    placement.teamSlotNumber.toString(),
-                    teamSlotsByNumber.getValue(placement.teamSlotNumber).teamName,
-                    players.getOrNull(0)?.displayName.orEmpty(),
-                    players.getOrNull(1)?.displayName.orEmpty(),
-                    players.getOrNull(2)?.displayName.orEmpty(),
-                    players.getOrNull(3)?.displayName.orEmpty(),
-                    positionPointsEngine(placement.position).toString(),
-                    kills.toString(),
-                    killPointsEngine(kills).toString(),
-                    matchTotalEngine(placement.position, kills).toString(),
-                    correctionStatus,
+                MatchExportRow(
+                    exportSchemaVersion = EXPORT_SCHEMA_VERSION,
+                    exportType = EXPORT_TYPE,
+                    tournamentId = input.tournament.id,
+                    tournamentName = input.tournament.name,
+                    matchId = input.match.id,
+                    matchLabel = "Match ${input.match.matchNumber}",
+                    matchFinalizedAt = "",
+                    rowNumber = index + 1,
+                    placement = placement.position,
+                    teamSlot = placement.teamSlotNumber,
+                    teamName = teamSlotsByNumber.getValue(placement.teamSlotNumber).teamName,
+                    player1Name = players.getOrNull(0)?.displayName.orEmpty(),
+                    player2Name = players.getOrNull(1)?.displayName.orEmpty(),
+                    player3Name = players.getOrNull(2)?.displayName.orEmpty(),
+                    player4Name = players.getOrNull(3)?.displayName.orEmpty(),
+                    placementPoints = positionPointsEngine(placement.position),
+                    kills = kills,
+                    killPoints = killPointsEngine(kills),
+                    totalPoints = matchTotalEngine(placement.position, kills),
+                    correctionStatus = correctionStatus,
                 )
             }
 
-        return MatchCsvExportResult.Success(
-            csv = (listOf(MATCH_CSV_HEADER) + dataRows.map { row -> row.toCsvRecord() })
-                .joinToString(CRLF),
-        )
+        return MatchExportRowsResult.Success(rows)
     }
 
     private fun MatchCsvExportInput.validate(): Set<MatchCsvExportFailure> {
