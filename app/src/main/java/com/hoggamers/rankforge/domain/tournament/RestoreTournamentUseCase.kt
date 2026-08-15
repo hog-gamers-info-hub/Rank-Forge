@@ -16,6 +16,7 @@ class RestoreTournamentUseCase @Inject constructor(
     private val cloudRepository: TournamentCloudRestorationRepository,
     private val localRepository: TournamentRestorationLocalRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
+    private val matchCloudRestorationAction: MatchCloudRestorationAction,
 ) : TournamentCloudRestorationAction, TournamentCloudRestorationRetryAction {
     override suspend fun loadAvailable(): TournamentCloudRestorationResult {
         if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
@@ -45,12 +46,19 @@ class RestoreTournamentUseCase @Inject constructor(
                 }
                 try {
                     localRepository.restore(result.value)
-                    TournamentCloudRestorationResult.Success(result.value.tournament.name)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
-                    TournamentCloudRestorationResult.LocalTransactionFailure
+                    return TournamentCloudRestorationResult.LocalTransactionFailure
                 }
+                try {
+                    matchCloudRestorationAction(tournamentId)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Child restoration owns its result and retry recording; parent success remains valid.
+                }
+                TournamentCloudRestorationResult.Success(result.value.tournament.name)
             }
         }
     }

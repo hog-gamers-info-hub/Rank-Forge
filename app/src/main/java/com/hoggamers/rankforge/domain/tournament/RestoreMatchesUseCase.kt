@@ -16,6 +16,8 @@ class RestoreMatchesUseCase @Inject constructor(
     private val cloudRepository: MatchCloudRestorationRepository,
     private val localRepository: MatchRestorationLocalRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
+    private val matchScreenshotRestorationAction: MatchScreenshotRestorationAction =
+        NoOpMatchScreenshotRestorationAction,
 ) : MatchCloudRestorationAction, MatchCloudRestorationRetryAction {
     override suspend fun invoke(
         tournamentId: String,
@@ -51,7 +53,17 @@ class RestoreMatchesUseCase @Inject constructor(
                 if (result.value.matches.isEmpty()) return MatchCloudRestorationResult.NoCloudMatches
                 try {
                     localRepository.replaceMatches(result.value)
-                    MatchCloudRestorationResult.Success
+                    when (
+                        val screenshotResult = matchScreenshotRestorationAction(
+                            tournamentId = tournamentId,
+                            restoredMatchIds = result.value.matches.map { it.id }.toSet(),
+                        )
+                    ) {
+                        MatchCloudRestorationResult.Success,
+                        MatchCloudRestorationResult.NoCloudMatches,
+                        -> MatchCloudRestorationResult.Success
+                        else -> screenshotResult
+                    }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {

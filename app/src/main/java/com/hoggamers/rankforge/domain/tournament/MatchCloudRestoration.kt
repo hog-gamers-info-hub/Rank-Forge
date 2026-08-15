@@ -54,3 +54,17 @@ fun interface MatchCloudRestorationAction {
 fun interface MatchCloudRestorationRetryAction {
     suspend fun executeForRetry(tournamentId: String): MatchCloudRestorationResult
 }
+
+fun interface MatchScreenshotRestorationAction {
+    suspend operator fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+    ): MatchCloudRestorationResult
+}
+
+object NoOpMatchScreenshotRestorationAction : MatchScreenshotRestorationAction {
+    override suspend fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+    ): MatchCloudRestorationResult = MatchCloudRestorationResult.Success
+}
