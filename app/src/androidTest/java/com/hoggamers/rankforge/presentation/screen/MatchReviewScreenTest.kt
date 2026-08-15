@@ -1287,21 +1287,27 @@ class MatchReviewScreenTest {
             "Google Sheets export blocked",
         )
 
-        statuses.forEachIndexed { index, status ->
-            composeTestRule.setContent {
-                RankForgeTheme {
-                    MatchReviewScreen(
-                        uiState = availableState().copy(
-                            status = MatchStatus.FINALIZED,
-                            googleSheetsExportResult = status,
-                        ),
-                        onEnterPlacements = {},
-                        onEnterKills = {},
-                        onBackToDetails = {},
-                        showLegacyManualReviewContent = false,
-                    )
-                }
+        var exportResult by mutableStateOf<AndroidExportResult>(statuses.first())
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        googleSheetsExportResult = exportResult,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
             }
+        }
+
+        statuses.forEachIndexed { index, status ->
+            composeTestRule.runOnIdle {
+                exportResult = status
+            }
+            composeTestRule.waitForIdle()
             composeTestRule.onNodeWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG)
                 .performScrollTo()
                 .assertIsDisplayed()

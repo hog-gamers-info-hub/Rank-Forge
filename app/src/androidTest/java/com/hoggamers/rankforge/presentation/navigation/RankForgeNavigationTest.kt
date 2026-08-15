@@ -27,14 +27,13 @@ import android.graphics.Bitmap
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
-import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
-import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -43,7 +42,11 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -90,6 +93,18 @@ import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.RosterOcrReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
+import com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotUploadCheckpointAction
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotUploadCheckpointResult
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
+import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG
@@ -121,7 +136,6 @@ import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotUploadCheckpointAction
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotUploadCheckpointResult
-import com.hoggamers.rankforge.presentation.screen.ScreenshotReconciliationScheduler
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewTestTags
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
@@ -195,7 +209,41 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
+import com.hoggamers.rankforge.domain.ocr.review.ProcessRosterOcrUseCase
+import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
+import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
+import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationFailure
+import com.hoggamers.rankforge.domain.ocr.review.RosterOcrSourceProvider
+import com.hoggamers.rankforge.domain.ocr.review.RosterOcrSourceProviderResult
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParser
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociator
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterOcrValidator
+import com.hoggamers.rankforge.domain.ocr.parsing.FixedLayoutRosterCandidateParser
+import com.hoggamers.rankforge.domain.ocr.parsing.FixedRosterSlotAssociator
+import com.hoggamers.rankforge.domain.ocr.parsing.DefaultRosterOcrValidator
+import com.hoggamers.rankforge.domain.sync.PersistentSyncQueueRepository
+import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
+import com.hoggamers.rankforge.domain.sync.SyncQueueEntry
+import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
+import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationFailureCategory
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
+import com.hoggamers.rankforge.presentation.screen.ScreenshotReconciliationScheduler
 
 @RunWith(AndroidJUnit4::class)
 class RankForgeNavigationTest {
@@ -614,17 +662,16 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             }
         }
 
-        val listTitle = context.getString(R.string.tournament_list_title)
         val openAction = context.getString(R.string.open_tournament_creation)
 
-        composeTestRule.onNodeWithText(listTitle).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
 
         composeTestRule.onNodeWithText(openAction).performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
 
         pressBackOnMainThread()
-        composeTestRule.onNodeWithText(listTitle).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
     }
 
@@ -653,14 +700,14 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithText(context.getString(R.string.keep_editing_action)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.discard_changes_action)).performClick()
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
     fun rosterScreenshotCropDestinationOpensAndBackReturnsToRosterReview() {
         val viewModels = createNavigationViewModels()
         createTournamentFromViewModel(viewModels.creationViewModel)
-        val tournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
+        val rosterOcrViewModel = createRosterOcrReviewViewModel(viewModels.repository)
         lateinit var navController: NavHostController
 
         composeTestRule.setContent {
@@ -674,6 +721,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterOcrReviewViewModelFactory = { rosterOcrViewModel },
                     rosterScreenshotIntakeContent = { _, onOpenCropEditor ->
                         Button(
                             onClick = { onOpenCropEditor(1) },
@@ -686,6 +734,11 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 )
             }
         }
+
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModels.listViewModel.uiState.value.tournaments.size == 1
+        }
+        val tournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
 
         composeTestRule.runOnIdle {
             navController.navigate(RosterReviewDestination(tournamentId))
@@ -766,7 +819,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
 
         pressBackOnMainThread()
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_list_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -813,6 +866,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         runBlocking {
             createValidRoster(viewModels.repository, tournamentId)
         }
+        val rosterOcrViewModel = createRosterOcrReviewViewModel(viewModels.repository)
         composeTestRule.setContent {
             RankForgeTheme {
                 RankForgeNavHost(
@@ -822,6 +876,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     teamEntryViewModelFactory = viewModels.teamEntryViewModel,
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
+                    rosterOcrReviewViewModelFactory = { rosterOcrViewModel },
                     rosterScreenshotIntakeContent = { _, _ -> },
                 )
             }
@@ -831,7 +886,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId).performClick()
         composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
         composeTestRule
-            .onNodeWithText(context.getString(R.string.review_roster_action))
+            .onNodeWithText(context.getString(R.string.overview_team_details_action))
             .performScrollTo()
             .performClick()
         composeTestRule.onNodeWithTag(ROSTER_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
@@ -876,53 +931,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
-    fun directMatchOcrReviewRouteDisplaysEmptyStateAndBackReturnsToReviewFallback() {
-        val viewModels = createNavigationViewModels()
-        val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
-            (
-                CreateMatchUseCase(viewModels.repository)(
-                    CreateMatchInput(
-                        tournamentId = "confirmed-id",
-                        matchNumber = "1",
-                        date = LocalDate.of(2026, 7, 24),
-                        mapName = "Bermuda",
-                    ),
-                ) as CreateMatchResult.Created
-            ).match.id
-        }
-        composeTestRule.setContent {
-            val navController = rememberNavController()
-            RankForgeTheme {
-                RankForgeNavHost(
-                    navController = navController,
-                    creationViewModel = viewModels.creationViewModel,
-                    listViewModel = viewModels.listViewModel,
-                    detailsViewModelFactory = viewModels.detailsViewModel,
-                    teamEntryViewModelFactory = viewModels.teamEntryViewModel,
-                    rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
-                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
-                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
-                )
-            }
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                navController.navigate(
-                    MatchOcrReviewDestination(
-                        tournamentId = "confirmed-id",
-                        matchId = matchId,
-                    ),
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
-        composeTestRule.onNodeWithText(context.getString(R.string.match_ocr_review_empty_title)).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
-    }
-
-    @Test
     fun confirmedTournamentDetailsCalculatePointsNavigatesToMatchReview() {
         val viewModels = createNavigationViewModels()
         runBlocking {
@@ -955,15 +963,14 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onNodeWithText("Review match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
     }
 
     @Test
     fun existingMatchRowOpensThatPersistedMatchWithoutCreatingAnother() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
-            viewModels.repository.saveTeamNames("confirmed-id", mapOf(1 to "Team 1"))
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
@@ -985,6 +992,8 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
+                    matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                 )
             }
         }
@@ -997,8 +1006,8 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .performClick()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_PLACEMENT_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Match 1 placements").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_CREATION_SCREEN_TEST_TAG).assertCountEquals(0)
         assertEquals(1, runBlocking { viewModels.repository.observeMatchesByTournamentId("confirmed-id").first().size })
         assertEquals(
@@ -1006,12 +1015,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             runBlocking { viewModels.repository.observeMatchesByTournamentId("confirmed-id").first().single().id },
         )
 
-        composeTestRule
-            .onNodeWithTag(MATCH_PLACEMENT_BACK_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -1021,11 +1024,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         var cachedMatchCreationViewModel: MatchCreationViewModel? = null
         lateinit var navController: NavHostController
         runBlocking {
-            viewModels.repository.create(confirmedTournament())
-            viewModels.repository.saveTeamNames(
-                "confirmed-id",
-                mapOf(1 to "Team 1"),
-            )
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
         }
         composeTestRule.setContent {
             RankForgeTheme {
@@ -1039,6 +1038,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchCreationViewModelFactory = { tournamentId ->
                         val viewModel = cachedMatchCreationViewModel
                             ?: viewModels.matchCreationViewModel(tournamentId).also {
@@ -1376,7 +1376,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun draftMatchDetailsNavigatesToPlacementEntry() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             (
                 CreateMatchUseCase(viewModels.repository)(
                     CreateMatchInput(
@@ -1401,6 +1401,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                 )
@@ -1424,7 +1425,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun draftMatchDetailsNavigatesToKillEntry() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
@@ -1447,6 +1448,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1473,7 +1475,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun draftMatchReviewNavigatesToPlacementKillsAndDetails() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
@@ -1496,6 +1498,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1530,7 +1533,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         val viewModels = createNavigationViewModels()
         val tournamentId = "confirmed-id"
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             val id = "lobby-crop-match"
             viewModels.repository.createDraftMatch(
                 com.hoggamers.rankforge.domain.tournament.Match(
@@ -1544,6 +1547,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             )
             id
         }
+        val cropViewModel = createLobbyCropNavigationViewModel(viewModels.repository)
         lateinit var navController: NavHostController
         composeTestRule.setContent {
             navController = rememberNavController()
@@ -1554,6 +1558,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchLobbyScreenshotCropViewModelFactory = { _, _, _ -> cropViewModel },
                     matchLobbyScreenshotIntakeContent = { _, _, onOpenCrop ->
                         Button(
                             onClick = { onOpenCrop(2) },
@@ -1712,20 +1717,15 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
     @Test
     fun linkedDraftScreenshotOpensOcrReviewAndReturnsToSameReviewAndDetails() {
-        val viewModels = createNavigationViewModels()
+        val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
+        val fixture = createResultCropNavigationFixture(
+            targetRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            targetCrop = crop,
+        )
+        val viewModels = fixture.viewModels
+        val matchId = fixture.matchId
         var activeMatchReviewViewModel: MatchReviewViewModel? = null
         val cachedMatchReviewViewModels = mutableMapOf<String, MatchReviewViewModel>()
-        val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
-            (CreateMatchUseCase(viewModels.repository)(
-                CreateMatchInput(
-                    tournamentId = "confirmed-id",
-                    matchNumber = "1",
-                    date = LocalDate.of(2026, 7, 24),
-                    mapName = "Bermuda",
-                ),
-            ) as CreateMatchResult.Created).match.id
-        }
         lateinit var navController: NavHostController
         composeTestRule.setContent {
             navController = rememberNavController()
@@ -1744,18 +1744,22 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = { tournamentId, matchId ->
                         cachedMatchReviewViewModels.getOrPut("$tournamentId:$matchId") {
-                            viewModels.matchReviewViewModel(tournamentId, matchId)
+                            fixture.matchReviewViewModel
                         }.also {
                             activeMatchReviewViewModel = it
                         }
                     },
-                    showLegacyManualReviewContent = true,
+                    showLegacyManualReviewContent = false,
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
         }
 
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModels.listViewModel.uiState.value.tournaments.any { it.id == "confirmed-id" }
+        }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "confirmed-id").performClick()
         composeTestRule.runOnIdle {
@@ -1782,9 +1786,33 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.SCREEN).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION).performClick()
+        composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            activeMatchReviewViewModel?.uiState?.value?.isAvailable == true
+        }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentBackStackEntry?.destination?.route ==
+                "${MatchReviewDestination::class.qualifiedName}/{tournamentId}/{matchId}" &&
+                navController.currentBackStackEntry
+                    ?.toRoute<MatchReviewDestination>() == MatchReviewDestination("confirmed-id", matchId)
+        }
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(MATCH_REVIEW_SCREEN_TEST_TAG, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .any { it.layoutInfo.isPlaced }
+        }
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
 
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
@@ -1803,7 +1831,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun finalizedMatchReviewDoesNotOfferPlacementOrKillEditing() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             val match = (
                 CreateMatchUseCase(viewModels.repository)(
                     CreateMatchInput(
@@ -1878,7 +1906,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun finalizedMatchCorrectionReturnsToCorrectedReadOnlyReview() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             val match = (
                 CreateMatchUseCase(viewModels.repository)(
                     CreateMatchInput(
@@ -1965,7 +1993,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun draftMatchDetailsHidesLegacyValidationDetails() {
         val viewModels = createNavigationViewModels()
         runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
@@ -2003,7 +2031,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     fun draftMatchAllowsEnteringAndDisplayingAllKills() {
         val viewModels = createNavigationViewModels()
         val matchId = runBlocking {
-            viewModels.repository.create(confirmedTournament())
+            createConfirmedTournamentWithOneActiveTeam(viewModels.repository)
             (CreateMatchUseCase(viewModels.repository)(
                 CreateMatchInput(
                     tournamentId = "confirmed-id",
@@ -2026,6 +2054,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -2087,8 +2116,165 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             ),
         )
 
+    private fun createRosterOcrReviewViewModel(
+        repository: InMemoryTournamentRepository,
+    ): RosterOcrReviewViewModel {
+        val processRosterOcr = ProcessRosterOcrUseCase(
+            sourceProvider = object : RosterOcrSourceProvider {
+                override suspend fun load(tournamentId: String): RosterOcrSourceProviderResult =
+                    RosterOcrSourceProviderResult.IncompleteScreenshotSet
+            },
+            panelPreparer = object : RosterOcrPanelPreparer {
+                override suspend fun prepare(source: com.hoggamers.rankforge.domain.ocr.review.RosterOcrScreenshotSource): RosterOcrPanelPreparationResult =
+                    RosterOcrPanelPreparationResult.Failed(
+                        RosterOcrPanelPreparationFailure.UNKNOWN,
+                    )
+            },
+            extractor = object : RosterRawOcrExtractor {
+                override suspend fun extract(input: RosterRawOcrExtractionInput): List<RosterRawOcrExtractionResult> =
+                    emptyList()
+            },
+            parser = FixedLayoutRosterCandidateParser(),
+            associator = FixedRosterSlotAssociator(),
+            validator = DefaultRosterOcrValidator(),
+        )
+        val cloudReplacement = ReplaceTournamentRosterInCloudUseCase(
+            tournamentRepository = repository,
+            authRepository = object : AuthRepository {
+                override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedOut)
+                override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+                override suspend fun signUp(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun login(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun logout(): AuthOperationResult = error("unused")
+            },
+            cloudReplacementRepository = object : TournamentRosterCloudReplacementRepository {
+                override suspend fun replace(
+                    snapshot: com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacement,
+                    ownerId: String,
+                ): TournamentRosterCloudReplacementResult = TournamentRosterCloudReplacementResult.NetworkFailure
+            },
+            cloudUploadRepository = object : TournamentCloudUploadRepository {
+                override suspend fun upload(
+                    snapshot: com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot,
+                    ownerId: String,
+                ): TournamentCloudUploadResult = TournamentCloudUploadResult.NetworkFailure
+            },
+            cloudRestorationRepository = object : TournamentCloudRestorationRepository {
+                override suspend fun listOwnedTournaments(): TournamentCloudRestorationRemoteResult<List<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary>> =
+                    TournamentCloudRestorationRemoteResult.Success(emptyList())
+
+                override suspend fun readOwnedTournament(
+                    tournamentId: String,
+                ): TournamentCloudRestorationRemoteResult<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot> =
+                    TournamentCloudRestorationRemoteResult.Failure(TournamentCloudRestorationFailureCategory.NOT_FOUND)
+            },
+            queueRecorder = RecordSyncQueueOutcome(NoOpPersistentSyncQueueRepository),
+        )
+        return RosterOcrReviewViewModel(
+            getTournamentById = GetTournamentByIdUseCase(repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            processRosterOcr = processRosterOcr,
+            replaceConfirmedTournamentRoster = ReplaceConfirmedTournamentRosterUseCase(
+                repository = repository,
+                rosterValidator = RosterValidator(),
+            ),
+            replaceTournamentRosterInCloud = cloudReplacement,
+        )
+    }
+
+    private fun createLobbyCropNavigationViewModel(
+        repository: InMemoryTournamentRepository,
+    ): MatchLobbyScreenshotCropViewModel = MatchLobbyScreenshotCropViewModel(
+        observeMatches = ObserveMatchesUseCase(repository),
+        assetRepository = EmptyLobbyScreenshotAssetRepository,
+        localImagePreserver = LocalImagePreserver(
+            appPrivateRoot = context.filesDir,
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        ),
+        clock = Clock.systemUTC(),
+        uploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
+            MatchLobbyScreenshotUploadCheckpointResult.Skipped
+        },
+        reconciliationScheduler = ScreenshotReconciliationScheduler(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            testOnly = true,
+        ),
+    )
+
+    private object EmptyLobbyScreenshotAssetRepository : MatchLobbyScreenshotAssetRepository {
+        override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+            flowOf(emptyList())
+
+        override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> =
+            flowOf(null)
+
+        override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotAssetEntity? = null
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+            flowOf(emptyList())
+
+        override suspend fun findDuplicateFingerprint(
+            identity: MatchLobbyScreenshotIdentity,
+            sha256: String,
+        ): MatchLobbyScreenshotAssetEntity? = null
+
+        override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult =
+            MatchLobbyScreenshotAssetSaveResult.Saved
+
+        override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
+
+        override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
+
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
+
+        override suspend fun deleteByMatchId(matchId: String) = Unit
+
+        override suspend fun persistConfirmedCrop(
+            identity: MatchLobbyScreenshotIdentity,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
+
+        override suspend fun clearConfirmedCrop(
+            identity: MatchLobbyScreenshotIdentity,
+            updatedAt: Long,
+        ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
+    }
+
+    private object NoOpPersistentSyncQueueRepository : PersistentSyncQueueRepository {
+        override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(emptyList())
+
+        override suspend fun enqueue(
+            operationType: SyncQueueOperationType,
+            tournamentId: String?,
+            status: SyncQueueStatus,
+            failureCategory: String?,
+        ): SyncQueueEntry = SyncQueueEntry(
+            id = "test",
+            operationType = operationType,
+            tournamentId = tournamentId,
+            createdAtEpochMillis = 0L,
+            status = status,
+            failureCategory = failureCategory,
+            attemptCount = 0,
+        )
+
+        override suspend fun completeOldestUnresolved(
+            operationType: SyncQueueOperationType,
+            tournamentId: String?,
+        ) = Unit
+
+        override suspend fun incrementAttemptCount(id: String) = Unit
+        override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
+        override suspend fun markCompleted(id: String) = Unit
+        override suspend fun remove(id: String) = Unit
+    }
+
     private fun createResultCropNavigationFixture(
         targetRole: MatchResultScreenshotRole,
+        targetCrop: OcrNormalizedCropRect? = null,
     ): ResultCropNavigationFixture {
         val viewModels = createNavigationViewModels()
         val tournamentId = "confirmed-id"
@@ -2130,7 +2316,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 tournamentId = tournamentId,
                 matchId = matchId,
                 role = targetRole,
-                crop = null,
+                crop = targetCrop,
             ),
             otherRole to resultAsset(
                 localImagePreserver = localImagePreserver,
@@ -2249,8 +2435,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         revision = 1,
     )
 
-    private fun createNavigationViewModels(): NavigationViewModels {
-        val repository = InMemoryTournamentRepository()
+    private fun createNavigationViewModels(
+        repository: InMemoryTournamentRepository = InMemoryTournamentRepository(),
+    ): NavigationViewModels {
         val uploadAction = TournamentCloudUploadAction {
             QueueAwareActionResult(
                 primaryResult = TournamentCloudUploadResult.Success(1),
@@ -2578,6 +2765,13 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
     )
+
+    private fun createConfirmedTournamentWithOneActiveTeam(
+        repository: InMemoryTournamentRepository,
+    ) = runBlocking {
+        repository.create(confirmedTournament())
+        repository.saveTeamNames("confirmed-id", mapOf(1 to "Team 1"))
+    }
 
     private fun createFinalizedMatch(viewModels: NavigationViewModels): String = runBlocking {
         val tournamentId = "confirmed-id"
