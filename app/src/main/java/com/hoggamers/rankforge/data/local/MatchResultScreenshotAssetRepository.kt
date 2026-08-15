@@ -47,6 +47,9 @@ interface MatchResultScreenshotAssetRepository {
 
     suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult
 
+    suspend fun restoreOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult =
+        saveOrReplace(asset)
+
     suspend fun updateUploadSuccessIfFingerprintMatches(
         identity: MatchResultScreenshotIdentity,
         sha256: String,
@@ -136,6 +139,15 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
 
     override suspend fun saveOrReplace(
         asset: MatchResultScreenshotAssetEntity,
+    ): MatchResultScreenshotAssetSaveResult = saveOrReplaceInternal(asset, clearCropOnReplacement = true)
+
+    override suspend fun restoreOrReplace(
+        asset: MatchResultScreenshotAssetEntity,
+    ): MatchResultScreenshotAssetSaveResult = saveOrReplaceInternal(asset, clearCropOnReplacement = false)
+
+    private suspend fun saveOrReplaceInternal(
+        asset: MatchResultScreenshotAssetEntity,
+        clearCropOnReplacement: Boolean,
     ): MatchResultScreenshotAssetSaveResult = ScreenshotAssetMutationCoordinator.withLock(
         ScreenshotAssetMutationCoordinator.key(
             asset.identityOrNull() ?: return MatchResultScreenshotAssetSaveResult.InvalidIdentity,
@@ -159,7 +171,7 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
         } catch (_: RuntimeException) {
             return@withLock MatchResultScreenshotAssetSaveResult.StateConflict
         }
-        val assetToSave = if (existing != null && existing.sha256 != asset.sha256) {
+        val assetToSave = if (clearCropOnReplacement && existing != null && existing.sha256 != asset.sha256) {
             asset.copy(
                 cropProfileId = null,
                 cropLeft = null,

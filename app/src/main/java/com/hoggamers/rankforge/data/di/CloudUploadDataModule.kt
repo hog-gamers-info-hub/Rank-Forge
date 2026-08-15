@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSou
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.AuthenticatedScreenshotStorageDownloader
+import com.hoggamers.rankforge.data.cloud.SupabaseAuthenticatedScreenshotStorageDownloader
 import com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchResultScreenshotStorageUploader
@@ -41,9 +43,11 @@ import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRepository
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchScreenshotRestorationAction
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.RestoreMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchScreenshotRestorationAction
 import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
 import com.hoggamers.rankforge.domain.tournament.ResolveDraftConflictUseCase
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRemoteDataSource
@@ -61,6 +65,17 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class CloudUploadDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindMatchScreenshotRestorationAction(
+        action: SupabaseMatchScreenshotRestorationAction,
+    ): MatchScreenshotRestorationAction
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedScreenshotStorageDownloader(
+        downloader: SupabaseAuthenticatedScreenshotStorageDownloader,
+    ): AuthenticatedScreenshotStorageDownloader
     @Binds
     @Singleton
     abstract fun bindScreenshotStorageUploader(

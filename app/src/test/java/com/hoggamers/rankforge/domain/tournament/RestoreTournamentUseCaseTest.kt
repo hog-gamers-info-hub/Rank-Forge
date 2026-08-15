@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
@@ -29,6 +30,7 @@ class RestoreTournamentUseCaseTest {
             cloudRepository = cloud,
             localRepository = local,
             queueRecorder = queue.recorder(),
+            matchCloudRestorationAction = RecordingMatchRestorationAction(),
         )
 
         val result = useCase.restore(TOURNAMENT_ID)
@@ -56,6 +58,7 @@ class RestoreTournamentUseCaseTest {
             cloudRepository = cloud,
             localRepository = local,
             queueRecorder = queue.recorder(),
+            matchCloudRestorationAction = RecordingMatchRestorationAction(),
         )
 
         val available = useCase.loadAvailable()
@@ -87,6 +90,7 @@ class RestoreTournamentUseCaseTest {
             networkCloud,
             RecordingLocalRepository(),
             queue.recorder(),
+            RecordingMatchRestorationAction(),
         ).restore(TOURNAMENT_ID)
         assertEquals(TournamentCloudRestorationResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
@@ -97,6 +101,7 @@ class RestoreTournamentUseCaseTest {
             networkCloud,
             RecordingLocalRepository(),
             RecordingTestQueueRepository(IllegalStateException()).recorder(),
+            RecordingMatchRestorationAction(),
         ).restore(TOURNAMENT_ID)
         assertEquals(TournamentCloudRestorationResult.NetworkFailure, persistenceFailureResult.primaryResult)
         assertEquals(QueueRecordingResult.PERSISTENCE_FAILED, persistenceFailureResult.queueRecordingResult)
@@ -112,12 +117,19 @@ class RestoreTournamentUseCaseTest {
         val localFailure = RecordingLocalRepository(throwOnRestore = true)
         val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
 
-        val readResult = RestoreTournamentUseCase(auth, cloudFailure, localFailure, testQueueRecorder()).restore(TOURNAMENT_ID)
+        val readResult = RestoreTournamentUseCase(
+            auth,
+            cloudFailure,
+            localFailure,
+            testQueueRecorder(),
+            RecordingMatchRestorationAction(),
+        ).restore(TOURNAMENT_ID)
         val transactionResult = RestoreTournamentUseCase(
             auth,
             RecordingCloudRepository(snapshot = snapshot()),
             localFailure,
             testQueueRecorder(),
+            RecordingMatchRestorationAction(),
         ).restore(TOURNAMENT_ID)
 
         assertEquals(TournamentCloudRestorationResult.NetworkFailure, readResult.primaryResult)
@@ -132,8 +144,152 @@ class RestoreTournamentUseCaseTest {
             ),
             RecordingLocalRepository(),
             testQueueRecorder(),
+            RecordingMatchRestorationAction(),
         ).restore(TOURNAMENT_ID)
         assertEquals(TournamentCloudRestorationResult.AuthorizationFailure, authorizationResult.primaryResult)
+    }
+
+    @Test
+    fun normalRestoreRestoresParentBeforeInvokingChildWithSameTournamentId() = runTest {
+        val events = mutableListOf<String>()
+        val local = RecordingLocalRepository(events = events)
+        val child = RecordingMatchRestorationAction(events = events)
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.restore(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result.primaryResult)
+        assertEquals(listOf("parent", "matches"), events)
+        assertEquals(1, child.invocationCount)
+        assertEquals(listOf(TOURNAMENT_ID), child.tournamentIds)
+    }
+
+    @Test
+    fun retryRestoresParentBeforeInvokingChildWithSameTournamentId() = runTest {
+        val events = mutableListOf<String>()
+        val local = RecordingLocalRepository(events = events)
+        val child = RecordingMatchRestorationAction(events = events)
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result)
+        assertEquals(listOf("parent", "matches"), events)
+        assertEquals(listOf(TOURNAMENT_ID), child.tournamentIds)
+    }
+
+    @Test
+    fun parentCloudFailureDoesNotInvokeChildRestoration() = runTest {
+        val child = RecordingMatchRestorationAction()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(
+                readResult = TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.NETWORK,
+                ),
+            ),
+            localRepository = RecordingLocalRepository(),
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.NetworkFailure, result)
+        assertEquals(0, child.invocationCount)
+    }
+
+    @Test
+    fun parentLocalTransactionFailureDoesNotInvokeChildRestoration() = runTest {
+        val child = RecordingMatchRestorationAction()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = RecordingLocalRepository(throwOnRestore = true),
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.LocalTransactionFailure, result)
+        assertEquals(0, child.invocationCount)
+    }
+
+    @Test
+    fun noCloudMatchesChildResultDoesNotFailSuccessfulParentRestore() = runTest {
+        val child = RecordingMatchRestorationAction(
+            result = MatchCloudRestorationResult.NoCloudMatches,
+        )
+        val local = RecordingLocalRepository()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result)
+        assertTrue(local.restoreCalled)
+        assertEquals(1, child.invocationCount)
+    }
+
+    @Test
+    fun childRetryableFailureLeavesSuccessfullyRestoredParentIntact() = runTest {
+        val child = RecordingMatchRestorationAction(
+            result = MatchCloudRestorationResult.NetworkFailure,
+        )
+        val local = RecordingLocalRepository()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result)
+        assertTrue(local.restoreCalled)
+        assertEquals(snapshot(), local.snapshot)
+        assertEquals(1, child.invocationCount)
+    }
+
+    @Test
+    fun childExceptionLeavesSuccessfullyRestoredParentIntact() = runTest {
+        val child = RecordingMatchRestorationAction(
+            failure = IllegalStateException("child restore failed"),
+        )
+        val local = RecordingLocalRepository()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = testQueueRecorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result)
+        assertTrue(local.restoreCalled)
+        assertEquals(1, child.invocationCount)
     }
 
     private fun snapshot() = TournamentCloudRestorationSnapshot(
@@ -178,14 +334,36 @@ class RestoreTournamentUseCaseTest {
 
     private class RecordingLocalRepository(
         private val throwOnRestore: Boolean = false,
+        private val events: MutableList<String>? = null,
     ) : TournamentRestorationLocalRepository {
         var restoreCalled = false
         var snapshot: TournamentCloudRestorationSnapshot? = null
 
         override suspend fun restore(snapshot: TournamentCloudRestorationSnapshot) {
             restoreCalled = true
+            events?.add("parent")
             if (throwOnRestore) error("transaction failed")
             this.snapshot = snapshot
+        }
+    }
+
+    private class RecordingMatchRestorationAction(
+        private val result: MatchCloudRestorationResult = MatchCloudRestorationResult.Success,
+        private val events: MutableList<String>? = null,
+        private val failure: Throwable? = null,
+    ) : MatchCloudRestorationAction {
+        var invocationCount = 0
+        val tournamentIds = mutableListOf<String>()
+
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult> {
+            invocationCount += 1
+            tournamentIds += tournamentId
+            events?.add("matches")
+            failure?.let { throw it }
+            return QueueAwareActionResult(
+                primaryResult = result,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
         }
     }
 

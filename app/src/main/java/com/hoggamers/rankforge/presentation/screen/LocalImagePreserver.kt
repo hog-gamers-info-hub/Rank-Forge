@@ -131,6 +131,35 @@ class LocalImagePreserver(
         )
     }
 
+    suspend fun restoreMatchLobbyScreenshot(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        extension: String,
+        bytes: ByteArray,
+    ): LocalImagePreservationResult {
+        if (lobbyScreenshotIndex !in 1..3) {
+            return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        return restoreBytesToDirectory(
+            directory = lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex),
+            extension = extension,
+            bytes = bytes,
+        )
+    }
+
+    suspend fun restoreMatchResultScreenshot(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+        extension: String,
+        bytes: ByteArray,
+    ): LocalImagePreservationResult = restoreBytesToDirectory(
+        directory = matchResultScreenshotDirectory(tournamentId, matchId, role),
+        extension = extension,
+        bytes = bytes,
+    )
+
     suspend fun snapshotLobbyTemplate(
         tournamentId: String,
         generation: String,
@@ -306,6 +335,51 @@ class LocalImagePreserver(
         } catch (exception: CancellationException) {
             safeDelete(temporaryFile)
             throw exception
+        } catch (_: IOException) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        } catch (_: RuntimeException) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        val targetFile = File(directory, "original.$extension")
+        if (!runCatching { fileOperations.atomicMove(temporaryFile, targetFile) }.getOrDefault(false)) {
+            safeDelete(temporaryFile)
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.ATOMIC_MOVE_FAILED)
+        }
+        if (cleanupStaleFiles(directory, targetFile)) {
+            LocalImagePreservationResult.Preserved(targetFile)
+        } else {
+            LocalImagePreservationResult.PreservedWithCleanupFailure(targetFile)
+        }
+    }
+
+    private suspend fun restoreBytesToDirectory(
+        directory: File,
+        extension: String,
+        bytes: ByteArray,
+    ): LocalImagePreservationResult = withContext(ioDispatcher) {
+        if (extension.isBlank() || bytes.isEmpty() ||
+            !runCatching { fileOperations.ensureDirectory(directory) }.getOrDefault(false)
+        ) {
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        val temporaryFile = try {
+            fileOperations.createTempFile(directory)
+        } catch (_: IOException) {
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        } catch (_: RuntimeException) {
+            return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        try {
+            fileOperations.openOutput(temporaryFile).use { output ->
+                output.write(bytes)
+                output.flush()
+                if (output is FileOutputStream) output.fd.sync()
+            }
+        } catch (cancellation: CancellationException) {
+            safeDelete(temporaryFile)
+            throw cancellation
         } catch (_: IOException) {
             safeDelete(temporaryFile)
             return@withContext LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
