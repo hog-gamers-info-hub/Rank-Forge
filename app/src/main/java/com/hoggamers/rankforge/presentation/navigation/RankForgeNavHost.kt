@@ -644,6 +644,10 @@ fun RankForgeNavHost(
                 destination.tournamentId,
                 destination.matchId,
             )
+            val ocrReviewViewModel = matchOcrReviewViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+            )
             if (reviewViewModel == null) {
                 MatchReviewRoute(
                     tournamentId = destination.tournamentId,
@@ -656,6 +660,7 @@ fun RankForgeNavHost(
                     onStartCorrection = onStartCorrection,
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
+                    ocrReviewViewModel = ocrReviewViewModel,
                 )
             } else {
                 MatchReviewRoute(
@@ -670,6 +675,7 @@ fun RankForgeNavHost(
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
                     viewModel = reviewViewModel,
+                    ocrReviewViewModel = ocrReviewViewModel,
                 )
             }
         }
