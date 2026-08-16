@@ -140,8 +140,6 @@ fun MatchReviewRoute(
         if (uiState.isAvailable) {
             if (uiState.status == MatchStatus.FINALIZED) {
                 resolvedOcrReviewViewModel.loadHistoricalEvidence(tournamentId, matchId)
-            } else {
-                resolvedOcrReviewViewModel.load(tournamentId, matchId)
             }
         }
     }
@@ -252,7 +250,12 @@ fun MatchReviewRoute(
         uiState = uiState,
         onEnterPlacements = viewModel::openPlacements,
         onEnterKills = viewModel::openKills,
-        onOpenOcrReview = viewModel::openOcrReview,
+        onOpenOcrReview = {
+            if (uiState.canOpenOcrReview) {
+                resolvedOcrReviewViewModel.load(tournamentId, matchId)
+            }
+            viewModel.openOcrReview()
+        },
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
@@ -303,6 +306,7 @@ fun MatchReviewScreen(
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     showLegacyManualReviewContent: Boolean = false,
+    showInlineOcrDetails: Boolean = false,
     ocrUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
@@ -338,6 +342,7 @@ fun MatchReviewScreen(
             onRemoveResultScreenshot = onRemoveResultScreenshot,
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
             showLegacyManualReviewContent = showLegacyManualReviewContent,
+            showInlineOcrDetails = showInlineOcrDetails,
             ocrUiState = ocrUiState,
             onOcrPlacementChanged = onOcrPlacementChanged,
             onOcrKillsChanged = onOcrKillsChanged,
@@ -372,6 +377,7 @@ private fun MatchReviewContent(
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
     matchLobbyScreenshotIntake: @Composable () -> Unit,
     showLegacyManualReviewContent: Boolean,
+    showInlineOcrDetails: Boolean,
     ocrUiState: MatchOcrReviewUiState,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit,
@@ -384,6 +390,10 @@ private fun MatchReviewContent(
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
+    var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
+    val shouldShowInlineOcrDetails = showInlineOcrDetails ||
+        ocrReviewOpened ||
+        (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
 
     RankForgeScreenContainer(
         modifier = Modifier
@@ -479,7 +489,7 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
             )
             matchLobbyScreenshotIntake()
-            if (ocrUiState.hasLobbyPlayerEvidence()) {
+            if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
                 MatchReviewLobbyPlayerDetailsContent(ocrUiState)
             }
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
@@ -496,20 +506,25 @@ private fun MatchReviewContent(
             onOpenCrop = onOpenResultScreenshotCrop,
             onRemoveScreenshot = onRemoveResultScreenshot,
         )
-        MatchReviewResultOcrDetailsContent(
-            uiState = ocrUiState,
-            onPlacementChanged = onOcrPlacementChanged,
-            onKillsChanged = onOcrKillsChanged,
-            onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-            onResetRowCorrection = onOcrResetRowCorrection,
-            onResetAllCorrections = onOcrResetAllCorrections,
-            onFinalizeOcrCorrection = onOcrFinalize,
-            onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-            onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-        )
+        if (shouldShowInlineOcrDetails) {
+            MatchReviewResultOcrDetailsContent(
+                uiState = ocrUiState,
+                onPlacementChanged = onOcrPlacementChanged,
+                onKillsChanged = onOcrKillsChanged,
+                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                onResetRowCorrection = onOcrResetRowCorrection,
+                onResetAllCorrections = onOcrResetAllCorrections,
+                onFinalizeOcrCorrection = onOcrFinalize,
+                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+            )
+        }
         if (uiState.isEditable) {
             Button(
-                onClick = onOpenOcrReview,
+                onClick = {
+                    ocrReviewOpened = true
+                    onOpenOcrReview()
+                },
                 enabled = uiState.canOpenOcrReview,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -724,6 +739,9 @@ private fun MatchOcrReviewUiState.hasLobbyPlayerEvidence(): Boolean = when (this
     -> false
 }
 
+private fun MatchOcrReviewUiState.hasPreservedResultOcrEvidence(): Boolean =
+    this is MatchOcrReviewUiState.Ready && rows.isNotEmpty()
+
 @Composable
 private fun MatchReviewResultOcrDetailsContent(
     uiState: MatchOcrReviewUiState,
@@ -747,9 +765,22 @@ private fun MatchReviewResultOcrDetailsContent(
                 text = stringResource(R.string.match_ocr_review_loading),
             )
             is MatchOcrReviewUiState.Empty -> {
-                MatchResultOcrPreviewSection(uiState.matchResultOcrPreview)
-                if (uiState.matchResultOcrPreview == MatchResultOcrPreviewUiState.NotRequested) {
-                    Text(text = stringResource(R.string.match_ocr_review_empty_message))
+                val preview = uiState.matchResultOcrPreview
+                if (preview is MatchResultOcrPreviewUiState.Ready && preview.rows.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.match_ocr_review_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                    MatchOcrReviewCompactPreviewList(
+                        preview = preview,
+                        reviewRowsByPosition = emptyMap(),
+                        teamNamesBySlot = emptyMap(),
+                    )
+                } else {
+                    MatchResultOcrPreviewSection(preview)
+                    if (preview == MatchResultOcrPreviewUiState.NotRequested) {
+                        Text(text = stringResource(R.string.match_ocr_review_empty_message))
+                    }
                 }
             }
             is MatchOcrReviewUiState.Error -> Text(

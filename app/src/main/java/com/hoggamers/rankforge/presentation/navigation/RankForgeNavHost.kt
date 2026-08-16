@@ -598,8 +598,12 @@ fun RankForgeNavHost(
             val onStartCorrection: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchCorrectionDestination(tournamentId, matchId))
             }
-            val onOpenOcrReview: (String, String) -> Unit = { tournamentId, matchId ->
-                navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
+            val onOpenOcrReview: (String, String) -> Unit = if (showLegacyManualReviewContent) {
+                { tournamentId, matchId ->
+                    navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
+                }
+            } else {
+                { _, _ -> }
             }
             val onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit = {
                     tournamentId,

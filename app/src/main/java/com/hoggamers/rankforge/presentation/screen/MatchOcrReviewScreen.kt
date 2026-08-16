@@ -428,7 +428,7 @@ private fun LobbyPlayerCell(
 }
 
 @Composable
-private fun MatchOcrReviewCompactPreviewList(
+internal fun MatchOcrReviewCompactPreviewList(
     preview: MatchResultOcrPreviewUiState.Ready,
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
     teamNamesBySlot: Map<Int, String>,

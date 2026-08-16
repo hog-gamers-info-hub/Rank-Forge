@@ -75,6 +75,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
             .assertIsDisplayed()
             .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
         val lobbyY = composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
             .fetchSemanticsNode().positionInRoot.y
         val resultY = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
@@ -124,6 +126,7 @@ class MatchReviewScreenTest {
                         androidx.compose.material3.Text("Lobby screenshot slots")
                     },
                     showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
                     ocrUiState = inlineOcrState(),
                 )
             }
@@ -182,6 +185,7 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
                     ocrUiState = inlineOcrState(),
                     onOcrPlacementChanged = { row, value -> placements += row to value },
                     onOcrKillsChanged = { row, value -> kills += row to value },
@@ -262,6 +266,127 @@ class MatchReviewScreenTest {
             .assertIsEnabled()
             .performClick()
         composeTestRule.runOnIdle { assertEquals(1, ocrReviewCount) }
+    }
+
+    @Test
+    fun inlineReadyPreviewUsesExistingCompactOcrReviewPresentation() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            rows = listOf(
+                MatchResultOcrPreviewRowUiState(
+                    position = 1,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    sourceLabel = "UPPER_TEMPLATE",
+                    placementText = "1",
+                    slots = (1..4).map { slot ->
+                        MatchResultOcrPreviewSlotUiState(
+                            slot = slot,
+                            playerText = "Player $slot",
+                            playerOcrText = "Player $slot",
+                            playerStatusLabel = "DIRECT_NUMERIC",
+                            killText = slot.toString(),
+                            killOcrText = slot.toString(),
+                            killStatusLabel = "DIRECT_NUMERIC",
+                        )
+                    },
+                ),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.COMPACT_LIST)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Roles: MATCH_RESULT_UPPER")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("DIRECT_NUMERIC")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun inlineOcrDetailsRemainVisibleAfterMatchFinalization() {
+        var openedCount = 0
+        var matchState by mutableStateOf(
+            availableState(
+                resultScreenshots = listOf(
+                    resultSlot(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        hasLinkedAsset = true,
+                        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                        cropProfileId = "match-result",
+                    ),
+                    resultSlot(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        hasLinkedAsset = true,
+                        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                        cropProfileId = "match-result",
+                    ),
+                ),
+            ),
+        )
+        var ocrState by mutableStateOf(inlineOcrState())
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = matchState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenOcrReview = { openedCount++ },
+                    ocrUiState = ocrState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(1, openedCount) }
+
+        composeTestRule.runOnIdle {
+            matchState = matchState.copy(status = MatchStatus.FINALIZED)
+            ocrState = ocrState.copy(
+                finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .assertIsNotEnabled()
     }
 
     @Test
