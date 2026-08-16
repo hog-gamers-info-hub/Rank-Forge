@@ -249,10 +249,24 @@ with payload as (
         'id', ('88000000-0000-0000-0000-' || lpad(slot_number::text, 12, '0'))::uuid,
         'match_id', '87000000-0000-0000-0000-000000000001'::uuid,
         'team_slot_id', ('86000000-0000-0000-0000-' || lpad(slot_number::text, 12, '0'))::uuid,
+        'team_slot_number_snapshot', slot_number,
+        'team_name_snapshot', 'Final Team ' || slot_number,
         'placement', slot_number,
         'kills', slot_number - 1,
+        'placement_points', case slot_number
+            when 1 then 12 when 2 then 9 when 3 then 8 when 4 then 7
+            when 5 then 6 when 6 then 5 when 7 then 4 when 8 then 3
+            when 9 then 2 when 10 then 1 when 11 then 0 when 12 then 0
+        end,
+        'kill_points', slot_number - 1,
+        'total_points', (case slot_number
+            when 1 then 12 when 2 then 9 when 3 then 8 when 4 then 7
+            when 5 then 6 when 6 then 5 when 7 then 4 when 8 then 3
+            when 9 then 2 when 10 then 1 when 11 then 0 when 12 then 0
+        end) + slot_number - 1,
         'source', 'manual',
-        'review_status', 'confirmed'
+        'review_status', 'confirmed',
+        'players', '[]'::jsonb
     )) as value
     from generate_series(1, 12) as slot_number
 )
@@ -291,10 +305,24 @@ with payload as (
         'id', ('88000000-0000-0000-0000-' || lpad(slot_number::text, 12, '0'))::uuid,
         'match_id', '87000000-0000-0000-0000-000000000001'::uuid,
         'team_slot_id', ('86000000-0000-0000-0000-' || lpad(slot_number::text, 12, '0'))::uuid,
+        'team_slot_number_snapshot', slot_number,
+        'team_name_snapshot', 'Final Team ' || slot_number,
         'placement', slot_number,
         'kills', slot_number - 1,
+        'placement_points', case slot_number
+            when 1 then 12 when 2 then 9 when 3 then 8 when 4 then 7
+            when 5 then 6 when 6 then 5 when 7 then 4 when 8 then 3
+            when 9 then 2 when 10 then 1 when 11 then 0 when 12 then 0
+        end,
+        'kill_points', slot_number - 1,
+        'total_points', (case slot_number
+            when 1 then 12 when 2 then 9 when 3 then 8 when 4 then 7
+            when 5 then 6 when 6 then 5 when 7 then 4 when 8 then 3
+            when 9 then 2 when 10 then 1 when 11 then 0 when 12 then 0
+        end) + slot_number - 1,
         'source', 'manual',
-        'review_status', 'confirmed'
+        'review_status', 'confirmed',
+        'players', '[]'::jsonb
     )) as value
     from generate_series(1, 12) as slot_number
 )
