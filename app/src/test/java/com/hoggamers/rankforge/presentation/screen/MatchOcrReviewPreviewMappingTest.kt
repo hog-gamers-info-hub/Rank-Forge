@@ -157,7 +157,7 @@ class MatchOcrReviewPreviewMappingTest {
     }
 
     @Test
-    fun incompletePreviewRemainsReadOnlyWithoutCorrectionDraft() = runTest(dispatcher) {
+    fun incompletePreviewCreatesManualCorrectionPlaceholders() = runTest(dispatcher) {
         val viewModel = viewModelWithPreview(
             MatchResultOcrPreviewUiStateMapper.map(
                 listOf(
@@ -172,12 +172,21 @@ class MatchOcrReviewPreviewMappingTest {
         viewModel.load("tournament", "match")
         advanceUntilIdle()
 
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
-        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready)
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, state.rows.size)
+        assertEquals((0..9).toList(), state.rows.take(10).map { it.rowIndex })
+        assertEquals(listOf(10, 11), state.rows.drop(10).map { it.rowIndex })
+        assertEquals(null, state.rows[10].originalParsedPlacementValue)
+        assertEquals(null, state.rows[10].originalParsedKillValue)
+        assertEquals(null, state.rows[10].originalSuggestedTeamSlot)
+        assertEquals("", state.correctionDraft?.rows?.get(10)?.placementDraftValue)
+        assertEquals("", state.correctionDraft?.rows?.get(10)?.killsDraftValue)
+        assertEquals("", state.correctionDraft?.rows?.get(10)?.assignedTeamSlotDraftValue)
+        assertTrue(state.correctionDraft?.rows?.get(10)?.validation?.blockers?.isNotEmpty() == true)
     }
 
     @Test
-    fun duplicatePreviewPositionDoesNotCreateCorrectionDraft() = runTest(dispatcher) {
+    fun duplicatePreviewPositionCreatesPlaceholderForAmbiguousPosition() {
         val preview = MatchResultOcrPreviewUiState.Ready(
             roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
             rows = (listOf(1, 1) + (2..11).toList()).map { position ->
@@ -190,16 +199,17 @@ class MatchOcrReviewPreviewMappingTest {
             ignoredLowerRows = emptyList(),
             manualReviewRows = emptyList(),
         )
-        val viewModel = viewModelWithPreview(preview)
 
-        viewModel.load("tournament", "match")
-        advanceUntilIdle()
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!
 
-        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Empty)
+        assertEquals(12, rows.size)
+        assertEquals("Unavailable", rows.first().detectedPlacementDisplayValue)
+        assertEquals(null, rows.first().originalParsedPlacementValue)
+        assertEquals("Manual correction required", rows.first().placementStatusLabel)
     }
 
     @Test
-    fun outOfRangePreviewPositionDoesNotCreateCorrectionDraft() = runTest(dispatcher) {
+    fun outOfRangePreviewPositionDoesNotChangeCanonicalRows() {
         val preview = MatchResultOcrPreviewUiState.Ready(
             roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
             rows = (1..11).map { position ->
@@ -216,12 +226,12 @@ class MatchOcrReviewPreviewMappingTest {
             ignoredLowerRows = emptyList(),
             manualReviewRows = emptyList(),
         )
-        val viewModel = viewModelWithPreview(preview)
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!
 
-        viewModel.load("tournament", "match")
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Empty)
+        assertEquals(12, rows.size)
+        assertEquals((0..10).toList(), rows.take(11).map { it.rowIndex })
+        assertEquals(11, rows.last().rowIndex)
+        assertEquals(null, rows.last().originalParsedPlacementValue)
     }
 
     @Test

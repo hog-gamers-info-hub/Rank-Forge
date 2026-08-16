@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -181,6 +182,86 @@ class MatchOcrReviewScreenTest {
             .assertTextEquals("4. Player Four - [8]")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
+    }
+
+    @Test
+    fun unavailableFallbackUsesExpectedPositionHeadingAndBlankPlacement() {
+        val rows = defaultReadyRows().map { row ->
+            if (row.rowIndex in 10..11) {
+                row.copy(
+                    detectedPlacementDisplayValue = "Unavailable",
+                    placementStatusLabel = "Manual correction required",
+                    detectedKillDisplayValue = "Unavailable",
+                    killStatusLabel = "Manual correction required",
+                    detectedPlayerNameEvidenceLabel = "Unavailable",
+                    playerNameStatusLabel = "Manual correction required",
+                    suggestedTeamSlotDisplayValue = "Unavailable",
+                    confidenceScoreDisplayValue = "Unavailable",
+                    confidenceTierLabel = "Unavailable",
+                    assignmentSafetyStatusLabel = "Unavailable",
+                    topThreeSuggestionsSummary = listOf("No suggestions"),
+                    warningLabels = emptyList(),
+                    blockerLabels = listOf("OCR evidence unavailable; manual correction required"),
+                    severity = MatchOcrReviewSeverity.BLOCKING,
+                    originalParsedPlacementValue = null,
+                    originalParsedKillValue = null,
+                    originalSuggestedTeamSlot = null,
+                )
+            } else {
+                row
+            }
+        }
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(rows = rows, correctionDraft = draft),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(11))
+            .performScrollTo()
+            .assertTextEquals("Position - 11")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 1))
+            .assertTextEquals("1. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 3))
+            .assertTextEquals("3. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 2))
+            .assertTextEquals("2. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 4))
+            .assertTextEquals("4. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(10))
+            .performScrollTo()
+            .run {
+                assertEquals(
+                    "",
+                    fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+                )
+            }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(12))
+            .performScrollTo()
+            .assertTextEquals("Position - 12")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 1))
+            .assertTextEquals("1. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 3))
+            .assertTextEquals("3. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 2))
+            .assertTextEquals("2. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 4))
+            .assertTextEquals("4. Not detected")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(11))
+            .performScrollTo()
+            .run {
+                assertEquals(
+                    "",
+                    fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+                )
+            }
+        composeTestRule.onAllNodesWithText("[Unavailable]").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("[?]").assertCountEquals(0)
     }
 
     @Test
