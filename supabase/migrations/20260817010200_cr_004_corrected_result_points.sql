@@ -36,8 +36,12 @@ begin
         return;
     end if;
 
-    if jsonb_typeof(p_match_results) is distinct from 'array'
-        or jsonb_array_length(p_match_results) <> 12 then
+    if jsonb_typeof(p_match_results) is distinct from 'array' then
+        return query select 'validation_failure'::text, null::integer;
+        return;
+    end if;
+
+    if jsonb_array_length(p_match_results) <> 12 then
         return query select 'validation_failure'::text, null::integer;
         return;
     end if;
@@ -84,7 +88,10 @@ begin
         bool_or(
             incoming.id is null
             or incoming.match_id is distinct from p_match_id
+            or incoming.team_slot_id is null
+            or incoming.placement is null
             or incoming.placement not between 1 and 12
+            or incoming.kills is null
             or incoming.kills < 0
         )
     into
