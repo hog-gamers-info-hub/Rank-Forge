@@ -32,9 +32,14 @@ import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnapshot
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
+import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -82,6 +87,74 @@ class MatchOcrReviewViewModelTest {
         state as MatchOcrReviewUiState.Empty
         assertEquals("synthetic-tournament", state.tournamentId)
         assertEquals("synthetic-match", state.matchId)
+    }
+
+    @Test
+    fun historicalEvidenceLoadsWithoutRunningEitherOcrRunner() = runTest(dispatcher) {
+        val repository = createRepository()
+        repository.finalizeDraftMatchWithOcrEvidence(
+            matchId = MATCH_ID,
+            placements = (1..12).map { MatchPlacement(teamSlotNumber = it, position = it) },
+            kills = (1..12).map { MatchKill(teamSlotNumber = it, kills = it - 1) },
+            evidence = preservedEvidence(),
+        )
+        var resultRunnerCalls = 0
+        var lobbyRunnerCalls = 0
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                resultRunnerCalls++
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                lobbyRunnerCalls++
+                MatchLobbyPlayersOcrResult.unavailable()
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+            tournamentRepository = repository,
+        )
+
+        viewModel.loadHistoricalEvidence(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals(12, state.rows.size)
+        assertTrue(state.finalization.isFinalized)
+        assertEquals(0, resultRunnerCalls)
+        assertEquals(0, lobbyRunnerCalls)
+    }
+
+    @Test
+    fun missingHistoricalEvidenceShowsEmptyStateWithoutRunningEitherOcrRunner() = runTest(dispatcher) {
+        val repository = createRepository()
+        var resultRunnerCalls = 0
+        var lobbyRunnerCalls = 0
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                resultRunnerCalls++
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                lobbyRunnerCalls++
+                MatchLobbyPlayersOcrResult.unavailable()
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+            tournamentRepository = repository,
+        )
+
+        viewModel.loadHistoricalEvidence(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Empty)
+        assertEquals(0, resultRunnerCalls)
+        assertEquals(0, lobbyRunnerCalls)
     }
 
     @Test
@@ -663,6 +736,37 @@ class MatchOcrReviewViewModelTest {
                 originalSuggestedTeamSlot = rowIndex + 1,
             )
         }
+
+    private fun preservedEvidence(): PreservedMatchOcrEvidence = PreservedMatchOcrEvidence(
+        tournamentId = TOURNAMENT_ID,
+        matchId = MATCH_ID,
+        sourceScreenshotId = "result-upper",
+        preservedAt = 123L,
+        provenance = "OCR_REVIEW_FINALIZATION",
+        rows = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
+            PreservedMatchOcrRowEvidence(
+                rowIndex = rowIndex,
+                originalOcrText = "Synthetic OCR row ${rowIndex + 1}",
+                originalPlacement = rowIndex + 1,
+                originalKills = rowIndex,
+                originalSuggestedTeamSlot = rowIndex + 1,
+                confidenceSummary = "96|Automatic candidate",
+                safetySummary = "Safe automatic assignment",
+                manualReviewRequired = false,
+            )
+        },
+        correctionSnapshots = (0 until TeamSlot.MAX_SLOT_NUMBER).map { rowIndex ->
+            PreservedMatchOcrCorrectionSnapshot(
+                rowIndex = rowIndex,
+                correctedPlacement = rowIndex + 1,
+                correctedKills = rowIndex,
+                correctedTeamSlot = rowIndex + 1,
+                placementChanged = false,
+                killsChanged = false,
+                teamSlotChanged = false,
+            )
+        },
+    )
 
     private fun displayInputWithMatchingEvidence(): MatchOcrReviewDisplayInput =
         MatchOcrReviewDisplayInput(

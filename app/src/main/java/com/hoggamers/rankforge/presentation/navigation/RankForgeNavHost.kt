@@ -598,8 +598,12 @@ fun RankForgeNavHost(
             val onStartCorrection: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchCorrectionDestination(tournamentId, matchId))
             }
-            val onOpenOcrReview: (String, String) -> Unit = { tournamentId, matchId ->
-                navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
+            val onOpenOcrReview: (String, String) -> Unit = if (showLegacyManualReviewContent) {
+                { tournamentId, matchId ->
+                    navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
+                }
+            } else {
+                { _, _ -> }
             }
             val onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit = {
                     tournamentId,
@@ -644,6 +648,10 @@ fun RankForgeNavHost(
                 destination.tournamentId,
                 destination.matchId,
             )
+            val ocrReviewViewModel = matchOcrReviewViewModelFactory?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+            )
             if (reviewViewModel == null) {
                 MatchReviewRoute(
                     tournamentId = destination.tournamentId,
@@ -656,6 +664,7 @@ fun RankForgeNavHost(
                     onStartCorrection = onStartCorrection,
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
+                    ocrReviewViewModel = ocrReviewViewModel,
                 )
             } else {
                 MatchReviewRoute(
@@ -670,6 +679,7 @@ fun RankForgeNavHost(
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
                     viewModel = reviewViewModel,
+                    ocrReviewViewModel = ocrReviewViewModel,
                 )
             }
         }

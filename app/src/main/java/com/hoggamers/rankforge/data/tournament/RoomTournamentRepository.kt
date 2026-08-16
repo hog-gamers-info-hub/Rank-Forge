@@ -668,6 +668,46 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun readPreservedMatchOcrEvidence(
+        tournamentId: String,
+        matchId: String,
+    ): PreservedMatchOcrEvidence? {
+        awaitState()
+        val evidence = database.matchOcrEvidenceDao().readMatchEvidence(matchId)
+            ?.takeIf { it.tournamentId == tournamentId }
+            ?: return null
+        return PreservedMatchOcrEvidence(
+            tournamentId = evidence.tournamentId,
+            matchId = evidence.matchId,
+            sourceScreenshotId = evidence.sourceScreenshotId,
+            preservedAt = evidence.preservedAt,
+            provenance = evidence.provenance,
+            rows = database.matchOcrEvidenceDao().readRowEvidence(matchId).map { row ->
+                PreservedMatchOcrRowEvidence(
+                    rowIndex = row.rowIndex,
+                    originalOcrText = row.originalOcrText,
+                    originalPlacement = row.originalPlacement,
+                    originalKills = row.originalKills,
+                    originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                    confidenceSummary = row.confidenceSummary,
+                    safetySummary = row.safetySummary,
+                    manualReviewRequired = row.manualReviewRequired,
+                )
+            },
+            correctionSnapshots = database.matchOcrEvidenceDao().readCorrectionSnapshots(matchId).map { snapshot ->
+                PreservedMatchOcrCorrectionSnapshot(
+                    rowIndex = snapshot.rowIndex,
+                    correctedPlacement = snapshot.correctedPlacement,
+                    correctedKills = snapshot.correctedKills,
+                    correctedTeamSlot = snapshot.correctedTeamSlot,
+                    placementChanged = snapshot.placementChanged,
+                    killsChanged = snapshot.killsChanged,
+                    teamSlotChanged = snapshot.teamSlotChanged,
+                )
+            },
+        )
+    }
+
     override suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult {
         awaitState()
         return writeMutex.withLock {

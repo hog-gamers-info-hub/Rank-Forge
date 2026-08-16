@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -268,48 +269,26 @@ private fun MatchOcrReviewReadyState(
                     teamNamesBySlot = uiState.teamNamesBySlot,
                 )
             }
-            uiState.correctionDraft?.let { correctionDraft ->
-                MatchOcrReviewCorrectionSummary(
-                    correctionDraft = correctionDraft,
-                    finalization = uiState.finalization,
-                    onResetAllCorrections = onResetAllCorrections,
-                    onFinalizeOcrCorrection = onFinalizeOcrCorrection,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MatchOcrReviewTestTags.ROW_LIST),
-                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
-            ) {
-                uiState.rows.forEach { row ->
-                    MatchOcrReviewRow(
-                        row = row,
-                        previewRow = previewRowsByPosition[row.rowIndex + 1],
-                        teamNamesBySlot = uiState.teamNamesBySlot,
-                        correctionDraft = correctionRowsByIndex[row.rowIndex],
-                        onPlacementChanged = onPlacementChanged,
-                        onKillsChanged = onKillsChanged,
-                        onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
-                        onResetRowCorrection = onResetRowCorrection,
-                        correctionEnabled = !uiState.finalization.isFinalized,
-                    )
-                }
-            }
+            MatchOcrReviewResultContent(
+                uiState = uiState,
+                onPlacementChanged = onPlacementChanged,
+                onKillsChanged = onKillsChanged,
+                onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                onResetRowCorrection = onResetRowCorrection,
+                onResetAllCorrections = onResetAllCorrections,
+                onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+                onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
+                onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+                previewRowsByPosition = previewRowsByPosition,
+                correctionRowsByIndex = correctionRowsByIndex,
+            )
             MatchOcrReviewBackAction(onBack)
         }
-    }
-    if (uiState.finalization.showWarningConfirmation) {
-        MatchOcrReviewFinalizeWarningDialog(
-            warningCount = uiState.correctionDraft?.warningCount ?: 0,
-            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
-            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
-        )
     }
 }
 
 @Composable
-private fun MatchOcrReviewLobbyPlayersSection(
+internal fun MatchOcrReviewLobbyPlayersSection(
     lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
     teamNamesBySlot: Map<Int, String>,
 ) {
@@ -330,23 +309,85 @@ private fun MatchOcrReviewLobbyPlayersSection(
                 ?: stringResource(R.string.match_ocr_review_compact_not_named)
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
-                Text(
-                    text = stringResource(
-                        R.string.match_ocr_review_compact_team,
-                        slot.slotNumber,
-                        teamName,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) {}
+                        .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.match_ocr_review_compact_team,
+                            slot.slotNumber,
+                            teamName,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
                 LobbyPlayerRow(slot, leftPlayer = 1, rightPlayer = 3)
                 LobbyPlayerRow(slot, leftPlayer = 2, rightPlayer = 4)
             }
         }
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewResultContent(
+    uiState: MatchOcrReviewUiState.Ready,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onResetRowCorrection: (rowIndex: Int) -> Unit = {},
+    onResetAllCorrections: () -> Unit = {},
+    onFinalizeOcrCorrection: () -> Unit = {},
+    onConfirmFinalizeWarnings: () -> Unit = {},
+    onDismissFinalizeWarnings: () -> Unit = {},
+    previewRowsByPosition: Map<Int, MatchResultOcrPreviewRowUiState> =
+        (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+            ?.rows
+            .orEmpty()
+            .associateBy { it.position },
+    correctionRowsByIndex: Map<Int, MatchOcrReviewRowCorrectionDraft> =
+        uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex },
+) {
+    uiState.correctionDraft?.let { correctionDraft ->
+        MatchOcrReviewCorrectionSummary(
+            correctionDraft = correctionDraft,
+            finalization = uiState.finalization,
+            onResetAllCorrections = onResetAllCorrections,
+            onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+        )
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.ROW_LIST),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
+    ) {
+        uiState.rows.forEach { row ->
+            MatchOcrReviewRow(
+                row = row,
+                previewRow = previewRowsByPosition[row.rowIndex + 1],
+                teamNamesBySlot = uiState.teamNamesBySlot,
+                correctionDraft = correctionRowsByIndex[row.rowIndex],
+                onPlacementChanged = onPlacementChanged,
+                onKillsChanged = onKillsChanged,
+                onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                onResetRowCorrection = onResetRowCorrection,
+                correctionEnabled = !uiState.finalization.isFinalized,
+            )
+        }
+    }
+    if (uiState.finalization.showWarningConfirmation) {
+        MatchOcrReviewFinalizeWarningDialog(
+            warningCount = uiState.correctionDraft?.warningCount ?: 0,
+            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
+            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+        )
     }
 }
 
@@ -387,7 +428,7 @@ private fun LobbyPlayerCell(
 }
 
 @Composable
-private fun MatchOcrReviewCompactPreviewList(
+internal fun MatchOcrReviewCompactPreviewList(
     preview: MatchResultOcrPreviewUiState.Ready,
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
     teamNamesBySlot: Map<Int, String>,
@@ -520,7 +561,7 @@ private fun CompactPlayerCell(
 }
 
 @Composable
-private fun MatchResultOcrPreviewSection(
+internal fun MatchResultOcrPreviewSection(
     preview: MatchResultOcrPreviewUiState,
 ) {
     when (preview) {

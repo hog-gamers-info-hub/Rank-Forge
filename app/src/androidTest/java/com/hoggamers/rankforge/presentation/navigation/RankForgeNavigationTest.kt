@@ -27,7 +27,6 @@ import android.graphics.Bitmap
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
@@ -165,6 +164,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTIO
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG
@@ -950,7 +950,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                 )
             }
         }
@@ -993,6 +995,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterScreenshotIntakeContent = { _, _ -> },
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                 )
             }
@@ -1050,6 +1053,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                 )
             }
         }
@@ -1164,6 +1168,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                         activeMatchReviewViewModel = viewModel
                         viewModel
                     },
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     showLegacyManualReviewContent = true,
                     standingsViewModelFactory = viewModels.standingsViewModel,
                 )
@@ -1261,6 +1266,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                     showLegacyManualReviewContent = true,
                 )
@@ -1453,6 +1459,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
@@ -1503,6 +1510,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
@@ -1558,6 +1566,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     listViewModel = viewModels.listViewModel,
                     detailsViewModelFactory = viewModels.detailsViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchLobbyScreenshotCropViewModelFactory = { _, _, _ -> cropViewModel },
                     matchLobbyScreenshotIntakeContent = { _, _, onOpenCrop ->
                         Button(
@@ -1644,6 +1653,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     detailsViewModelFactory = fixture.viewModels.detailsViewModel,
                     matchLobbyScreenshotIntakeContent = { _, _, _ -> },
                     matchReviewViewModelFactory = { _, _ -> fixture.matchReviewViewModel },
+                    matchOcrReviewViewModelFactory = fixture.viewModels.matchOcrReviewViewModel,
                     matchResultScreenshotCropViewModelFactory = { fixture.cropViewModel },
                     showLegacyManualReviewContent = false,
                 )
@@ -1783,36 +1793,19 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .performScrollTo()
             .performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.SCREEN).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY).assertIsDisplayed()
-
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule
-            .onNodeWithTag(MatchOcrReviewTestTags.BACK_ACTION)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
-            activeMatchReviewViewModel?.uiState?.value?.isAvailable == true
-        }
-        composeTestRule.waitForIdle()
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
-            navController.currentBackStackEntry?.destination?.route ==
-                "${MatchReviewDestination::class.qualifiedName}/{tournamentId}/{matchId}" &&
-                navController.currentBackStackEntry
-                    ?.toRoute<MatchReviewDestination>() == MatchReviewDestination("confirmed-id", matchId)
-        }
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
-            navController.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED
-        }
-        composeTestRule.waitForIdle()
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
-            composeTestRule
-                .onAllNodesWithTag(MATCH_REVIEW_SCREEN_TEST_TAG, useUnmergedTree = true)
-                .fetchSemanticsNodes()
-                .any { it.layoutInfo.isPlaced }
-        }
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG, useUnmergedTree = true)
+            .onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertIsDisplayed()
+        composeTestRule
+            .onAllNodesWithTag(MatchOcrReviewTestTags.SCREEN)
+            .assertCountEquals(0)
+        composeTestRule.runOnIdle {
+            assertEquals(
+                MatchReviewDestination("confirmed-id", matchId),
+                navController.currentBackStackEntry?.toRoute<MatchReviewDestination>(),
+            )
+        }
 
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG)
@@ -1866,6 +1859,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
@@ -1941,6 +1935,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     showLegacyManualReviewContent = true,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
@@ -2059,6 +2054,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
+                    matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
             }
