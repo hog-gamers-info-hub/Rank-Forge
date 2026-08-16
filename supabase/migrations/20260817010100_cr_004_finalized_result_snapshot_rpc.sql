@@ -33,8 +33,12 @@ begin
         return;
     end if;
 
-    if jsonb_typeof(p_match_results) is distinct from 'array'
-        or jsonb_array_length(p_match_results) <> 12 then
+    if jsonb_typeof(p_match_results) is distinct from 'array' then
+        return query select 'validation_failure'::text, null::integer;
+        return;
+    end if;
+
+    if jsonb_array_length(p_match_results) <> 12 then
         return query select 'validation_failure'::text, null::integer;
         return;
     end if;
@@ -88,10 +92,13 @@ begin
             result_row.id is null
             or result_row.match_id is distinct from v_match_id
             or result_row.team_slot_id is null
+            or result_row.team_slot_number_snapshot is null
             or result_row.team_slot_number_snapshot not between 1 and 12
             or result_row.team_name_snapshot is null
             or btrim(result_row.team_name_snapshot) = ''
+            or result_row.placement is null
             or result_row.placement not between 1 and 12
+            or result_row.kills is null
             or result_row.kills < 0
             or result_row.placement_points is distinct from case result_row.placement
                 when 1 then 12
@@ -111,7 +118,9 @@ begin
             or result_row.kill_points is distinct from result_row.kills
             or result_row.total_points is distinct from
                 result_row.placement_points + result_row.kill_points
+            or result_row.source is null
             or result_row.source not in ('manual', 'ocr_assisted')
+            or result_row.review_status is null
             or result_row.review_status <> 'confirmed'
             or jsonb_typeof(result_row.players) is distinct from 'array'
         )
@@ -224,6 +233,28 @@ begin
         where player_count <> distinct_snapshot_ids
             or player_count <> distinct_positions
             or referenced_player_count <> distinct_referenced_players
+    ) then
+        return query select 'validation_failure'::text, v_current_revision;
+        return;
+    end if;
+
+    if exists (
+        select player_row.id
+        from jsonb_to_recordset(p_match_results) as result_row(
+            id uuid, match_id uuid, team_slot_id uuid,
+            team_slot_number_snapshot integer, team_name_snapshot text,
+            placement integer, kills integer, placement_points integer,
+            kill_points integer, total_points integer, source text,
+            review_status text, players jsonb
+        )
+        cross join lateral jsonb_to_recordset(result_row.players) as player_row(
+            id uuid,
+            player_id uuid,
+            roster_position_snapshot integer,
+            player_name_snapshot text
+        )
+        group by player_row.id
+        having count(*) > 1
     ) then
         return query select 'validation_failure'::text, v_current_revision;
         return;
