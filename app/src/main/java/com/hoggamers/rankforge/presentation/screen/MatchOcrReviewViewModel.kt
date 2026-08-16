@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
@@ -39,6 +40,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+
+private const val TEMP_LOWER_ROW_TRACE_TAG = "RF_TEMP_LOWER_ROW_TRACE"
 
 @HiltViewModel
 class MatchOcrReviewViewModel @Inject constructor(
@@ -166,7 +169,26 @@ class MatchOcrReviewViewModel @Inject constructor(
                     ),
                 )
             }
+            roleResults.forEach { roleResult ->
+                val processed = roleResult.result as? MatchResultOcrPreviewProcessingResult.Processed
+                Log.i(
+                    TEMP_LOWER_ROW_TRACE_TAG,
+                    "VIEWMODEL_ROLE role=${roleResult.role.name} processedRows=" +
+                        (processed?.extraction?.rows?.map { it.position } ?: "none"),
+                )
+            }
             val preview = mapPreviewResults(roleResults)
+            if (preview is MatchResultOcrPreviewUiState.Ready) {
+                Log.i(
+                    TEMP_LOWER_ROW_TRACE_TAG,
+                    "VIEWMODEL_READY rows=${preview.rows.map { it.position }}",
+                )
+            } else {
+                Log.i(
+                    TEMP_LOWER_ROW_TRACE_TAG,
+                    "VIEWMODEL_PREVIEW state=${preview.javaClass.simpleName}",
+                )
+            }
             val teamContext = loadTeamContext(tournamentId)
             val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
                 preview = preview,

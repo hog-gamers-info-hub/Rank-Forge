@@ -1,12 +1,16 @@
 package com.hoggamers.rankforge.data.ocr.matchresult
 
+import android.util.Log
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheFingerprint
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import kotlinx.coroutines.CancellationException
+
+private const val TEMP_LOWER_ROW_TRACE_TAG = "RF_TEMP_LOWER_ROW_TRACE"
 
 /**
  * Increment this value whenever preprocessing, ML Kit recognition, canonical layout interpretation,
@@ -37,11 +41,23 @@ class CachingMatchResultOcrPreviewRunner(
                 cached.isValidFor(fingerprintBefore) &&
                 readFingerprint(identity) == fingerprintBefore
             ) {
+                Log.i(
+                    TEMP_LOWER_ROW_TRACE_TAG,
+                    "CACHE_HIT role=${identity.role.name} ${cached.extraction.toTempRowTraceSummary()}",
+                )
                 return cached
             }
         }
 
+        Log.i(TEMP_LOWER_ROW_TRACE_TAG, "CACHE_MISS role=${identity.role.name}")
         val fresh = delegate.process(identity)
+        if (fresh is MatchResultOcrPreviewProcessingResult.Processed) {
+            Log.i(
+                TEMP_LOWER_ROW_TRACE_TAG,
+                "DELEGATED_PROCESSED role=${identity.role.name} " +
+                    fresh.extraction.toTempRowTraceSummary(),
+            )
+        }
         if (fresh is MatchResultOcrPreviewProcessingResult.Processed && fingerprintBefore != null) {
             if (readFingerprint(identity) == fingerprintBefore) {
                 try {
@@ -67,6 +83,15 @@ class CachingMatchResultOcrPreviewRunner(
         null
     }
 }
+
+private fun MatchResultOcrExtractionResult.toTempRowTraceSummary(): String =
+    "rows=${rows.map { it.position }} " +
+        "ignored=${ignoredLowerRows.joinToString(",", prefix = "[", postfix = "]") {
+            "${it.visualRow.name}:${it.detectedPlacement ?: "null"}:${it.reason.name}"
+        }} " +
+        "manual=${manualReviewRows.joinToString(",", prefix = "[", postfix = "]") {
+            "${it.visualRow.name}:${it.detectedPlacementText}:${it.reason.name}"
+        }}"
 
 private fun MatchResultOcrPreviewProcessingResult.Processed.isValidFor(
     fingerprint: MatchResultOcrCacheFingerprint,
