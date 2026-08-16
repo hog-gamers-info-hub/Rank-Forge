@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,8 +43,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -63,6 +68,8 @@ const val MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG = "match_review_placements_act
 const val MATCH_REVIEW_KILLS_ACTION_TEST_TAG = "match_review_kills_action"
 const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
 const val MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG = "match_review_ocr_review_action"
+const val MATCH_REVIEW_OCR_READY_TEST_TAG = "match_review_ocr_ready"
+const val MATCH_REVIEW_OCR_STALE_TEST_TAG = "match_review_ocr_stale"
 const val MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG = "match_review_finalize_action"
 const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize_confirm_action"
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
@@ -136,12 +143,27 @@ fun MatchReviewRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
+    val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
     LaunchedEffect(tournamentId, matchId, uiState.isAvailable, uiState.status) {
         if (uiState.isAvailable) {
             if (uiState.status == MatchStatus.FINALIZED) {
                 resolvedOcrReviewViewModel.loadHistoricalEvidence(tournamentId, matchId)
+            } else {
+                resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
             }
         }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, tournamentId, matchId, uiState.isAvailable, uiState.status) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && uiState.isAvailable &&
+                uiState.status != MatchStatus.FINALIZED
+            ) {
+                resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val legacyPhotoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -273,6 +295,8 @@ fun MatchReviewRoute(
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
         matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
         showLegacyManualReviewContent = showLegacyManualReviewContent,
+        showInlineOcrDetails = ocrCacheAvailability == MatchOcrCacheAvailability.READY,
+        ocrCacheAvailability = ocrCacheAvailability,
         ocrUiState = ocrUiState,
         onOcrPlacementChanged = resolvedOcrReviewViewModel::onPlacementChanged,
         onOcrKillsChanged = resolvedOcrReviewViewModel::onKillsChanged,
@@ -307,6 +331,7 @@ fun MatchReviewScreen(
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     showLegacyManualReviewContent: Boolean = false,
     showInlineOcrDetails: Boolean = false,
+    ocrCacheAvailability: MatchOcrCacheAvailability = MatchOcrCacheAvailability.UNKNOWN,
     ocrUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
@@ -343,6 +368,7 @@ fun MatchReviewScreen(
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
             showLegacyManualReviewContent = showLegacyManualReviewContent,
             showInlineOcrDetails = showInlineOcrDetails,
+            ocrCacheAvailability = ocrCacheAvailability,
             ocrUiState = ocrUiState,
             onOcrPlacementChanged = onOcrPlacementChanged,
             onOcrKillsChanged = onOcrKillsChanged,
@@ -378,6 +404,7 @@ private fun MatchReviewContent(
     matchLobbyScreenshotIntake: @Composable () -> Unit,
     showLegacyManualReviewContent: Boolean,
     showInlineOcrDetails: Boolean,
+    ocrCacheAvailability: MatchOcrCacheAvailability,
     ocrUiState: MatchOcrReviewUiState,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit,
@@ -518,6 +545,20 @@ private fun MatchReviewContent(
                 onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
             )
+        }
+        when (ocrCacheAvailability) {
+            MatchOcrCacheAvailability.READY -> Text(
+                text = "OCR data ready",
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_READY_TEST_TAG),
+            )
+            MatchOcrCacheAvailability.STALE_OR_INCOMPLETE -> Text(
+                text = "OCR data needs refresh",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_STALE_TEST_TAG),
+            )
+            MatchOcrCacheAvailability.UNKNOWN,
+            MatchOcrCacheAvailability.NOT_AVAILABLE,
+            -> Unit
         }
         if (uiState.isEditable) {
             Button(

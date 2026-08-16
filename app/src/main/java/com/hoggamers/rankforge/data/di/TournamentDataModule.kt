@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
+import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheDao
+import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheDao
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetDao
@@ -31,8 +33,12 @@ import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
+import com.hoggamers.rankforge.data.local.RoomMatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyOcrCacheCodec
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
+import com.hoggamers.rankforge.data.ocr.RoomMatchOcrCacheReader
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -113,6 +119,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindTournamentLobbyTemplateAssetRepository(
         repository: RoomTournamentLobbyTemplateAssetRepository,
     ): TournamentLobbyTemplateAssetRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchOcrCacheReader(
+        reader: RoomMatchOcrCacheReader,
+    ): MatchOcrCacheReader
 }
 
 @Module
@@ -139,6 +151,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_10_11,
         RankForgeDatabase.MIGRATION_11_12,
         RankForgeDatabase.MIGRATION_12_13,
+        RankForgeDatabase.MIGRATION_13_14,
     ).build()
 
     @Provides
@@ -172,6 +185,19 @@ object TournamentDataProvidersModule {
         codec: MatchResultOcrCacheCodec,
         clock: Clock,
     ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock)
+
+    @Provides
+    @Singleton
+    fun provideMatchLobbyOcrCacheDao(database: RankForgeDatabase): MatchLobbyOcrCacheDao =
+        database.matchLobbyOcrCacheDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchLobbyOcrCacheRepository(
+        dao: MatchLobbyOcrCacheDao,
+        codec: MatchLobbyOcrCacheCodec,
+        clock: Clock,
+    ): MatchLobbyOcrCacheRepository = RoomMatchLobbyOcrCacheRepository(dao, codec, clock)
 
     @Provides
     @Singleton

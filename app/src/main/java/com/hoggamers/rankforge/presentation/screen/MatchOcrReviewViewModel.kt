@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.NoOpMatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
+import com.hoggamers.rankforge.data.ocr.NoOpMatchOcrCacheReader
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
@@ -57,9 +60,12 @@ class MatchOcrReviewViewModel @Inject constructor(
     private val tournamentRepository: TournamentRepository = NO_OP_MATCHING_REPOSITORY,
     private val lobbyScreenshotAssetRepository: MatchLobbyScreenshotAssetRepository =
         NoOpMatchLobbyScreenshotAssetRepository(),
+    private val matchOcrCacheReader: MatchOcrCacheReader = NoOpMatchOcrCacheReader,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
     val uiState: StateFlow<MatchOcrReviewUiState> = _uiState.asStateFlow()
+    private val _cacheAvailability = MutableStateFlow(MatchOcrCacheAvailability.UNKNOWN)
+    val cacheAvailability: StateFlow<MatchOcrCacheAvailability> = _cacheAvailability.asStateFlow()
 
     private var loadedMatchKey: String? = null
     private var previewJob: Job? = null
@@ -100,6 +106,21 @@ class MatchOcrReviewViewModel @Inject constructor(
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
+    ) {
+        _uiState.value = initialUiState
+    }
+
+    internal constructor(
+        finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
+        matchOcrCacheReader: MatchOcrCacheReader,
+        initialUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
+    ) : this(
+        finalizeOcrCorrectionMatch = finalizeOcrCorrectionMatch,
+        matchResultOcrPreviewRunner = NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
+        matchLobbyPlayersOcrRunner = NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        observeTournamentSlots = NO_OP_OBSERVE_TOURNAMENT_SLOTS,
+        observeRoster = NO_OP_OBSERVE_ROSTER,
+        matchOcrCacheReader = matchOcrCacheReader,
     ) {
         _uiState.value = initialUiState
     }
@@ -151,6 +172,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 matchResultOcrPreview = MatchResultOcrPreviewUiState.Processing,
             )
         }
+        _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
         previewJob?.cancel()
         lobbyPlayersJob?.cancel()
         previewJob = viewModelScope.launch {
@@ -226,10 +248,94 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    fun loadCached(tournamentId: String, matchId: String) {
+        viewModelScope.launch {
+            val cached = try {
+                matchOcrCacheReader.read(tournamentId, matchId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            val availability = cached?.availability ?: MatchOcrCacheAvailability.NOT_AVAILABLE
+            _cacheAvailability.value = availability
+            if (cached == null || availability != MatchOcrCacheAvailability.READY) {
+                _uiState.update { state ->
+                    when (state) {
+                        is MatchOcrReviewUiState.Ready -> {
+                            if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                                MatchOcrReviewUiState.Empty(
+                                    tournamentId = tournamentId,
+                                    matchId = matchId,
+                                    teamNamesBySlot = state.teamNamesBySlot,
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                        is MatchOcrReviewUiState.Empty -> {
+                            if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                                state
+                            } else {
+                                state
+                            }
+                        }
+                        is MatchOcrReviewUiState.Error,
+                        MatchOcrReviewUiState.Loading,
+                        -> state
+                    }
+                }
+                return@launch
+            }
+
+            val preview = mapPreviewResults(cached.resultRoleResults)
+            if (preview !is MatchResultOcrPreviewUiState.Ready) {
+                _cacheAvailability.value = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE
+                return@launch
+            }
+            val teamContext = loadTeamContext(tournamentId)
+            val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
+                preview = preview,
+                candidateTeams = teamContext.candidateTeams,
+            )
+            val lobbyPlayers = cached.lobbyResult.toUiState()
+            _uiState.update { state ->
+                when (state) {
+                    is MatchOcrReviewUiState.Ready -> state
+                    is MatchOcrReviewUiState.Empty -> {
+                        if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                            completeReviewStateFromPreview(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                preview = preview,
+                                reviewRows = matchedRows,
+                                teamNamesBySlot = teamContext.teamNamesBySlot,
+                                lobbyPlayers = lobbyPlayers,
+                            ) ?: state
+                        } else {
+                            state
+                        }
+                    }
+                    is MatchOcrReviewUiState.Error,
+                    -> state
+                    MatchOcrReviewUiState.Loading -> completeReviewStateFromPreview(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        preview = preview,
+                        reviewRows = matchedRows,
+                        teamNamesBySlot = teamContext.teamNamesBySlot,
+                        lobbyPlayers = lobbyPlayers,
+                    ) ?: state
+                }
+            }
+        }
+    }
+
     fun loadHistoricalEvidence(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId:historical"
         if (loadedMatchKey == matchKey && _uiState.value !is MatchOcrReviewUiState.Loading) return
         loadedMatchKey = matchKey
+        _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
         previewJob?.cancel()
         lobbyPlayersJob?.cancel()
         _uiState.value = MatchOcrReviewUiState.Loading

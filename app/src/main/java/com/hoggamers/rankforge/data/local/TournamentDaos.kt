@@ -527,6 +527,28 @@ interface MatchResultOcrCacheDao {
 }
 
 @Dao
+interface MatchLobbyOcrCacheDao {
+    @Query(
+        """
+        SELECT * FROM match_lobby_ocr_cache
+        WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
+        """,
+    )
+    suspend fun readByMatchAndIndex(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+    ): MatchLobbyOcrCacheEntity?
+
+    @Upsert
+    suspend fun upsert(cache: MatchLobbyOcrCacheEntity)
+
+    @Query(
+        "DELETE FROM match_lobby_ocr_cache WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex",
+    )
+    suspend fun deleteByMatchAndIndex(matchId: String, lobbyScreenshotIndex: Int)
+}
+
+@Dao
 interface MatchLobbyScreenshotAssetDao {
     @Query(
         """

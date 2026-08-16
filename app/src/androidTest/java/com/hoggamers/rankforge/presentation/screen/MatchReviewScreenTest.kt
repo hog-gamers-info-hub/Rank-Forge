@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -167,6 +168,29 @@ class MatchReviewScreenTest {
         assertTrue(lobbyScreenshotsY < lobbyDetailsY)
         assertTrue(lobbyDetailsY < resultScreenshotsY)
         assertTrue(resultScreenshotsY < resultDetailsY)
+    }
+
+    @Test
+    fun cachedOcrAvailabilityIsShownWithoutChangingInlineReviewStructure() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrCacheAvailability = MatchOcrCacheAvailability.READY,
+                    ocrUiState = inlineOcrState(),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_READY_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
     }
 
     @Test
