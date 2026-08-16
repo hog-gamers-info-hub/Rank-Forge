@@ -505,7 +505,9 @@ private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPrevie
         position = rowIndex + 1,
         role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
         sourceLabel = "",
-        placementText = detectedPlacementDisplayValue,
+        placementText = detectedPlacementDisplayValue
+            .takeUnless { it == "Unavailable" }
+            ?: expectedPlacementLabel,
         slots = (1..4).map { slot ->
             MatchResultOcrPreviewSlotUiState(
                 slot = slot,
@@ -692,11 +694,19 @@ private fun MatchOcrReviewRow(
             .testTag(MatchOcrReviewTestTags.row(row.rowIndex)),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        MatchOcrReviewCompactRow(
-            previewRow = previewRow ?: row.toCompactPreviewRow(),
-            reviewRow = row,
-            teamNamesBySlot = teamNamesBySlot,
-        )
+        when {
+            previewRow != null -> MatchOcrReviewCompactRow(
+                previewRow = previewRow,
+                reviewRow = row,
+                teamNamesBySlot = teamNamesBySlot,
+            )
+            row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(row)
+            else -> MatchOcrReviewCompactRow(
+                previewRow = row.toCompactPreviewRow(),
+                reviewRow = row,
+                teamNamesBySlot = teamNamesBySlot,
+            )
+        }
         if (correctionDraft != null) {
             MatchOcrReviewCorrectionFields(
                 correctionDraft = correctionDraft,
@@ -708,6 +718,95 @@ private fun MatchOcrReviewRow(
             )
         }
     }
+}
+
+private fun MatchOcrReviewRowUiState.isSyntheticManualPlaceholder(): Boolean =
+    originalParsedPlacementValue == null &&
+        originalParsedKillValue == null &&
+        originalSuggestedTeamSlot == null &&
+        detectedPlacementDisplayValue == "Unavailable" &&
+        detectedKillDisplayValue == "Unavailable" &&
+        detectedPlayerNameEvidenceLabel == "Unavailable" &&
+        blockerLabels.contains("OCR evidence unavailable; manual correction required")
+
+@Composable
+private fun MatchOcrReviewMissingPreviewRow(
+    row: MatchOcrReviewRowUiState,
+) {
+    val position = row.expectedPlacementLabel
+    val notMatched = stringResource(R.string.match_ocr_review_compact_not_matched)
+    val notDetected = stringResource(R.string.match_ocr_review_compact_not_detected)
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_compact_position, position),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1)),
+        )
+        Text(
+            text = stringResource(
+                R.string.match_ocr_review_compact_team,
+                notMatched,
+                notMatched,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(row.rowIndex + 1)),
+        )
+        MatchOcrReviewMissingPreviewPlayerRow(
+            position = row.rowIndex + 1,
+            leftSlot = 1,
+            rightSlot = 3,
+            playerLabel = notDetected,
+        )
+        MatchOcrReviewMissingPreviewPlayerRow(
+            position = row.rowIndex + 1,
+            leftSlot = 2,
+            rightSlot = 4,
+            playerLabel = notDetected,
+        )
+    }
+}
+
+@Composable
+private fun MatchOcrReviewMissingPreviewPlayerRow(
+    position: Int,
+    leftSlot: Int,
+    rightSlot: Int,
+    playerLabel: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.compactPlayerRow(position, leftSlot)),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        MatchOcrReviewMissingPreviewPlayerCell(position, leftSlot, playerLabel, Modifier.weight(1f))
+        MatchOcrReviewMissingPreviewPlayerCell(position, rightSlot, playerLabel, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun MatchOcrReviewMissingPreviewPlayerCell(
+    position: Int,
+    slot: Int,
+    playerLabel: String,
+    modifier: Modifier,
+) {
+    Text(
+        text = stringResource(R.string.match_ocr_review_lobby_player, slot, playerLabel),
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(position, slot)),
+    )
 }
 
 @Composable
