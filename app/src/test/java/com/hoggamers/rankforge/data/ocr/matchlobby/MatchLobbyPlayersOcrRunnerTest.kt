@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.data.ocr.matchlobby
 
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheFingerprint
+import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
@@ -45,6 +47,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         val extractor = PositionTrackingExtractor()
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(assets),
+            cacheRepository = FakeCacheRepository(),
             panelPreparer = preparer,
             extractor = extractor,
             parser = PositionParser(extractor),
@@ -65,6 +68,7 @@ class MatchLobbyPlayersOcrRunnerTest {
     fun cancellationFromOneScreenshotPropagates() {
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(mapOf(1 to asset(1))),
+            cacheRepository = FakeCacheRepository(),
             panelPreparer = object : RosterOcrPanelPreparer {
                 override suspend fun prepare(source: RosterOcrScreenshotSource): RosterOcrPanelPreparationResult =
                     throw CancellationException("cancelled")
@@ -86,6 +90,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         val extractor = PositionTrackingExtractor()
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(assets),
+            cacheRepository = FakeCacheRepository(),
             panelPreparer = preparer,
             extractor = extractor,
             parser = PositionParser(extractor),
@@ -100,9 +105,113 @@ class MatchLobbyPlayersOcrRunnerTest {
         assertEquals(2, preparer.releasedPanels)
     }
 
+    @Test
+    fun firstRunWritesOneCacheEntryPerProcessedScreenshotAndSecondRunHitsAllThree() = runTest {
+        val assets = (1..3).associateWith(::asset)
+        val assetRepository = FakeAssetRepository(assets)
+        val cache = FakeCacheRepository()
+        val extractor = PositionTrackingExtractor()
+        val runner = runner(assetRepository, cache, extractor)
+
+        runner.process("tournament-1", "match-1")
+        runner.process("tournament-1", "match-1")
+
+        assertEquals(3, cache.saveCount)
+        assertEquals(3, extractor.extractCount)
+        assertEquals((1..3).toSet(), cache.entries.keys.map { it.screenshotPosition.index }.toSet())
+    }
+
+    @Test
+    fun changedShaDimensionCropOrPipelineCausesOnlyThatScreenshotToMiss() = runTest {
+        listOf(
+            asset(2, sha = "changed"),
+            asset(2, width = 200),
+            asset(2, crop = OcrNormalizedCropRect(0.0, 0.0, 0.8, 1.0)),
+        ).forEach { changedAsset ->
+            val assetRepository = FakeAssetRepository((1..3).associateWith(::asset))
+            val cache = FakeCacheRepository()
+            val extractor = PositionTrackingExtractor()
+            val runner = runner(assetRepository, cache, extractor)
+
+            runner.process("tournament-1", "match-1")
+            assetRepository.assets[2] = changedAsset
+            runner.process("tournament-1", "match-1")
+
+            assertEquals(4, extractor.extractCount)
+            assertEquals(4, cache.saveCount)
+        }
+    }
+
+    @Test
+    fun pipelineVersionMismatchIsACacheMiss() = runTest {
+        val assetRepository = FakeAssetRepository(mapOf(1 to asset(1)))
+        val cache = FakeCacheRepository()
+        val fingerprint = assetRepository.fingerprint(RosterScreenshotPosition.ONE)
+            .copy(ocrPipelineVersion = 0)
+        cache.entries[fingerprint] = slotsFor(RosterScreenshotPosition.ONE)
+        val extractor = PositionTrackingExtractor()
+
+        runner(assetRepository, cache, extractor).process("tournament-1", "match-1")
+
+        assertEquals(1, extractor.extractCount)
+        assertEquals(1, cache.saveCount)
+    }
+
+    @Test
+    fun cacheReadFailureFallsBackToFreshOcr() = runTest {
+        val cache = FakeCacheRepository().apply { readFailure = IllegalStateException("read") }
+        val extractor = PositionTrackingExtractor()
+
+        runner(FakeAssetRepository(mapOf(1 to asset(1))), cache, extractor)
+            .process("tournament-1", "match-1")
+
+        assertEquals(1, extractor.extractCount)
+    }
+
+    @Test
+    fun cacheWriteFailureStillReturnsFreshOcrResult() = runTest {
+        val cache = FakeCacheRepository().apply { saveFailure = IllegalStateException("write") }
+        val extractor = PositionTrackingExtractor()
+
+        val result = runner(FakeAssetRepository(mapOf(1 to asset(1))), cache, extractor)
+            .process("tournament-1", "match-1")
+
+        assertEquals("S1P1", result.slots.first().players.first().playerName)
+        assertEquals(1, extractor.extractCount)
+    }
+
+    @Test
+    fun changingOnlyScreenshotTwoLeavesOneAndThreeAsCacheHits() = runTest {
+        val assetRepository = FakeAssetRepository((1..3).associateWith(::asset))
+        val cache = FakeCacheRepository()
+        val extractor = PositionTrackingExtractor()
+        val runner = runner(assetRepository, cache, extractor)
+
+        runner.process("tournament-1", "match-1")
+        assetRepository.assets[2] = asset(2, sha = "new-sha-2")
+        runner.process("tournament-1", "match-1")
+
+        assertEquals(4, extractor.extractCount)
+        assertEquals(4, cache.saveCount)
+    }
+
+    private fun runner(
+        assets: FakeAssetRepository,
+        cache: FakeCacheRepository,
+        extractor: PositionTrackingExtractor,
+    ) = AndroidMatchLobbyPlayersOcrRunner(
+        assetRepository = assets,
+        cacheRepository = cache,
+        panelPreparer = FakePanelPreparer(),
+        extractor = extractor,
+        parser = PositionParser(extractor),
+        associator = PositionAssociator(),
+    )
+
     private class FakeAssetRepository(
-        private val assets: Map<Int, MatchLobbyScreenshotAssetEntity>,
+        initialAssets: Map<Int, MatchLobbyScreenshotAssetEntity>,
     ) : MatchLobbyScreenshotAssetRepository {
+        val assets = initialAssets.toMutableMap()
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override fun observeByIdentity(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(null)
         override suspend fun getByIdentity(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity) = assets[identity.lobbyScreenshotIndex]
@@ -115,6 +224,16 @@ class MatchLobbyPlayersOcrRunnerTest {
         override suspend fun deleteByMatchId(matchId: String) = Unit
         override suspend fun persistConfirmedCrop(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
         override suspend fun clearConfirmedCrop(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity, updatedAt: Long): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.MissingAsset
+
+        fun fingerprint(position: RosterScreenshotPosition): MatchLobbyOcrCacheFingerprint =
+            assets.getValue(position.index).toMatchLobbyOcrCacheFingerprint(
+                com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity(
+                    "tournament-1",
+                    "match-1",
+                    position.index,
+                ),
+                position,
+            )!!
     }
 
     private class FakePanelPreparer : RosterOcrPanelPreparer {
@@ -136,7 +255,9 @@ class MatchLobbyPlayersOcrRunnerTest {
 
     private class PositionTrackingExtractor : com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor {
         var position: RosterScreenshotPosition? = null
+        var extractCount = 0
         override suspend fun extract(input: RosterRawOcrExtractionInput): List<RosterRawOcrExtractionResult> {
+            extractCount++
             position = input.croppedPanelInput.screenshotPosition
             return emptyList()
         }
@@ -202,7 +323,12 @@ class MatchLobbyPlayersOcrRunnerTest {
         override val height = 100
     }
 
-    private fun asset(index: Int) = MatchLobbyScreenshotAssetEntity(
+    private fun asset(
+        index: Int,
+        sha: String = "sha-$index",
+        width: Int = 100,
+        crop: OcrNormalizedCropRect = OcrNormalizedCropRect(0.0, 0.0, 1.0, 1.0),
+    ) = MatchLobbyScreenshotAssetEntity(
         tournamentId = "tournament-1",
         matchId = "match-1",
         lobbyScreenshotIndex = index,
@@ -210,24 +336,54 @@ class MatchLobbyPlayersOcrRunnerTest {
         localRelativePath = "screenshots/tournament-1/match-1/$index.jpg",
         fileExtension = "jpg",
         mimeType = "image/jpeg",
-        originalWidth = 100,
+        originalWidth = width,
         originalHeight = 100,
         byteSize = 10,
-        sha256 = "sha-$index",
+        sha256 = sha,
         localStatus = "AVAILABLE",
         uploadStatus = "NOT_UPLOADED",
         uploadFailureCode = null,
         storageBucket = null,
         storageObjectPath = null,
         cropProfileId = OcrCropValidationProfiles.Lobby.id,
-        cropLeft = 0.0,
-        cropTop = 0.0,
-        cropRight = 1.0,
-        cropBottom = 1.0,
+        cropLeft = crop.left,
+        cropTop = crop.top,
+        cropRight = crop.right,
+        cropBottom = crop.bottom,
         createdAt = 1,
         updatedAt = 1,
         preservedAt = 1,
         uploadedAt = null,
         revision = 1,
     )
+
+    private fun slotsFor(position: RosterScreenshotPosition) = position.tournamentSlotRange.map { slot ->
+        MatchLobbyPlayersOcrSlot(
+            slotNumber = slot,
+            players = (1..4).map { player -> MatchLobbyPlayersOcrPlayer(player, "S${position.index}P$player") },
+        )
+    }
+
+    private class FakeCacheRepository : MatchLobbyOcrCacheRepository {
+        val entries = mutableMapOf<MatchLobbyOcrCacheFingerprint, List<MatchLobbyPlayersOcrSlot>>()
+        var saveCount = 0
+        var readFailure: Throwable? = null
+        var saveFailure: Throwable? = null
+
+        override suspend fun read(fingerprint: MatchLobbyOcrCacheFingerprint): List<MatchLobbyPlayersOcrSlot>? {
+            readFailure?.let { throw it }
+            return entries[fingerprint]
+        }
+
+        override suspend fun save(
+            fingerprint: MatchLobbyOcrCacheFingerprint,
+            slots: List<MatchLobbyPlayersOcrSlot>,
+        ) {
+            saveFailure?.let { throw it }
+            saveCount++
+            entries[fingerprint] = slots
+        }
+
+        override suspend fun deleteByMatchAndIndex(matchId: String, lobbyScreenshotIndex: Int) = Unit
+    }
 }
