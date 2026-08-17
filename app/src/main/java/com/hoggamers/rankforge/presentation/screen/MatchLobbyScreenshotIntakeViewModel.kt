@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
+import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -38,6 +39,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val clock: Clock,
     private val saveLobbyTemplate: SaveLobbyTemplateUseCase,
+    private val unsaveLobbyTemplate: UnsaveLobbyTemplateUseCase,
+    private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
@@ -71,7 +74,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             combine(
                 observeMatches(tournamentId),
                 assetRepository.observeByMatchId(matchId),
-            ) { matches, assets ->
+                templateRepository.observeByTournamentId(tournamentId),
+            ) { matches, assets, templates ->
                 val match = matches.firstOrNull { it.id == matchId && it.tournamentId == tournamentId }
                 if (match == null) {
                     MatchLobbyScreenshotIntakeUiState(
@@ -80,6 +84,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         intakeError = MatchLobbyScreenshotIntakeError.MATCH_NOT_FOUND,
+                        isLobbySavedForNextMatches = isCompleteLobbyTemplate(
+                            tournamentId,
+                            templates,
+                            localImagePreserver,
+                        ),
                     )
                 } else {
                     MatchLobbyScreenshotIntakeUiState(
@@ -96,6 +105,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                             }?.toUiState(emptySlot.index) ?: emptySlot
                         },
                         pendingCropNavigationSlotIndex = _uiState.value.pendingCropNavigationSlotIndex,
+                        isLobbySavedForNextMatches = isCompleteLobbyTemplate(
+                            tournamentId,
+                            templates,
+                            localImagePreserver,
+                        ),
                     )
                 }
             }.collect { state ->
@@ -184,7 +198,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         if (!current.canSaveLobbyForNextMatches) return
         _uiState.update {
             it.copy(
-                isSavingLobbyTemplate = true,
+                isLobbyTemplateMutationInProgress = true,
                 lobbyTemplateSaveStatus = null,
             )
         }
@@ -198,12 +212,42 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             }
             _uiState.update {
                 it.copy(
-                    isSavingLobbyTemplate = false,
+                    isLobbyTemplateMutationInProgress = false,
                     lobbyTemplateSaveStatus = when (result) {
                         SaveLobbyTemplateResult.Saved -> MatchLobbyTemplateSaveStatus.SAVED
                         SaveLobbyTemplateResult.NotReady,
                         SaveLobbyTemplateResult.Failed,
                         -> MatchLobbyTemplateSaveStatus.FAILED
+                    },
+                )
+            }
+        }
+    }
+
+    fun unsaveLobbyForNextMatches() {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        if (!current.canUnsaveLobbyForNextMatches) return
+        _uiState.update {
+            it.copy(
+                isLobbyTemplateMutationInProgress = true,
+                lobbyTemplateSaveStatus = null,
+            )
+        }
+        viewModelScope.launch {
+            val result = try {
+                unsaveLobbyTemplate(tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                UnsaveLobbyTemplateResult.Failed
+            }
+            _uiState.update {
+                it.copy(
+                    isLobbyTemplateMutationInProgress = false,
+                    lobbyTemplateSaveStatus = when (result) {
+                        UnsaveLobbyTemplateResult.Unsaved -> MatchLobbyTemplateSaveStatus.UNSAVED
+                        UnsaveLobbyTemplateResult.Failed -> MatchLobbyTemplateSaveStatus.FAILED
                     },
                 )
             }
@@ -504,7 +548,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 if (transient?.isBusy == true) transient else restored
             },
             pendingCropNavigationSlotIndex = current.pendingCropNavigationSlotIndex,
-            isSavingLobbyTemplate = current.isSavingLobbyTemplate,
+            isLobbyTemplateMutationInProgress = current.isLobbyTemplateMutationInProgress,
             lobbyTemplateSaveStatus = current.lobbyTemplateSaveStatus,
         )
     }

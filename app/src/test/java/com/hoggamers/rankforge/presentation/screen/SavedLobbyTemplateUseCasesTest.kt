@@ -196,6 +196,108 @@ class SavedLobbyTemplateUseCasesTest {
         assertEquals(3, allTemplateOriginals(root).size)
     }
 
+    @Test
+    fun unsaveDeletesActiveTemplateAndCleansItsGenerationFiles() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-unsave").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val activeFiles = allTemplateOriginals(root)
+
+        assertEquals(
+            UnsaveLobbyTemplateResult.Unsaved,
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+        )
+        assertTrue(templateRepository.getByTournamentId(tournamentId).isEmpty())
+        activeFiles.forEach { file -> assertFalse(file.isFile) }
+    }
+
+    @Test
+    fun unsaveLeavesCurrentAndPreviouslyInheritedMatchAssetsUntouched() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-preserve").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val apply = ApplyLobbyTemplateToMatchUseCase(
+            templateRepository,
+            repository,
+            preserver,
+            object : ScreenshotOwnerProvider {
+                override suspend fun currentOwnerUserId(): String = "owner-2"
+            },
+            Clock.systemUTC(),
+        )
+        assertEquals(ApplyLobbyTemplateResult.Applied, apply(tournamentId, targetMatchId))
+        val before = repository.snapshot()
+
+        assertEquals(
+            UnsaveLobbyTemplateResult.Unsaved,
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+        )
+        assertEquals(before, repository.snapshot())
+    }
+
+    @Test
+    fun unsaveDeletionFailurePreservesRowsAndFiles() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-unsave-room-failure").toFile()
+        val repository = FakeLobbyRepository()
+        val preserver = preserver(root)
+        seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
+        val previous = templateRepository.getByTournamentId(tournamentId)
+        val previousFiles = allTemplateOriginals(root)
+        templateRepository.throwOnDelete = true
+
+        assertEquals(
+            UnsaveLobbyTemplateResult.Failed,
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+        )
+        assertEquals(previous, templateRepository.getByTournamentId(tournamentId))
+        previousFiles.forEach { file -> assertTrue(file.isFile) }
+    }
+
+    @Test
+    fun cleanupFailureAfterUnsaveLeavesRepositoryOff() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-unsave-cleanup-failure").toFile()
+        val repository = FakeLobbyRepository()
+        val normalPreserver = preserver(root)
+        seedSourceAssets(normalPreserver, repository, listOf("A", "B", "C"))
+        val templateRepository = FakeTemplateRepository()
+        assertEquals(
+            SaveLobbyTemplateResult.Saved,
+            SaveLobbyTemplateUseCase(repository, templateRepository, normalPreserver, Clock.systemUTC())(
+                tournamentId,
+                sourceMatchId,
+            ),
+        )
+        val failingPreserver = preserver(root, CleanupFailingTemplateFileOperations())
+
+        assertEquals(
+            UnsaveLobbyTemplateResult.Unsaved,
+            UnsaveLobbyTemplateUseCase(templateRepository, failingPreserver)(tournamentId),
+        )
+        assertTrue(templateRepository.getByTournamentId(tournamentId).isEmpty())
+    }
+
+    @Test
+    fun unsaveWithoutActiveTemplateIsIdempotentlySuccessful() = runBlocking {
+        val templateRepository = FakeTemplateRepository()
+        val preserver = preserver(Files.createTempDirectory("saved-lobby-template-unsave-empty").toFile())
+
+        assertEquals(
+            UnsaveLobbyTemplateResult.Unsaved,
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+        )
+    }
+
     private suspend fun seedSourceAssets(
         preserver: LocalImagePreserver,
         repository: FakeLobbyRepository,
@@ -280,11 +382,13 @@ class SavedLobbyTemplateUseCasesTest {
         override suspend fun deleteByMatchId(matchId: String) = Unit
         override suspend fun persistConfirmedCrop(identity: MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+        fun snapshot() = state.value
     }
 
     private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
         private val state = MutableStateFlow<List<TournamentLobbyTemplateAssetEntity>>(emptyList())
         var throwOnReplace: Boolean = false
+        var throwOnDelete: Boolean = false
         var cancelOnReplace: Boolean = false
         var beforeReplace: (() -> Unit)? = null
         override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> = state
@@ -294,6 +398,11 @@ class SavedLobbyTemplateUseCasesTest {
             if (cancelOnReplace) throw CancellationException("replacement cancelled")
             if (throwOnReplace) error("replacement failed")
             state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+        }
+
+        override suspend fun deleteByTournamentId(tournamentId: String) {
+            if (throwOnDelete) error("deletion failed")
+            state.value = state.value.filterNot { it.tournamentId == tournamentId }
         }
     }
 
@@ -332,5 +441,10 @@ class SavedLobbyTemplateUseCasesTest {
             if (moves++ >= failAfterMoves) return false
             return super.atomicMove(source, target)
         }
+    }
+
+    private class CleanupFailingTemplateFileOperations : TestTemplateFileOperations() {
+        override fun delete(file: java.io.File): Boolean =
+            if (file.path.replace('\\', '/').contains("/lobby-template/")) false else super.delete(file)
     }
 }

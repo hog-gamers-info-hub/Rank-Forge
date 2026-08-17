@@ -28,6 +28,11 @@ sealed interface SaveLobbyTemplateResult {
     data object Failed : SaveLobbyTemplateResult
 }
 
+sealed interface UnsaveLobbyTemplateResult {
+    data object Unsaved : UnsaveLobbyTemplateResult
+    data object Failed : UnsaveLobbyTemplateResult
+}
+
 sealed interface ApplyLobbyTemplateResult {
     data object Applied : ApplyLobbyTemplateResult
     data object Unavailable : ApplyLobbyTemplateResult
@@ -215,6 +220,72 @@ class SaveLobbyTemplateUseCase @Inject constructor(
     )
 }
 
+class UnsaveLobbyTemplateUseCase @Inject constructor(
+    private val templateRepository: TournamentLobbyTemplateAssetRepository,
+    private val localImagePreserver: LocalImagePreserver,
+) {
+    suspend operator fun invoke(tournamentId: String): UnsaveLobbyTemplateResult {
+        val templates = try {
+            templateRepository.getByTournamentId(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return UnsaveLobbyTemplateResult.Failed
+        }
+        val generations = templates.mapNotNull { template ->
+            localImagePreserver.lobbyTemplateGenerationFromRelativePath(
+                tournamentId,
+                template.localRelativePath,
+            )
+        }.distinct()
+        try {
+            templateRepository.deleteByTournamentId(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return UnsaveLobbyTemplateResult.Failed
+        }
+        withContext(NonCancellable) {
+            generations.forEach { generation ->
+                try {
+                    localImagePreserver.cleanupLobbyTemplateGeneration(tournamentId, generation)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Room is authoritative; cleanup failure must not reactivate the template.
+                }
+            }
+        }
+        return UnsaveLobbyTemplateResult.Unsaved
+    }
+}
+
+internal fun isCompleteLobbyTemplate(
+    tournamentId: String,
+    templates: List<TournamentLobbyTemplateAssetEntity>,
+    localImagePreserver: LocalImagePreserver,
+): Boolean {
+    if (templates.map { it.lobbyScreenshotIndex } != listOf(1, 2, 3)) return false
+    if (templates.any { it.tournamentId != tournamentId || it.ownerUserId.isBlank() || it.sha256.isBlank() }) return false
+    if (templates.map { it.sha256 }.toSet().size != 3) return false
+    return templates.all { template ->
+        val file = localImagePreserver.resolveRelativePath(template.localRelativePath)
+        val crop = OcrNormalizedCropRect(
+            template.cropLeft,
+            template.cropTop,
+            template.cropRight,
+            template.cropBottom,
+        )
+        file != null && runCatching { file.isFile && file.canRead() && file.length() > 0L }.getOrDefault(false) &&
+            template.cropProfileId == OcrCropValidationProfiles.Lobby.id &&
+            OcrCropValidator.validate(
+                crop,
+                OcrImageDimensions.from(template.originalWidth, template.originalHeight),
+                OcrCropValidationProfiles.Lobby,
+            ) is OcrCropValidationResult.Valid
+    }
+}
+
 class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
@@ -227,7 +298,9 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
         newMatchId: String,
     ): ApplyLobbyTemplateResult {
         val templates = templateRepository.getByTournamentId(tournamentId)
-        if (!isCompleteTemplate(tournamentId, templates)) return ApplyLobbyTemplateResult.Unavailable
+        if (!isCompleteLobbyTemplate(tournamentId, templates, localImagePreserver)) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
         val copied = mutableListOf<Pair<TournamentLobbyTemplateAssetEntity, File>>()
         templates.forEach { template ->
             val result = localImagePreserver.copyLobbyTemplateToMatch(
@@ -314,28 +387,4 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
         return ApplyLobbyTemplateResult.Applied
     }
 
-    private fun isCompleteTemplate(
-        tournamentId: String,
-        templates: List<TournamentLobbyTemplateAssetEntity>,
-    ): Boolean {
-        if (templates.map { it.lobbyScreenshotIndex } != listOf(1, 2, 3)) return false
-        if (templates.any { it.tournamentId != tournamentId || it.ownerUserId.isBlank() || it.sha256.isBlank() }) return false
-        if (templates.map { it.sha256 }.toSet().size != 3) return false
-        return templates.all { template ->
-            val file = localImagePreserver.resolveRelativePath(template.localRelativePath)
-            val crop = OcrNormalizedCropRect(
-                template.cropLeft,
-                template.cropTop,
-                template.cropRight,
-                template.cropBottom,
-            )
-            file != null && runCatching { file.isFile && file.canRead() && file.length() > 0L }.getOrDefault(false) &&
-                template.cropProfileId == OcrCropValidationProfiles.Lobby.id &&
-                OcrCropValidator.validate(
-                    crop,
-                    OcrImageDimensions.from(template.originalWidth, template.originalHeight),
-                    OcrCropValidationProfiles.Lobby,
-                ) is OcrCropValidationResult.Valid
-        }
-    }
 }

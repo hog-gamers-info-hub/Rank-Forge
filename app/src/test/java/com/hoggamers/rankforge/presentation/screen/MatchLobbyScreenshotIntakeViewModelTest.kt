@@ -8,6 +8,8 @@ import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
+import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity
+import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
@@ -40,6 +42,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var tournamentRepository: InMemoryTournamentRepository
     private lateinit var lobbyRepository: FakeLobbyRepository
+    private lateinit var templateRepository: FakeTemplateRepository
     private val tournamentId = "lobby-intake-tournament"
     private val matchId = "lobby-intake-match"
 
@@ -47,6 +50,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     fun setUp() = kotlinx.coroutines.runBlocking {
         Dispatchers.setMain(dispatcher)
         tournamentRepository = InMemoryTournamentRepository()
+        templateRepository = FakeTemplateRepository()
         tournamentRepository.create(
             Tournament(
                 id = tournamentId,
@@ -283,6 +287,161 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertFalse(viewModel.uiState.value.slot(1)?.isPhotoPickerRequestActive == true)
     }
 
+    @Test
+    fun noTemplateRestoresOffStateAfterLoad() = runTest {
+        val viewModel = viewModel(preserver(Files.createTempDirectory("lobby-toggle-off").toFile()))
+
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isLobbySavedForNextMatches)
+    }
+
+    @Test
+    fun completeTemplateBeforeLoadRestoresOnState() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-restore").toFile())
+        seedActiveTemplate(preserver)
+        val viewModel = viewModel(preserver)
+
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+    }
+
+    @Test
+    fun saveTransitionsToOnOnlyAfterTemplateRepositoryEmits() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-save").toFile())
+        seedReadyCurrentAssets(preserver)
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.canSaveLobbyForNextMatches)
+        viewModel.saveLobbyForNextMatches()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+        assertEquals(MatchLobbyTemplateSaveStatus.SAVED, viewModel.uiState.value.lobbyTemplateSaveStatus)
+    }
+
+    @Test
+    fun unsaveRemainsAllowedWhenCurrentLobbyIsIncomplete() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-unsave-incomplete").toFile())
+        seedActiveTemplate(preserver)
+        lobbyRepository.deleteByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 2))
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+        assertTrue(viewModel.uiState.value.canUnsaveLobbyForNextMatches)
+        viewModel.unsaveLobbyForNextMatches()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isLobbySavedForNextMatches)
+    }
+
+    @Test
+    fun finalizedMatchWithTemplateOnCanUnsaveButFinalizedOffCannotSave() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-finalized").toFile())
+        seedActiveTemplate(preserver)
+        tournamentRepository.finalizeDraftMatch(
+            matchId = matchId,
+            placements = (1..12).map { com.hoggamers.rankforge.domain.tournament.MatchPlacement(it, it) },
+            kills = (1..12).map { com.hoggamers.rankforge.domain.tournament.MatchKill(it, 0) },
+        )
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.canUnsaveLobbyForNextMatches)
+        viewModel.unsaveLobbyForNextMatches()
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isLobbySavedForNextMatches)
+        assertFalse(viewModel.uiState.value.canSaveLobbyForNextMatches)
+    }
+
+    @Test
+    fun unsaveFailureKeepsObservedStateOnAndReportsFailure() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-failure").toFile())
+        seedActiveTemplate(preserver)
+        templateRepository.throwOnDelete = true
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.unsaveLobbyForNextMatches()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+        assertEquals(MatchLobbyTemplateSaveStatus.FAILED, viewModel.uiState.value.lobbyTemplateSaveStatus)
+    }
+
+    @Test
+    fun currentLobbyChangesDoNotChangeSavedTemplateState() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-snapshot").toFile())
+        seedActiveTemplate(preserver)
+        val savedBefore = templateRepository.getByTournamentId(tournamentId)
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.removeScreenshot(1)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+        assertEquals(savedBefore, templateRepository.getByTournamentId(tournamentId))
+    }
+
+    @Test
+    fun repeatedUnsaveIsIgnoredWhileMutationIsInProgress() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-toggle-concurrency").toFile())
+        seedActiveTemplate(preserver)
+        val gate = CompletableDeferred<Unit>()
+        templateRepository.deleteGate = gate
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.unsaveLobbyForNextMatches()
+        advanceUntilIdle()
+        viewModel.unsaveLobbyForNextMatches()
+        assertEquals(1, templateRepository.deleteCalls)
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    private suspend fun seedReadyCurrentAssets(preserver: LocalImagePreserver) {
+        (1..3).forEach { index ->
+            val file = preserver.lobbyPreservedFile(tournamentId, matchId, index, "png")
+            file.parentFile?.mkdirs()
+            file.writeBytes(byteArrayOf(index.toByte(), 1, 2))
+            lobbyRepository.saveOrReplace(
+                asset(index, matchId, preserver.relativePathFor(file)!!, "ready-$index").copy(
+                    cropProfileId = "lobby",
+                    cropLeft = 0.1,
+                    cropTop = 0.1,
+                    cropRight = 0.9,
+                    cropBottom = 0.9,
+                ),
+            )
+        }
+    }
+
+    private suspend fun seedActiveTemplate(preserver: LocalImagePreserver) {
+        seedReadyCurrentAssets(preserver)
+        assertEquals(
+            SaveLobbyTemplateResult.Saved,
+            SaveLobbyTemplateUseCase(
+                assetRepository = lobbyRepository,
+                templateRepository = templateRepository,
+                localImagePreserver = preserver,
+                clock = java.time.Clock.systemUTC(),
+            )(tournamentId, matchId),
+        )
+    }
+
     private fun viewModel(
         preserver: LocalImagePreserver,
         validator: ImageCandidateValidator = ImageCandidateValidator(ImageCandidateMetadataReader { ImageCandidateReadResult.Metadata("image/png", 100, 100) }),
@@ -306,10 +465,15 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         clock = java.time.Clock.systemUTC(),
         saveLobbyTemplate = SaveLobbyTemplateUseCase(
             assetRepository = lobbyRepository,
-            templateRepository = com.hoggamers.rankforge.data.local.NoOpTournamentLobbyTemplateAssetRepository(),
+            templateRepository = templateRepository,
             localImagePreserver = preserver,
             clock = java.time.Clock.systemUTC(),
         ),
+        unsaveLobbyTemplate = UnsaveLobbyTemplateUseCase(
+            templateRepository = templateRepository,
+            localImagePreserver = preserver,
+        ),
+        templateRepository = templateRepository,
         cloudDataSource = cloudDataSource,
     )
 
@@ -379,6 +543,43 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
             MatchLobbyScreenshotAssetCloudResult.Success
+    }
+
+    private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
+        private val state = MutableStateFlow<List<TournamentLobbyTemplateAssetEntity>>(emptyList())
+        var throwOnDelete = false
+        var deleteGate: CompletableDeferred<Unit>? = null
+        var deleteCalls = 0
+
+        override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> =
+            state.asStateFlow().let { flow ->
+                kotlinx.coroutines.flow.flow {
+                    flow.collect { templates ->
+                        emit(templates.filter { it.tournamentId == tournamentId })
+                    }
+                }
+            }
+
+        override suspend fun getByTournamentId(tournamentId: String): List<TournamentLobbyTemplateAssetEntity> =
+            state.value.filter { it.tournamentId == tournamentId }
+
+        override suspend fun replaceForTournament(
+            tournamentId: String,
+            assets: List<TournamentLobbyTemplateAssetEntity>,
+        ) {
+            state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+        }
+
+        override suspend fun deleteByTournamentId(tournamentId: String) {
+            deleteCalls += 1
+            deleteGate?.await()
+            if (throwOnDelete) error("delete failed")
+            state.value = state.value.filterNot { it.tournamentId == tournamentId }
+        }
+
+        fun set(templates: List<TournamentLobbyTemplateAssetEntity>) {
+            state.value = templates
+        }
     }
 
     private class SuspendingCloudDataSource(

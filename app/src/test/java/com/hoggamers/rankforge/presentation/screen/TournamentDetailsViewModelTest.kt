@@ -151,6 +151,36 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
+    fun unavailableTemplateAfterUnsaveCreatesNextMatchWithoutInheritedLobbyCheckpoints() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        var templateActive = true
+        val events = mutableListOf<String>()
+        val apply = ApplyLobbyTemplateAction { _, matchId ->
+            events += "apply:$matchId"
+            if (templateActive) ApplyLobbyTemplateResult.Applied else ApplyLobbyTemplateResult.Unavailable
+        }
+        val upload = MatchLobbyScreenshotUploadCheckpointAction { identity ->
+            events += "upload:${identity.lobbyScreenshotIndex}"
+            MatchLobbyScreenshotUploadCheckpointResult.Completed
+        }
+        val viewModel = detailsViewModel(
+            syncDraftMatches = RecordingDraftMatchCloudSyncAction(onInvoke = { events += "sync" }),
+            applyLobbyTemplate = apply,
+            lobbyUploadCheckpoint = upload,
+        )
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        templateActive = false
+
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.uiState.value.matchReviewRequest)
+        assertEquals(listOf("apply:${viewModel.uiState.value.matchReviewRequest?.matchId}", "sync"), events)
+    }
+
+    @Test
     fun useDefaultsPersistsRemainingNamesAndRequestsMatch() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })

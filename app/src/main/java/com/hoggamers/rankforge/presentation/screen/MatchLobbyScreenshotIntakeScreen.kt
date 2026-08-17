@@ -19,14 +19,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +43,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -100,6 +105,7 @@ fun MatchLobbyScreenshotIntakeRoute(
         onCrop = viewModel::requestCropEditor,
         onRemove = viewModel::removeScreenshot,
         onSaveLobbyForNextMatches = viewModel::saveLobbyForNextMatches,
+        onUnsaveLobbyForNextMatches = viewModel::unsaveLobbyForNextMatches,
         showTitle = showTitle,
         compactSelectors = compactSelectors,
         compactActions = compactActions,
@@ -113,6 +119,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     onSaveLobbyForNextMatches: () -> Unit = {},
+    onUnsaveLobbyForNextMatches: () -> Unit = {},
     showTitle: Boolean = true,
     compactSelectors: Boolean = false,
     compactActions: Boolean = false,
@@ -214,17 +221,11 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
                 if (compactActions) {
                     Spacer(modifier = Modifier.weight(1f))
-                    FilledTonalButton(
-                        onClick = onSaveLobbyForNextMatches,
-                        enabled = uiState.canSaveLobbyForNextMatches,
-                        contentPadding = PaddingValues(
-                            horizontal = RankForgeSpacing.Small,
-                            vertical = RankForgeSpacing.ExtraSmall,
-                        ),
-                        modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
-                    ) {
-                        Text(text = stringResource(R.string.match_lobby_screenshot_save_template_compact_action))
-                    }
+                    LobbyTemplateToggle(
+                        uiState = uiState,
+                        onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
+                        onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                    )
                 }
             }
 
@@ -262,27 +263,74 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
             if (!compactActions) {
-                Button(
-                    onClick = onSaveLobbyForNextMatches,
-                    enabled = uiState.canSaveLobbyForNextMatches,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
-                ) {
-                    Text(text = stringResource(R.string.match_lobby_screenshot_save_template_action))
-                }
-            }
-            when (uiState.lobbyTemplateSaveStatus) {
-                MatchLobbyTemplateSaveStatus.SAVED -> Text(
-                    text = stringResource(R.string.match_lobby_screenshot_save_template_success),
+                LobbyTemplateToggle(
+                    uiState = uiState,
+                    onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
+                    onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                MatchLobbyTemplateSaveStatus.FAILED -> Text(
-                    text = stringResource(R.string.match_lobby_screenshot_save_template_failed),
+            }
+            if (uiState.lobbyTemplateSaveStatus == MatchLobbyTemplateSaveStatus.FAILED) {
+                Text(
+                    text = stringResource(R.string.match_lobby_screenshot_template_mutation_failed),
                     color = MaterialTheme.colorScheme.error,
                 )
-                null -> Unit
             }
         }
+    }
+}
+
+@Composable
+private fun LobbyTemplateToggle(
+    uiState: MatchLobbyScreenshotIntakeUiState,
+    onSaveLobbyForNextMatches: () -> Unit,
+    onUnsaveLobbyForNextMatches: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isSaved = uiState.isLobbySavedForNextMatches
+    val enabled = if (isSaved) {
+        uiState.canUnsaveLobbyForNextMatches
+    } else {
+        uiState.canSaveLobbyForNextMatches
+    }
+    val accessibilityDescription = stringResource(
+        if (isSaved) {
+            R.string.match_lobby_screenshot_saved_template_accessibility_description
+        } else {
+            R.string.match_lobby_screenshot_unsaved_template_accessibility_description
+        },
+    )
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = stringResource(R.string.match_lobby_screenshot_save_template_compact_action))
+        Switch(
+            checked = isSaved,
+            onCheckedChange = { checked ->
+                if (checked) {
+                    onSaveLobbyForNextMatches()
+                } else {
+                    onUnsaveLobbyForNextMatches()
+                }
+            },
+            enabled = enabled,
+            thumbContent = {
+                Icon(
+                    imageVector = if (isSaved) Icons.Default.Check else Icons.Default.Close,
+                    contentDescription = null,
+                )
+            },
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = 0.82f
+                    scaleY = 0.82f
+                }
+                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+                .semantics { contentDescription = accessibilityDescription },
+        )
     }
 }
 

@@ -5,11 +5,14 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -501,10 +504,198 @@ class MatchLobbyScreenshotIntakeScreenTest {
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
             .assertIsDisplayed()
             .assertIsEnabled()
+            .assertIsOff()
             .performClick()
         composeTestRule.onAllNodesWithText("Save Lobby").assertCountEquals(1)
-        composeTestRule.onAllNodesWithText("Save this lobby for next matches").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Unsave Lobby").assertCountEquals(0)
         composeTestRule.runOnIdle { assertEquals(1, saveCount) }
+    }
+
+    @Test
+    fun offIncompleteLobbyShowsDisabledSaveLobby() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.DRAFT,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOff()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun onLobbyShowsCheckedSaveLobbySwitchAndInvokesUnsaveCallback() {
+        var unsaveCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.FINALIZED,
+                        isLobbySavedForNextMatches = true,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    onUnsaveLobbyForNextMatches = { unsaveCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Unsave Lobby").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOn()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, unsaveCount) }
+    }
+
+    @Test
+    fun saveLobbyLabelAndSwitchStateFollowObservedStateAcrossRecomposition() {
+        var saveCount = 0
+        var unsaveCount = 0
+        composeTestRule.setContent {
+            var saved by remember { mutableStateOf(false) }
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.DRAFT,
+                        slots = completeLobbySlots(),
+                        isLobbySavedForNextMatches = saved,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    onSaveLobbyForNextMatches = { saveCount++; saved = true },
+                    onUnsaveLobbyForNextMatches = { unsaveCount++; saved = false },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOff()
+            .performClick()
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Unsave Lobby").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOn()
+            .performClick()
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Unsave Lobby").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOff()
+        composeTestRule.runOnIdle {
+            assertEquals(1, saveCount)
+            assertEquals(1, unsaveCount)
+        }
+    }
+
+    @Test
+    fun finalizedOffLobbyKeepsSaveDisabled() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.FINALIZED,
+                        slots = completeLobbySlots(),
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsOff()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun lobbySwitchExposesStateDescriptionsAndDoesNotShowMutationSuccessText() {
+        var uiState by mutableStateOf(
+            MatchLobbyScreenshotIntakeUiState(
+                isLoading = false,
+                isAvailable = true,
+                status = MatchStatus.DRAFT,
+                slots = completeLobbySlots(),
+                isLobbySavedForNextMatches = false,
+                lobbyTemplateSaveStatus = MatchLobbyTemplateSaveStatus.UNSAVED,
+            ),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = uiState,
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    onSaveLobbyForNextMatches = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Lobby not saved for next matches")
+            .assertIsOff()
+        composeTestRule.onAllNodesWithText("Lobby saved for next matches").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Lobby will not be reused for next matches.")
+            .assertCountEquals(0)
+
+        composeTestRule.runOnIdle {
+            uiState = uiState.copy(
+                status = MatchStatus.FINALIZED,
+                isLobbySavedForNextMatches = true,
+                lobbyTemplateSaveStatus = MatchLobbyTemplateSaveStatus.SAVED,
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("Lobby saved for next matches")
+            .assertIsOn()
+        composeTestRule.onAllNodesWithText("Lobby saved for next matches").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Lobby will not be reused for next matches.")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun lobbySwitchKeepsMutationFailureFeedback() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.DRAFT,
+                        slots = completeLobbySlots(),
+                        lobbyTemplateSaveStatus = MatchLobbyTemplateSaveStatus.FAILED,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Could not update saved Lobby.").assertIsDisplayed()
     }
 
     @Test
@@ -702,5 +893,16 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsNotEnabled()
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
             .assertIsNotEnabled()
+    }
+
+    private fun completeLobbySlots() = defaultMatchLobbyScreenshotSlots().map { slot ->
+        slot.copy(
+            hasLinkedAsset = true,
+            selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+            selectedScreenshotWidth = 1920,
+            selectedScreenshotHeight = 1080,
+            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+            cropProfileId = "lobby",
+        )
     }
 }

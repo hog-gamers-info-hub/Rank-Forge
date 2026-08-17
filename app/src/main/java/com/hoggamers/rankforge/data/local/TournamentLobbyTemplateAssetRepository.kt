@@ -14,6 +14,8 @@ interface TournamentLobbyTemplateAssetRepository {
         tournamentId: String,
         assets: List<TournamentLobbyTemplateAssetEntity>,
     )
+
+    suspend fun deleteByTournamentId(tournamentId: String)
 }
 
 @Singleton
@@ -32,6 +34,10 @@ class RoomTournamentLobbyTemplateAssetRepository @Inject constructor(
     ) {
         dao.replaceForTournament(tournamentId, assets)
     }
+
+    override suspend fun deleteByTournamentId(tournamentId: String) {
+        dao.deleteByTournamentId(tournamentId)
+    }
 }
 
 class NoOpTournamentLobbyTemplateAssetRepository : TournamentLobbyTemplateAssetRepository {
@@ -44,4 +50,6 @@ class NoOpTournamentLobbyTemplateAssetRepository : TournamentLobbyTemplateAssetR
         tournamentId: String,
         assets: List<TournamentLobbyTemplateAssetEntity>,
     ) = Unit
+
+    override suspend fun deleteByTournamentId(tournamentId: String) = Unit
 }
