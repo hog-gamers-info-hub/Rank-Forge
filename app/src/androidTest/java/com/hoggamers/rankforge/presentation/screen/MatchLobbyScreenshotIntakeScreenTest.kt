@@ -220,6 +220,49 @@ class MatchLobbyScreenshotIntakeScreenTest {
     }
 
     @Test
+    fun embeddedSaveLobbyTemplateUsesOneCompactTopRowAction() {
+        var saveCount = 0
+        val completeSlots = defaultMatchLobbyScreenshotSlots().map { slot ->
+            slot.copy(
+                hasLinkedAsset = true,
+                selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                selectedScreenshotWidth = 1920,
+                selectedScreenshotHeight = 1080,
+                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                cropProfileId = "lobby",
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.DRAFT,
+                        slots = completeSlots,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    onSaveLobbyForNextMatches = { saveCount++ },
+                    compactSelectors = true,
+                    compactActions = true,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.onAllNodesWithText("Save Lobby").assertCountEquals(1)
+        composeTestRule.onAllNodesWithText("Save this lobby for next matches").assertCountEquals(0)
+        composeTestRule.runOnIdle { assertEquals(1, saveCount) }
+    }
+
+    @Test
     fun removingLastSelectedSlotClearsPagerAndActions() {
         val selectedSlot = defaultMatchLobbyScreenshotSlots().first().copy(
             hasLinkedAsset = true,

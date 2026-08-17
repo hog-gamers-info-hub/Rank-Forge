@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -158,6 +160,7 @@ fun MatchLobbyScreenshotIntakeScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 uiState.slots.forEach { slot ->
                     val hasSelection = slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
@@ -179,6 +182,20 @@ fun MatchLobbyScreenshotIntakeScreen(
                         compactSelectors = compactSelectors,
                         onClick = onClick,
                     )
+                }
+                if (compactActions) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    FilledTonalButton(
+                        onClick = onSaveLobbyForNextMatches,
+                        enabled = uiState.canSaveLobbyForNextMatches,
+                        contentPadding = PaddingValues(
+                            horizontal = RankForgeSpacing.Small,
+                            vertical = RankForgeSpacing.ExtraSmall,
+                        ),
+                        modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
+                    ) {
+                        Text(text = stringResource(R.string.match_lobby_screenshot_save_template_compact_action))
+                    }
                 }
             }
 
@@ -215,14 +232,16 @@ fun MatchLobbyScreenshotIntakeScreen(
                     )
                 }
             }
-            Button(
-                onClick = onSaveLobbyForNextMatches,
-                enabled = uiState.canSaveLobbyForNextMatches,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
-            ) {
-                Text(text = stringResource(R.string.match_lobby_screenshot_save_template_action))
+            if (!compactActions) {
+                Button(
+                    onClick = onSaveLobbyForNextMatches,
+                    enabled = uiState.canSaveLobbyForNextMatches,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG),
+                ) {
+                    Text(text = stringResource(R.string.match_lobby_screenshot_save_template_action))
+                }
             }
             when (uiState.lobbyTemplateSaveStatus) {
                 MatchLobbyTemplateSaveStatus.SAVED -> Text(
