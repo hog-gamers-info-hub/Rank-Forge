@@ -704,6 +704,7 @@ internal fun MatchOcrReviewRow(
     correctionEnabled: Boolean,
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
+    showBlockerDetails: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -734,6 +735,7 @@ internal fun MatchOcrReviewRow(
                 correctionEnabled = correctionEnabled,
                 showWarningDetails = showWarningDetails,
                 compactFieldRow = compactFieldRow,
+                showBlockerDetails = showBlockerDetails,
             )
         }
     }
@@ -838,6 +840,7 @@ private fun MatchOcrReviewCorrectionFields(
     correctionEnabled: Boolean,
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
+    showBlockerDetails: Boolean = true,
 ) {
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedTextField(
@@ -939,7 +942,7 @@ private fun MatchOcrReviewCorrectionFields(
             modifier = Modifier.testTag(MatchOcrReviewTestTags.rowDirty(correctionDraft.rowIndex)),
         )
     }
-    if (correctionDraft.validation.blockers.isNotEmpty()) {
+    if (showBlockerDetails && correctionDraft.validation.blockers.isNotEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

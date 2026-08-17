@@ -1004,6 +1004,7 @@ private fun MatchReviewResultRowsPagerContent(
                             correctionEnabled = !uiState.finalization.isFinalized,
                             showWarningDetails = false,
                             compactFieldRow = true,
+                            showBlockerDetails = false,
                         )
                     }
                 }
