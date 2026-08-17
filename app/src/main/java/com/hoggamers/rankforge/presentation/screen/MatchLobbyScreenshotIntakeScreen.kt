@@ -325,7 +325,7 @@ private fun LobbyScreenshotDetail(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
+        if (!compactActions && slot.hasLinkedAsset && !slot.isLocalFileMissing) {
             Text(text = stringResource(R.string.match_lobby_screenshot_selected))
         } else if (slot.isLocalFileMissing) {
             Text(
