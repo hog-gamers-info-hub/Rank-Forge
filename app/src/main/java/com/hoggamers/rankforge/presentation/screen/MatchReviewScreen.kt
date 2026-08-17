@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -26,11 +25,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,7 +37,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -49,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -126,10 +121,10 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_r
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG = "match_review_result_screenshot_next_select"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
 const val MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG = "match_review_lobby_player_details_section"
 const val MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG = "match_review_lobby_players_pager"
-const val MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX = "match_review_result_screenshot_slot_"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG = "match_review_result_screenshots_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 const val MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG = "match_review_result_ocr_details_section"
@@ -1070,6 +1065,9 @@ private fun ResultScreenshotSelector(
             ?.let { slot -> role to slot }
     }
     val selectedRoles = selectedPages.map { it.first }
+    val nextEmptyRole = roles.firstOrNull { role ->
+        !resultScreenshots.slot(role).hasSelection()
+    }
     var activeRoleName by rememberSaveable { mutableStateOf<String?>(null) }
     val activeRole = when (activeRoleName) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER.name -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
@@ -1077,7 +1075,6 @@ private fun ResultScreenshotSelector(
         else -> null
     }
     val pagerState = rememberPagerState(pageCount = { selectedPages.size })
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(selectedRoles) {
         if (selectedRoles.isEmpty()) {
@@ -1107,38 +1104,22 @@ private fun ResultScreenshotSelector(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            resultScreenshotSelectorButton(
-                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                slot = resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
-                activeRole = activeRole,
-                isEditable = isEditable,
-                onActivate = { role, hasSelection ->
-                    val targetPage = selectedRoles.indexOf(role)
-                    if (hasSelection && targetPage >= 0) {
-                        activeRoleName = role.name
-                        scope.launch { pagerState.animateScrollToPage(targetPage) }
-                    } else if (!hasSelection) {
-                        onSelectScreenshot(role)
-                    }
-                },
-                modifier = Modifier,
-            )
-            resultScreenshotSelectorButton(
-                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-                slot = resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-                activeRole = activeRole,
-                isEditable = isEditable,
-                onActivate = { role, hasSelection ->
-                    val targetPage = selectedRoles.indexOf(role)
-                    if (hasSelection && targetPage >= 0) {
-                        activeRoleName = role.name
-                        scope.launch { pagerState.animateScrollToPage(targetPage) }
-                    } else if (!hasSelection) {
-                        onSelectScreenshot(role)
-                    }
-                },
-                modifier = Modifier,
-            )
+            nextEmptyRole?.let { role ->
+                val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
+                val slot = resultScreenshots.slot(role)
+                Button(
+                    onClick = { onSelectScreenshot(role) },
+                    enabled = isEditable && !slot.isBusy,
+                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.match_review_result_screenshot_select_action,
+                            screenshotNumber,
+                        ),
+                    )
+                }
+            }
         }
         if (selectedPages.isNotEmpty()) {
             HorizontalPager(
@@ -1164,36 +1145,6 @@ private fun ResultScreenshotSelector(
 
 private fun MatchResultScreenshotSlotUiState.hasSelection(): Boolean =
     hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
-
-@Composable
-private fun RowScope.resultScreenshotSelectorButton(
-    role: MatchResultScreenshotRole,
-    slot: MatchResultScreenshotSlotUiState,
-    activeRole: MatchResultScreenshotRole?,
-    isEditable: Boolean,
-    onActivate: (MatchResultScreenshotRole, Boolean) -> Unit,
-    modifier: Modifier,
-) {
-    val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
-    val hasSelection = slot.hasSelection()
-    val isActive = hasSelection && activeRole == role
-    val buttonModifier = modifier
-            .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + screenshotNumber)
-            .semantics { selected = isActive }
-    if (isActive) {
-        FilledIconButton(
-            onClick = { onActivate(role, hasSelection) },
-            enabled = hasSelection || (isEditable && !slot.isBusy),
-            modifier = buttonModifier,
-        ) { Text(text = screenshotNumber.toString()) }
-    } else {
-        OutlinedIconButton(
-            onClick = { onActivate(role, hasSelection) },
-            enabled = hasSelection || (isEditable && !slot.isBusy),
-            modifier = buttonModifier,
-        ) { Text(text = screenshotNumber.toString()) }
-    }
-}
 
 @Composable
 private fun ResultScreenshotPage(

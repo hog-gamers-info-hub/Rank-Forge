@@ -18,6 +18,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -148,7 +150,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_LOBBY_SCREENSHOT
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG
-import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_ACTION_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_FIELD_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.MATCH_PLACEMENT_SAVE_ACTION_TEST_TAG
@@ -1669,9 +1671,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         if (role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
             composeTestRule
-                .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + "2")
+                .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
                 .performScrollTo()
-                .performClick()
+                .performTouchInput { swipeLeft() }
             composeTestRule.waitForIdle()
         }
 

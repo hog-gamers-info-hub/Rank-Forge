@@ -445,7 +445,7 @@
     <string name="match_review_result_screenshot_next_page_affordance">›</string>
     <string name="match_review_result_screenshot_1_guidance">Select the main result screenshot containing the complete upper result rows. Crop the useful result area and exclude the cut-off 11th team where possible.</string>
     <string name="match_review_result_screenshot_2_guidance">Select the continuation result screenshot containing the complete 11th and 12th team rows. Crop the useful result area.</string>
-    <string name="match_review_result_screenshot_select_action">Select screenshot %1$d</string>
+    <string name="match_review_result_screenshot_select_action">Select Screenshot %1$d</string>
     <string name="match_review_result_screenshot_replace_action">Replace screenshot %1$d</string>
     <string name="match_review_result_screenshot_ready">Screenshot ready.</string>
     <string name="match_review_result_screenshot_preview_description">Result Screenshot %1$d preview</string>
