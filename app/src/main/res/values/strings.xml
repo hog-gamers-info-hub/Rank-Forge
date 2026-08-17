@@ -314,6 +314,9 @@
     <string name="match_ocr_review_correction_placement_label">Corrected placement</string>
     <string name="match_ocr_review_correction_kills_label">Corrected kills</string>
     <string name="match_ocr_review_correction_team_slot_label">Assigned team slot</string>
+    <string name="match_ocr_review_correction_position_short_label">Position</string>
+    <string name="match_ocr_review_correction_kills_short_label">Kills</string>
+    <string name="match_ocr_review_correction_slot_short_label">Slot</string>
     <string name="match_ocr_review_correction_dirty_row">Draft changed</string>
     <string name="match_ocr_review_correction_blockers_title">Correction blockers</string>
     <string name="match_ocr_review_correction_warnings_title">Correction warnings</string>

@@ -1003,6 +1003,7 @@ private fun MatchReviewResultRowsPagerContent(
                             onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
                             showWarningDetails = false,
+                            compactFieldRow = true,
                         )
                     }
                 }

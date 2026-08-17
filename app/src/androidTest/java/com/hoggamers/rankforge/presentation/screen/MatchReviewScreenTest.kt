@@ -147,12 +147,26 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.ROW_LIST)
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Position - 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Position").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Kills").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slot").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
             .assertIsDisplayed()
+        val placementFieldY = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .fetchSemanticsNode().positionInRoot.y
+        val killsFieldY = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
+            .fetchSemanticsNode().positionInRoot.y
+        val teamSlotFieldY = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .fetchSemanticsNode().positionInRoot.y
+        assertEquals(placementFieldY, killsFieldY)
+        assertEquals(placementFieldY, teamSlotFieldY)
 
         val lobbyScreenshotsY = composeTestRule
             .onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
