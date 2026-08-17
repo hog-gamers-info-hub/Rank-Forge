@@ -518,7 +518,7 @@ private fun MatchReviewContent(
         } else {
             Text(
                 text = stringResource(R.string.match_review_lobby_screenshots_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
             )
             matchLobbyScreenshotIntake()
@@ -528,7 +528,7 @@ private fun MatchReviewContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             Text(
                 text = stringResource(R.string.match_review_result_screenshots_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
             )
         }
@@ -799,10 +799,6 @@ private fun MatchReviewLobbyPlayersPager(
             .testTag(MatchOcrReviewTestTags.LOBBY_PLAYERS),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        Text(
-            text = stringResource(R.string.match_ocr_review_lobby_players_title),
-            style = MaterialTheme.typography.titleLarge,
-        )
         if (orderedSlots.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
