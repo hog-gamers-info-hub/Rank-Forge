@@ -1894,6 +1894,47 @@ class MatchReviewScreenTest {
             .assertIsEnabled()
     }
 
+    @Test
+    fun simplifiedInlineOcrHidesPerRowBlockerDetailsButKeepsBlockingState() {
+        val baseState = inlineOcrState()
+        val baseDraft = baseState.correctionDraft ?: error("Expected correction draft")
+        val blockedDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(baseDraft, 0, "")
+        val blockedState = baseState.copy(
+            correctionDraft = blockedDraft,
+        )
+        assertTrue(blockedDraft.blockerCount > 0)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = blockedState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.rowBlocker(0)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Correction blockers").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Blocker:", substring = true).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.rowWarning(0)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warnings:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warning:", substring = true).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
         resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
