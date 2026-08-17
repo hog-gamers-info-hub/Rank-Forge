@@ -170,33 +170,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (compactSelectors) {
-                    uiState.slots
-                        .filterNot { it.hasScreenshotSelection() }
-                        .minByOrNull { it.index }
-                        ?.let { nextEmptySlot ->
-                            Button(
-                                onClick = { onSelect(nextEmptySlot.index) },
-                                enabled = uiState.isAvailable &&
-                                    !uiState.isFinalized &&
-                                    !nextEmptySlot.isBusy,
-                                contentPadding = PaddingValues(
-                                    horizontal = RankForgeSpacing.Small,
-                                    vertical = RankForgeSpacing.ExtraSmall,
-                                ),
-                                modifier = Modifier.testTag(
-                                    MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG,
-                                ),
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.match_lobby_screenshot_select_index_action,
-                                        nextEmptySlot.index,
-                                    ),
-                                )
-                            }
-                        }
-                } else {
+                if (!compactSelectors) {
                     uiState.slots.forEach { slot ->
                         val hasSelection = slot.hasScreenshotSelection()
                         val targetPage = selectedSlotIndices.indexOf(slot.index)
@@ -248,6 +222,34 @@ fun MatchLobbyScreenshotIntakeScreen(
                         )
                     }
                 }
+            }
+
+            if (compactSelectors) {
+                uiState.slots
+                    .filterNot { it.hasScreenshotSelection() }
+                    .minByOrNull { it.index }
+                    ?.let { nextEmptySlot ->
+                        Button(
+                            onClick = { onSelect(nextEmptySlot.index) },
+                            enabled = uiState.isAvailable &&
+                                !uiState.isFinalized &&
+                                !nextEmptySlot.isBusy,
+                            contentPadding = PaddingValues(
+                                horizontal = RankForgeSpacing.Small,
+                                vertical = RankForgeSpacing.ExtraSmall,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.match_lobby_screenshot_select_index_action,
+                                    nextEmptySlot.index,
+                                ),
+                            )
+                        }
+                    }
             }
             if (!compactActions) activeSlotIndex?.let { activeIndex ->
                 selectedSlots.firstOrNull { it.index == activeIndex }?.let { slot ->

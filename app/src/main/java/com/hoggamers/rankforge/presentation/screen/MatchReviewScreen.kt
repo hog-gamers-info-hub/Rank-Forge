@@ -1380,27 +1380,6 @@ private fun ResultScreenshotSelector(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            nextEmptyRole?.let { role ->
-                val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
-                val slot = resultScreenshots.slot(role)
-                Button(
-                    onClick = { onSelectScreenshot(role) },
-                    enabled = isEditable && !slot.isBusy,
-                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
-                ) {
-                    Text(
-                        stringResource(
-                            R.string.match_review_result_screenshot_select_action,
-                            screenshotNumber,
-                        ),
-                    )
-                }
-            }
-        }
         if (selectedPages.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
@@ -1418,6 +1397,24 @@ private fun ResultScreenshotSelector(
                         onRemoveScreenshot = onRemoveScreenshot,
                     )
                 }
+            }
+        }
+        nextEmptyRole?.let { role ->
+            val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
+            val slot = resultScreenshots.slot(role)
+            Button(
+                onClick = { onSelectScreenshot(role) },
+                enabled = isEditable && !slot.isBusy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
+            ) {
+                Text(
+                    stringResource(
+                        R.string.match_review_result_screenshot_select_action,
+                        screenshotNumber,
+                    ),
+                )
             }
         }
     }
