@@ -99,6 +99,7 @@ fun RankForgeNavHost(
             onOpenCropEditor = onOpenCropEditor,
             showTitle = false,
             compactSelectors = true,
+            compactActions = true,
         )
     },
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
