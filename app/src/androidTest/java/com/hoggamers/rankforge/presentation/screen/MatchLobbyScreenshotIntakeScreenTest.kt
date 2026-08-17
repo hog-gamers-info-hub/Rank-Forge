@@ -145,6 +145,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
                     onSelect = { selectedIndexes += it },
                     onCrop = { cropIndexes += it },
                     onRemove = { removeIndexes += it },
+                    compactActions = true,
                 )
             }
         }
