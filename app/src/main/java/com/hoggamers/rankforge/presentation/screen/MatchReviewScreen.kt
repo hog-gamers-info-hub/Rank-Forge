@@ -15,14 +15,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -117,10 +120,13 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_resu
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
 const val MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG = "match_review_lobby_player_details_section"
+const val MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG = "match_review_lobby_players_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX = "match_review_result_screenshot_slot_"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG = "match_review_result_screenshots_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
 const val MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG = "match_review_result_ocr_details_section"
+const val MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG = "match_review_result_ocr_preview_pager"
+const val MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG = "match_review_result_ocr_rows_pager"
 
 @Composable
 fun MatchReviewRoute(
@@ -746,7 +752,7 @@ private fun MatchReviewLobbyPlayerDetailsContent(
             )
             is MatchOcrReviewUiState.Empty -> {
                 if (ocrUiState.lobbyPlayers.isNotEmpty()) {
-                    MatchOcrReviewLobbyPlayersSection(
+                    MatchReviewLobbyPlayersPager(
                         lobbyPlayers = ocrUiState.lobbyPlayers,
                         teamNamesBySlot = ocrUiState.teamNamesBySlot,
                     )
@@ -760,12 +766,57 @@ private fun MatchReviewLobbyPlayerDetailsContent(
             )
             is MatchOcrReviewUiState.Ready -> {
                 if (ocrUiState.lobbyPlayers.isNotEmpty()) {
-                    MatchOcrReviewLobbyPlayersSection(
+                    MatchReviewLobbyPlayersPager(
                         lobbyPlayers = ocrUiState.lobbyPlayers,
                         teamNamesBySlot = ocrUiState.teamNamesBySlot,
                     )
                 } else {
                     Text(text = stringResource(R.string.match_ocr_review_empty_message))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewLobbyPlayersPager(
+    lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    val orderedSlots = lobbyPlayers.sortedBy { it.slotNumber }
+    val pagerState = rememberPagerState(pageCount = { orderedSlots.size })
+
+    LaunchedEffect(pagerState, orderedSlots.size) {
+        val lastPage = orderedSlots.lastIndex
+        if (lastPage >= 0 && pagerState.currentPage > lastPage) {
+            pagerState.scrollToPage(lastPage)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.LOBBY_PLAYERS),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_lobby_players_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        if (orderedSlots.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                .testTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG),
+            ) { page ->
+                orderedSlots.getOrNull(page)?.let { slot ->
+                    MatchReviewOcrPagerItem {
+                        MatchOcrReviewLobbySlotContent(
+                            slot = slot,
+                            teamNamesBySlot = teamNamesBySlot,
+                        )
+                    }
                 }
             }
         }
@@ -812,7 +863,7 @@ private fun MatchReviewResultOcrDetailsContent(
                         text = stringResource(R.string.match_ocr_review_title),
                         style = MaterialTheme.typography.headlineMedium,
                     )
-                    MatchOcrReviewCompactPreviewList(
+                    MatchReviewResultPreviewPager(
                         preview = preview,
                         reviewRowsByPosition = emptyMap(),
                         teamNamesBySlot = emptyMap(),
@@ -828,7 +879,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 text = uiState.message,
                 color = MaterialTheme.colorScheme.error,
             )
-            is MatchOcrReviewUiState.Ready -> MatchOcrReviewResultContent(
+            is MatchOcrReviewUiState.Ready -> MatchReviewResultRowsPagerContent(
                 uiState = uiState,
                 onPlacementChanged = onPlacementChanged,
                 onKillsChanged = onKillsChanged,
@@ -839,6 +890,143 @@ private fun MatchReviewResultOcrDetailsContent(
                 onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onDismissFinalizeWarnings,
             )
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewResultPreviewPager(
+    preview: MatchResultOcrPreviewUiState.Ready,
+    reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    val rows = preview.rows
+    val pagerState = rememberPagerState(pageCount = { rows.size })
+
+    LaunchedEffect(pagerState, rows.size) {
+        val lastPage = rows.lastIndex
+        if (lastPage >= 0 && pagerState.currentPage > lastPage) {
+            pagerState.scrollToPage(lastPage)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.COMPACT_LIST),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+    ) {
+        if (rows.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG),
+            ) { page ->
+                rows.getOrNull(page)?.let { previewRow ->
+                    MatchReviewOcrPagerItem {
+                        MatchOcrReviewCompactRow(
+                            previewRow = previewRow,
+                            reviewRow = reviewRowsByPosition[previewRow.position],
+                            teamNamesBySlot = teamNamesBySlot,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewResultRowsPagerContent(
+    uiState: MatchOcrReviewUiState.Ready,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onResetRowCorrection: (rowIndex: Int) -> Unit,
+    onResetAllCorrections: () -> Unit,
+    onFinalizeOcrCorrection: () -> Unit,
+    onConfirmFinalizeWarnings: () -> Unit,
+    onDismissFinalizeWarnings: () -> Unit,
+) {
+    val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+        ?.rows
+        .orEmpty()
+        .associateBy { it.position }
+    val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
+    val rows = uiState.rows
+    val pagerState = rememberPagerState(pageCount = { rows.size })
+
+    LaunchedEffect(pagerState, rows.size) {
+        val lastPage = rows.lastIndex
+        if (lastPage >= 0 && pagerState.currentPage > lastPage) {
+            pagerState.scrollToPage(lastPage)
+        }
+    }
+
+    uiState.correctionDraft?.let { correctionDraft ->
+        MatchOcrReviewCorrectionSummary(
+            correctionDraft = correctionDraft,
+            finalization = uiState.finalization,
+            onResetAllCorrections = onResetAllCorrections,
+            onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+        )
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.ROW_LIST),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
+    ) {
+        if (rows.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG),
+            ) { page ->
+                rows.getOrNull(page)?.let { row ->
+                    MatchReviewOcrPagerItem {
+                        MatchOcrReviewRow(
+                            row = row,
+                            previewRow = previewRowsByPosition[row.rowIndex + 1],
+                            teamNamesBySlot = uiState.teamNamesBySlot,
+                            correctionDraft = correctionRowsByIndex[row.rowIndex],
+                            onPlacementChanged = onPlacementChanged,
+                            onKillsChanged = onKillsChanged,
+                            onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                            onResetRowCorrection = onResetRowCorrection,
+                            correctionEnabled = !uiState.finalization.isFinalized,
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (uiState.finalization.showWarningConfirmation) {
+        MatchOcrReviewFinalizeWarningDialog(
+            warningCount = uiState.correctionDraft?.warningCount ?: 0,
+            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
+            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+        )
+    }
+}
+
+@Composable
+private fun MatchReviewOcrPagerItem(
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(RankForgeSpacing.Small),
+        ) {
+            content()
         }
     }
 }

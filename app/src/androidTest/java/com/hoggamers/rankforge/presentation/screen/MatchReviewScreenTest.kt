@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -168,6 +169,161 @@ class MatchReviewScreenTest {
         assertTrue(lobbyScreenshotsY < lobbyDetailsY)
         assertTrue(lobbyDetailsY < resultScreenshotsY)
         assertTrue(resultScreenshotsY < resultDetailsY)
+    }
+
+    @Test
+    fun inlineLobbyPagerUsesSlotOrderAndReturnsToThePreviousSlot() {
+        val firstSlot = MatchOcrReviewLobbySlotUiState(
+            slotNumber = 11,
+            players = listOf(MatchOcrReviewLobbyPlayerUiState(1, "Lobby Eleven")),
+        )
+        val secondSlot = MatchOcrReviewLobbySlotUiState(
+            slotNumber = 2,
+            players = listOf(MatchOcrReviewLobbyPlayerUiState(1, "Lobby Two")),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState().copy(
+                        teamNamesBySlot = mapOf(2 to "Team 2", 11 to "Team 11"),
+                        lobbyPlayers = listOf(firstSlot, secondSlot),
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Lobby Two").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
+            .assertIsNotDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Lobby Eleven").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
+            .assertIsNotDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG)
+            .performTouchInput { swipeRight() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Lobby Two").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
+            .assertIsNotDisplayed()
+    }
+
+    @Test
+    fun inlineResultRowsPagerUsesSuppliedRowOrderAndKeepsRowsIndependentFromScreenshotPager() {
+        val state = inlineOcrStateWithRows()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = state,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(1))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+            .assertIsNotDisplayed()
+        composeTestRule.onNodeWithText("Position - 2").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Position - 1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(1))
+            .assertIsNotDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + 2)
+            .assertIsSelected()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun inlineResultPreviewPagerUsesPreviewRowsWithoutAddingAnotherSort() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(
+                previewRow(2, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(2))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertIsNotDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(2))
+            .assertIsNotDisplayed()
     }
 
     @Test
@@ -1768,6 +1924,63 @@ class MatchReviewScreenTest {
             ),
         )
     }
+
+    private fun inlineOcrStateWithRows(): MatchOcrReviewUiState.Ready {
+        val first = inlineOcrState()
+        val firstRow = first.rows.single()
+        val secondRow = firstRow.copy(
+            rowIndex = 1,
+            expectedPlacementLabel = "2",
+            detectedPlacementDisplayValue = "2",
+            detectedKillDisplayValue = "9",
+            detectedPlayerNameEvidenceLabel = "Player Two",
+            suggestedTeamSlotDisplayValue = "2",
+            originalParsedPlacementValue = 2,
+            originalParsedKillValue = 9,
+            originalSuggestedTeamSlot = 2,
+        )
+        val correctionDraft = first.correctionDraft ?: error("Expected correction draft")
+        val firstCorrection = correctionDraft.rows.single()
+        val secondCorrection = firstCorrection.copy(
+            rowIndex = 1,
+            originalPlacementValue = "2",
+            originalKillsValue = "9",
+            originalAssignedTeamSlotValue = "2",
+            placementDraftValue = "2",
+            killsDraftValue = "9",
+            assignedTeamSlotDraftValue = "2",
+        )
+        return first.copy(
+            rowCount = 2,
+            rows = listOf(secondRow, firstRow),
+            safeRowCount = 2,
+            correctionDraft = correctionDraft.copy(
+                rows = listOf(secondCorrection, firstCorrection),
+            ),
+            lobbyPlayers = emptyList(),
+        )
+    }
+
+    private fun previewRow(
+        position: Int,
+        role: MatchResultScreenshotRole,
+    ) = MatchResultOcrPreviewRowUiState(
+        position = position,
+        role = role,
+        sourceLabel = "SOURCE_$position",
+        placementText = position.toString(),
+        slots = (1..4).map { slot ->
+            MatchResultOcrPreviewSlotUiState(
+                slot = slot,
+                playerText = "Player $position-$slot",
+                playerOcrText = "Player $position-$slot",
+                playerStatusLabel = "DIRECT_NUMERIC",
+                killText = slot.toString(),
+                killOcrText = slot.toString(),
+                killStatusLabel = "DIRECT_NUMERIC",
+            )
+        },
+    )
 
     private fun resultSlot(
         role: MatchResultScreenshotRole,

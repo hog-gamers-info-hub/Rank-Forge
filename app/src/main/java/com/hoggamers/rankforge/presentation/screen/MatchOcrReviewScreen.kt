@@ -303,35 +303,46 @@ internal fun MatchOcrReviewLobbyPlayersSection(
             style = MaterialTheme.typography.titleLarge,
         )
         lobbyPlayers.sortedBy { it.slotNumber }.forEach { slot ->
-            val teamName = teamNamesBySlot[slot.slotNumber]
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: stringResource(R.string.match_ocr_review_compact_not_named)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics(mergeDescendants = true) {}
-                        .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.match_ocr_review_compact_team,
-                            slot.slotNumber,
-                            teamName,
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-                LobbyPlayerRow(slot, leftPlayer = 1, rightPlayer = 3)
-                LobbyPlayerRow(slot, leftPlayer = 2, rightPlayer = 4)
-            }
+            MatchOcrReviewLobbySlotContent(
+                slot = slot,
+                teamNamesBySlot = teamNamesBySlot,
+            )
         }
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewLobbySlotContent(
+    slot: MatchOcrReviewLobbySlotUiState,
+    teamNamesBySlot: Map<Int, String>,
+) {
+    val teamName = teamNamesBySlot[slot.slotNumber]
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.match_ocr_review_compact_not_named)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {}
+                .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_compact_team,
+                    slot.slotNumber,
+                    teamName,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        LobbyPlayerRow(slot, leftPlayer = 1, rightPlayer = 3)
+        LobbyPlayerRow(slot, leftPlayer = 2, rightPlayer = 4)
     }
 }
 
@@ -451,7 +462,7 @@ internal fun MatchOcrReviewCompactPreviewList(
 }
 
 @Composable
-private fun MatchOcrReviewCompactRow(
+internal fun MatchOcrReviewCompactRow(
     previewRow: MatchResultOcrPreviewRowUiState,
     reviewRow: MatchOcrReviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
@@ -631,7 +642,7 @@ internal fun MatchResultOcrPreviewSection(
 }
 
 @Composable
-private fun MatchOcrReviewCorrectionSummary(
+internal fun MatchOcrReviewCorrectionSummary(
     correctionDraft: MatchOcrReviewCorrectionDraft,
     finalization: MatchOcrReviewFinalizationUiState,
     onResetAllCorrections: () -> Unit,
@@ -677,7 +688,7 @@ private fun MatchOcrReviewCorrectionSummary(
 }
 
 @Composable
-private fun MatchOcrReviewRow(
+internal fun MatchOcrReviewRow(
     row: MatchOcrReviewRowUiState,
     previewRow: MatchResultOcrPreviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
@@ -980,7 +991,7 @@ private fun MatchOcrReviewFinalizationSummary(
 }
 
 @Composable
-private fun MatchOcrReviewFinalizeWarningDialog(
+internal fun MatchOcrReviewFinalizeWarningDialog(
     warningCount: Int,
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
