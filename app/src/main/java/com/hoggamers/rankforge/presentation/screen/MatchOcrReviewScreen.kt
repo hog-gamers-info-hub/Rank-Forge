@@ -659,6 +659,7 @@ internal fun MatchOcrReviewCorrectionSummary(
     onFinalizeOcrCorrection: () -> Unit,
     showCorrectionSummaryDetails: Boolean = true,
     showResetAllCorrectionsAction: Boolean = true,
+    showFinalizeAction: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -689,6 +690,7 @@ internal fun MatchOcrReviewCorrectionSummary(
             finalization = finalization,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
             showSummaryDetails = showCorrectionSummaryDetails,
+            showFinalizeAction = showFinalizeAction,
         )
         if (showResetAllCorrectionsAction) {
             Button(
@@ -1063,6 +1065,7 @@ private fun MatchOcrReviewFinalizationSummary(
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
     showSummaryDetails: Boolean,
+    showFinalizeAction: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -1107,25 +1110,40 @@ private fun MatchOcrReviewFinalizationSummary(
                 modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZATION_ERROR),
             )
         }
-        Button(
-            onClick = onFinalizeOcrCorrection,
-            enabled = correctionDraft.blockerCount == 0 &&
-                !finalization.isFinalizing &&
-                !finalization.isFinalized,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
-        ) {
-            Text(
-                text = stringResource(
-                    if (finalization.isFinalizing) {
-                        R.string.match_ocr_review_finalization_in_progress
-                    } else {
-                        R.string.match_ocr_review_finalize_action
-                    },
-                ),
+        if (showFinalizeAction) {
+            MatchOcrReviewFinalizeAction(
+                correctionDraft = correctionDraft,
+                finalization = finalization,
+                onFinalizeOcrCorrection = onFinalizeOcrCorrection,
             )
         }
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewFinalizeAction(
+    correctionDraft: MatchOcrReviewCorrectionDraft,
+    finalization: MatchOcrReviewFinalizationUiState,
+    onFinalizeOcrCorrection: () -> Unit,
+) {
+    Button(
+        onClick = onFinalizeOcrCorrection,
+        enabled = correctionDraft.blockerCount == 0 &&
+            !finalization.isFinalizing &&
+            !finalization.isFinalized,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+    ) {
+        Text(
+            text = stringResource(
+                if (finalization.isFinalizing) {
+                    R.string.match_ocr_review_finalization_in_progress
+                } else {
+                    R.string.match_ocr_review_finalize_action
+                },
+            ),
+        )
     }
 }
 
