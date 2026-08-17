@@ -99,6 +99,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
                     onCrop = {},
                     onRemove = {},
                     showTitle = false,
+                    compactSelectors = true,
                 )
             }
         }
@@ -106,6 +107,8 @@ class MatchLobbyScreenshotIntakeScreenTest {
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
             .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Empty").assertCountEquals(0)
         composeTestRule.onNodeWithText(composeTestRule.activity.getString(R.string.match_lobby_screenshot_intake_title))
             .assertDoesNotExist()
     }
