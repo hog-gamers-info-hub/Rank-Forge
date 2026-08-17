@@ -975,6 +975,7 @@ private fun MatchReviewResultRowsPagerContent(
             onResetAllCorrections = onResetAllCorrections,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
             showCorrectionSummaryDetails = false,
+            showResetAllCorrectionsAction = false,
         )
     }
     Column(
@@ -1005,6 +1006,7 @@ private fun MatchReviewResultRowsPagerContent(
                             showWarningDetails = false,
                             compactFieldRow = true,
                             showBlockerDetails = false,
+                            compactResetAction = true,
                         )
                     }
                 }

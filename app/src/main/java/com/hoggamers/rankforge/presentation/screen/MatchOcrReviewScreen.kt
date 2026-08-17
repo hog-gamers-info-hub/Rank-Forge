@@ -10,9 +10,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -466,6 +471,9 @@ internal fun MatchOcrReviewCompactRow(
     previewRow: MatchResultOcrPreviewRowUiState,
     reviewRow: MatchOcrReviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
+    onCompactReset: (() -> Unit)? = null,
+    compactResetEnabled: Boolean = true,
+    compactResetTestTag: String? = null,
 ) {
     val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
@@ -488,10 +496,12 @@ internal fun MatchOcrReviewCompactRow(
             .testTag(MatchOcrReviewTestTags.compactRow(previewRow.position)),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(
+        MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, placement),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactPlacement(previewRow.position)),
+            placementTestTag = MatchOcrReviewTestTags.compactPlacement(previewRow.position),
+            onCompactReset = onCompactReset,
+            compactResetEnabled = compactResetEnabled,
+            compactResetTestTag = compactResetTestTag,
         )
         Text(
             text = stringResource(
@@ -648,6 +658,7 @@ internal fun MatchOcrReviewCorrectionSummary(
     onResetAllCorrections: () -> Unit,
     onFinalizeOcrCorrection: () -> Unit,
     showCorrectionSummaryDetails: Boolean = true,
+    showResetAllCorrectionsAction: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -679,14 +690,16 @@ internal fun MatchOcrReviewCorrectionSummary(
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
             showSummaryDetails = showCorrectionSummaryDetails,
         )
-        Button(
-            onClick = onResetAllCorrections,
-            enabled = !finalization.isFinalized,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MatchOcrReviewTestTags.RESET_ALL),
-        ) {
-            Text(text = stringResource(R.string.match_ocr_review_reset_all_action))
+        if (showResetAllCorrectionsAction) {
+            Button(
+                onClick = onResetAllCorrections,
+                enabled = !finalization.isFinalized,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MatchOcrReviewTestTags.RESET_ALL),
+            ) {
+                Text(text = stringResource(R.string.match_ocr_review_reset_all_action))
+            }
         }
     }
 }
@@ -705,7 +718,14 @@ internal fun MatchOcrReviewRow(
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
+    compactResetAction: Boolean = false,
 ) {
+    val compactResetCallback: (() -> Unit)? = if (compactResetAction && correctionDraft != null) {
+        { onResetRowCorrection(row.rowIndex) }
+    } else {
+        null
+    }
+    val compactResetTestTag = compactResetCallback?.let { MatchOcrReviewTestTags.resetRow(row.rowIndex) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -717,12 +737,23 @@ internal fun MatchOcrReviewRow(
                 previewRow = previewRow,
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                onCompactReset = compactResetCallback,
+                compactResetEnabled = correctionEnabled,
+                compactResetTestTag = compactResetTestTag,
             )
-            row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(row)
+            row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
+                row = row,
+                onCompactReset = compactResetCallback,
+                compactResetEnabled = correctionEnabled,
+                compactResetTestTag = compactResetTestTag,
+            )
             else -> MatchOcrReviewCompactRow(
                 previewRow = row.toCompactPreviewRow(),
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                onCompactReset = compactResetCallback,
+                compactResetEnabled = correctionEnabled,
+                compactResetTestTag = compactResetTestTag,
             )
         }
         if (correctionDraft != null) {
@@ -736,6 +767,7 @@ internal fun MatchOcrReviewRow(
                 showWarningDetails = showWarningDetails,
                 compactFieldRow = compactFieldRow,
                 showBlockerDetails = showBlockerDetails,
+                showResetRowCorrectionAction = !compactResetAction,
             )
         }
     }
@@ -753,6 +785,9 @@ private fun MatchOcrReviewRowUiState.isSyntheticManualPlaceholder(): Boolean =
 @Composable
 private fun MatchOcrReviewMissingPreviewRow(
     row: MatchOcrReviewRowUiState,
+    onCompactReset: (() -> Unit)? = null,
+    compactResetEnabled: Boolean = true,
+    compactResetTestTag: String? = null,
 ) {
     val position = row.expectedPlacementLabel
     val notMatched = stringResource(R.string.match_ocr_review_compact_not_matched)
@@ -762,10 +797,12 @@ private fun MatchOcrReviewMissingPreviewRow(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(
+        MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, position),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1)),
+            placementTestTag = MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1),
+            onCompactReset = onCompactReset,
+            compactResetEnabled = compactResetEnabled,
+            compactResetTestTag = compactResetTestTag,
         )
         Text(
             text = stringResource(
@@ -792,6 +829,40 @@ private fun MatchOcrReviewMissingPreviewRow(
             rightSlot = 4,
             playerLabel = notDetected,
         )
+    }
+}
+
+@Composable
+private fun MatchOcrReviewPositionHeader(
+    text: String,
+    placementTestTag: String,
+    onCompactReset: (() -> Unit)?,
+    compactResetEnabled: Boolean,
+    compactResetTestTag: String?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(placementTestTag),
+        )
+        if (onCompactReset != null && compactResetTestTag != null) {
+            IconButton(
+                onClick = onCompactReset,
+                enabled = compactResetEnabled,
+                modifier = Modifier.testTag(compactResetTestTag),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.match_ocr_review_reset_row_action),
+                )
+            }
+        }
     }
 }
 
@@ -841,6 +912,7 @@ private fun MatchOcrReviewCorrectionFields(
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
+    showResetRowCorrectionAction: Boolean = true,
 ) {
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedTextField(
@@ -972,14 +1044,16 @@ private fun MatchOcrReviewCorrectionFields(
             }
         }
     }
-    Button(
-        onClick = { onResetRowCorrection(correctionDraft.rowIndex) },
-        enabled = correctionEnabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.resetRow(correctionDraft.rowIndex)),
-    ) {
-        Text(text = stringResource(R.string.match_ocr_review_reset_row_action))
+    if (showResetRowCorrectionAction) {
+        Button(
+            onClick = { onResetRowCorrection(correctionDraft.rowIndex) },
+            enabled = correctionEnabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.resetRow(correctionDraft.rowIndex)),
+        ) {
+            Text(text = stringResource(R.string.match_ocr_review_reset_row_action))
+        }
     }
 }
 
