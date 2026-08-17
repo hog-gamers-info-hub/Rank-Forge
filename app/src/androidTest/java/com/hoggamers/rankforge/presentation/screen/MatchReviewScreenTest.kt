@@ -368,8 +368,7 @@ class MatchReviewScreenTest {
         val placements = mutableListOf<Pair<Int, String>>()
         val kills = mutableListOf<Pair<Int, String>>()
         val teamSlots = mutableListOf<Pair<Int, String>>()
-        var resetRowCount = 0
-        var resetAllCount = 0
+        val resetRows = mutableListOf<Int>()
         var finalizeCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -384,8 +383,8 @@ class MatchReviewScreenTest {
                     onOcrPlacementChanged = { row, value -> placements += row to value },
                     onOcrKillsChanged = { row, value -> kills += row to value },
                     onOcrAssignedTeamSlotChanged = { row, value -> teamSlots += row to value },
-                    onOcrResetRowCorrection = { resetRowCount++ },
-                    onOcrResetAllCorrections = { resetAllCount++ },
+                    onOcrResetRowCorrection = { rowIndex -> resetRows += rowIndex },
+                    onOcrResetAllCorrections = {},
                     onOcrFinalize = { finalizeCount++ },
                 )
             }
@@ -406,10 +405,10 @@ class MatchReviewScreenTest {
             .assertIsEnabled()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
             .performScrollTo()
+            .assertIsDisplayed()
             .performClick()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.RESET_ALL)
-            .performScrollTo()
-            .performClick()
+        composeTestRule.onAllNodesWithText("Reset").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.RESET_ALL).assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .performScrollTo()
             .performClick()
@@ -418,8 +417,7 @@ class MatchReviewScreenTest {
             assertTrue(placements.any { it.first == 0 })
             assertTrue(kills.any { it.first == 0 })
             assertTrue(teamSlots.any { it.first == 0 })
-            assertEquals(1, resetRowCount)
-            assertEquals(1, resetAllCount)
+            assertEquals(listOf(0), resetRows)
             assertEquals(1, finalizeCount)
         }
     }
@@ -1885,9 +1883,8 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.RESET_ALL)
-            .performScrollTo()
-            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.RESET_ALL)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .performScrollTo()
             .assertIsDisplayed()
