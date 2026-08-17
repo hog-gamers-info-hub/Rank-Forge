@@ -165,6 +165,24 @@ fun MatchLobbyScreenshotIntakeScreen(
                     }
             }
 
+            if (compactActions && !showTitle) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.match_review_lobby_screenshots_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    LobbyTemplateToggle(
+                        uiState = uiState,
+                        onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
+                        onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -193,7 +211,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         )
                     }
                 }
-                if (compactActions) {
+                if (compactActions && showTitle) {
                     Spacer(modifier = Modifier.weight(1f))
                     LobbyTemplateToggle(
                         uiState = uiState,

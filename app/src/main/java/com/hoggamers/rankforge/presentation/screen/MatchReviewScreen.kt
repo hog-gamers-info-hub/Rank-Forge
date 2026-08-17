@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
@@ -589,12 +590,14 @@ private fun MatchReviewContent(
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             }
         } else {
-            Text(
-                text = stringResource(R.string.match_review_lobby_screenshots_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
-            )
-            matchLobbyScreenshotIntake()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 1.dp)
+                    .testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
+            ) {
+                matchLobbyScreenshotIntake()
+            }
             if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
                 MatchReviewLobbyPlayerDetailsContent(ocrUiState)
             }
