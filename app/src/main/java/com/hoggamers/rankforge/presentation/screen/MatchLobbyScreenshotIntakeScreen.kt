@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +57,7 @@ fun MatchLobbyScreenshotIntakeRoute(
     matchId: String,
     onOpenCropEditor: (Int) -> Unit,
     showTitle: Boolean = true,
+    compactSelectors: Boolean = false,
     viewModel: MatchLobbyScreenshotIntakeViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) { viewModel.load(tournamentId, matchId) }
@@ -85,6 +88,7 @@ fun MatchLobbyScreenshotIntakeRoute(
         onRemove = viewModel::removeScreenshot,
         onSaveLobbyForNextMatches = viewModel::saveLobbyForNextMatches,
         showTitle = showTitle,
+        compactSelectors = compactSelectors,
     )
 }
 
@@ -96,6 +100,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     onRemove: (Int) -> Unit,
     onSaveLobbyForNextMatches: () -> Unit = {},
     showTitle: Boolean = true,
+    compactSelectors: Boolean = false,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG),
@@ -159,6 +164,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         hasSelection = hasSelection,
                         isActive = hasSelection && activeSlotIndex == slot.index,
                         enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isBusy),
+                        compactSelectors = compactSelectors,
                         onClick = onClick,
                     )
                 }
@@ -219,12 +225,33 @@ private fun RowScope.LobbyScreenshotSelectorButton(
     hasSelection: Boolean,
     isActive: Boolean,
     enabled: Boolean,
+    compactSelectors: Boolean,
     onClick: () -> Unit,
 ) {
     val modifier = Modifier
-        .weight(1f)
+        .then(if (compactSelectors) Modifier else Modifier.weight(1f))
         .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + slot.index)
         .semantics { selected = isActive }
+    if (compactSelectors) {
+        if (isActive) {
+            FilledIconButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = modifier,
+            ) {
+                Text(text = slot.index.toString())
+            }
+        } else {
+            OutlinedIconButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = modifier,
+            ) {
+                Text(text = slot.index.toString())
+            }
+        }
+        return
+    }
     val content: @Composable RowScope.() -> Unit = {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = stringResource(R.string.match_lobby_screenshot_slot_short_label, slot.index))

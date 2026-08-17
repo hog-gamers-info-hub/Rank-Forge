@@ -23,8 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1096,7 +1098,7 @@ private fun ResultScreenshotSelector(
                         onSelectScreenshot(role)
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier,
             )
             resultScreenshotSelectorButton(
                 role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
@@ -1112,7 +1114,7 @@ private fun ResultScreenshotSelector(
                         onSelectScreenshot(role)
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier,
             )
         }
         if (selectedPages.isNotEmpty()) {
@@ -1163,36 +1165,18 @@ private fun RowScope.resultScreenshotSelectorButton(
     val buttonModifier = modifier
             .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_SLOT_TEST_TAG_PREFIX + screenshotNumber)
             .semantics { selected = isActive }
-    val content: @Composable RowScope.() -> Unit = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = stringResource(R.string.match_review_result_screenshot_slot_short_label, screenshotNumber))
-            Text(
-                text = stringResource(
-                    if (hasSelection) {
-                        R.string.screenshot_slot_selected_status
-                    } else {
-                        R.string.screenshot_slot_empty_status
-                    },
-                ),
-            )
-        }
-    }
     if (isActive) {
-        Button(
+        FilledIconButton(
             onClick = { onActivate(role, hasSelection) },
             enabled = hasSelection || (isEditable && !slot.isBusy),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
             modifier = buttonModifier,
-            content = content,
-        )
+        ) { Text(text = screenshotNumber.toString()) }
     } else {
-        OutlinedButton(
+        OutlinedIconButton(
             onClick = { onActivate(role, hasSelection) },
             enabled = hasSelection || (isEditable && !slot.isBusy),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
             modifier = buttonModifier,
-            content = content,
-        )
+        ) { Text(text = screenshotNumber.toString()) }
     }
 }
 
