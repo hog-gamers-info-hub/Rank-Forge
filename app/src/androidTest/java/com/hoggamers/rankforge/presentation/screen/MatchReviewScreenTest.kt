@@ -1831,6 +1831,55 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun simplifiedInlineOcrHidesPerRowWarningDetailsAndVerboseSummary() {
+        val baseState = inlineOcrState()
+        val baseDraft = baseState.correctionDraft ?: error("Expected correction draft")
+        val warningDraft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(baseDraft, 0, "9")
+        val warningState = baseState.copy(
+            warningCount = warningDraft.warningCount,
+            correctionDraft = warningDraft,
+        )
+        assertEquals(1, warningDraft.warningCount)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = warningState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.rowWarning(0)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warnings:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warning: Kills changed from OCR value.").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Correction draft:", substring = true).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Correction draft has unsaved in-memory changes.")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Corrected rows are ready for finalization review.")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Finalization blocked:", substring = true).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Warnings requiring confirmation:", substring = true)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_BLOCKED_LABEL)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.RESET_ALL)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
         resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),

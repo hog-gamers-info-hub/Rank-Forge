@@ -974,6 +974,7 @@ private fun MatchReviewResultRowsPagerContent(
             finalization = uiState.finalization,
             onResetAllCorrections = onResetAllCorrections,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+            showCorrectionSummaryDetails = false,
         )
     }
     Column(
@@ -1001,6 +1002,7 @@ private fun MatchReviewResultRowsPagerContent(
                             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                             onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
+                            showWarningDetails = false,
                         )
                     }
                 }
