@@ -703,6 +703,7 @@ internal fun MatchOcrReviewRow(
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
     showWarningDetails: Boolean = true,
+    compactFieldRow: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -732,6 +733,7 @@ internal fun MatchOcrReviewRow(
                 onResetRowCorrection = onResetRowCorrection,
                 correctionEnabled = correctionEnabled,
                 showWarningDetails = showWarningDetails,
+                compactFieldRow = compactFieldRow,
             )
         }
     }
@@ -835,52 +837,102 @@ private fun MatchOcrReviewCorrectionFields(
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
     showWarningDetails: Boolean = true,
+    compactFieldRow: Boolean = false,
 ) {
-    OutlinedTextField(
-        value = correctionDraft.placementDraftValue,
-        onValueChange = { onPlacementChanged(correctionDraft.rowIndex, it) },
-        enabled = correctionEnabled,
-        label = { Text(text = stringResource(R.string.match_ocr_review_correction_placement_label)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        isError = correctionDraft.validation.blockers.any {
-            it == MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ||
-                it == MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ||
-                it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.placementInput(correctionDraft.rowIndex)),
-    )
-    OutlinedTextField(
-        value = correctionDraft.killsDraftValue,
-        onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
-        enabled = correctionEnabled,
-        label = { Text(text = stringResource(R.string.match_ocr_review_correction_kills_label)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        isError = correctionDraft.validation.blockers.any {
-            it == MatchOcrReviewCorrectionReason.MISSING_KILLS ||
-                it == MatchOcrReviewCorrectionReason.INVALID_KILLS ||
-                it == MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.killsInput(correctionDraft.rowIndex)),
-    )
-    OutlinedTextField(
-        value = correctionDraft.assignedTeamSlotDraftValue,
-        onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
-        enabled = correctionEnabled,
-        label = { Text(text = stringResource(R.string.match_ocr_review_correction_team_slot_label)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        isError = correctionDraft.validation.blockers.any {
-            it == MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ||
-                it == MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ||
-                it == MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.teamSlotInput(correctionDraft.rowIndex)),
-    )
+    val placementField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(
+            value = correctionDraft.placementDraftValue,
+            onValueChange = { onPlacementChanged(correctionDraft.rowIndex, it) },
+            enabled = correctionEnabled,
+            label = {
+                Text(
+                    text = stringResource(
+                        if (compactFieldRow) {
+                            R.string.match_ocr_review_correction_position_short_label
+                        } else {
+                            R.string.match_ocr_review_correction_placement_label
+                        },
+                    ),
+                )
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = correctionDraft.validation.blockers.any {
+                it == MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ||
+                    it == MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ||
+                    it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
+            },
+            modifier = modifier.testTag(MatchOcrReviewTestTags.placementInput(correctionDraft.rowIndex)),
+        )
+    }
+    val killsField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(
+            value = correctionDraft.killsDraftValue,
+            onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
+            enabled = correctionEnabled,
+            label = {
+                Text(
+                    text = stringResource(
+                        if (compactFieldRow) {
+                            R.string.match_ocr_review_correction_kills_short_label
+                        } else {
+                            R.string.match_ocr_review_correction_kills_label
+                        },
+                    ),
+                )
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = correctionDraft.validation.blockers.any {
+                it == MatchOcrReviewCorrectionReason.MISSING_KILLS ||
+                    it == MatchOcrReviewCorrectionReason.INVALID_KILLS ||
+                    it == MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
+            },
+            modifier = modifier.testTag(MatchOcrReviewTestTags.killsInput(correctionDraft.rowIndex)),
+        )
+    }
+    val teamSlotField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(
+            value = correctionDraft.assignedTeamSlotDraftValue,
+            onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
+            enabled = correctionEnabled,
+            label = {
+                Text(
+                    text = stringResource(
+                        if (compactFieldRow) {
+                            R.string.match_ocr_review_correction_slot_short_label
+                        } else {
+                            R.string.match_ocr_review_correction_team_slot_label
+                        },
+                    ),
+                )
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = correctionDraft.validation.blockers.any {
+                it == MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ||
+                    it == MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ||
+                    it == MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
+            },
+            modifier = modifier.testTag(MatchOcrReviewTestTags.teamSlotInput(correctionDraft.rowIndex)),
+        )
+    }
+    if (compactFieldRow) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            placementField(Modifier.weight(1f))
+            killsField(Modifier.weight(1f))
+            teamSlotField(Modifier.weight(1f))
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            placementField(Modifier.fillMaxWidth())
+            killsField(Modifier.fillMaxWidth())
+            teamSlotField(Modifier.fillMaxWidth())
+        }
+    }
     if (correctionDraft.isDirty) {
         Text(
             text = stringResource(R.string.match_ocr_review_correction_dirty_row),
