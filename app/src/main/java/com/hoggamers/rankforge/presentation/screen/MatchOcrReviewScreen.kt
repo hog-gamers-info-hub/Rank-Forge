@@ -647,6 +647,7 @@ internal fun MatchOcrReviewCorrectionSummary(
     finalization: MatchOcrReviewFinalizationUiState,
     onResetAllCorrections: () -> Unit,
     onFinalizeOcrCorrection: () -> Unit,
+    showCorrectionSummaryDetails: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -654,26 +655,29 @@ internal fun MatchOcrReviewCorrectionSummary(
             .testTag(MatchOcrReviewTestTags.CORRECTION_ROOT),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_correction_summary_value,
-                correctionDraft.blockerCount,
-                correctionDraft.warningCount,
-                if (correctionDraft.isDirty) {
-                    stringResource(R.string.match_ocr_review_yes)
-                } else {
-                    stringResource(R.string.match_ocr_review_no)
-                },
-                stringResource(correctionDraft.status.toMessageRes()),
-            ),
-        )
-        if (correctionDraft.isDirty) {
-            Text(text = stringResource(R.string.match_ocr_review_correction_dirty_summary))
+        if (showCorrectionSummaryDetails) {
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_correction_summary_value,
+                    correctionDraft.blockerCount,
+                    correctionDraft.warningCount,
+                    if (correctionDraft.isDirty) {
+                        stringResource(R.string.match_ocr_review_yes)
+                    } else {
+                        stringResource(R.string.match_ocr_review_no)
+                    },
+                    stringResource(correctionDraft.status.toMessageRes()),
+                ),
+            )
+            if (correctionDraft.isDirty) {
+                Text(text = stringResource(R.string.match_ocr_review_correction_dirty_summary))
+            }
         }
         MatchOcrReviewFinalizationSummary(
             correctionDraft = correctionDraft,
             finalization = finalization,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+            showSummaryDetails = showCorrectionSummaryDetails,
         )
         Button(
             onClick = onResetAllCorrections,
@@ -698,6 +702,7 @@ internal fun MatchOcrReviewRow(
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
+    showWarningDetails: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -726,6 +731,7 @@ internal fun MatchOcrReviewRow(
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onResetRowCorrection = onResetRowCorrection,
                 correctionEnabled = correctionEnabled,
+                showWarningDetails = showWarningDetails,
             )
         }
     }
@@ -828,6 +834,7 @@ private fun MatchOcrReviewCorrectionFields(
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
+    showWarningDetails: Boolean = true,
 ) {
     OutlinedTextField(
         value = correctionDraft.placementDraftValue,
@@ -895,7 +902,7 @@ private fun MatchOcrReviewCorrectionFields(
             }
         }
     }
-    if (correctionDraft.validation.warnings.isNotEmpty()) {
+    if (showWarningDetails && correctionDraft.validation.warnings.isNotEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -926,6 +933,7 @@ private fun MatchOcrReviewFinalizationSummary(
     correctionDraft: MatchOcrReviewCorrectionDraft,
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
+    showSummaryDetails: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -933,26 +941,28 @@ private fun MatchOcrReviewFinalizationSummary(
             .testTag(MatchOcrReviewTestTags.FINALIZATION_SUMMARY),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        Text(text = stringResource(R.string.match_ocr_review_finalization_ready))
-        if (correctionDraft.blockerCount > 0) {
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_finalization_blocked,
-                    correctionDraft.blockerCount,
-                ),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_BLOCKED_LABEL),
-            )
-        }
-        if (correctionDraft.warningCount > 0) {
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_finalization_warning_count,
-                    correctionDraft.warningCount,
-                ),
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT),
-            )
+        if (showSummaryDetails) {
+            Text(text = stringResource(R.string.match_ocr_review_finalization_ready))
+            if (correctionDraft.blockerCount > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.match_ocr_review_finalization_blocked,
+                        correctionDraft.blockerCount,
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_BLOCKED_LABEL),
+                )
+            }
+            if (correctionDraft.warningCount > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.match_ocr_review_finalization_warning_count,
+                        correctionDraft.warningCount,
+                    ),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT),
+                )
+            }
         }
         if (finalization.isFinalized) {
             Text(
