@@ -601,6 +601,7 @@
     <string name="match_lobby_screenshot_crop_action">Crop</string>
     <string name="match_lobby_screenshot_remove_action">Remove</string>
     <string name="match_lobby_screenshot_save_template_action">Save this lobby for next matches</string>
+    <string name="match_lobby_screenshot_save_template_compact_action">Save Lobby</string>
     <string name="match_lobby_screenshot_save_template_success">Lobby saved for next matches</string>
     <string name="match_lobby_screenshot_save_template_failed">Could not save this lobby</string>
     <string name="match_lobby_screenshot_selected">Image selected and preserved.</string>
