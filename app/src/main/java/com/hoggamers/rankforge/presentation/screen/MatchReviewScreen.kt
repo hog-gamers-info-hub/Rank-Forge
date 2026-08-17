@@ -574,6 +574,16 @@ private fun MatchReviewContent(
             MatchOcrCacheAvailability.NOT_AVAILABLE,
             -> Unit
         }
+        if (!showLegacyManualReviewContent && shouldShowInlineOcrDetails) {
+            val readyOcrUiState = ocrUiState as? MatchOcrReviewUiState.Ready
+            readyOcrUiState?.correctionDraft?.let { correctionDraft ->
+                MatchOcrReviewFinalizeAction(
+                    correctionDraft = correctionDraft,
+                    finalization = readyOcrUiState.finalization,
+                    onFinalizeOcrCorrection = onOcrFinalize,
+                )
+            }
+        }
         if (uiState.isEditable) {
             Button(
                 onClick = {
@@ -976,6 +986,7 @@ private fun MatchReviewResultRowsPagerContent(
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
             showCorrectionSummaryDetails = false,
             showResetAllCorrectionsAction = false,
+            showFinalizeAction = false,
         )
     }
     Column(

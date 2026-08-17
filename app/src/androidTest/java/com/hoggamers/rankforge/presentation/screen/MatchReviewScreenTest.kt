@@ -423,6 +423,39 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun simplifiedInlineFinalizeActionSitsBetweenResultRowsAndOcrReview() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertCountEquals(1)
+        val resultRows = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+        val finalizeAction = composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+        val ocrReviewAction = composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+
+        resultRows.performScrollTo()
+        finalizeAction.performScrollTo().assertIsDisplayed()
+        ocrReviewAction.performScrollTo().assertIsDisplayed()
+
+        val resultRowsBounds = resultRows.fetchSemanticsNode().boundsInRoot
+        val finalizeBounds = finalizeAction.fetchSemanticsNode().boundsInRoot
+        val ocrReviewBounds = ocrReviewAction.fetchSemanticsNode().boundsInRoot
+        assertTrue(finalizeBounds.top >= resultRowsBounds.bottom)
+        assertTrue(finalizeBounds.bottom <= ocrReviewBounds.top)
+    }
+
+    @Test
     fun simplifiedReviewOcrActionInvokesCallbackWhenEligible() {
         var ocrReviewCount = 0
         composeTestRule.setContent {
