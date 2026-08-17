@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG = "match_lobby_screenshot_intake_screen"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX = "match_lobby_screenshot_select_"
+const val MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG = "match_lobby_screenshot_next_select"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX = "match_lobby_screenshot_crop_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX = "match_lobby_screenshot_remove_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX = "match_lobby_screenshot_preview_"
@@ -131,7 +132,7 @@ fun MatchLobbyScreenshotIntakeScreen(
         if (uiState.slots.isNotEmpty()) {
             var activeSlotIndex by rememberSaveable { mutableStateOf<Int?>(null) }
             val selectedSlots = uiState.slots.filter { slot ->
-                slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
+                slot.hasScreenshotSelection()
             }
             val selectedSlotIndices = selectedSlots.map { it.index }
             val pagerState = rememberPagerState(pageCount = { selectedSlots.size })
@@ -162,26 +163,54 @@ fun MatchLobbyScreenshotIntakeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                uiState.slots.forEach { slot ->
-                    val hasSelection = slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
-                    val targetPage = selectedSlotIndices.indexOf(slot.index)
-                    val onClick: () -> Unit = {
-                        if (hasSelection && targetPage >= 0) {
-                            activeSlotIndex = slot.index
-                            scope.launch { pagerState.animateScrollToPage(targetPage) }
-                        } else if (!hasSelection) {
-                            onSelect(slot.index)
+                if (compactSelectors) {
+                    uiState.slots
+                        .filterNot { it.hasScreenshotSelection() }
+                        .minByOrNull { it.index }
+                        ?.let { nextEmptySlot ->
+                            Button(
+                                onClick = { onSelect(nextEmptySlot.index) },
+                                enabled = uiState.isAvailable &&
+                                    !uiState.isFinalized &&
+                                    !nextEmptySlot.isBusy,
+                                contentPadding = PaddingValues(
+                                    horizontal = RankForgeSpacing.Small,
+                                    vertical = RankForgeSpacing.ExtraSmall,
+                                ),
+                                modifier = Modifier.testTag(
+                                    MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG,
+                                ),
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.match_lobby_screenshot_select_index_action,
+                                        nextEmptySlot.index,
+                                    ),
+                                )
+                            }
                         }
-                        Unit
+                } else {
+                    uiState.slots.forEach { slot ->
+                        val hasSelection = slot.hasScreenshotSelection()
+                        val targetPage = selectedSlotIndices.indexOf(slot.index)
+                        val onClick: () -> Unit = {
+                            if (hasSelection && targetPage >= 0) {
+                                activeSlotIndex = slot.index
+                                scope.launch { pagerState.animateScrollToPage(targetPage) }
+                            } else if (!hasSelection) {
+                                onSelect(slot.index)
+                            }
+                            Unit
+                        }
+                        LobbyScreenshotSelectorButton(
+                            slot = slot,
+                            hasSelection = hasSelection,
+                            isActive = hasSelection && activeSlotIndex == slot.index,
+                            enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isBusy),
+                            compactSelectors = compactSelectors,
+                            onClick = onClick,
+                        )
                     }
-                    LobbyScreenshotSelectorButton(
-                        slot = slot,
-                        hasSelection = hasSelection,
-                        isActive = hasSelection && activeSlotIndex == slot.index,
-                        enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isBusy),
-                        compactSelectors = compactSelectors,
-                        onClick = onClick,
-                    )
                 }
                 if (compactActions) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -256,6 +285,9 @@ fun MatchLobbyScreenshotIntakeScreen(
         }
     }
 }
+
+private fun MatchLobbyScreenshotSlotUiState.hasScreenshotSelection(): Boolean =
+    hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
 
 @Composable
 private fun RowScope.LobbyScreenshotSelectorButton(

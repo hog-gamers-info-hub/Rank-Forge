@@ -35,7 +35,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun emptySlotsShowCompactSelectorsAndSelectionCallbacks() {
+    fun emptySlotsShowOneSequentialCompactSelectorAndSelectionCallback() {
         val selectedIndexes = mutableListOf<Int>()
         composeTestRule.setContent {
             RankForgeTheme {
@@ -48,45 +48,43 @@ class MatchLobbyScreenshotIntakeScreenTest {
                     onSelect = { selectedIndexes += it },
                     onCrop = {},
                     onRemove = {},
+                    compactSelectors = true,
+                    compactActions = true,
                 )
             }
         }
 
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                1,
+            ),
+        ).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
             .assertIsDisplayed()
             .assertIsNotEnabled()
         (1..3).forEach { index ->
-            composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + index)
-                .assertIsDisplayed()
+            composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + index)
+                .assertCountEquals(0)
         }
-        composeTestRule.onAllNodesWithText("Empty").assertCountEquals(3)
+        composeTestRule.onAllNodesWithText("Empty").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + "1")
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + "1")
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + "1")
             .assertCountEquals(0)
-        (1..3).forEach { index ->
-            composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + index)
-                .assertIsNotSelected()
-        }
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .performClick()
 
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
-            .performClick()
-            .assertIsNotSelected()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
-            .performClick()
-            .assertIsNotSelected()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 3)
-            .performClick()
-            .assertIsNotSelected()
-
-        composeTestRule.runOnIdle { assertEquals(listOf(1, 2, 3), selectedIndexes) }
+        composeTestRule.runOnIdle { assertEquals(listOf(1), selectedIndexes) }
     }
 
     @Test
-    fun embeddedModeSuppressesOnlyStandaloneTitleAndKeepsSlots() {
+    fun embeddedModeSuppressesOnlyStandaloneTitleAndUsesSequentialSelector() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchLobbyScreenshotIntakeScreen(
@@ -105,12 +103,259 @@ class MatchLobbyScreenshotIntakeScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("1").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                1,
+            ),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Empty").assertCountEquals(0)
         composeTestRule.onNodeWithText(composeTestRule.activity.getString(R.string.match_lobby_screenshot_intake_title))
             .assertDoesNotExist()
+    }
+
+    @Test
+    fun sequentialSelectorTargetsSlotTwoAfterSlotOneIsSelected() {
+        val selectedIndexes = mutableListOf<Int>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index == 1) {
+                                slot.copy(
+                                    hasLinkedAsset = true,
+                                    selectedScreenshotUri = "file:///private/lobby-1.png",
+                                )
+                            } else {
+                                slot
+                            }
+                        },
+                    ),
+                    onSelect = { selectedIndexes += it },
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                2,
+            ),
+        ).assertIsDisplayed()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(listOf(2), selectedIndexes) }
+    }
+
+    @Test
+    fun sequentialSelectorTargetsSlotThreeAfterSlotsOneAndTwoAreSelected() {
+        val selectedIndexes = mutableListOf<Int>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index in 1..2) {
+                                slot.copy(
+                                    hasLinkedAsset = true,
+                                    selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                                )
+                            } else {
+                                slot
+                            }
+                        },
+                    ),
+                    onSelect = { selectedIndexes += it },
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                3,
+            ),
+        ).performClick()
+        composeTestRule.runOnIdle { assertEquals(listOf(3), selectedIndexes) }
+    }
+
+    @Test
+    fun allSelectedSlotsHideSequentialSelector() {
+        val completeSlots = defaultMatchLobbyScreenshotSlots().map { slot ->
+            slot.copy(
+                hasLinkedAsset = true,
+                selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+            )
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = completeSlots,
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun nonSequentialSelectedSlotsTargetTheLowestMissingSlot() {
+        val selectedIndexes = mutableListOf<Int>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index == 1 || slot.index == 3) {
+                                slot.copy(
+                                    hasLinkedAsset = true,
+                                    selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                                )
+                            } else {
+                                slot
+                            }
+                        },
+                    ),
+                    onSelect = { selectedIndexes += it },
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                2,
+            ),
+        ).performClick()
+        composeTestRule.runOnIdle { assertEquals(listOf(2), selectedIndexes) }
+    }
+
+    @Test
+    fun missingLocalLinkedSlotIsNotUsedAsSequentialTarget() {
+        val selectedIndexes = mutableListOf<Int>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index == 1) {
+                                slot.copy(
+                                    hasLinkedAsset = true,
+                                    isLocalFileMissing = true,
+                                    selectedScreenshotUri = "file:///private/missing.png",
+                                )
+                            } else {
+                                slot
+                            }
+                        },
+                    ),
+                    onSelect = { selectedIndexes += it },
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                    compactActions = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                2,
+            ),
+        ).performClick()
+        composeTestRule.runOnIdle { assertEquals(listOf(2), selectedIndexes) }
+    }
+
+    @Test
+    fun busySequentialTargetRemainsDisplayedAndDisabled() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index == 1) {
+                                slot.copy(isPreservationInProgress = true)
+                            } else {
+                                slot
+                            }
+                        },
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                1,
+            ),
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun finalizedMatchKeepsSequentialSelectionDisabled() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.FINALIZED,
+                        slots = defaultMatchLobbyScreenshotSlots(),
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    compactSelectors = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
     }
 
     @Test
@@ -313,7 +558,8 @@ class MatchLobbyScreenshotIntakeScreenTest {
     }
 
     @Test
-    fun selectedSlotsSwipeThroughOnlySelectedSlotsAndUpdateActiveHighlight() {
+    fun selectedSlotsSwipeThroughInCompactModeWithoutSelectorButtons() {
+        val selectedIndexes = mutableListOf<Int>()
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchLobbyScreenshotIntakeScreen(
@@ -338,26 +584,35 @@ class MatchLobbyScreenshotIntakeScreenTest {
                             }
                         },
                     ),
-                    onSelect = {},
+                    onSelect = { selectedIndexes += it },
                     onCrop = {},
                     onRemove = {},
+                    compactSelectors = true,
+                    compactActions = true,
                 )
             }
         }
 
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
-            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(
+                R.string.match_lobby_screenshot_select_index_action,
+                2,
+            ),
+        ).assertIsDisplayed()
+            .performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 3)
+            .assertCountEquals(0)
+        composeTestRule.runOnIdle { assertEquals(listOf(2), selectedIndexes) }
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG)
+            .assertIsDisplayed()
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
-            .assertIsNotSelected()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
-            .assertIsNotSelected()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 3)
-            .assertIsSelected()
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 3)
             .assertIsDisplayed()
     }

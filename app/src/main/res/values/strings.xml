@@ -600,6 +600,7 @@
     <string name="match_lobby_screenshot_previous_page_affordance">‹</string>
     <string name="match_lobby_screenshot_next_page_affordance">›</string>
     <string name="match_lobby_screenshot_select_action">Select Screenshot</string>
+    <string name="match_lobby_screenshot_select_index_action">Select Screenshot %1$d</string>
     <string name="match_lobby_screenshot_replace_action">Replace</string>
     <string name="match_lobby_screenshot_crop_action">Crop</string>
     <string name="match_lobby_screenshot_remove_action">Remove</string>
