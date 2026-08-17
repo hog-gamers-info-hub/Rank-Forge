@@ -192,6 +192,139 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun explicitReprocessRunsAgainForTheSameMatch() = runTest(dispatcher) {
+        var calls = 0
+        var evidenceVersion = 1
+        val completeRunner = completePreviewRunner()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                calls++
+                val processed = completeRunner.process(identity) as MatchResultOcrPreviewProcessingResult.Processed
+                processed.copy(
+                    extraction = processed.extraction.copy(
+                        rows = processed.extraction.rows.map { row ->
+                            row.copy(
+                                placement = row.placement.copy(
+                                    ocrText = evidenceVersion.toString(),
+                                    resolvedText = evidenceVersion.toString(),
+                                ),
+                            )
+                        },
+                    ),
+                )
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+        assertEquals("1", (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
+            .rows.first().detectedPlacementDisplayValue)
+        evidenceVersion = 2
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        assertEquals(4, calls)
+        assertEquals("2", (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
+            .rows.first().detectedPlacementDisplayValue)
+    }
+
+    @Test
+    fun incompleteReprocessWithOnlyUpperCreatesManualPlaceholdersForLowerRows() = runTest(dispatcher) {
+        val completeRunner = completePreviewRunner()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+                    completeRunner.process(identity)
+                } else {
+                    MatchResultOcrPreviewProcessingResult.MissingAsset
+                }
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, state.rows.size)
+        assertEquals("Unavailable", state.rows[10].detectedPlacementDisplayValue)
+        assertEquals("", state.correctionDraft!!.rows[10].placementDraftValue)
+        assertTrue(state.rows[10].blockerLabels.isNotEmpty())
+    }
+
+    @Test
+    fun incompleteReprocessWithOnlyLowerCreatesManualPlaceholdersForUpperRows() = runTest(dispatcher) {
+        val completeRunner = completePreviewRunner()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                    completeRunner.process(identity)
+                } else {
+                    MatchResultOcrPreviewProcessingResult.MissingAsset
+                }
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, state.rows.size)
+        assertTrue(state.rows.take(10).all { it.detectedPlacementDisplayValue == "Unavailable" })
+        assertEquals("", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
+    }
+
+    @Test
+    fun incompleteReprocessWithZeroResultEvidenceCreatesTwelveBlankManualRows() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, state.rows.size)
+        assertEquals((0..11).toList(), state.rows.map { it.rowIndex })
+        assertEquals((1..12).map(Int::toString), state.rows.map { it.expectedPlacementLabel })
+        assertTrue(state.rows.all { it.detectedPlacementDisplayValue == "Unavailable" })
+        assertTrue(state.rows.all { it.detectedKillDisplayValue == "Unavailable" })
+        assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
+        assertTrue(state.correctionDraft!!.rows.all { row ->
+            row.placementDraftValue.isBlank() &&
+                row.killsDraftValue.isBlank() &&
+                row.assignedTeamSlotDraftValue.isBlank()
+        })
+        assertEquals(12, state.correctionDraft.blockerCount)
+    }
+
+    @Test
+    fun completeEvidenceModeDoesNotSilentlyCreateManualFallbackWithoutResults() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Error)
+    }
+
+    @Test
     fun loadDisplayInputPreservesExactIdsAndSurfacesMatchingEvidence() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
@@ -302,7 +435,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun emptyStateWithUsefulResultPreviewStillCarriesPersistedLobbyTeamNames() = runTest(dispatcher) {
+    fun partialResultPreviewStillCarriesPersistedLobbyTeamNames() = runTest(dispatcher) {
         val repository = createRepository()
         repository.saveTeamNames(TOURNAMENT_ID, mapOf(5 to "ETR ESPORTS"))
         val lobbyRunner = MatchLobbyPlayersOcrRunner { _, _ ->
@@ -327,7 +460,7 @@ class MatchOcrReviewViewModelTest {
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
         advanceUntilIdle()
 
-        val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
         assertEquals("ETR ESPORTS", state.teamNamesBySlot[5])
         assertEquals(5, state.lobbyPlayers.single().slotNumber)
         assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready)

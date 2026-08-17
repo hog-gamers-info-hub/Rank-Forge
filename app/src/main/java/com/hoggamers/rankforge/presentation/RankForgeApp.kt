@@ -55,6 +55,7 @@ fun RankForgeApp(
                         onAuthSubmit = authViewModel::submit,
                         onAuthGoogleSignIn = authViewModel::signInWithGoogle,
                         onAuthLogout = authViewModel::logout,
+                        matchLobbyScreenshotIntakeViewModelProvider = { _, _ -> hiltViewModel() },
                     )
                 },
             )

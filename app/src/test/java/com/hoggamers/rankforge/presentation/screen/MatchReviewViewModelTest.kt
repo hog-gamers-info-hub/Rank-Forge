@@ -288,7 +288,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun linkedLegacyDraftScreenshotDoesNotExposeResultOcrReviewNavigation() = runTest {
+    fun linkedLegacyDraftScreenshotCanOpenOcrReviewWithoutCompleteResultInputs() = runTest {
         val viewModel = reviewViewModel()
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
@@ -304,13 +304,13 @@ class MatchReviewViewModelTest {
 
         viewModel.openOcrReview()
 
-        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
         assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
     }
 
     @Test
-    fun upperReadyOnlyCannotOpenOcrReview() = runTest {
+    fun upperReadyOnlyCanOpenOcrReviewForPreflight() = runTest {
         val viewModel = reviewViewModelWithReadyResultRoles(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
@@ -318,11 +318,11 @@ class MatchReviewViewModelTest {
         viewModel.openOcrReview()
 
         assertFalse(viewModel.uiState.value.canOpenOcrReview)
-        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
     }
 
     @Test
-    fun lowerReadyOnlyCannotOpenOcrReview() = runTest {
+    fun lowerReadyOnlyCanOpenOcrReviewForPreflight() = runTest {
         val viewModel = reviewViewModelWithReadyResultRoles(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
@@ -330,7 +330,7 @@ class MatchReviewViewModelTest {
         viewModel.openOcrReview()
 
         assertFalse(viewModel.uiState.value.canOpenOcrReview)
-        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -364,7 +364,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun invalidScreenshotDoesNotExposeOcrReviewNavigation() = runTest {
+    fun invalidScreenshotDoesNotBlockOcrReviewNavigationBeforePreflight() = runTest {
         val viewModel = reviewViewModel(
             imageCandidateValidator = ImageCandidateValidator(
                 ImageCandidateMetadataReader {
@@ -382,7 +382,7 @@ class MatchReviewViewModelTest {
         viewModel.openOcrReview()
 
         assertFalse(viewModel.uiState.value.canOpenOcrReview)
-        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(MatchReviewNavigation.OCR_REVIEW, viewModel.uiState.value.navigation)
         assertEquals(ScreenshotLinkError.INVALID_IMAGE, viewModel.uiState.value.screenshotLinkError)
     }
 

@@ -77,7 +77,7 @@ class MatchReviewScreenTest {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
             .assertIsDisplayed()
-            .assertIsNotEnabled()
+            .assertIsEnabled()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
         val lobbyY = composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
@@ -85,6 +85,227 @@ class MatchReviewScreenTest {
         val resultY = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
             .fetchSemanticsNode().positionInRoot.y
         assertTrue(lobbyY < resultY)
+    }
+
+    @Test
+    fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+        listOf(
+            "Lobby Screenshot 1 is not available.",
+            "Lobby Screenshot 2 is not available.",
+            "Lobby Screenshot 3 is not available.",
+            "Result Screenshot 1 is not available.",
+            "Result Screenshot 2 is not available.",
+        ).forEach {
+            composeTestRule.onNodeWithText(it).performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun completeEvidenceBypassesPreflightAndStartsOcr() {
+        var opened = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.runOnIdle { assertEquals(1, opened) }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun lobbyIssueOffersOnlyItsExactSelectAction() {
+        var selectedIndex: Int? = null
+        val lobbyState = allLobbyReadyState().copy(
+            slots = allLobbyReadyState().slots.map { slot ->
+                if (slot.index == 2) slot.copy(hasLinkedAsset = false, confirmedCrop = null, cropProfileId = null)
+                else slot
+            },
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = lobbyState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onSelectLobbyScreenshot = { selectedIndex = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText("Lobby Screenshot 2 is not available.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Select Lobby Screenshot 2").performClick()
+        composeTestRule.runOnIdle { assertEquals(2, selectedIndex) }
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun lowerResultIssueUsesLowerRoleSelectAction() {
+        var selectedRole: MatchResultScreenshotRole? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            allResultReadySlots().first(),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onSelectResultScreenshot = { selectedRole = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText("Select Result Screenshot 2").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, selectedRole)
+        }
+    }
+
+    @Test
+    fun cropAndLocalMissingIssuesOfferCropAndReplace() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            allResultReadySlots().first(),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                isLocalFileMissing = true,
+                            ),
+                        ),
+                    ),
+                    lobbyUiState = allLobbyReadyState().copy(
+                        slots = allLobbyReadyState().slots.map { slot ->
+                            if (slot.index == 3) slot.copy(confirmedCrop = null, cropProfileId = null)
+                            else slot
+                        },
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText("Lobby Screenshot 3 needs a confirmed crop.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Crop Lobby Screenshot 3").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Result Screenshot 2 local image is unavailable.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Replace Result Screenshot 2").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Select Result Screenshot 2").assertCountEquals(0)
+    }
+
+    @Test
+    fun processingIssueDisablesCalculateWithoutAnActionButton() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState().copy(
+                        slots = allLobbyReadyState().slots.map { slot ->
+                            if (slot.index == 2) slot.copy(isValidationInProgress = true) else slot
+                        },
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText("Lobby Screenshot 2 is still processing.")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Select Lobby Screenshot 2").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun cancelDoesNotOpenInlineOcrOrStartCalculation() {
+        var calculated = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onCalculatePoints = { calculated++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG)
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(0, calculated) }
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun calculatePointsAcceptsIncompleteEvidenceAndOpensInlineOcr() {
+        var calculated = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onCalculatePoints = { calculated++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, calculated) }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
     }
 
     @Test
@@ -261,6 +482,7 @@ class MatchReviewScreenTest {
                             ),
                         ),
                     ),
+                    lobbyUiState = allLobbyReadyState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -478,6 +700,7 @@ class MatchReviewScreenTest {
                             ),
                         ),
                     ),
+                    lobbyUiState = allLobbyReadyState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -580,6 +803,7 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = matchState,
+                    lobbyUiState = allLobbyReadyState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -631,6 +855,7 @@ class MatchReviewScreenTest {
                             resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
                         ),
                     ),
+                    lobbyUiState = allLobbyReadyState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -640,7 +865,7 @@ class MatchReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
-            .assertIsNotEnabled()
+            .assertIsEnabled()
     }
 
     @Test
@@ -668,7 +893,7 @@ class MatchReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
-            .assertIsNotEnabled()
+            .assertIsEnabled()
     }
 
     @Test
@@ -2143,6 +2368,37 @@ class MatchReviewScreenTest {
         },
         validationErrors = validationErrors,
         resultScreenshots = resultScreenshots,
+    )
+
+    private fun allLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
+        isLoading = false,
+        isAvailable = true,
+        tournamentId = "tournament-id",
+        matchId = "match-id",
+        status = MatchStatus.DRAFT,
+        slots = (1..3).map { index ->
+            MatchLobbyScreenshotSlotUiState(
+                index = index,
+                hasLinkedAsset = true,
+                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                cropProfileId = "lobby",
+            )
+        },
+    )
+
+    private fun allResultReadySlots() = listOf(
+        resultSlot(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            hasLinkedAsset = true,
+            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+            cropProfileId = "match-result",
+        ),
+        resultSlot(
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            hasLinkedAsset = true,
+            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+            cropProfileId = "match-result",
+        ),
     )
 
     private fun inlineOcrState(): MatchOcrReviewUiState.Ready {

@@ -70,6 +70,7 @@ class MatchOcrReviewViewModel @Inject constructor(
     private var loadedMatchKey: String? = null
     private var previewJob: Job? = null
     private var lobbyPlayersJob: Job? = null
+    private var cacheLoadJob: Job? = null
 
     internal constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
@@ -164,6 +165,33 @@ class MatchOcrReviewViewModel @Inject constructor(
         val matchKey = "$tournamentId:$matchId"
         if (loadedMatchKey == matchKey) return
         loadedMatchKey = matchKey
+        startOcrProcessing(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            allowIncompleteEvidence = false,
+        )
+    }
+
+    /** Explicit user-triggered refresh; unlike load(), this always reruns current screenshot evidence. */
+    fun reprocess(
+        tournamentId: String,
+        matchId: String,
+        allowIncompleteEvidence: Boolean,
+    ) {
+        loadedMatchKey = "$tournamentId:$matchId"
+        startOcrProcessing(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            allowIncompleteEvidence = allowIncompleteEvidence,
+        )
+    }
+
+    private fun startOcrProcessing(
+        tournamentId: String,
+        matchId: String,
+        allowIncompleteEvidence: Boolean,
+    ) {
+        cacheLoadJob?.cancel()
 
         _uiState.update {
             MatchOcrReviewUiState.Empty(
@@ -195,17 +223,42 @@ class MatchOcrReviewViewModel @Inject constructor(
                 candidateTeams = teamContext.candidateTeams,
             )
             _uiState.update { state ->
+                val lobbyPlayers = when (state) {
+                    is MatchOcrReviewUiState.Empty -> state.lobbyPlayers
+                    is MatchOcrReviewUiState.Ready -> state.lobbyPlayers
+                    is MatchOcrReviewUiState.Error -> emptyList()
+                    MatchOcrReviewUiState.Loading -> emptyList()
+                }
+                val reviewState = if (
+                    allowIncompleteEvidence || roleResults.all {
+                        it.result is MatchResultOcrPreviewProcessingResult.Processed
+                    }
+                ) {
+                    completeReviewStateFromPreview(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        preview = preview,
+                        reviewRows = matchedRows,
+                        teamNamesBySlot = teamContext.teamNamesBySlot,
+                        lobbyPlayers = lobbyPlayers,
+                    )
+                } else {
+                    null
+                } ?: if (allowIncompleteEvidence) {
+                    completeManualFallbackReviewState(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        preview = preview,
+                        teamNamesBySlot = teamContext.teamNamesBySlot,
+                        lobbyPlayers = lobbyPlayers,
+                    )
+                } else {
+                    null
+                }
                 when (state) {
                     is MatchOcrReviewUiState.Empty -> {
                         if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                            completeReviewStateFromPreview(
-                                tournamentId = tournamentId,
-                                matchId = matchId,
-                                preview = preview,
-                                reviewRows = matchedRows,
-                                teamNamesBySlot = teamContext.teamNamesBySlot,
-                                lobbyPlayers = state.lobbyPlayers,
-                            ) ?: state.copy(
+                            reviewState ?: state.copy(
                                 matchResultOcrPreview = preview,
                                 teamNamesBySlot = teamContext.teamNamesBySlot,
                             )
@@ -213,7 +266,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                             state
                         }
                     }
-                    is MatchOcrReviewUiState.Ready -> state.copy(
+                    is MatchOcrReviewUiState.Ready -> reviewState ?: state.copy(
                         matchResultOcrPreview = preview,
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                     )
@@ -249,7 +302,8 @@ class MatchOcrReviewViewModel @Inject constructor(
     }
 
     fun loadCached(tournamentId: String, matchId: String) {
-        viewModelScope.launch {
+        cacheLoadJob?.cancel()
+        cacheLoadJob = viewModelScope.launch {
             val cached = try {
                 matchOcrCacheReader.read(tournamentId, matchId)
             } catch (cancellation: CancellationException) {
@@ -335,6 +389,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         val matchKey = "$tournamentId:$matchId:historical"
         if (loadedMatchKey == matchKey && _uiState.value !is MatchOcrReviewUiState.Loading) return
         loadedMatchKey = matchKey
+        cacheLoadJob?.cancel()
         _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
         previewJob?.cancel()
         lobbyPlayersJob?.cancel()
@@ -666,6 +721,37 @@ class MatchOcrReviewViewModel @Inject constructor(
             warningCount = correctionDraft.warningCount,
             safeRowCount = 0,
             manualRequiredRowCount = correctionDraft.blockerCount,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = true,
+            hasUnavailableEvidence = true,
+            correctionDraft = correctionDraft,
+            matchResultOcrPreview = preview,
+            teamNamesBySlot = teamNamesBySlot,
+            lobbyPlayers = lobbyPlayers,
+        )
+    }
+
+    private fun completeManualFallbackReviewState(
+        tournamentId: String,
+        matchId: String,
+        preview: MatchResultOcrPreviewUiState,
+        teamNamesBySlot: Map<Int, String>,
+        lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
+    ): MatchOcrReviewUiState.Ready {
+        val rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
+            rows = rows,
+            assignmentRequired = true,
+        )
+        return MatchOcrReviewUiState.Ready(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            rowCount = rows.size,
+            rows = rows,
+            blockerCount = correctionDraft.blockerCount,
+            warningCount = correctionDraft.warningCount,
+            safeRowCount = 0,
+            manualRequiredRowCount = rows.size,
             reviewRequiredRowCount = 0,
             manualReviewRequired = true,
             hasUnavailableEvidence = true,

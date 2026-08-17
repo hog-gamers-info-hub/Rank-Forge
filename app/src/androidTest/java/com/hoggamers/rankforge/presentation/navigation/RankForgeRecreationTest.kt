@@ -81,7 +81,7 @@ class RankForgeRecreationTest {
                     listViewModel = navigationViewModels.listViewModel,
                     detailsViewModelFactory = navigationViewModels::detailsViewModel,
                     matchReviewViewModelFactory = navigationViewModels::matchReviewViewModel,
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                 )
             }
         }

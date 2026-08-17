@@ -170,6 +170,9 @@ object MatchResultOcrPreviewUiStateMapper {
         }
     }
 
+    fun manualFallbackRows(): List<MatchOcrReviewRowUiState> =
+        (1..12).map(::placeholderRow)
+
     private fun placeholderRow(expectedPosition: Int): MatchOcrReviewRowUiState =
         MatchOcrReviewRowUiState(
             rowIndex = expectedPosition - 1,

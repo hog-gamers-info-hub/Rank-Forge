@@ -64,6 +64,7 @@ import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
@@ -130,6 +131,26 @@ const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_resul
 const val MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG = "match_review_result_ocr_details_section"
 const val MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG = "match_review_result_ocr_preview_pager"
 const val MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG = "match_review_result_ocr_rows_pager"
+const val MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG = "match_review_ocr_preflight_dialog"
+const val MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG = "match_review_ocr_preflight_calculate"
+const val MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG = "match_review_ocr_preflight_cancel"
+
+fun matchReviewOcrPreflightItemTestTag(identity: OcrScreenshotPreflightIdentity): String = when (identity) {
+    is OcrScreenshotPreflightIdentity.Lobby ->
+        "match_review_ocr_preflight_lobby_${identity.index}"
+    is OcrScreenshotPreflightIdentity.Result ->
+        "match_review_ocr_preflight_result_${identity.role.numberForUi()}"
+}
+
+fun matchReviewOcrPreflightActionTestTag(
+    identity: OcrScreenshotPreflightIdentity,
+    issue: OcrScreenshotPreflightIssue,
+): String = "${matchReviewOcrPreflightItemTestTag(identity)}_${issue.name.lowercase()}"
+
+private fun MatchResultScreenshotRole.numberForUi(): Int = when (this) {
+    MatchResultScreenshotRole.MATCH_RESULT_UPPER -> 1
+    MatchResultScreenshotRole.MATCH_RESULT_LOWER -> 2
+}
 
 @Composable
 fun MatchReviewRoute(
@@ -142,6 +163,7 @@ fun MatchReviewRoute(
     onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
     onStartCorrection: (String, String) -> Unit,
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
+    lobbyScreenshotIntakeViewModel: MatchLobbyScreenshotIntakeViewModel? = null,
     showLegacyManualReviewContent: Boolean = false,
     viewModel: MatchReviewViewModel = hiltViewModel(),
     ocrReviewViewModel: MatchOcrReviewViewModel? = null,
@@ -150,6 +172,9 @@ fun MatchReviewRoute(
         viewModel.load(tournamentId, matchId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lobbyUiState by (lobbyScreenshotIntakeViewModel?.uiState
+        ?: flowOf(MatchLobbyScreenshotIntakeUiState()))
+        .collectAsStateWithLifecycle(MatchLobbyScreenshotIntakeUiState())
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
     val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
@@ -279,13 +304,30 @@ fun MatchReviewRoute(
 
     MatchReviewScreen(
         uiState = uiState,
+        lobbyUiState = lobbyUiState,
         onEnterPlacements = viewModel::openPlacements,
         onEnterKills = viewModel::openKills,
         onOpenOcrReview = {
-            if (uiState.canOpenOcrReview) {
-                resolvedOcrReviewViewModel.load(tournamentId, matchId)
+            if (showLegacyManualReviewContent) {
+                viewModel.openOcrReview()
+            } else {
+                resolvedOcrReviewViewModel.reprocess(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    allowIncompleteEvidence = false,
+                )
             }
-            viewModel.openOcrReview()
+        },
+        onCalculatePoints = {
+            if (showLegacyManualReviewContent) {
+                viewModel.openOcrReview()
+            } else {
+                resolvedOcrReviewViewModel.reprocess(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    allowIncompleteEvidence = true,
+                )
+            }
         },
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
@@ -303,6 +345,12 @@ fun MatchReviewRoute(
         onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
         matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+        onSelectLobbyScreenshot = lobbyScreenshotIntakeViewModel?.let { intakeViewModel ->
+            { index -> intakeViewModel.requestPhotoPicker(index) }
+        } ?: {},
+        onOpenLobbyScreenshotCrop = lobbyScreenshotIntakeViewModel?.let { intakeViewModel ->
+            { index -> intakeViewModel.requestCropEditor(index) }
+        } ?: {},
         showLegacyManualReviewContent = showLegacyManualReviewContent,
         showInlineOcrDetails = ocrCacheAvailability == MatchOcrCacheAvailability.READY,
         ocrCacheAvailability = ocrCacheAvailability,
@@ -321,9 +369,11 @@ fun MatchReviewRoute(
 @Composable
 fun MatchReviewScreen(
     uiState: MatchReviewUiState,
+    lobbyUiState: MatchLobbyScreenshotIntakeUiState = MatchLobbyScreenshotIntakeUiState(),
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit = {},
+    onCalculatePoints: () -> Unit = {},
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
@@ -337,6 +387,8 @@ fun MatchReviewScreen(
     onRetryScreenshotUpload: () -> Unit = {},
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit = {},
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    onSelectLobbyScreenshot: (Int) -> Unit = {},
+    onOpenLobbyScreenshotCrop: (Int) -> Unit = {},
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     showLegacyManualReviewContent: Boolean = false,
     showInlineOcrDetails: Boolean = false,
@@ -358,9 +410,11 @@ fun MatchReviewScreen(
         uiState.isNotFound -> MatchReviewNotFoundState(onBackToDetails)
         uiState.isAvailable -> MatchReviewContent(
             uiState = uiState,
+            lobbyUiState = lobbyUiState,
             onEnterPlacements = onEnterPlacements,
             onEnterKills = onEnterKills,
             onOpenOcrReview = onOpenOcrReview,
+            onCalculatePoints = onCalculatePoints,
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
@@ -374,6 +428,8 @@ fun MatchReviewScreen(
             onRetryScreenshotUpload = onRetryScreenshotUpload,
             onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
             onRemoveResultScreenshot = onRemoveResultScreenshot,
+            onSelectLobbyScreenshot = onSelectLobbyScreenshot,
+            onOpenLobbyScreenshotCrop = onOpenLobbyScreenshotCrop,
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
             showLegacyManualReviewContent = showLegacyManualReviewContent,
             showInlineOcrDetails = showInlineOcrDetails,
@@ -394,9 +450,11 @@ fun MatchReviewScreen(
 @Composable
 private fun MatchReviewContent(
     uiState: MatchReviewUiState,
+    lobbyUiState: MatchLobbyScreenshotIntakeUiState,
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit,
+    onCalculatePoints: () -> Unit,
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
@@ -410,6 +468,8 @@ private fun MatchReviewContent(
     onRetryScreenshotUpload: () -> Unit,
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit,
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onSelectLobbyScreenshot: (Int) -> Unit,
+    onOpenLobbyScreenshotCrop: (Int) -> Unit,
     matchLobbyScreenshotIntake: @Composable () -> Unit,
     showLegacyManualReviewContent: Boolean,
     showInlineOcrDetails: Boolean,
@@ -426,7 +486,17 @@ private fun MatchReviewContent(
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
+    var showOcrPreflight by remember { mutableStateOf(false) }
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
+    val ocrPreflightItems = classifyOcrScreenshotPreflight(
+        lobbySlots = lobbyUiState.slots,
+        resultSlots = uiState.resultScreenshots,
+    )
+    LaunchedEffect(ocrPreflightItems) {
+        if (ocrPreflightItems.isNotEmpty()) {
+            ocrReviewOpened = false
+        }
+    }
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
@@ -542,6 +612,37 @@ private fun MatchReviewContent(
             onOpenCrop = onOpenResultScreenshotCrop,
             onRemoveScreenshot = onRemoveResultScreenshot,
         )
+        if (showOcrPreflight) {
+            MatchOcrScreenshotPreflightDialog(
+                items = ocrPreflightItems,
+                onCancel = { showOcrPreflight = false },
+                onCalculatePoints = {
+                    showOcrPreflight = false
+                    ocrReviewOpened = true
+                    onCalculatePoints()
+                },
+                onSelectLobbyScreenshot = { index ->
+                    showOcrPreflight = false
+                    ocrReviewOpened = false
+                    onSelectLobbyScreenshot(index)
+                },
+                onOpenLobbyScreenshotCrop = { index ->
+                    showOcrPreflight = false
+                    ocrReviewOpened = false
+                    onOpenLobbyScreenshotCrop(index)
+                },
+                onSelectResultScreenshot = { role ->
+                    showOcrPreflight = false
+                    ocrReviewOpened = false
+                    onSelectResultScreenshot(role)
+                },
+                onOpenResultScreenshotCrop = { role ->
+                    showOcrPreflight = false
+                    ocrReviewOpened = false
+                    onOpenResultScreenshotCrop(role)
+                },
+            )
+        }
         if (shouldShowInlineOcrDetails) {
             MatchReviewResultOcrDetailsContent(
                 uiState = ocrUiState,
@@ -582,10 +683,14 @@ private fun MatchReviewContent(
         if (uiState.isEditable) {
             Button(
                 onClick = {
-                    ocrReviewOpened = true
-                    onOpenOcrReview()
+                    if (showLegacyManualReviewContent || ocrPreflightItems.isEmpty()) {
+                        ocrReviewOpened = true
+                        onOpenOcrReview()
+                    } else {
+                        showOcrPreflight = true
+                    }
                 },
-                enabled = uiState.canOpenOcrReview,
+                enabled = uiState.isEditable,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
@@ -746,6 +851,181 @@ private fun MatchReviewContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun MatchOcrScreenshotPreflightDialog(
+    items: List<OcrScreenshotPreflightItem>,
+    onCancel: () -> Unit,
+    onCalculatePoints: () -> Unit,
+    onSelectLobbyScreenshot: (Int) -> Unit,
+    onOpenLobbyScreenshotCrop: (Int) -> Unit,
+    onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit,
+) {
+    val hasProcessing = items.any { it.issue == OcrScreenshotPreflightIssue.PROCESSING }
+    AlertDialog(
+        modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG),
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.match_ocr_preflight_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+            ) {
+                Text(stringResource(R.string.match_ocr_preflight_intro))
+                items.forEach { item ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(matchReviewOcrPreflightItemTestTag(item.identity)),
+                        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    ) {
+                        Text(item.issue.message(item.identity))
+                        item.actionLabel()?.let { action ->
+                            OutlinedButton(
+                                onClick = {
+                                    when (val identity = item.identity) {
+                                        is OcrScreenshotPreflightIdentity.Lobby -> when (item.issue) {
+                                            OcrScreenshotPreflightIssue.CROP_REQUIRED ->
+                                                onOpenLobbyScreenshotCrop(identity.index)
+                                            OcrScreenshotPreflightIssue.MISSING,
+                                            OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
+                                            OcrScreenshotPreflightIssue.PROCESSING,
+                                            -> onSelectLobbyScreenshot(identity.index)
+                                        }
+                                        is OcrScreenshotPreflightIdentity.Result -> when (item.issue) {
+                                            OcrScreenshotPreflightIssue.CROP_REQUIRED ->
+                                                onOpenResultScreenshotCrop(identity.role)
+                                            OcrScreenshotPreflightIssue.MISSING,
+                                            OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
+                                            OcrScreenshotPreflightIssue.PROCESSING,
+                                            -> onSelectResultScreenshot(identity.role)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.testTag(
+                                    matchReviewOcrPreflightActionTestTag(item.identity, item.issue),
+                                ),
+                            ) {
+                                Text(action)
+                            }
+                        }
+                    }
+                }
+                if (hasProcessing) {
+                    Text(
+                        text = stringResource(R.string.match_ocr_preflight_processing_message),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text(stringResource(R.string.match_ocr_preflight_incomplete_message))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.cancel_action))
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onCalculatePoints,
+                enabled = !hasProcessing,
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.calculate_points_action))
+            }
+        },
+    )
+}
+
+@Composable
+private fun OcrScreenshotPreflightIssue.message(
+    identity: OcrScreenshotPreflightIdentity,
+): String {
+    val number = when (identity) {
+        is OcrScreenshotPreflightIdentity.Lobby -> identity.index
+        is OcrScreenshotPreflightIdentity.Result -> identity.role.numberForUi()
+    }
+    return when (this) {
+        OcrScreenshotPreflightIssue.MISSING -> stringResourceForPreflight(
+            identity,
+            R.string.match_ocr_preflight_missing_lobby,
+            R.string.match_ocr_preflight_missing_result,
+            number,
+        )
+        OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING -> stringResourceForPreflight(
+            identity,
+            R.string.match_ocr_preflight_local_missing_lobby,
+            R.string.match_ocr_preflight_local_missing_result,
+            number,
+        )
+        OcrScreenshotPreflightIssue.CROP_REQUIRED -> stringResourceForPreflight(
+            identity,
+            R.string.match_ocr_preflight_crop_lobby,
+            R.string.match_ocr_preflight_crop_result,
+            number,
+        )
+        OcrScreenshotPreflightIssue.PROCESSING -> stringResourceForPreflight(
+            identity,
+            R.string.match_ocr_preflight_processing_lobby,
+            R.string.match_ocr_preflight_processing_result,
+            number,
+        )
+    }
+}
+
+@Composable
+private fun stringResourceForPreflight(
+    identity: OcrScreenshotPreflightIdentity,
+    lobbyRes: Int,
+    resultRes: Int,
+    number: Int,
+): String = stringResource(
+    if (identity is OcrScreenshotPreflightIdentity.Lobby) lobbyRes else resultRes,
+    number,
+)
+
+@Composable
+private fun OcrScreenshotPreflightItem.actionLabel(): String? {
+    val number = userFacingNumber
+    return when (issue) {
+        OcrScreenshotPreflightIssue.MISSING -> when (identity) {
+            is OcrScreenshotPreflightIdentity.Lobby -> stringResource(
+                R.string.match_ocr_preflight_select_lobby,
+                number,
+            )
+            is OcrScreenshotPreflightIdentity.Result -> stringResource(
+                R.string.match_ocr_preflight_select_result,
+                number,
+            )
+        }
+        OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING -> when (identity) {
+            is OcrScreenshotPreflightIdentity.Lobby -> stringResource(
+                R.string.match_ocr_preflight_replace_lobby,
+                number,
+            )
+            is OcrScreenshotPreflightIdentity.Result -> stringResource(
+                R.string.match_ocr_preflight_replace_result,
+                number,
+            )
+        }
+        OcrScreenshotPreflightIssue.CROP_REQUIRED -> when (identity) {
+            is OcrScreenshotPreflightIdentity.Lobby -> stringResource(
+                R.string.match_ocr_preflight_crop_action_lobby,
+                number,
+            )
+            is OcrScreenshotPreflightIdentity.Result -> stringResource(
+                R.string.match_ocr_preflight_crop_action_result,
+                number,
+            )
+        }
+        OcrScreenshotPreflightIssue.PROCESSING -> null
     }
 }
 

@@ -57,6 +57,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropView
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeRoute
+import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
@@ -92,16 +93,20 @@ fun RankForgeNavHost(
         )
     },
     rosterScreenshotCropViewModelFactory: (() -> RosterScreenshotIntakeViewModel)? = null,
-    matchLobbyScreenshotIntakeContent: @Composable (String, String, (Int) -> Unit) -> Unit = { tournamentId, matchId, onOpenCropEditor ->
-        MatchLobbyScreenshotIntakeRoute(
-            tournamentId = tournamentId,
-            matchId = matchId,
-            onOpenCropEditor = onOpenCropEditor,
-            showTitle = false,
-            compactSelectors = true,
-            compactActions = true,
-        )
+    matchLobbyScreenshotIntakeContent: @Composable (String, String, (Int) -> Unit, MatchLobbyScreenshotIntakeViewModel?) -> Unit = { tournamentId, matchId, onOpenCropEditor, viewModel ->
+        if (viewModel != null) {
+            MatchLobbyScreenshotIntakeRoute(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                onOpenCropEditor = onOpenCropEditor,
+                showTitle = false,
+                compactSelectors = true,
+                compactActions = true,
+                viewModel = viewModel,
+            )
+        }
     },
+    matchLobbyScreenshotIntakeViewModelProvider: (@Composable (String, String) -> MatchLobbyScreenshotIntakeViewModel)? = null,
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
@@ -633,6 +638,10 @@ fun RankForgeNavHost(
                     ),
                 )
             }
+            val lobbyScreenshotIntakeViewModel = matchLobbyScreenshotIntakeViewModelProvider?.invoke(
+                destination.tournamentId,
+                destination.matchId,
+            )
             val matchLobbyScreenshotIntake = @Composable {
                 matchLobbyScreenshotIntakeContent(
                     destination.tournamentId,
@@ -644,6 +653,7 @@ fun RankForgeNavHost(
                             index,
                         )
                     },
+                    lobbyScreenshotIntakeViewModel,
                 )
             }
             val reviewViewModel = matchReviewViewModelFactory?.invoke(
@@ -665,6 +675,7 @@ fun RankForgeNavHost(
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+                    lobbyScreenshotIntakeViewModel = lobbyScreenshotIntakeViewModel,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
                     ocrReviewViewModel = ocrReviewViewModel,
                 )
@@ -679,6 +690,7 @@ fun RankForgeNavHost(
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
+                    lobbyScreenshotIntakeViewModel = lobbyScreenshotIntakeViewModel,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
                     viewModel = reviewViewModel,
                     ocrReviewViewModel = ocrReviewViewModel,

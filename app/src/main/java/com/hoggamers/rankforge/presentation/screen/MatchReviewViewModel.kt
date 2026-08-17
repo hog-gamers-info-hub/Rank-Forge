@@ -317,7 +317,8 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     fun openOcrReview() {
-        if (_uiState.value.canOpenOcrReview) {
+        val state = _uiState.value
+        if (state.isEditable && !state.tournamentId.isNullOrBlank() && !state.matchId.isNullOrBlank()) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.OCR_REVIEW) }
         }
     }

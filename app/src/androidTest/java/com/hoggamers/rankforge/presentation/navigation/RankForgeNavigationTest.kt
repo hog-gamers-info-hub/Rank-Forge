@@ -166,6 +166,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_PLACEMENTS_ACTIO
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_KILLS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_DETAILS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG
+import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG
@@ -952,7 +953,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                 )
@@ -998,7 +999,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                 )
             }
         }
@@ -1043,7 +1044,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchCreationViewModelFactory = { tournamentId ->
                         val viewModel = cachedMatchCreationViewModel
                             ?: viewModels.matchCreationViewModel(tournamentId).also {
@@ -1409,7 +1410,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                 )
@@ -1456,7 +1457,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1507,7 +1508,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
@@ -1570,7 +1571,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     matchReviewViewModelFactory = viewModels.matchReviewViewModel,
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchLobbyScreenshotCropViewModelFactory = { _, _, _ -> cropViewModel },
-                    matchLobbyScreenshotIntakeContent = { _, _, onOpenCrop ->
+                    matchLobbyScreenshotIntakeContent = { _, _, onOpenCrop, _ ->
                         Button(
                             onClick = { onOpenCrop(2) },
                             modifier = Modifier.testTag("open_lobby_crop_2"),
@@ -1653,7 +1654,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     creationViewModel = fixture.viewModels.creationViewModel,
                     listViewModel = fixture.viewModels.listViewModel,
                     detailsViewModelFactory = fixture.viewModels.detailsViewModel,
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchReviewViewModelFactory = { _, _ -> fixture.matchReviewViewModel },
                     matchOcrReviewViewModelFactory = fixture.viewModels.matchOcrReviewViewModel,
                     matchResultScreenshotCropViewModelFactory = { fixture.cropViewModel },
@@ -1762,7 +1763,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                         }
                     },
                     showLegacyManualReviewContent = false,
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchOcrReviewViewModelFactory = viewModels.matchOcrReviewViewModel,
                     matchCorrectionViewModelFactory = viewModels.matchCorrectionViewModel,
                 )
@@ -1793,6 +1794,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
             .performScrollTo()
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
             .performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
@@ -2051,7 +2055,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     rosterEntryViewModelFactory = viewModels.rosterEntryViewModel,
                     rosterReviewViewModelFactory = viewModels.rosterReviewViewModel,
                     rosterScreenshotIntakeContent = { _, _ -> },
-                    matchLobbyScreenshotIntakeContent = { _, _, _ -> },
+                    matchLobbyScreenshotIntakeContent = { _, _, _, _ -> },
                     matchCreationViewModelFactory = viewModels.matchCreationViewModel,
                     matchPlacementViewModelFactory = viewModels.matchPlacementViewModel,
                     matchKillViewModelFactory = viewModels.matchKillViewModel,
