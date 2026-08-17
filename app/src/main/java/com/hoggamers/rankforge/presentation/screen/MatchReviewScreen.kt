@@ -1252,22 +1252,8 @@ private fun ResultScreenshotPage(
         if (slot.isSelectedScreenshotValidated) {
             Text(text = stringResource(R.string.match_review_screenshot_selected_and_validated))
         }
-        if (slot.hasLinkedAsset) {
-            Text(text = stringResource(R.string.match_review_result_screenshot_ready))
-            if (slot.hasConfirmedCrop) {
-                Text(
-                    text = stringResource(R.string.match_review_result_screenshot_crop_ready),
-                    modifier = Modifier.testTag(
-                        if (screenshotNumber == 1) {
-                            MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG
-                        } else {
-                            MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG
-                        },
-                    ),
-                )
-            } else {
-                Text(text = stringResource(R.string.match_review_result_screenshot_crop_required))
-            }
+        if (slot.hasLinkedAsset && !slot.hasConfirmedCrop) {
+            Text(text = stringResource(R.string.match_review_result_screenshot_crop_required))
         }
         slot.photoPickerError?.let { error ->
             Text(
