@@ -8,7 +8,14 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultCropContentValidator
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
+import com.hoggamers.rankforge.data.ocr.matchresult.NoOpMatchResultCropContentValidator
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
+import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -34,11 +41,13 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
     private val clock: Clock = Clock.systemUTC(),
     private val uploadCheckpoint: MatchResultScreenshotUploadCheckpointAction,
     private val reconciliationScheduler: ScreenshotReconciliationScheduler,
+    private val contentValidator: MatchResultCropContentValidator = NoOpMatchResultCropContentValidator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchResultScreenshotCropUiState())
     val uiState: StateFlow<MatchResultScreenshotCropUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+    private var confirmJob: Job? = null
     private var loadedKey: String? = null
     private var draftEdited = false
     private val missingMarked = mutableSetOf<String>()
@@ -115,14 +124,20 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 draftCrop = crop,
-                error = if (it.error == MatchResultScreenshotCropError.INVALID_CROP) null else it.error,
+                error = when (it.error) {
+                    MatchResultScreenshotCropError.INVALID_CROP,
+                    MatchResultScreenshotCropError.CONTENT_INVALID,
+                    MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED,
+                    -> null
+                    else -> it.error
+                },
             )
         }
     }
 
     fun confirmCrop(onConfirmed: () -> Unit) {
         val current = _uiState.value
-        if (current.isSaving) return
+        if (current.isSaving || current.isValidating || confirmJob?.isActive == true) return
         val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
         val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
         val role = current.role ?: return
@@ -142,17 +157,22 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             _uiState.update { it.copy(error = MatchResultScreenshotCropError.MISSING_LOCAL_FILE) }
             return
         }
-        _uiState.update { it.copy(isSaving = true, error = null) }
-        viewModelScope.launch {
-            val match = try {
-                observeMatches(tournamentId)
-                    .first()
-                    .firstOrNull { it.id == matchId }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                null
-            }
+        val identity = MatchResultScreenshotIdentity(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = role,
+        )
+        confirmJob = viewModelScope.launch {
+            try {
+                val match = try {
+                    observeMatches(tournamentId)
+                        .first()
+                        .firstOrNull { it.id == matchId }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    null
+                }
             if (match == null) {
                 _uiState.update {
                     it.copy(
@@ -174,11 +194,6 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                 return@launch
             }
 
-            val identity = MatchResultScreenshotIdentity(
-                tournamentId = tournamentId,
-                matchId = matchId,
-                role = role,
-            )
             val existing = try {
                 assetRepository.getByIdentity(identity)
             } catch (cancellation: CancellationException) {
@@ -187,26 +202,120 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                 null
             }
             if (existing?.identityOrNull() != identity) {
-                _uiState.update { it.copy(isSaving = false, error = MatchResultScreenshotCropError.INVALID_ROLE) }
+                _uiState.update { it.copy(error = MatchResultScreenshotCropError.INVALID_ROLE) }
                 return@launch
             }
-            val result = try {
-                assetRepository.persistConfirmedCrop(
-                    identity = identity,
+            val dimensions = OcrImageDimensions.from(existing.originalWidth, existing.originalHeight)
+            val pixelCrop = when (
+                val geometry = OcrCropValidator.validate(
                     crop = current.draftCrop,
-                    updatedAt = clock.millis(),
+                    dimensions = dimensions,
+                    profile = OcrCropValidationProfiles.MatchResult,
+                )
+            ) {
+                is OcrCropValidationResult.Valid -> geometry.pixelCrop
+                is OcrCropValidationResult.Invalid -> null
+            }
+            if (pixelCrop == null) {
+                _uiState.update { it.copy(error = MatchResultScreenshotCropError.INVALID_CROP) }
+                return@launch
+            }
+
+            val localFile = localImagePreserver.resolveRelativePath(existing.localRelativePath)
+                ?.takeIf { file ->
+                    runCatching { file.isFile && file.length() > 0L }.getOrDefault(false)
+                }
+            if (localFile == null) {
+                _uiState.update { it.copy(error = MatchResultScreenshotCropError.MISSING_LOCAL_FILE) }
+                return@launch
+            }
+            if (!isCurrentValidationSnapshot(current, identity, existing, existing)) return@launch
+
+            _uiState.update { it.copy(isValidating = true, isSaving = false, error = null) }
+            val contentResult = try {
+                contentValidator.validate(
+                    role = role,
+                    localFile = localFile,
+                    pixelCrop = pixelCrop,
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                MatchResultScreenshotCropSaveResult.InvalidCrop
+                com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentValidationResult.Indeterminate(
+                    com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentIndeterminateReason.VALIDATION_EXECUTION_FAILED,
+                )
             }
-            when (result) {
+            val latest = try {
+                assetRepository.getByIdentity(identity)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            if (latest == null || !isCurrentValidationSnapshot(current, identity, existing, latest)) {
+                clearValidationIfCurrent(identity)
+                return@launch
+            }
+
+            when (contentResult) {
+                com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentValidationResult.Valid -> {
+                    _uiState.update { it.copy(isValidating = false, isSaving = true) }
+                    val result = try {
+                        assetRepository.persistConfirmedCrop(
+                            identity = identity,
+                            crop = current.draftCrop,
+                            updatedAt = clock.millis(),
+                        )
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        MatchResultScreenshotCropSaveResult.InvalidCrop
+                    }
+                    handleSaveResult(result, identity, current.draftCrop, onConfirmed)
+                }
+
+                is com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentValidationResult.Invalid -> {
+                    _uiState.update {
+                        it.copy(
+                            isValidating = false,
+                            isSaving = false,
+                            error = MatchResultScreenshotCropError.CONTENT_INVALID,
+                        )
+                    }
+                }
+
+                is com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentValidationResult.Indeterminate -> {
+                    _uiState.update {
+                        it.copy(
+                            isValidating = false,
+                            isSaving = false,
+                            error = MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED,
+                        )
+                    }
+                }
+            }
+            } catch (cancellation: CancellationException) {
+                clearValidationIfCurrent(identity)
+                throw cancellation
+            } finally {
+                confirmJob = null
+            }
+        }
+    }
+
+    private fun handleSaveResult(
+        result: MatchResultScreenshotCropSaveResult,
+        identity: MatchResultScreenshotIdentity,
+        crop: OcrNormalizedCropRect,
+        onConfirmed: () -> Unit,
+    ) {
+        when (result) {
                 MatchResultScreenshotCropSaveResult.Saved -> {
                     _uiState.update {
                         it.copy(
+                            isValidating = false,
                             isSaving = false,
-                            confirmedCrop = current.draftCrop,
+                            confirmedCrop = crop,
                             error = null,
                         )
                     }
@@ -226,19 +335,53 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                 }
                 MatchResultScreenshotCropSaveResult.MissingAsset -> {
                     _uiState.update {
-                        it.copy(isSaving = false, error = MatchResultScreenshotCropError.MISSING_ASSET)
+                        it.copy(isValidating = false, isSaving = false, error = MatchResultScreenshotCropError.MISSING_ASSET)
                     }
                 }
                 MatchResultScreenshotCropSaveResult.InvalidIdentity -> {
                     _uiState.update {
-                        it.copy(isSaving = false, error = MatchResultScreenshotCropError.INVALID_ROLE)
+                        it.copy(isValidating = false, isSaving = false, error = MatchResultScreenshotCropError.INVALID_ROLE)
                     }
                 }
                 MatchResultScreenshotCropSaveResult.InvalidCrop -> {
                     _uiState.update {
-                        it.copy(isSaving = false, error = MatchResultScreenshotCropError.INVALID_CROP)
+                        it.copy(isValidating = false, isSaving = false, error = MatchResultScreenshotCropError.INVALID_CROP)
                     }
                 }
+            }
+    }
+
+    private fun isCurrentValidationSnapshot(
+        snapshot: MatchResultScreenshotCropUiState,
+        identity: MatchResultScreenshotIdentity,
+        expectedAsset: MatchResultScreenshotAssetEntity,
+        currentAsset: MatchResultScreenshotAssetEntity,
+    ): Boolean {
+        val current = _uiState.value
+        return current.tournamentId == snapshot.tournamentId &&
+            current.matchId == snapshot.matchId &&
+            current.role == snapshot.role &&
+            current.draftCrop == snapshot.draftCrop &&
+            current.originalWidth == expectedAsset.originalWidth &&
+            current.originalHeight == expectedAsset.originalHeight &&
+            currentAsset.identityOrNull() == identity &&
+            currentAsset.sha256 == expectedAsset.sha256 &&
+            currentAsset.localRelativePath == expectedAsset.localRelativePath &&
+            currentAsset.originalWidth == expectedAsset.originalWidth &&
+            currentAsset.originalHeight == expectedAsset.originalHeight &&
+            currentAsset.byteSize == expectedAsset.byteSize
+    }
+
+    private fun clearValidationIfCurrent(identity: MatchResultScreenshotIdentity) {
+        _uiState.update { state ->
+            if (
+                state.tournamentId == identity.tournamentId &&
+                state.matchId == identity.matchId &&
+                state.role == identity.role
+            ) {
+                state.copy(isValidating = false, isSaving = false)
+            } else {
+                state
             }
         }
     }
@@ -256,6 +399,22 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         } else {
             confirmedCrop ?: OcrVisualCropDefaults.FullImageCrop
         }
+        val sameIdentity = previous.tournamentId == tournamentId &&
+            previous.matchId == matchId &&
+            previous.role == role
+        val preservedSemanticError = if (
+            sameIdentity &&
+            previous.draftCrop == draft
+        ) {
+            when (previous.error) {
+                MatchResultScreenshotCropError.CONTENT_INVALID,
+                MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED,
+                -> previous.error
+                else -> null
+            }
+        } else {
+            null
+        }
         return MatchResultScreenshotCropUiState(
             isLoading = false,
             tournamentId = tournamentId,
@@ -267,7 +426,13 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             confirmedCrop = confirmedCrop,
             draftCrop = draft,
             isFinalized = isFinalized,
-            error = if (fileExists) null else MatchResultScreenshotCropError.MISSING_LOCAL_FILE,
+            isValidating = if (sameIdentity) previous.isValidating else false,
+            isSaving = if (sameIdentity) previous.isSaving else false,
+            error = if (fileExists) {
+                preservedSemanticError
+            } else {
+                MatchResultScreenshotCropError.MISSING_LOCAL_FILE
+            },
         )
     }
 

@@ -486,12 +486,15 @@
     <string name="match_result_screenshot_crop_update_action">Update crop</string>
     <string name="match_result_screenshot_crop_cancel_action">Cancel crop</string>
     <string name="match_result_screenshot_crop_saving">Saving crop.</string>
+    <string name="match_result_screenshot_crop_validating">Validating crop…</string>
     <string name="match_result_screenshot_crop_invalid_role">The result screenshot role is invalid.</string>
     <string name="match_result_screenshot_crop_missing_asset">Select and preserve this result screenshot before cropping.</string>
     <string name="match_result_screenshot_crop_missing_local_file">The preserved local result screenshot is missing.</string>
     <string name="match_result_screenshot_crop_finalized_read_only">Finalized matches cannot change result screenshot crops.</string>
     <string name="match_result_screenshot_crop_invalid_crop">The crop is invalid for result OCR.</string>
     <string name="match_result_screenshot_crop_save_failed">The crop could not be saved.</string>
+    <string name="match_result_screenshot_crop_content_invalid">This crop does not contain the complete expected result area. Adjust the crop and try again.</string>
+    <string name="match_result_screenshot_crop_content_validation_failed">The crop could not be verified. Try again.</string>
     <string name="start_match_correction_action">Correct finalized match</string>
     <string name="start_match_correction_title">Start correction?</string>
     <string name="start_match_correction_message">This opens an editable correction copy. The finalized result stays unchanged until you submit it.</string>
