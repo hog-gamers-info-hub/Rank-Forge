@@ -210,6 +210,38 @@ class MatchReviewResultScreenshotViewModelTest {
         assertEquals(0.8, lower.cropRight!!, 0.0)
     }
 
+    @Test
+    fun replacingUpperWithSameBytesPreservesUpperCrop() = runTest {
+        val firstUri = "content://picker/upper-same-first"
+        val secondUri = "content://picker/upper-same-second"
+        val bytes = byteArrayOf(1, 2, 3)
+        val assetRepository = FakeMatchResultScreenshotAssetRepository()
+        val viewModel = viewModel(
+            bytesByUri = mapOf(firstUri to bytes, secondUri to bytes),
+            assetRepository = assetRepository,
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, firstUri)
+        advanceUntilIdle()
+        val crop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)
+        assetRepository.persistConfirmedCrop(
+            identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            crop,
+            updatedAt = 20L,
+        )
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, secondUri)
+        advanceUntilIdle()
+
+        val upper = assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
+        assertEquals(crop.left, upper.cropLeft!!, 0.0)
+        assertEquals(crop.right, upper.cropRight!!, 0.0)
+    }
+
 
     @Test
     fun authorizationUploadIsDeferredUntilCropConfirmation() = runTest {

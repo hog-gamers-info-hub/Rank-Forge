@@ -18,6 +18,8 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,6 +44,9 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
     private val uploadCheckpoint: MatchResultScreenshotUploadCheckpointAction,
     private val reconciliationScheduler: ScreenshotReconciliationScheduler,
     private val contentValidator: MatchResultCropContentValidator = NoOpMatchResultCropContentValidator,
+    private val autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
+        MatchResultAutoCropResult.OcrFailed
+    },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchResultScreenshotCropUiState())
     val uiState: StateFlow<MatchResultScreenshotCropUiState> = _uiState.asStateFlow()
@@ -51,6 +56,9 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
     private var loadedKey: String? = null
     private var draftEdited = false
     private val missingMarked = mutableSetOf<String>()
+    private val autoCropAttemptedKeys = mutableSetOf<AutoProposalKey>()
+    private val autoProposals = mutableMapOf<AutoProposalKey, OcrNormalizedCropRect>()
+    private var currentAutoProposalKey: AutoProposalKey? = null
 
     fun load(tournamentId: String, matchId: String, roleName: String) {
         val key = "$tournamentId:$matchId:$roleName"
@@ -58,6 +66,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         loadedKey = key
         draftEdited = false
         loadJob?.cancel()
+        currentAutoProposalKey = null
         val role = runCatching { MatchResultScreenshotRole.valueOf(roleName) }.getOrNull()
         if (role == null || tournamentId.isBlank() || matchId.isBlank()) {
             _uiState.value = MatchResultScreenshotCropUiState(
@@ -86,6 +95,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             ) { asset, matches ->
                 val match = matches.firstOrNull { it.id == matchId }
                 if (match == null) {
+                    currentAutoProposalKey = null
                     MatchResultScreenshotCropUiState(
                         isLoading = false,
                         tournamentId = tournamentId,
@@ -95,6 +105,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                         error = MatchResultScreenshotCropError.SAVE_FAILED,
                     )
                 } else if (asset == null) {
+                    currentAutoProposalKey = null
                     MatchResultScreenshotCropUiState(
                         isLoading = false,
                         tournamentId = tournamentId,
@@ -115,6 +126,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                     markMissingIfNeeded(identity)
                 }
                 _uiState.value = state
+                maybeLaunchAutoCrop(identity)
             }
         }
     }
@@ -391,13 +403,15 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         isFinalized: Boolean,
         previous: MatchResultScreenshotCropUiState,
     ): MatchResultScreenshotCropUiState {
+        val proposalKey = autoProposalKey(role)
+        currentAutoProposalKey = proposalKey
         val file = localImagePreserver.resolveRelativePath(localRelativePath)
         val fileExists = file?.let { runCatching { it.isFile && it.length() > 0L }.getOrDefault(false) } == true
         val confirmedCrop = confirmedCropOrNull()
         val draft = if (draftEdited && previous.role == role) {
             previous.draftCrop
         } else {
-            confirmedCrop ?: OcrVisualCropDefaults.FullImageCrop
+            confirmedCrop ?: autoProposals[proposalKey] ?: OcrVisualCropDefaults.FullImageCrop
         }
         val sameIdentity = previous.tournamentId == tournamentId &&
             previous.matchId == matchId &&
@@ -445,6 +459,90 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             }
         }
     }
+
+    private fun maybeLaunchAutoCrop(identity: MatchResultScreenshotIdentity) {
+        val current = _uiState.value
+        val proposalKey = currentAutoProposalKey ?: return
+        if (
+            current.isLoading ||
+            current.role != identity.role ||
+            current.tournamentId != identity.tournamentId ||
+            current.matchId != identity.matchId ||
+            current.isFinalized ||
+            current.imageUri == null ||
+            current.confirmedCrop != null ||
+            draftEdited ||
+            autoProposals.containsKey(proposalKey) ||
+            !autoCropAttemptedKeys.add(proposalKey)
+        ) {
+            return
+        }
+
+        viewModelScope.launch {
+            val asset = try {
+                assetRepository.getByIdentity(identity)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            } ?: return@launch
+            if (asset.autoProposalKey(identity.role) != proposalKey) return@launch
+            val localFile = localImagePreserver.resolveRelativePath(asset.localRelativePath)
+                ?.takeIf { file ->
+                    runCatching { file.isFile && file.length() > 0L }.getOrDefault(false)
+                }
+                ?: return@launch
+            val result = try {
+                autoCropProposer.propose(localFile)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                MatchResultAutoCropResult.OcrFailed
+            }
+            val proposedCrop = (result as? MatchResultAutoCropResult.Proposed)?.crop ?: return@launch
+            autoProposals[proposalKey] = proposedCrop
+            if (!isCurrentAutoProposal(identity, proposalKey)) return@launch
+            _uiState.update { state ->
+                if (isCurrentAutoProposal(identity, proposalKey)) {
+                    state.copy(draftCrop = proposedCrop)
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
+    private fun isCurrentAutoProposal(
+        identity: MatchResultScreenshotIdentity,
+        proposalKey: AutoProposalKey,
+    ): Boolean {
+        val current = _uiState.value
+        return currentAutoProposalKey == proposalKey &&
+            loadedKey == "${identity.tournamentId}:${identity.matchId}:${identity.role.name}" &&
+            current.tournamentId == identity.tournamentId &&
+            current.matchId == identity.matchId &&
+            current.role == identity.role &&
+            current.imageUri != null &&
+            !current.isFinalized &&
+            current.confirmedCrop == null &&
+            !draftEdited
+    }
+
+    private fun MatchResultScreenshotAssetEntity.autoProposalKey(
+        role: MatchResultScreenshotRole,
+    ): AutoProposalKey = AutoProposalKey(
+        tournamentId = tournamentId,
+        matchId = matchId,
+        role = role,
+        sha256 = sha256,
+    )
+
+    private data class AutoProposalKey(
+        val tournamentId: String,
+        val matchId: String,
+        val role: MatchResultScreenshotRole,
+        val sha256: String,
+    )
 
 }
 private fun MatchResultScreenshotAssetEntity.confirmedCropOrNull():
