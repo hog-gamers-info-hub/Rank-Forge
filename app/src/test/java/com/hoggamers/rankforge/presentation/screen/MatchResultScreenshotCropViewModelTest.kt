@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -42,6 +44,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -402,12 +405,284 @@ class MatchResultScreenshotCropViewModelTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun proposedCropInitializesDraftAndSurvivesRepeatedAssetEmissionWithOneAttempt() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-proposed").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val repository = FakeCropAssetRepository(
+            asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!),
+        )
+        val proposed = OcrNormalizedCropRect(0.12, 0.18, 0.88, 0.82)
+        val proposer = RecordingAutoCropProposer(MatchResultAutoCropResult.Proposed(proposed))
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+
+        assertEquals(proposed, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+        repository.updateAsset(repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!.copy(updatedAt = 2L))
+        advanceUntilIdle()
+        assertEquals(proposed, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+    }
+
+    @Test
+    fun confirmedCropSkipsAutoCropProposer() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-confirmed").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(4, 5, 6))
+        val confirmed = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+        val repository = FakeCropAssetRepository(
+            asset(MatchResultScreenshotRole.MATCH_RESULT_LOWER, preserver.relativePathFor(file)!!).copy(
+                cropProfileId = "match-result",
+                cropLeft = confirmed.left,
+                cropTop = confirmed.top,
+                cropRight = confirmed.right,
+                cropBottom = confirmed.bottom,
+            ),
+        )
+        val proposer = RecordingAutoCropProposer(MatchResultAutoCropResult.Proposed(OcrVisualCropDefaults.FullImageCrop))
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_LOWER.name)
+        advanceUntilIdle()
+
+        assertEquals(confirmed, viewModel.uiState.value.draftCrop)
+        assertEquals(0, proposer.calls)
+    }
+
+    @Test
+    fun proposerFailureFallsBackToFullImageCrop() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-failure").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val repository = FakeCropAssetRepository(asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!))
+        val proposer = RecordingAutoCropProposer(MatchResultAutoCropResult.OcrFailed)
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+
+        assertEquals(OcrVisualCropDefaults.FullImageCrop, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+    }
+
+    @Test
+    fun anchorFourMissingFallsBackWithoutRetryOrPersistence() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-anchor-four-missing").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val repository = FakeCropAssetRepository(asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!))
+        val proposer = RecordingAutoCropProposer(MatchResultAutoCropResult.AnchorFourMissing)
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+        repository.updateAsset(repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!.copy(updatedAt = 2L))
+        advanceUntilIdle()
+
+        assertEquals(OcrVisualCropDefaults.FullImageCrop, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+        assertEquals(0, repository.persistConfirmedCropCalls)
+    }
+
+    @Test
+    fun draftPriorityIsUserEditThenConfirmedThenAutoThenFullImage() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-priority").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
+        val confirmed = OcrNormalizedCropRect(0.25, 0.25, 0.75, 0.75)
+        val manual = OcrNormalizedCropRect(0.05, 0.05, 0.95, 0.95)
+        val repository = FakeCropAssetRepository(asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!))
+        val proposer = RecordingAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic))
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+        assertEquals(automatic, viewModel.uiState.value.draftCrop)
+
+        repository.updateAsset(repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!.copy(
+            cropProfileId = "match-result",
+            cropLeft = confirmed.left,
+            cropTop = confirmed.top,
+            cropRight = confirmed.right,
+            cropBottom = confirmed.bottom,
+            updatedAt = 2L,
+        ))
+        advanceUntilIdle()
+        assertEquals(confirmed, viewModel.uiState.value.draftCrop)
+
+        viewModel.onCropChanged(manual)
+        repository.updateAsset(repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!.copy(updatedAt = 3L))
+        advanceUntilIdle()
+        assertEquals(manual, viewModel.uiState.value.draftCrop)
+    }
+
+    @Test
+    fun lowerResultScreenshotUsesSameProposalPathAndDoesNotShareUpperState() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-roles").toFile()
+        val preserver = testPreserver(root)
+        val upperFile = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        val lowerFile = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            extension = "png",
+        )
+        upperFile.parentFile?.mkdirs()
+        lowerFile.parentFile?.mkdirs()
+        upperFile.writeBytes(byteArrayOf(1, 2, 3))
+        lowerFile.writeBytes(byteArrayOf(4, 5, 6))
+        val upperCrop = OcrNormalizedCropRect(0.1, 0.1, 0.7, 0.7)
+        val lowerCrop = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+        val repository = FakeCropAssetRepository(
+            asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(upperFile)!!),
+            additionalAssets = listOf(
+                asset(MatchResultScreenshotRole.MATCH_RESULT_LOWER, preserver.relativePathFor(lowerFile)!!).copy(
+                    sha256 = "b".repeat(64),
+                ),
+            ),
+        )
+        val proposer = SequencedImmediateAutoCropProposer(
+            MatchResultAutoCropResult.Proposed(upperCrop),
+            MatchResultAutoCropResult.Proposed(lowerCrop),
+        )
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+        assertEquals(upperCrop, viewModel.uiState.value.draftCrop)
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_LOWER.name)
+        advanceUntilIdle()
+        assertEquals(lowerCrop, viewModel.uiState.value.draftCrop)
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        advanceUntilIdle()
+
+        assertEquals(upperCrop, viewModel.uiState.value.draftCrop)
+        assertEquals(2, proposer.calls)
+    }
+
+    @Test
+    fun userEditWinsDelayedAutoCropProposal() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-user-edit").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val repository = FakeCropAssetRepository(asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!))
+        val response = CompletableDeferred<MatchResultAutoCropResult>()
+        val proposer = SuspendingAutoCropProposer(response)
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        runCurrent()
+        val manual = OcrNormalizedCropRect(0.05, 0.1, 0.95, 0.9)
+        viewModel.onCropChanged(manual)
+        response.complete(MatchResultAutoCropResult.Proposed(OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)))
+        advanceUntilIdle()
+
+        assertEquals(1, proposer.calls)
+        assertEquals(manual, viewModel.uiState.value.draftCrop)
+    }
+
+    @Test
+    fun staleProposalIsIgnoredAndReplacementAssetGetsItsOwnAttempt() = runTest {
+        val root = Files.createTempDirectory("rank-forge-auto-crop-stale").toFile()
+        val preserver = testPreserver(root)
+        val file = preserver.matchResultPreservedFile(
+            tournamentId = CROP_TOURNAMENT_ID,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            extension = "png",
+        )
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val first = asset(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preserver.relativePathFor(file)!!)
+        val repository = FakeCropAssetRepository(first)
+        val firstResponse = CompletableDeferred<MatchResultAutoCropResult>()
+        val secondResponse = CompletableDeferred<MatchResultAutoCropResult>()
+        val proposer = SequencedAutoCropProposer(firstResponse, secondResponse)
+        val viewModel = viewModel(repository, preserver, autoCropProposer = proposer)
+
+        viewModel.load(CROP_TOURNAMENT_ID, matchId, MatchResultScreenshotRole.MATCH_RESULT_UPPER.name)
+        runCurrent()
+        repository.updateAsset(first.copy(sha256 = "b".repeat(64), updatedAt = 2L))
+        runCurrent()
+        assertEquals(2, proposer.calls)
+
+        firstResponse.complete(MatchResultAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.7, 0.7)))
+        runCurrent()
+        assertEquals(OcrVisualCropDefaults.FullImageCrop, viewModel.uiState.value.draftCrop)
+        val replacementCrop = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+        secondResponse.complete(MatchResultAutoCropResult.Proposed(replacementCrop))
+        advanceUntilIdle()
+        assertEquals(replacementCrop, viewModel.uiState.value.draftCrop)
+    }
+
+    private fun testPreserver(root: java.io.File) = LocalImagePreserver(
+        appPrivateRoot = root,
+        sourceStreamOpener = ImageSourceStreamOpener { null },
+        mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+        ioDispatcher = Dispatchers.Unconfined,
+    )
+
     private fun viewModel(
         repository: FakeCropAssetRepository,
         preserver: LocalImagePreserver,
         cloud: MatchResultScreenshotAssetCloudDataSource = FailingCropCloudDataSource(),
         storageUploader: MatchResultScreenshotStorageUploader? = null,
         clock: Clock = Clock.systemUTC(),
+        autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
+            MatchResultAutoCropResult.OcrFailed
+        },
     ): MatchResultScreenshotCropViewModel {
         val checkpoint = MatchResultScreenshotUploadCheckpoint(
             assetRepository = repository,
@@ -426,6 +701,7 @@ class MatchResultScreenshotCropViewModelTest {
                 scope = CoroutineScope(SupervisorJob() + dispatcher),
                 testOnly = true,
             ),
+            autoCropProposer = autoCropProposer,
         )
     }
 
@@ -467,6 +743,47 @@ class MatchResultScreenshotCropViewModelTest {
         uploadedAt = 1L,
         revision = 1L,
     )
+
+    private class RecordingAutoCropProposer(
+        private val response: MatchResultAutoCropResult,
+    ) : MatchResultAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult {
+            calls++
+            return response
+        }
+    }
+
+    private class SuspendingAutoCropProposer(
+        private val response: CompletableDeferred<MatchResultAutoCropResult>,
+    ) : MatchResultAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult {
+            calls++
+            return response.await()
+        }
+    }
+
+    private class SequencedAutoCropProposer(
+        private vararg val responses: CompletableDeferred<MatchResultAutoCropResult>,
+    ) : MatchResultAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult {
+            val response = responses[calls++]
+            return response.await()
+        }
+    }
+
+    private class SequencedImmediateAutoCropProposer(
+        private vararg val responses: MatchResultAutoCropResult,
+    ) : MatchResultAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult = responses[calls++]
+    }
 
     private class FailingCropCloudDataSource : MatchResultScreenshotAssetCloudDataSource {
         override suspend fun upsert(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetCloudResult =
@@ -542,10 +859,15 @@ class MatchResultScreenshotCropViewModelTest {
 
     private class FakeCropAssetRepository(
         asset: MatchResultScreenshotAssetEntity,
+        additionalAssets: List<MatchResultScreenshotAssetEntity> = emptyList(),
     ) : MatchResultScreenshotAssetRepository {
-        private val assets = MutableStateFlow(listOf(asset))
+        private val assets = MutableStateFlow(listOf(asset) + additionalAssets)
         var persistConfirmedCropCalls: Int = 0
             private set
+
+        fun updateAsset(value: MatchResultScreenshotAssetEntity) {
+            assets.value = assets.value.filterNot { it.matches(value.identity()) } + value
+        }
 
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             assets.map { list -> list.filter { it.matchId == matchId } }
@@ -696,5 +1018,11 @@ class MatchResultScreenshotCropViewModelTest {
             tournamentId == identity.tournamentId &&
                 matchId == identity.matchId &&
                 screenshotRole == identity.role.name
+
+        private fun MatchResultScreenshotAssetEntity.identity() = MatchResultScreenshotIdentity(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = MatchResultScreenshotRole.valueOf(screenshotRole),
+        )
     }
 }

@@ -9,6 +9,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultCropContentValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -135,6 +137,72 @@ class MatchResultScreenshotCropValidationGateTest {
         assertEquals(0, repository.uploadCheckpointCalls)
         assertEquals(0, confirmations)
         assertEquals(MatchResultScreenshotCropError.CONTENT_INVALID, viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun autoProposedDraftStillRequiresCv03AndInvalidContentDoesNotPersist() = runTest {
+        val repository = GateAssetRepository()
+        val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
+        val proposer = FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic))
+        val viewModel = viewModel(
+            repository,
+            ControlledValidator(OcrCropContentValidationResult.Invalid(OcrCropContentInvalidReason.CROP_INCOMPLETE)),
+            proposer,
+        )
+        load(viewModel)
+
+        assertEquals(automatic, viewModel.uiState.value.draftCrop)
+        viewModel.confirmCrop {}
+        advanceUntilIdle()
+
+        assertEquals(1, proposer.calls)
+        assertEquals(MatchResultScreenshotCropError.CONTENT_INVALID, viewModel.uiState.value.error)
+        assertEquals(0, repository.persistConfirmedCropCalls)
+        assertEquals(0, repository.uploadCheckpointCalls)
+    }
+
+    @Test
+    fun autoProposedDraftUsesExistingValidPersistencePath() = runTest {
+        val repository = GateAssetRepository()
+        val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
+        val proposer = FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic))
+        val viewModel = viewModel(
+            repository,
+            ControlledValidator(OcrCropContentValidationResult.Valid),
+            proposer,
+        )
+        load(viewModel)
+        var confirmations = 0
+
+        viewModel.confirmCrop { confirmations++ }
+        advanceUntilIdle()
+
+        assertEquals(automatic, viewModel.uiState.value.confirmedCrop)
+        assertEquals(1, repository.persistConfirmedCropCalls)
+        assertEquals(1, repository.uploadCheckpointCalls)
+        assertEquals(1, confirmations)
+    }
+
+    @Test
+    fun userModifiedAutoProposalIsValidatedAndPersistedInsteadOfOriginalProposal() = runTest {
+        val repository = GateAssetRepository()
+        val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
+        val manual = OcrNormalizedCropRect(0.2, 0.1, 0.8, 0.9)
+        val validator = ControlledValidator(OcrCropContentValidationResult.Valid)
+        val viewModel = viewModel(
+            repository,
+            validator,
+            FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic)),
+        )
+        load(viewModel)
+        viewModel.onCropChanged(manual)
+        viewModel.confirmCrop {}
+        advanceUntilIdle()
+
+        assertTrue(validator.lastPixelCrop != null)
+        assertEquals(manual.left, repository.asset.cropLeft!!, 0.0)
+        assertEquals(manual.right, repository.asset.cropRight!!, 0.0)
+        assertEquals(1, repository.persistConfirmedCropCalls)
     }
 
     @Test
@@ -281,6 +349,9 @@ class MatchResultScreenshotCropValidationGateTest {
     private fun viewModel(
         repository: GateAssetRepository,
         validator: MatchResultCropContentValidator,
+        autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
+            MatchResultAutoCropResult.OcrFailed
+        },
     ): MatchResultScreenshotCropViewModel {
         val root = Files.createTempDirectory("rank-forge-gate").toFile()
         val preserver = LocalImagePreserver(
@@ -311,13 +382,26 @@ class MatchResultScreenshotCropValidationGateTest {
                 testOnly = true,
             ),
             contentValidator = validator,
+            autoCropProposer = autoCropProposer,
         )
+    }
+
+    private class FixedAutoCropProposer(
+        private val result: MatchResultAutoCropResult,
+    ) : MatchResultAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult {
+            calls++
+            return result
+        }
     }
 
     private class ControlledValidator(
         private val immediateResult: OcrCropContentValidationResult? = null,
     ) : MatchResultCropContentValidator {
         var calls = 0
+        var lastPixelCrop: OcrPixelCropRect? = null
         val release = CompletableDeferred<OcrCropContentValidationResult>()
 
         override suspend fun validate(
@@ -326,6 +410,7 @@ class MatchResultScreenshotCropValidationGateTest {
             pixelCrop: OcrPixelCropRect,
         ): OcrCropContentValidationResult {
             calls++
+            lastPixelCrop = pixelCrop
             return immediateResult ?: release.await()
         }
     }
