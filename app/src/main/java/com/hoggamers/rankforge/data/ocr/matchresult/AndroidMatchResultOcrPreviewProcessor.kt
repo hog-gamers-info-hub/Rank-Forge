@@ -13,12 +13,16 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldExtractor
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.validation.MatchResultCropContentEvidence
+import com.hoggamers.rankforge.domain.ocr.validation.MatchResultCropContentEvidenceEvaluator
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val MATCH_RESULT_OCR_PREVIEW_TAG = "RF_MATCH_RESULT_OCR_PREVIEW"
+private const val MATCH_RESULT_CROP_CALIBRATION_TAG = "RF_RESULT_CROP_CALIBRATION"
 
 class AndroidMatchResultOcrPreviewProcessor(
     private val assetRepository: MatchResultScreenshotAssetRepository,
@@ -38,6 +42,17 @@ class AndroidMatchResultOcrPreviewProcessor(
                 ),
                 fieldExtractor = MatchResultOcrPreviewFieldExtractor {
                     role, cropWidth, cropHeight, blocks ->
+                    logCalibrationEvidenceSafely(
+                        roleName = role.name,
+                        evidenceProvider = {
+                            MatchResultCropContentEvidenceEvaluator().evaluate(
+                                role = role,
+                                cropWidth = cropWidth,
+                                cropHeight = cropHeight,
+                                blocks = blocks,
+                            )
+                        },
+                    )
                     MatchResultOcrFieldExtractor().extract(role, cropWidth, cropHeight, blocks)
                 },
             ).process(identity)
@@ -96,6 +111,72 @@ class AndroidMatchResultOcrPreviewProcessor(
                 logResultOnly("RecognitionFailed")
         }
     }
+
+    private fun logCalibrationEvidenceSafely(
+        roleName: String,
+        evidenceProvider: () -> MatchResultCropContentEvidence,
+    ) {
+        try {
+            logCalibrationEvidence(evidenceProvider())
+        } catch (throwable: Throwable) {
+            Log.w(
+                MATCH_RESULT_CROP_CALIBRATION_TAG,
+                "CALIBRATION_LOG_FAILED role=$roleName type=${throwable::class.java.simpleName}",
+            )
+        }
+    }
+
+    private fun logCalibrationEvidence(evidence: MatchResultCropContentEvidence) {
+        Log.i(
+            MATCH_RESULT_CROP_CALIBRATION_TAG,
+            "===== RESULT_CROP_CALIBRATION_BEGIN =====",
+        )
+        Log.i(
+            MATCH_RESULT_CROP_CALIBRATION_TAG,
+            "role=${evidence.role.name} crop=${evidence.cropWidth}x${evidence.cropHeight} " +
+                "observations=${evidence.nonBlankObservationCount} " +
+                "playerLike=${evidence.playerLikeObservationCount} " +
+                "killLike=${evidence.killLikeObservationCount}",
+        )
+        evidence.placementEvidence.forEach { placement ->
+            Log.i(
+                MATCH_RESULT_CROP_CALIBRATION_TAG,
+                "PLACEMENT expected=${placement.expectedPlacement} " +
+                    "candidates=${placement.matchingCandidateCount} " +
+                    "minCenter=${placement.minimumNormalizedCenterDistance.calibrationValue()}",
+            )
+        }
+        evidence.playerFieldEvidence.forEach { field ->
+            Log.i(
+                MATCH_RESULT_CROP_CALIBRATION_TAG,
+                "PLAYER field=${field.fieldId} " +
+                    "coverage=${field.maximumExpectedRegionCoverageRatio.calibrationValue()} " +
+                    "containment=${field.maximumObservationContainmentRatio.calibrationValue()} " +
+                    "minCenter=${field.minimumNormalizedCenterDistance.calibrationValue()}",
+            )
+        }
+        evidence.killFieldEvidence.forEach { field ->
+            Log.i(
+                MATCH_RESULT_CROP_CALIBRATION_TAG,
+                "KILL field=${field.fieldId} " +
+                    "coverage=${field.maximumExpectedRegionCoverageRatio.calibrationValue()} " +
+                    "containment=${field.maximumObservationContainmentRatio.calibrationValue()} " +
+                    "minCenter=${field.minimumNormalizedCenterDistance.calibrationValue()}",
+            )
+        }
+        Log.i(
+            MATCH_RESULT_CROP_CALIBRATION_TAG,
+            "H_BANDS=${evidence.spatialDistribution.horizontalBandCounts.joinToString(",")} " +
+                "V_BANDS=${evidence.spatialDistribution.verticalBandCounts.joinToString(",")}",
+        )
+        Log.i(
+            MATCH_RESULT_CROP_CALIBRATION_TAG,
+            "===== RESULT_CROP_CALIBRATION_END =====",
+        )
+    }
+
+    private fun Double?.calibrationValue(): String =
+        this?.let { String.format(Locale.US, "%.6f", it) } ?: "null"
 
     private fun MatchResultOcrRow.toLogLine(): String {
         val slots = (1..4).joinToString(" | ") { slot ->
