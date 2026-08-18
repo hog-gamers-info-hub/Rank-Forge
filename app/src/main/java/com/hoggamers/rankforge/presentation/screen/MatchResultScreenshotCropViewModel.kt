@@ -213,13 +213,17 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                     reconciliationScheduler.schedule {
                         uploadCheckpoint.run(identity)
                     }
-                    viewModelScope.launch {
+                    try {
                         AndroidMatchResultOcrPreviewProcessor(
                             assetRepository = assetRepository,
                             localFileResolver = MatchResultOcrPreviewLocalFileResolver(
                                 localImagePreserver::resolveRelativePath,
                             ),
                         ).processAndLog(identity)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        // Calibration logging must not convert a saved crop into a save failure.
                     }
                     draftEdited = false
                     onConfirmed()
