@@ -40,6 +40,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrCorrectionSnapshot
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -47,13 +48,16 @@ import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -231,6 +235,153 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun resultAndLobbyCompletionOrderProducesTheSameLobbyDrivenAssignment() = runTest(dispatcher) {
+        assertEquals(12, runGatedAssignment(resultCompletesFirst = true))
+        assertEquals(12, runGatedAssignment(resultCompletesFirst = false))
+    }
+
+    @Test
+    fun liveLobbyEvidenceOverridesConflictingPersistedRosterSlot() = runTest(dispatcher) {
+        val repository = createRepository()
+        repository.saveRoster(
+            tournamentId = TOURNAMENT_ID,
+            slotNumber = 1,
+            players = listOf("Alpha", "Bravo", "Charlie", "Delta").map { name ->
+                RosterPlayer.create(
+                    TOURNAMENT_ID,
+                    1,
+                    name,
+                )
+            },
+        )
+        val resultPlayers = listOf("Alpha", "Bravo", "Charlie", "Delta")
+        val resultRunner = MatchResultOcrPreviewRunner { identity ->
+            when (val result = completePreviewRunner().process(identity)) {
+                is MatchResultOcrPreviewProcessingResult.Processed -> result.copy(
+                    extraction = result.extraction.copy(
+                        rows = result.extraction.rows.map { row ->
+                            if (row.position == 1) {
+                                row.copy(
+                                    playerSlots = row.playerSlots.mapIndexed { index, playerSlot ->
+                                        playerSlot.copy(
+                                            player = playerSlot.player.copy(
+                                                ocrText = resultPlayers[index],
+                                                resolvedText = resultPlayers[index],
+                                            ),
+                                        )
+                                    },
+                                )
+                            } else {
+                                row
+                            }
+                        },
+                    ),
+                )
+                else -> result
+            }
+        }
+        val lobbyRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+            MatchLobbyPlayersOcrResult(
+                slots = listOf(
+                    MatchLobbyPlayersOcrSlot(
+                        slotNumber = 5,
+                        players = resultPlayers.mapIndexed { index, name ->
+                            MatchLobbyPlayersOcrPlayer(index + 1, name)
+                        },
+                    ),
+                ),
+            )
+        }
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = resultRunner,
+            matchLobbyPlayersOcrRunner = lobbyRunner,
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.load(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val row = state.rows.first()
+        val draft = state.correctionDraft!!.rows.first()
+        assertEquals("5", row.suggestedTeamSlotDisplayValue)
+        assertEquals(5, row.originalSuggestedTeamSlot)
+        assertEquals("5", draft.assignedTeamSlotDraftValue)
+        assertFalse(row.suggestedTeamSlotDisplayValue == "1")
+        assertFalse(row.originalSuggestedTeamSlot == 1)
+        assertFalse(draft.assignedTeamSlotDraftValue == "1")
+    }
+
+    private suspend fun TestScope.runGatedAssignment(resultCompletesFirst: Boolean): Int {
+        val resultStarted = CompletableDeferred<Unit>()
+        val lobbyStarted = CompletableDeferred<Unit>()
+        val resultRelease = CompletableDeferred<Unit>()
+        val lobbyRelease = CompletableDeferred<Unit>()
+        val lobbyEvidence = MatchLobbyPlayersOcrResult(
+            slots = (1..12).map { slotNumber ->
+                MatchLobbyPlayersOcrSlot(
+                    slotNumber = slotNumber,
+                    players = if (slotNumber == 12) {
+                        (1..4).map { playerNumber ->
+                            MatchLobbyPlayersOcrPlayer(playerNumber, "Player 1-$playerNumber")
+                        }
+                    } else {
+                        (1..4).map { playerNumber -> MatchLobbyPlayersOcrPlayer(playerNumber, null) }
+                    },
+                )
+            },
+        )
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                resultStarted.complete(Unit)
+                resultRelease.await()
+                val processed = completePreviewRunner().process(identity)
+                    as MatchResultOcrPreviewProcessingResult.Processed
+                processed.copy(
+                    extraction = processed.extraction.copy(
+                        rows = if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+                            processed.extraction.rows.take(1)
+                        } else {
+                            emptyList()
+                        },
+                    ),
+                )
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                lobbyStarted.complete(Unit)
+                lobbyRelease.await()
+                lobbyEvidence
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(InMemoryTournamentRepository()),
+            observeRoster = ObserveRosterByTournamentUseCase(InMemoryTournamentRepository()),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = true)
+        runCurrent()
+        resultStarted.await()
+        lobbyStarted.await()
+        if (resultCompletesFirst) {
+            resultRelease.complete(Unit)
+            runCurrent()
+            lobbyRelease.complete(Unit)
+        } else {
+            lobbyRelease.complete(Unit)
+            runCurrent()
+            resultRelease.complete(Unit)
+        }
+        advanceUntilIdle()
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        return requireNotNull(state.rows.first().originalSuggestedTeamSlot) {
+            "Expected a safe Lobby assignment but got ${state.rows.first()}"
+        }
+    }
+
+    @Test
     fun incompleteReprocessWithOnlyUpperCreatesManualPlaceholdersForLowerRows() = runTest(dispatcher) {
         val completeRunner = completePreviewRunner()
         val viewModel = MatchOcrReviewViewModel(
@@ -375,7 +526,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun loadSurfacesPersistedTeamNamesWithoutChangingMatchingResult() = runTest(dispatcher) {
+    fun loadSurfacesPersistedTeamNamesWithoutUsingRosterPlayersForMatching() = runTest(dispatcher) {
         val repository = createRepository()
         repository.saveTeamNames(TOURNAMENT_ID, mapOf(5 to "ETR ESPORTS"))
         val viewModel = MatchOcrReviewViewModel(
@@ -392,11 +543,13 @@ class MatchOcrReviewViewModelTest {
         val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
         assertEquals("ETR ESPORTS", state.teamNamesBySlot[5])
         assertEquals(12, state.rows.size)
-        assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
+        assertTrue(state.rows.all { it.assignmentSafetyStatusLabel == "Manual required" })
+        assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
+        assertTrue(state.correctionDraft!!.rows.all { it.assignedTeamSlotDraftValue.isBlank() })
     }
 
     @Test
-    fun lobbyPlayersCoexistWithResultPreviewAndUsePersistedTeamContext() = runTest(dispatcher) {
+    fun lobbyPlayersCoexistWithResultPreviewWithoutBecomingResultMatchCandidates() = runTest(dispatcher) {
         val repository = createRepository()
         repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to "ABC ESPORTS"))
         val lobbyRunner = MatchLobbyPlayersOcrRunner { _, _ ->
@@ -431,7 +584,8 @@ class MatchOcrReviewViewModelTest {
         assertEquals("Lobby Player", state.lobbyPlayers.first { it.slotNumber == 1 }
             .players.first { it.playerNumber == 1 }.playerName)
         assertEquals(12, state.rows.size)
-        assertTrue(state.rows.all { it.suggestedTeamSlotDisplayValue == "Unavailable" })
+        assertTrue(state.rows.all { it.assignmentSafetyStatusLabel == "Manual required" })
+        assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
     }
 
     @Test

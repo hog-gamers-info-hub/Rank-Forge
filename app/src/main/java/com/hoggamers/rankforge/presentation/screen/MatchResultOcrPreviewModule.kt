@@ -2,16 +2,17 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchResultLobbyOcrSlotRanker
 import com.hoggamers.rankforge.data.ocr.matchresult.CachingMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
-import com.hoggamers.rankforge.domain.matching.ScoreboardRowPlayerEvidence
-import com.hoggamers.rankforge.domain.matching.ScoreboardTeamIdentificationEvaluator
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotAssignmentEvaluator
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyReason
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
-import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -45,31 +46,24 @@ object MatchResultOcrPreviewModule {
 object MatchResultOcrPreviewTeamSuggestionMapper {
     fun map(
         preview: MatchResultOcrPreviewUiState,
-        candidateTeams: List<TeamCandidateRosterInput>,
+        resultRows: List<MatchResultOcrRow>,
+        lobbyOcrResult: MatchLobbyPlayersOcrResult,
     ): List<MatchOcrReviewRowUiState>? {
-        val ready = preview as? MatchResultOcrPreviewUiState.Ready ?: return null
         val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
-        if (candidateTeams.isEmpty()) return rows
-
-        val evidence = ready.rows.map { row ->
-            ScoreboardRowPlayerEvidence(
-                rowIndex = row.position - 1,
-                expectedPlacementId = row.position,
-                detectedPlayerNames = row.slots
-                    .sortedBy(MatchResultOcrPreviewSlotUiState::slot)
-                    .mapNotNull { it.playerText.trim().takeIf(String::isNotBlank) },
-            )
+        val matchResults = resultRows.mapNotNull { resultRow ->
+            runCatching {
+                MatchResultLobbyOcrSlotRanker.rank(resultRow, lobbyOcrResult)
+            }.getOrNull()
         }
         val evaluation = runCatching {
-            ScoreboardTeamIdentificationEvaluator.evaluate(evidence, candidateTeams)
-        }.getOrNull() ?: return rows
-        val evaluationByRow = evaluation.rows.associateBy { it.rowIndex }
+            ResultLobbySlotAssignmentEvaluator.evaluate(matchResults)
+        }.getOrNull()
+        val evaluationByPosition = evaluation?.rows?.associateBy { it.resultPosition }.orEmpty()
 
         return rows.map { row ->
-            val result = evaluationByRow[row.rowIndex] ?: return@map row
+            val result = evaluationByPosition[row.rowIndex + 1] ?: return@map row
             val safety = result.assignmentSafety
-            val safePrefill = safety.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT &&
-                safety.proposedTeamSlot != null
+            val automaticAssignedTeamSlot = result.automaticAssignedTeamSlot
             val blockers = row.blockerLabels
                 .filterNot { it.startsWith(TEAM_ASSIGNMENT_PREFIX) }
                 .toMutableList()
@@ -84,12 +78,12 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
             val selected = result.confidenceAssessment.selectedSuggestion
             row.copy(
                 suggestedTeamSlotDisplayValue = safety.proposedTeamSlot?.toString() ?: "Unavailable",
-                originalSuggestedTeamSlot = safety.proposedTeamSlot.takeIf { safePrefill },
+                originalSuggestedTeamSlot = automaticAssignedTeamSlot,
                 confidenceScoreDisplayValue = selected?.teamCandidateScore?.confidenceScore?.toString()
                     ?: "Unavailable",
                 confidenceTierLabel = result.confidenceAssessment.tier.toLabel(),
                 assignmentSafetyStatusLabel = safety.safetyStatus.toLabel(),
-                topThreeSuggestionsSummary = result.suggestions.toSummary(),
+                topThreeSuggestionsSummary = result.matchResult.rankedCandidates.toSummary(),
                 warningLabels = warnings.distinct(),
                 blockerLabels = blockers.distinct(),
                 severity = when {

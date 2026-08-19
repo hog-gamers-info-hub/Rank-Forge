@@ -2,8 +2,11 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrSlot
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
-import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
@@ -35,6 +38,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -57,7 +61,11 @@ class MatchOcrReviewTeamSuggestionTest {
     @Test
     fun completePreviewMapsTopSuggestionsAndSafeAssignmentPrefillsDraft() = runTest(dispatcher) {
         val repository = repositoryWithRoster()
-        val viewModel = viewModel(repository, completePreviewRunner())
+        val viewModel = viewModel(
+            repository,
+            completePreviewRunner(),
+            lobbyRunner(mapOf(1 to exactPlayers)),
+        )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
         advanceUntilIdle()
@@ -76,10 +84,10 @@ class MatchOcrReviewTeamSuggestionTest {
 
     @Test
     fun reviewRequiredShowsSuggestionButDoesNotPrefillDraft() {
-        val rows = MatchResultOcrPreviewTeamSuggestionMapper.map(
+        val rows = mapWithLobbyEvidence(
             preview = completePreviewUiState(slotsForPosition = mapOf(1 to listOf("Alpha"))),
-            candidateTeams = candidateTeams(),
-        )!!
+            lobbyOverrides = mapOf(1 to exactPlayers),
+        )
         val row = rows.first()
         val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
 
@@ -92,10 +100,10 @@ class MatchOcrReviewTeamSuggestionTest {
 
     @Test
     fun manualRequiredDoesNotPrefillTeamSlot() {
-        val rows = MatchResultOcrPreviewTeamSuggestionMapper.map(
+        val rows = mapWithLobbyEvidence(
             preview = completePreviewUiState(slotsForPosition = mapOf(1 to listOf("Unrelated"))),
-            candidateTeams = candidateTeams(),
-        )!!
+            lobbyOverrides = mapOf(1 to exactPlayers),
+        )
         val row = rows.first()
 
         assertEquals("Manual required", row.assignmentSafetyStatusLabel)
@@ -106,12 +114,12 @@ class MatchOcrReviewTeamSuggestionTest {
     @Test
     fun duplicateSafeSuggestionsAreNotPrefilled() {
         val duplicateNames = listOf("Alpha", "Bravo", "Charlie", "Delta")
-        val rows = MatchResultOcrPreviewTeamSuggestionMapper.map(
+        val rows = mapWithLobbyEvidence(
             preview = completePreviewUiState(
                 slotsForPosition = mapOf(1 to duplicateNames, 2 to duplicateNames),
             ),
-            candidateTeams = candidateTeams(),
-        )!!
+            lobbyOverrides = mapOf(1 to exactPlayers),
+        )
 
         assertTrue(rows[0].assignmentSafetyStatusLabel == "Review required")
         assertTrue(rows[1].assignmentSafetyStatusLabel == "Review required")
@@ -120,15 +128,16 @@ class MatchOcrReviewTeamSuggestionTest {
     }
 
     @Test
-    fun missingRosterDataLeavesEditableRowsBlockedWithoutSuggestions() {
-        val rows = MatchResultOcrPreviewTeamSuggestionMapper.map(
+    fun unavailableLobbyEvidenceLeavesEditableRowsManualWithoutAssignment() {
+        val rows = mapWithLobbyEvidence(
             preview = completePreviewUiState(),
-            candidateTeams = emptyList(),
-        )!!
+            lobbyResult = MatchLobbyPlayersOcrResult.unavailable(),
+        )
         val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
 
-        assertEquals(listOf("No suggestions"), rows.first().topThreeSuggestionsSummary)
-        assertEquals("Unavailable", rows.first().suggestedTeamSlotDisplayValue)
+        assertEquals("Manual required", rows.first().assignmentSafetyStatusLabel)
+        assertEquals("1", rows.first().suggestedTeamSlotDisplayValue)
+        assertNull(rows.first().originalSuggestedTeamSlot)
         assertEquals("", draft.rows.first().assignedTeamSlotDraftValue)
         assertTrue(draft.rows.first().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT))
     }
@@ -148,6 +157,7 @@ class MatchOcrReviewTeamSuggestionTest {
                     MatchResultOcrPreviewProcessingResult.MissingConfirmedCrop
                 }
             },
+            lobbyRunner = lobbyRunner(emptyMap()),
         )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
@@ -160,12 +170,14 @@ class MatchOcrReviewTeamSuggestionTest {
     private fun viewModel(
         repository: InMemoryTournamentRepository,
         runner: MatchResultOcrPreviewRunner,
+        lobbyRunner: MatchLobbyPlayersOcrRunner = lobbyRunner(emptyMap()),
     ): MatchOcrReviewViewModel = MatchOcrReviewViewModel(
         finalizeOcrCorrectionMatch = FinalizeOcrCorrectionMatchUseCase(
             repository = repository,
             finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         ),
         matchResultOcrPreviewRunner = runner,
+        matchLobbyPlayersOcrRunner = lobbyRunner,
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         initialUiState = MatchOcrReviewUiState.Loading,
@@ -206,18 +218,6 @@ class MatchOcrReviewTeamSuggestionTest {
             )
         }
 
-    private fun candidateTeams(): List<TeamCandidateRosterInput> =
-        (1..12).map { slot ->
-            TeamCandidateRosterInput(
-                teamSlot = slot,
-                rosterPlayerNames = if (slot == 1) {
-                    listOf("Alpha", "Bravo", "Charlie", "Delta")
-                } else {
-                    emptyList()
-                },
-            )
-        }
-
     private fun completePreviewUiState(
         slotsForPosition: Map<Int, List<String>> = emptyMap(),
     ): MatchResultOcrPreviewUiState.Ready = MatchResultOcrPreviewUiState.Ready(
@@ -251,6 +251,73 @@ class MatchOcrReviewTeamSuggestionTest {
         },
         ignoredLowerRows = emptyList(),
         manualReviewRows = emptyList(),
+    )
+
+    private fun mapWithLobbyEvidence(
+        preview: MatchResultOcrPreviewUiState.Ready,
+        lobbyOverrides: Map<Int, List<String?>> = emptyMap(),
+        lobbyResult: MatchLobbyPlayersOcrResult = lobbyResult(lobbyOverrides),
+    ): List<MatchOcrReviewRowUiState> = MatchResultOcrPreviewTeamSuggestionMapper.map(
+        preview = preview,
+        resultRows = resultRowsForPreview(preview),
+        lobbyOcrResult = lobbyResult,
+    )!!
+
+    private fun resultRowsForPreview(
+        preview: MatchResultOcrPreviewUiState.Ready,
+    ): List<MatchResultOcrRow> = preview.rows.map { previewRow ->
+        MatchResultOcrRow(
+            position = previewRow.position,
+            source = if (previewRow.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+                MatchResultOcrRowSource.UPPER_TEMPLATE
+            } else if (previewRow.position == 11) {
+                MatchResultOcrRowSource.LOWER_ROW_A
+            } else {
+                MatchResultOcrRowSource.LOWER_ROW_B
+            },
+            placement = field(
+                id = "placement-${previewRow.position}",
+                type = MatchResultOcrFieldType.PLACEMENT,
+                position = previewRow.position,
+                text = previewRow.placementText,
+            ),
+            playerSlots = (1..4).map { slot ->
+                val player = previewRow.slots.firstOrNull { it.slot == slot }?.playerText.orEmpty()
+                MatchResultOcrPlayerSlot(
+                    slot = slot,
+                    player = field(
+                        id = "player-${previewRow.position}-$slot",
+                        type = MatchResultOcrFieldType.PLAYER,
+                        position = previewRow.position,
+                        text = player,
+                    ),
+                    kill = field(
+                        id = "kill-${previewRow.position}-$slot",
+                        type = MatchResultOcrFieldType.KILL,
+                        position = previewRow.position,
+                        text = "0",
+                    ),
+                )
+            },
+        )
+    }
+
+    private fun lobbyRunner(
+        lobbyOverrides: Map<Int, List<String?>>,
+    ): MatchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+        lobbyResult(lobbyOverrides)
+    }
+
+    private fun lobbyResult(
+        lobbyOverrides: Map<Int, List<String?>>,
+    ): MatchLobbyPlayersOcrResult = MatchLobbyPlayersOcrResult(
+        slots = (1..12).map { slotNumber ->
+            MatchLobbyPlayersOcrSlot(
+                slotNumber = slotNumber,
+                players = (lobbyOverrides[slotNumber] ?: listOf(null, null, null, null))
+                    .mapIndexed { index, playerName -> MatchLobbyPlayersOcrPlayer(index + 1, playerName) },
+            )
+        },
     )
 
     private fun processed(
@@ -314,6 +381,7 @@ class MatchOcrReviewTeamSuggestionTest {
     )
 
     private companion object {
+        val exactPlayers = listOf<String?>("Alpha", "Bravo", "Charlie", "Delta")
         const val TOURNAMENT_ID = "action5-tournament"
         const val MATCH_ID = "action5-match"
     }

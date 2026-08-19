@@ -21,19 +21,20 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchWarni
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionRowInput
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
-import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,7 +70,6 @@ class MatchOcrReviewViewModel @Inject constructor(
 
     private var loadedMatchKey: String? = null
     private var previewJob: Job? = null
-    private var lobbyPlayersJob: Job? = null
     private var cacheLoadJob: Job? = null
 
     internal constructor(
@@ -202,33 +202,44 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
         _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
         previewJob?.cancel()
-        lobbyPlayersJob?.cancel()
         previewJob = viewModelScope.launch {
-            val roleResults = MatchResultScreenshotRole.entries.map { role ->
-                MatchResultOcrPreviewRoleResult(
-                    role = role,
-                    result = matchResultOcrPreviewRunner.process(
-                        MatchResultScreenshotIdentity(
-                            tournamentId = tournamentId,
-                            matchId = matchId,
+            val (roleResults, lobbyResult) = coroutineScope {
+                val resultOcr = async {
+                    MatchResultScreenshotRole.entries.map { role ->
+                        MatchResultOcrPreviewRoleResult(
                             role = role,
-                        ),
-                    ),
-                )
+                            result = matchResultOcrPreviewRunner.process(
+                                MatchResultScreenshotIdentity(
+                                    tournamentId = tournamentId,
+                                    matchId = matchId,
+                                    role = role,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                val lobbyOcr = async {
+                    try {
+                        matchLobbyPlayersOcrRunner.process(tournamentId, matchId)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        MatchLobbyPlayersOcrResult.unavailable()
+                    }
+                }
+                resultOcr.await() to lobbyOcr.await()
             }
             val preview = mapPreviewResults(roleResults)
             val teamContext = loadTeamContext(tournamentId)
             val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
                 preview = preview,
-                candidateTeams = teamContext.candidateTeams,
+                resultRows = roleResults.processedResultRows(),
+                lobbyOcrResult = lobbyResult,
             )
+            val lobbyPlayers = lobbyResult.toUiState()
+                .takeIf { lobbyResult.hasLobbyOcrEvidence(matchId, lobbyScreenshotAssetRepository) }
+                .orEmpty()
             _uiState.update { state ->
-                val lobbyPlayers = when (state) {
-                    is MatchOcrReviewUiState.Empty -> state.lobbyPlayers
-                    is MatchOcrReviewUiState.Ready -> state.lobbyPlayers
-                    is MatchOcrReviewUiState.Error -> emptyList()
-                    MatchOcrReviewUiState.Loading -> emptyList()
-                }
                 val reviewState = if (
                     allowIncompleteEvidence || roleResults.all {
                         it.result is MatchResultOcrPreviewProcessingResult.Processed
@@ -271,30 +282,6 @@ class MatchOcrReviewViewModel @Inject constructor(
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                     )
                     is MatchOcrReviewUiState.Error -> state.copy(matchResultOcrPreview = preview)
-                    MatchOcrReviewUiState.Loading -> state
-                }
-            }
-        }
-        lobbyPlayersJob = viewModelScope.launch {
-            val result = try {
-                matchLobbyPlayersOcrRunner.process(tournamentId, matchId)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                MatchLobbyPlayersOcrResult.unavailable()
-            }
-            val lobbyPlayers = result.toUiState()
-                .takeIf { result.hasLobbyOcrEvidence(matchId, lobbyScreenshotAssetRepository) }
-                .orEmpty()
-            _uiState.update { state ->
-                when (state) {
-                    is MatchOcrReviewUiState.Empty -> {
-                        if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                            state.copy(lobbyPlayers = lobbyPlayers)
-                        } else state
-                    }
-                    is MatchOcrReviewUiState.Ready -> state.copy(lobbyPlayers = lobbyPlayers)
-                    is MatchOcrReviewUiState.Error -> state
                     MatchOcrReviewUiState.Loading -> state
                 }
             }
@@ -347,12 +334,15 @@ class MatchOcrReviewViewModel @Inject constructor(
                 _cacheAvailability.value = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE
                 return@launch
             }
-            val teamContext = loadTeamContext(tournamentId)
             val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
                 preview = preview,
-                candidateTeams = teamContext.candidateTeams,
+                resultRows = cached.resultRoleResults.processedResultRows(),
+                lobbyOcrResult = cached.lobbyResult,
             )
+            val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
             val lobbyPlayers = cached.lobbyResult.toUiState()
+                .takeIf { cached.lobbyResult.hasLobbyOcrEvidence(matchId, lobbyScreenshotAssetRepository) }
+                .orEmpty()
             _uiState.update { state ->
                 when (state) {
                     is MatchOcrReviewUiState.Ready -> state
@@ -363,7 +353,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                                 matchId = matchId,
                                 preview = preview,
                                 reviewRows = matchedRows,
-                                teamNamesBySlot = teamContext.teamNamesBySlot,
+                                teamNamesBySlot = teamNamesBySlot,
                                 lobbyPlayers = lobbyPlayers,
                             ) ?: state
                         } else {
@@ -377,7 +367,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         matchId = matchId,
                         preview = preview,
                         reviewRows = matchedRows,
-                        teamNamesBySlot = teamContext.teamNamesBySlot,
+                        teamNamesBySlot = teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
                     ) ?: state
                 }
@@ -392,7 +382,6 @@ class MatchOcrReviewViewModel @Inject constructor(
         cacheLoadJob?.cancel()
         _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
         previewJob?.cancel()
-        lobbyPlayersJob?.cancel()
         _uiState.value = MatchOcrReviewUiState.Loading
         viewModelScope.launch {
             val evidence = try {
@@ -409,9 +398,8 @@ class MatchOcrReviewViewModel @Inject constructor(
                 )
                 return@launch
             }
-            val teamContext = loadTeamContext(tournamentId)
             _uiState.value = evidence.toHistoricalUiState(
-                teamNamesBySlot = teamContext.teamNamesBySlot,
+                teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot,
             )
         }
     }
@@ -719,11 +707,15 @@ class MatchOcrReviewViewModel @Inject constructor(
             rows = rows,
             blockerCount = correctionDraft.blockerCount,
             warningCount = correctionDraft.warningCount,
-            safeRowCount = 0,
-            manualRequiredRowCount = correctionDraft.blockerCount,
-            reviewRequiredRowCount = 0,
-            manualReviewRequired = true,
-            hasUnavailableEvidence = true,
+            safeRowCount = rows.count { it.assignmentSafetyStatusLabel == SAFE_AUTOMATIC_ASSIGNMENT_LABEL },
+            manualRequiredRowCount = rows.count { it.assignmentSafetyStatusLabel == MANUAL_REQUIRED_LABEL },
+            reviewRequiredRowCount = rows.count { it.assignmentSafetyStatusLabel == REVIEW_REQUIRED_LABEL },
+            manualReviewRequired = correctionDraft.blockerCount > 0 || correctionDraft.warningCount > 0,
+            hasUnavailableEvidence = rows.any { row ->
+                row.confidenceTierLabel == UNAVAILABLE_LABEL ||
+                    row.assignmentSafetyStatusLabel == UNAVAILABLE_LABEL ||
+                    row.topThreeSuggestionsSummary == listOf(NO_SUGGESTIONS_LABEL)
+            },
             correctionDraft = correctionDraft,
             matchResultOcrPreview = preview,
             teamNamesBySlot = teamNamesBySlot,
@@ -764,33 +756,14 @@ class MatchOcrReviewViewModel @Inject constructor(
 
     private suspend fun loadTeamContext(tournamentId: String): OcrReviewTeamContext = try {
         val persistedSlots = observeTournamentSlots(tournamentId).first()
-        val persistedSlotNumbers = persistedSlots.map { it.slotNumber }.distinct()
-        val candidateSlotNumbers = persistedSlotNumbers.ifEmpty { TeamSlot.SLOT_NUMBERS.toList() }
-        val rosterBySlot = observeRoster(tournamentId).first()
-        if (rosterBySlot.values.flatten().none { it.displayName.isNotBlank() }) {
-            OcrReviewTeamContext(
-                candidateTeams = emptyList(),
-                teamNamesBySlot = persistedSlots.associate { it.slotNumber to it.teamName },
-            )
-        } else {
-            OcrReviewTeamContext(
-                candidateTeams = candidateSlotNumbers.map { slotNumber ->
-                    TeamCandidateRosterInput(
-                        teamSlot = slotNumber,
-                        rosterPlayerNames = rosterBySlot[slotNumber].orEmpty().map { it.displayName },
-                    )
-                },
-                teamNamesBySlot = persistedSlots.associate { it.slotNumber to it.teamName },
-            )
-        }
+        OcrReviewTeamContext(persistedSlots.associate { it.slotNumber to it.teamName })
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
-        OcrReviewTeamContext(emptyList(), emptyMap())
+        OcrReviewTeamContext(emptyMap())
     }
 
     private data class OcrReviewTeamContext(
-        val candidateTeams: List<TeamCandidateRosterInput>,
         val teamNamesBySlot: Map<Int, String>,
     )
 
@@ -934,3 +907,17 @@ private suspend fun MatchLobbyPlayersOcrResult.hasLobbyOcrEvidence(
 private val NO_OP_MATCHING_REPOSITORY = InMemoryTournamentRepository()
 private val NO_OP_OBSERVE_TOURNAMENT_SLOTS = ObserveTournamentSlotsUseCase(NO_OP_MATCHING_REPOSITORY)
 private val NO_OP_OBSERVE_ROSTER = ObserveRosterByTournamentUseCase(NO_OP_MATCHING_REPOSITORY)
+
+private fun List<MatchResultOcrPreviewRoleResult>.processedResultRows(): List<MatchResultOcrRow> =
+    flatMap { roleResult ->
+        (roleResult.result as? MatchResultOcrPreviewProcessingResult.Processed)
+            ?.extraction
+            ?.rows
+            .orEmpty()
+    }
+
+private const val SAFE_AUTOMATIC_ASSIGNMENT_LABEL = "Safe automatic assignment"
+private const val REVIEW_REQUIRED_LABEL = "Review required"
+private const val MANUAL_REQUIRED_LABEL = "Manual required"
+private const val UNAVAILABLE_LABEL = "Unavailable"
+private const val NO_SUGGESTIONS_LABEL = "No suggestions"
