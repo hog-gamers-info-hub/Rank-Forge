@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -233,10 +236,173 @@ class MatchLobbyScreenshotCropViewModelTest {
         assertEquals(MatchLobbyScreenshotCropError.FINALIZED_MATCH, finalizedViewModel.uiState.value.error)
     }
 
+    @Test
+    fun safeProposalBecomesDraftWithoutPersistence() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-proposal").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 2, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!, screenshotIndex = 2))
+        val proposal = OcrNormalizedCropRect(0.1, 0.2, 0.9, 0.8)
+        val proposer = RecordingLobbyAutoCropProposer(MatchLobbyAutoCropResult.Proposed(proposal))
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+
+        viewModel.load(tournamentId, matchId, 2)
+        advanceUntilIdle()
+
+        assertEquals(proposal, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+        assertTrue(assetRepository.persistedCrops.isEmpty())
+    }
+
+    @Test
+    fun noProposalKeepsFullImageFallback() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-no-proposal").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!))
+        val proposer = RecordingLobbyAutoCropProposer(MatchLobbyAutoCropResult.NoProposal)
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+
+        viewModel.load(tournamentId, matchId, 1)
+        advanceUntilIdle()
+
+        assertEquals(OcrVisualCropDefaults.FullImageCrop, viewModel.uiState.value.draftCrop)
+        assertEquals(1, proposer.calls)
+    }
+
+    @Test
+    fun confirmedCropWinsAndSkipsProposal() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-confirmed").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 3, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val confirmed = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+        assetRepository.saveOrReplace(
+            asset(preserver.relativePathFor(file)!!, screenshotIndex = 3).copy(
+                cropProfileId = "lobby",
+                cropLeft = confirmed.left,
+                cropTop = confirmed.top,
+                cropRight = confirmed.right,
+                cropBottom = confirmed.bottom,
+            ),
+        )
+        val proposer = RecordingLobbyAutoCropProposer(
+            MatchLobbyAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9)),
+        )
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+
+        viewModel.load(tournamentId, matchId, 3)
+        advanceUntilIdle()
+
+        assertEquals(confirmed, viewModel.uiState.value.draftCrop)
+        assertEquals(0, proposer.calls)
+    }
+
+    @Test
+    fun manualEditWinsWhenProposalCompletesLater() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-manual-race").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 2, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!, screenshotIndex = 2))
+        val response = CompletableDeferred<MatchLobbyAutoCropResult>()
+        val proposer = SuspendingLobbyAutoCropProposer(response)
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+        val manual = OcrNormalizedCropRect(0.05, 0.1, 0.95, 0.9)
+
+        viewModel.load(tournamentId, matchId, 2)
+        runCurrent()
+        viewModel.onCropChanged(manual)
+        response.complete(MatchLobbyAutoCropResult.Proposed(OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)))
+        advanceUntilIdle()
+
+        assertEquals(1, proposer.calls)
+        assertEquals(manual, viewModel.uiState.value.draftCrop)
+    }
+
+    @Test
+    fun staleProposalIsIgnoredAndReplacementGetsNewAttempt() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-stale").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 2, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val first = asset(preserver.relativePathFor(file)!!, screenshotIndex = 2)
+        assetRepository.saveOrReplace(first)
+        val firstResponse = CompletableDeferred<MatchLobbyAutoCropResult>()
+        val secondResponse = CompletableDeferred<MatchLobbyAutoCropResult>()
+        val proposer = SequencedLobbyAutoCropProposer(firstResponse, secondResponse)
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+
+        viewModel.load(tournamentId, matchId, 2)
+        runCurrent()
+        assetRepository.saveOrReplace(first.copy(sha256 = "b".repeat(64), revision = 2))
+        runCurrent()
+        assertEquals(2, proposer.calls)
+
+        firstResponse.complete(MatchLobbyAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.7, 0.7)))
+        runCurrent()
+        assertEquals(OcrVisualCropDefaults.FullImageCrop, viewModel.uiState.value.draftCrop)
+        val replacement = OcrNormalizedCropRect(0.2, 0.2, 0.8, 0.8)
+        secondResponse.complete(MatchLobbyAutoCropResult.Proposed(replacement))
+        advanceUntilIdle()
+        assertEquals(replacement, viewModel.uiState.value.draftCrop)
+    }
+
+    @Test
+    fun sameIdentityDoesNotRepeatProposalAttempt() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-once").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 2, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val current = asset(preserver.relativePathFor(file)!!, screenshotIndex = 2)
+        assetRepository.saveOrReplace(current)
+        val proposer = RecordingLobbyAutoCropProposer(MatchLobbyAutoCropResult.NoProposal)
+        val viewModel = viewModel(preserver, autoCropProposer = proposer)
+
+        viewModel.load(tournamentId, matchId, 2)
+        advanceUntilIdle()
+        assetRepository.saveOrReplace(current)
+        advanceUntilIdle()
+
+        assertEquals(1, proposer.calls)
+    }
+
+    @Test
+    fun proposalCanBeConfirmedThroughExistingPersistenceFlow() = runTest {
+        val root = Files.createTempDirectory("lobby-auto-crop-confirm").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 2, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        assetRepository.saveOrReplace(asset(preserver.relativePathFor(file)!!, screenshotIndex = 2))
+        val proposal = OcrNormalizedCropRect(0.1, 0.2, 0.9, 0.8)
+        val viewModel = viewModel(
+            preserver,
+            autoCropProposer = RecordingLobbyAutoCropProposer(MatchLobbyAutoCropResult.Proposed(proposal)),
+        )
+
+        viewModel.load(tournamentId, matchId, 2)
+        advanceUntilIdle()
+        viewModel.confirmCrop {}
+        advanceUntilIdle()
+
+        assertEquals(1, assetRepository.persistedCrops.size)
+        assertEquals(proposal, assetRepository.persistedCrops.single().second)
+    }
+
     private fun viewModel(
         preserver: LocalImagePreserver,
         cloud: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
         storageUploader: MatchLobbyScreenshotStorageUploader = RecordingLobbyStorageUploader(),
+        autoCropProposer: MatchLobbyAutoCropProposer = MatchLobbyAutoCropProposer { MatchLobbyAutoCropResult.NoProposal },
     ): MatchLobbyScreenshotCropViewModel {
         val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
             assetRepository = assetRepository,
@@ -255,6 +421,7 @@ class MatchLobbyScreenshotCropViewModelTest {
                 scope = CoroutineScope(SupervisorJob() + dispatcher),
                 testOnly = true,
             ),
+            autoCropProposer = autoCropProposer,
         )
     }
 
@@ -265,10 +432,16 @@ class MatchLobbyScreenshotCropViewModelTest {
         ioDispatcher = Dispatchers.Unconfined,
     )
 
-    private fun asset(path: String, assetMatchId: String = matchId) = MatchLobbyScreenshotAssetEntity(
+    private fun asset(
+        path: String,
+        assetMatchId: String = matchId,
+        screenshotIndex: Int = 1,
+        sha256Value: String = "a".repeat(64),
+        revisionValue: Long = 1,
+    ) = MatchLobbyScreenshotAssetEntity(
         tournamentId = tournamentId,
         matchId = assetMatchId,
-        lobbyScreenshotIndex = 1,
+        lobbyScreenshotIndex = screenshotIndex,
         ownerUserId = "owner-1",
         localRelativePath = path,
         fileExtension = "png",
@@ -276,7 +449,7 @@ class MatchLobbyScreenshotCropViewModelTest {
         originalWidth = 100,
         originalHeight = 100,
         byteSize = 3,
-        sha256 = "a".repeat(64),
+        sha256 = sha256Value,
         localStatus = ScreenshotLocalStatus.PRESERVED.name,
         uploadStatus = ScreenshotUploadStatus.PENDING.name,
         uploadFailureCode = null,
@@ -291,11 +464,12 @@ class MatchLobbyScreenshotCropViewModelTest {
         updatedAt = 1,
         preservedAt = 1,
         uploadedAt = null,
-        revision = 1,
+        revision = revisionValue,
     )
 
     private class FakeLobbyRepository : MatchLobbyScreenshotAssetRepository {
         private val state = MutableStateFlow<List<MatchLobbyScreenshotAssetEntity>>(emptyList())
+        val persistedCrops = mutableListOf<Pair<MatchLobbyScreenshotIdentity, OcrNormalizedCropRect>>()
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.filter { asset -> asset.matchId == matchId }) } } }
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> =
@@ -329,11 +503,44 @@ class MatchLobbyScreenshotCropViewModelTest {
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
         override suspend fun deleteByMatchId(matchId: String) = Unit
         override suspend fun persistConfirmedCrop(identity: MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long): MatchLobbyScreenshotCropSaveResult {
+            persistedCrops += identity to crop
             val current = getByIdentity(identity) ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
             state.value = state.value.map { if (it == current) it.copy(cropProfileId = "lobby", cropLeft = crop.left, cropTop = crop.top, cropRight = crop.right, cropBottom = crop.bottom) else it }
             return MatchLobbyScreenshotCropSaveResult.Saved
         }
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+    }
+
+    private class RecordingLobbyAutoCropProposer(
+        private val result: MatchLobbyAutoCropResult,
+    ) : MatchLobbyAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchLobbyAutoCropResult {
+            calls++
+            return result
+        }
+    }
+
+    private class SuspendingLobbyAutoCropProposer(
+        private val response: CompletableDeferred<MatchLobbyAutoCropResult>,
+    ) : MatchLobbyAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchLobbyAutoCropResult {
+            calls++
+            return response.await()
+        }
+    }
+
+    private class SequencedLobbyAutoCropProposer(
+        private vararg val responses: CompletableDeferred<MatchLobbyAutoCropResult>,
+    ) : MatchLobbyAutoCropProposer {
+        var calls = 0
+
+        override suspend fun propose(localFile: java.io.File): MatchLobbyAutoCropResult {
+            return responses[calls++].await()
+        }
     }
 
     private class FakeCloudDataSource(
