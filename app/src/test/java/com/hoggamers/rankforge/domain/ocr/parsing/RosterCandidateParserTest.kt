@@ -25,6 +25,10 @@ class RosterCandidateParserTest {
             playerRow(4, "Player Four"),
         )
 
+        val slotNumber = result.slots.single().slotNumberCandidate
+        assertEquals(RosterCandidateParseStatus.MISSING, slotNumber.status)
+        assertNull(slotNumber.detectedSlotNumber)
+
         val players = result.slots.single().playerNameCandidates
         assertEquals((1..4).toList(), players.map { it.playerRowIndex })
         assertEquals(
@@ -32,6 +36,83 @@ class RosterCandidateParserTest {
             players.map { it.candidateText },
         )
         assertTrue(players.all { it.status == RosterCandidateParseStatus.PARSED })
+    }
+
+    @Test
+    fun parsesCanonicalSlotNumbersFromOneThroughTwelve() {
+        for (expectedSlotNumber in 1..12) {
+            val candidate = parse(slotNumber(expectedSlotNumber.toString()))
+                .slots.single()
+                .slotNumberCandidate
+
+            assertEquals(RosterCandidateParseStatus.PARSED, candidate.status)
+            assertEquals(expectedSlotNumber, candidate.detectedSlotNumber)
+            assertNull(candidate.failure)
+        }
+    }
+
+    @Test
+    fun parsesMultiDigitCanonicalSlotNumbersWithoutSplittingThem() {
+        val candidates = listOf("10", "11", "12").map { text ->
+            parse(slotNumber(text)).slots.single().slotNumberCandidate
+        }
+
+        assertEquals(listOf(10, 11, 12), candidates.map { it.detectedSlotNumber })
+        assertTrue(candidates.all { it.status == RosterCandidateParseStatus.PARSED })
+    }
+
+    @Test
+    fun blankSlotNumberEvidenceIsEmpty() {
+        val candidate = parse(
+            RosterRawOcrExtractionResult.Empty(identity(regionType = RosterRawOcrRegionType.SLOT_NUMBER)),
+        ).slots.single().slotNumberCandidate
+
+        assertEquals(RosterCandidateParseStatus.EMPTY, candidate.status)
+        assertNull(candidate.detectedSlotNumber)
+    }
+
+    @Test
+    fun absentSlotNumberEvidenceIsMissing() {
+        val candidate = parse(playerRow(1, "Player One")).slots.single().slotNumberCandidate
+
+        assertEquals(RosterCandidateParseStatus.MISSING, candidate.status)
+        assertNull(candidate.detectedSlotNumber)
+    }
+
+    @Test
+    fun malformedSlotNumberEvidenceDoesNotUseCorrections() {
+        val malformedValues = listOf("01", "1.", "#5", "Slot 5", "I", "l", "0", "13", "-1", "+1")
+
+        for (value in malformedValues) {
+            val candidate = parse(slotNumber(value)).slots.single().slotNumberCandidate
+
+            assertEquals(value, RosterCandidateParseStatus.MALFORMED, candidate.status)
+            assertNull(candidate.detectedSlotNumber)
+        }
+    }
+
+    @Test
+    fun slotNumberExtractionFailureIsTypedAsInputFailure() {
+        val identity = identity(regionType = RosterRawOcrRegionType.SLOT_NUMBER)
+        val candidate = parse(
+            RosterRawOcrExtractionResult.Failed(
+                failure = com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrFailure.RECOGNIZER_FAILED,
+                regionIdentity = identity,
+            ),
+        ).slots.single().slotNumberCandidate
+
+        assertEquals(RosterCandidateParseStatus.INPUT_FAILURE, candidate.status)
+        assertNull(candidate.detectedSlotNumber)
+        assertEquals(RosterCandidateParseFailure.RAW_EXTRACTION_FAILURE, candidate.failure)
+    }
+
+    @Test
+    fun distinctSlotNumberFragmentsRemainAmbiguousWithoutGuessing() {
+        val candidate = parse(slotNumber("5"), slotNumber("6")).slots.single().slotNumberCandidate
+
+        assertEquals(RosterCandidateParseStatus.AMBIGUOUS, candidate.status)
+        assertNull(candidate.detectedSlotNumber)
+        assertEquals(RosterCandidateParseFailure.MULTIPLE_FRAGMENTS, candidate.failure)
     }
 
     @Test
@@ -113,7 +194,12 @@ class RosterCandidateParserTest {
             screenshotPosition = RosterScreenshotPosition.TWO,
             visibleSlotPosition = RosterVisibleSlotPosition.BOTTOM_RIGHT,
         )
-        val result = parse(source)
+        val slotNumberSource = slotNumber(
+            text = "12",
+            screenshotPosition = RosterScreenshotPosition.TWO,
+            visibleSlotPosition = RosterVisibleSlotPosition.BOTTOM_RIGHT,
+        )
+        val result = parse(source, slotNumberSource)
 
         val slot = result.slots.single()
         val player = slot.playerNameCandidates.first()
@@ -121,6 +207,8 @@ class RosterCandidateParserTest {
         assertEquals(RosterVisibleSlotPosition.BOTTOM_RIGHT, slot.visibleSlotPosition)
         assertEquals(5..8, slot.intendedTournamentSlotRange)
         assertEquals(8, slot.intendedTournamentSlot)
+        assertEquals(RosterCandidateParseStatus.PARSED, slot.slotNumberCandidate.status)
+        assertEquals(12, slot.slotNumberCandidate.detectedSlotNumber)
         assertEquals(1, player.regionIdentity.playerRowIndex)
         assertEquals(listOf(source), player.rawSourceResults)
         assertEquals(RawOcrConfidence.Unavailable, player.confidence)
@@ -201,6 +289,17 @@ class RosterCandidateParserTest {
         confidence: RawOcrConfidence = RawOcrConfidence.Unavailable,
     ): RosterRawOcrExtractionResult.Extracted = extracted(
         identity(screenshotPosition, visibleSlotPosition, RosterRawOcrRegionType.PLAYER_ROW, row),
+        text,
+        confidence,
+    )
+
+    private fun slotNumber(
+        text: String,
+        screenshotPosition: RosterScreenshotPosition = RosterScreenshotPosition.ONE,
+        visibleSlotPosition: RosterVisibleSlotPosition = RosterVisibleSlotPosition.TOP_LEFT,
+        confidence: RawOcrConfidence = RawOcrConfidence.Unavailable,
+    ): RosterRawOcrExtractionResult.Extracted = extracted(
+        identity(screenshotPosition, visibleSlotPosition, RosterRawOcrRegionType.SLOT_NUMBER),
         text,
         confidence,
     )

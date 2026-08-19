@@ -21,7 +21,6 @@ enum class CroppedRosterLayoutValidationError {
     UNSUPPORTED_SCREENSHOT_POSITION,
     INVALID_VISIBLE_SLOT_STRUCTURE,
     OVERLAPPING_SLOT_CONTENT_REGIONS,
-    SLOT_NUMBER_REGION_OUTSIDE_SLOT,
     UNSUPPORTED_PLAYER_ROW_COUNT,
     INVALID_PLAYER_ROW_STRUCTURE,
     PLAYER_ROW_REGION_OUTSIDE_SLOT,
@@ -68,11 +67,6 @@ class CroppedRosterLayoutValidator {
         }
 
         layout.slots.forEach { slot ->
-            if (!slot.slotNumberRect.isWithin(slot.contentRect)) {
-                return CroppedRosterLayoutValidationResult.Incompatible(
-                    CroppedRosterLayoutValidationError.SLOT_NUMBER_REGION_OUTSIDE_SLOT,
-                )
-            }
             if (slot.playerRowRegions.size != REQUIRED_PLAYER_ROW_COUNT) {
                 return CroppedRosterLayoutValidationResult.Incompatible(
                     CroppedRosterLayoutValidationError.UNSUPPORTED_PLAYER_ROW_COUNT,

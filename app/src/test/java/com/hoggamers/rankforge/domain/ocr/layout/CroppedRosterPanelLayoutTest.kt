@@ -42,12 +42,39 @@ class CroppedRosterPanelLayoutTest {
     }
 
     @Test
-    fun everyVisibleSlotDefinesOneSlotNumberAndFourPlayerRowRegions() {
+    fun everyVisibleSlotDefinesFourPlayerRowRegions() {
         layout.slots.forEach { slot ->
-            assertTrue(slot.slotNumberRect.isWithin(slot.contentRect))
             assertEquals((1..4).toList(), slot.playerRowRegions.map { it.rowIndex })
             assertEquals(REQUIRED_PLAYER_ROW_COUNT, slot.playerRowRegions.size)
             assertTrue(slot.playerRowRegions.all { it.rect.isWithin(slot.contentRect) })
+        }
+    }
+
+    @Test
+    fun slotContentAndPlayerRowGeometryRemainUnchangedAcrossVisibleSlots() {
+        layout.slots.forEach { slot ->
+            val relativeContentX = slot.contentRect.x
+            val relativeContentY = slot.contentRect.y
+
+            assertTrue(relativeContentX == 0.0 || relativeContentX == 0.5)
+            assertTrue(relativeContentY == 0.0 || relativeContentY == 0.5)
+            assertEquals(0.5, slot.contentRect.width, DOUBLE_EPSILON)
+            assertEquals(0.5, slot.contentRect.height, DOUBLE_EPSILON)
+
+            slot.playerRowRegions.forEachIndexed { index, row ->
+                assertEquals(
+                    slot.contentRect.x + slot.contentRect.width * 0.15,
+                    row.rect.x,
+                    DOUBLE_EPSILON,
+                )
+                assertEquals(
+                    slot.contentRect.y + slot.contentRect.height * index * 0.25,
+                    row.rect.y,
+                    DOUBLE_EPSILON,
+                )
+                assertEquals(slot.contentRect.width * 0.85, row.rect.width, DOUBLE_EPSILON)
+                assertEquals(slot.contentRect.height * 0.25, row.rect.height, DOUBLE_EPSILON)
+            }
         }
     }
 
@@ -86,7 +113,7 @@ class CroppedRosterPanelLayoutTest {
     @Test
     fun layoutRegionsRemainWithinNormalizedCroppedPanelBounds() {
         val rectangles = layout.slots.flatMap { slot ->
-            listOf(slot.contentRect, slot.slotNumberRect) + slot.playerRowRegions.map { it.rect }
+            listOf(slot.contentRect) + slot.playerRowRegions.map { it.rect }
         }
 
         rectangles.forEach { rect ->
@@ -198,29 +225,6 @@ class CroppedRosterPanelLayoutTest {
             ),
             validator.validate(
                 overlappingLayout,
-                CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
-            ),
-        )
-    }
-
-    @Test
-    fun slotNumberRegionOutsideSlotIsRejected() {
-        val invalidLayout = layout.copy(
-            slots = layout.slots.mapIndexed { index, slot ->
-                if (index == 0) {
-                    slot.copy(slotNumberRect = NormalizedOcrRect(0.51, 0.01, 0.01, 0.01))
-                } else {
-                    slot
-                }
-            },
-        )
-
-        assertEquals(
-            CroppedRosterLayoutValidationResult.Incompatible(
-                CroppedRosterLayoutValidationError.SLOT_NUMBER_REGION_OUTSIDE_SLOT,
-            ),
-            validator.validate(
-                invalidLayout,
                 CroppedRosterPanelInput(RosterScreenshotPosition.ONE, true, 800, 600),
             ),
         )

@@ -39,10 +39,15 @@ class MlKitRosterRawOcrEngineImpl @Inject constructor(
 ) : RosterRawOcrEngine {
     override suspend fun recognize(input: RosterRawOcrRegionInput): RawOcrEngineOutput =
         withContext(Dispatchers.Default) {
-            val source = (input.croppedPanelImage as? AndroidBitmapOcrImage)?.bitmap
-                ?.takeIf { !it.isRecycled } ?: throw RosterRawOcrInputException()
+            val sourceBitmap = (input.croppedPanelImage as? AndroidBitmapOcrImage)?.bitmap
             val rect = input.pixelRect
-            if (!rect.isWithin(source)) throw RosterRawOcrInputException()
+            val rectIsWithin = sourceBitmap
+                ?.takeIf { !it.isRecycled }
+                ?.let { rect.isWithin(it) }
+                ?: false
+            val source = sourceBitmap?.takeIf { !it.isRecycled }
+                ?: throw RosterRawOcrInputException()
+            if (!rectIsWithin) throw RosterRawOcrInputException()
 
             val regionBitmap = try {
                 Bitmap.createBitmap(source, rect.x, rect.y, rect.width, rect.height)
@@ -52,14 +57,19 @@ class MlKitRosterRawOcrEngineImpl @Inject constructor(
             val recognizer = try {
                 recognizerFactory.create()
             } catch (throwable: Throwable) {
-                if (!regionBitmap.isRecycled) regionBitmap.recycle()
+                recycleBitmap(regionBitmap)
                 throw throwable
             }
             try {
-                recognizer.process(InputImage.fromBitmap(regionBitmap, 0)).awaitText().toRawOutput()
+                val authoritativeText = recognizer
+                    .process(InputImage.fromBitmap(regionBitmap, 0))
+                    .awaitText()
+                authoritativeText.toRawOutput()
+            } catch (throwable: Throwable) {
+                throw throwable
             } finally {
                 recognizer.close()
-                if (!regionBitmap.isRecycled) regionBitmap.recycle()
+                recycleBitmap(regionBitmap)
             }
         }
 
@@ -71,6 +81,11 @@ class MlKitRosterRawOcrEngineImpl @Inject constructor(
         height > 0 &&
         x.toLong() + width <= bitmap.width &&
         y.toLong() + height <= bitmap.height
+
+    private fun recycleBitmap(bitmap: Bitmap) {
+        if (!bitmap.isRecycled) bitmap.recycle()
+    }
+
 }
 
 @Singleton
