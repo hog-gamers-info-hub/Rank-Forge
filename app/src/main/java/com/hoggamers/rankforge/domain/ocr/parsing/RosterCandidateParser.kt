@@ -46,7 +46,26 @@ data class RosterSlotCandidate(
     val intendedTournamentSlot: Int,
     val teamNameCandidate: RosterTeamNameCandidate,
     val playerNameCandidates: List<RosterPlayerNameCandidate>,
+    val slotNumberCandidate: RosterSlotNumberCandidate = RosterSlotNumberCandidate.unavailable(),
 )
+
+data class RosterSlotNumberCandidate(
+    val status: RosterCandidateParseStatus,
+    val detectedSlotNumber: Int?,
+    val failure: RosterCandidateParseFailure?,
+    val rawSourceResults: List<RosterRawOcrExtractionResult>,
+    val confidence: RawOcrConfidence,
+) {
+    companion object {
+        fun unavailable(): RosterSlotNumberCandidate = RosterSlotNumberCandidate(
+            status = RosterCandidateParseStatus.MISSING,
+            detectedSlotNumber = null,
+            failure = RosterCandidateParseFailure.MISSING_EVIDENCE,
+            rawSourceResults = emptyList(),
+            confidence = RawOcrConfidence.Unavailable,
+        )
+    }
+}
 
 data class RosterTeamNameCandidate(
     val status: RosterCandidateParseStatus,
@@ -96,8 +115,11 @@ class FixedLayoutRosterCandidateParser : RosterCandidateParser {
         metadata: RosterSlotMetadata,
         extractions: List<RosterRawOcrExtractionResult>,
     ): RosterSlotCandidate {
-        val teamSources = extractions.forSlot(metadata)
+        val slotSources = extractions.forSlot(metadata)
+        val teamSources = slotSources
             .filter { it.regionIdentityOrNull()?.regionType == RosterRawOcrRegionType.SLOT_CONTENT }
+        val slotNumberSources = slotSources
+            .filter { it.regionIdentityOrNull()?.regionType == RosterRawOcrRegionType.SLOT_NUMBER }
         val playerCandidates = SUPPORTED_PLAYER_ROWS.map { rowIndex ->
             val identity = RosterRawOcrRegionIdentity(
                 screenshotPosition = metadata.screenshotPosition,
@@ -122,6 +144,83 @@ class FixedLayoutRosterCandidateParser : RosterCandidateParser {
                 confidence = RawOcrConfidence.Unavailable,
             ),
             playerNameCandidates = playerCandidates,
+            slotNumberCandidate = parseSlotNumber(
+                sources = slotNumberSources,
+                screenshotPosition = metadata.screenshotPosition,
+                visibleSlotPosition = metadata.visibleSlotPosition,
+            ),
+        )
+    }
+
+    private fun parseSlotNumber(
+        sources: List<RosterRawOcrExtractionResult>,
+        screenshotPosition: RosterScreenshotPosition,
+        visibleSlotPosition: RosterVisibleSlotPosition,
+    ): RosterSlotNumberCandidate {
+        val extractedSources = sources.filterIsInstance<RosterRawOcrExtractionResult.Extracted>()
+        val failedSources = sources.filterIsInstance<RosterRawOcrExtractionResult.Failed>()
+        val emptySources = sources.filterIsInstance<RosterRawOcrExtractionResult.Empty>()
+        val texts = extractedSources.map { it.evidence.rawText.trim() }
+        val distinctTexts = texts.distinct()
+        val confidence = extractedSources.sharedConfidence()
+
+        val outcome = when {
+            failedSources.isNotEmpty() -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.INPUT_FAILURE,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.RAW_EXTRACTION_FAILURE,
+            )
+            extractedSources.isEmpty() && emptySources.isNotEmpty() -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.EMPTY,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.EMPTY_TEXT,
+            )
+            extractedSources.isEmpty() -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.MISSING,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.MISSING_EVIDENCE,
+            )
+            distinctTexts.all { it.isEmpty() } -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.EMPTY,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.EMPTY_TEXT,
+            )
+            distinctTexts.size > 1 -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.AMBIGUOUS,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.MULTIPLE_FRAGMENTS,
+            )
+            extractedSources.size > 1 -> RosterSlotNumberParseOutcome(
+                status = RosterCandidateParseStatus.DUPLICATE,
+                detectedSlotNumber = null,
+                failure = RosterCandidateParseFailure.DUPLICATE_TEXT,
+            )
+            else -> {
+                val detectedSlotNumber = CANONICAL_SLOT_NUMBERS.firstOrNull { number ->
+                    number.toString() == texts.single()
+                }
+                if (detectedSlotNumber != null) {
+                    RosterSlotNumberParseOutcome(
+                        status = RosterCandidateParseStatus.PARSED,
+                        detectedSlotNumber = detectedSlotNumber,
+                        failure = null,
+                    )
+                } else {
+                    RosterSlotNumberParseOutcome(
+                        status = RosterCandidateParseStatus.MALFORMED,
+                        detectedSlotNumber = null,
+                        failure = null,
+                    )
+                }
+            }
+        }
+
+        return RosterSlotNumberCandidate(
+            status = outcome.status,
+            detectedSlotNumber = outcome.detectedSlotNumber,
+            failure = outcome.failure,
+            rawSourceResults = sources,
+            confidence = confidence,
         )
     }
 
@@ -204,7 +303,14 @@ class FixedLayoutRosterCandidateParser : RosterCandidateParser {
         val visibleSlotPosition: RosterVisibleSlotPosition,
     )
 
+    private data class RosterSlotNumberParseOutcome(
+        val status: RosterCandidateParseStatus,
+        val detectedSlotNumber: Int?,
+        val failure: RosterCandidateParseFailure?,
+    )
+
     private companion object {
+        val CANONICAL_SLOT_NUMBERS = 1..12
         val SUPPORTED_PLAYER_ROWS = 1..4
     }
 }

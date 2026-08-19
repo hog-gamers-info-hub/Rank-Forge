@@ -163,8 +163,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     }
 
     fun onPhotoPickerResult(selectedUri: String?) {
-        val slot = _uiState.value.slots.firstOrNull { it.isPhotoPickerRequestActive } ?: return
-        val index = slot.index
+        val index = _uiState.value.slots.firstOrNull { it.isPhotoPickerRequestActive }?.index
+        val slot = index?.let(_uiState.value::slot) ?: return
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
@@ -453,7 +453,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             uploadedAt = if (retainCloudState) existingAsset?.uploadedAt else null,
             revision = (existingAsset?.revision ?: 0L) + 1L,
         )
-        when (assetRepository.saveOrReplace(asset)) {
+        val saveResult = assetRepository.saveOrReplace(asset)
+        when (saveResult) {
             MatchLobbyScreenshotAssetSaveResult.Saved -> {
                 updateSlot(index) {
                     it.copy(

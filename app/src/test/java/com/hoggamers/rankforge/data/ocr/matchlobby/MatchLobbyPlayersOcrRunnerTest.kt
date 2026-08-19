@@ -6,6 +6,14 @@ import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotIdentityResolver
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrGeometry
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrEvidence
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.layout.CroppedRosterPanelInput
@@ -13,18 +21,17 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrRegionEvidence
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrRegionIdentity
+import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrRegionType
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseInput
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseResult
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParser
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterPlayerNameCandidate
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociationInput
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociationResult
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociator
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotCandidate
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociationStatus
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterTeamNameCandidate
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterTournamentSlotCandidate
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
@@ -51,7 +58,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             panelPreparer = preparer,
             extractor = extractor,
             parser = PositionParser(extractor),
-            associator = PositionAssociator(),
+            slotIdentityResolver = LobbySlotIdentityResolver(),
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -75,7 +82,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             },
             extractor = PositionTrackingExtractor(),
             parser = PositionParser(PositionTrackingExtractor()),
-            associator = PositionAssociator(),
+            slotIdentityResolver = LobbySlotIdentityResolver(),
         )
 
         assertThrows(CancellationException::class.java) {
@@ -94,7 +101,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             panelPreparer = preparer,
             extractor = extractor,
             parser = PositionParser(extractor),
-            associator = PositionAssociator(),
+            slotIdentityResolver = LobbySlotIdentityResolver(),
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -103,6 +110,143 @@ class MatchLobbyPlayersOcrRunnerTest {
         assertEquals(null, result.slots[4].players[0].playerName)
         assertEquals("S3P1", result.slots[8].players[0].playerName)
         assertEquals(2, preparer.releasedPanels)
+    }
+
+    @Test
+    fun physicalScreenshotOneUsesSemanticFiveThroughEightFromSlotEvidence() = runTest {
+        val extractor = PositionTrackingExtractor()
+        val result = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            cache = FakeCacheRepository(),
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
+            ),
+        ).process("tournament-1", "match-1")
+
+        assertEquals(listOf(null, null, null, null), result.slots.take(4).map { it.players[0].playerName })
+        assertEquals(
+            listOf("S1P1", "S1P1", "S1P1", "S1P1"),
+            result.slots.drop(4).take(4).map { it.players[0].playerName },
+        )
+    }
+
+    @Test
+    fun contentDerivedSlotNumberOverridesConflictingDedicatedSlotNumber() = runTest {
+        val extractor = PositionTrackingExtractor(
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(9, 10, 11, 12),
+            ),
+        )
+        val runner = AndroidMatchLobbyPlayersOcrRunner(
+            assetRepository = FakeAssetRepository(mapOf(1 to asset(1))),
+            cacheRepository = FakeCacheRepository(),
+            panelPreparer = FakePanelPreparer(),
+            extractor = extractor,
+            parser = PositionParser(
+                extractor = extractor,
+                semanticSlotNumbers = mapOf(
+                    RosterScreenshotPosition.ONE to listOf(6, 10, 11, 12),
+                ),
+            ),
+            slotIdentityResolver = LobbySlotIdentityResolver(),
+        )
+
+        val result = runner.process("tournament-1", "match-1")
+
+        assertEquals(listOf(null, null, null, null), result.slots.take(4).map { it.players[0].playerName })
+        assertEquals(
+            listOf("S1P1", "S1P1", "S1P1", "S1P1"),
+            result.slots.drop(8).map { it.players[0].playerName },
+        )
+    }
+
+    @Test
+    fun shuffledPhysicalCardsProduceDeterministicSemanticSlotOrder() = runTest {
+        val extractor = PositionTrackingExtractor()
+        val result = runner(
+            assets = FakeAssetRepository((1..3).associateWith(::asset)),
+            cache = FakeCacheRepository(),
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(9, 10, 11, 12),
+                RosterScreenshotPosition.TWO to listOf(1, 2, 3, 4),
+                RosterScreenshotPosition.THREE to listOf(5, 6, 7, 8),
+            ),
+        ).process("tournament-1", "match-1")
+
+        assertEquals("S2P1", result.slots[0].players[0].playerName)
+        assertEquals("S3P1", result.slots[4].players[0].playerName)
+        assertEquals("S1P1", result.slots[8].players[0].playerName)
+        assertEquals((1..12).toList(), result.slots.map { it.slotNumber })
+    }
+
+    @Test
+    fun oneParsedQuadrantAnchorResolvesTheWholeSemanticGroupInTheRunner() = runTest {
+        val extractor = PositionTrackingExtractor()
+        val result = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            cache = FakeCacheRepository(),
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(null, 6, null, null),
+            ),
+        ).process("tournament-1", "match-1")
+
+        assertEquals(listOf("S1P1", "S1P1", "S1P1", "S1P1"), result.slots.drop(4).take(4).map { it.players[0].playerName })
+        assertEquals(null, result.slots[0].players[0].playerName)
+    }
+
+    @Test
+    fun unresolvedScreenshotContributesNothingAndDoesNotEraseAValidGroup() = runTest {
+        val extractor = PositionTrackingExtractor()
+        val result = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1), 2 to asset(2))),
+            cache = FakeCacheRepository(),
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
+                RosterScreenshotPosition.TWO to listOf(null, null, null, null),
+            ),
+        ).process("tournament-1", "match-1")
+
+        assertEquals("S1P1", result.slots[4].players[0].playerName)
+        assertEquals(null, result.slots[0].players[0].playerName)
+    }
+
+    @Test
+    fun duplicateSemanticGroupsAreSuppressedRatherThanOverwritten() = runTest {
+        val extractor = PositionTrackingExtractor()
+        val result = runner(
+            assets = FakeAssetRepository((1..3).associateWith(::asset)),
+            cache = FakeCacheRepository(),
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
+                RosterScreenshotPosition.TWO to listOf(5, 6, 7, 8),
+                RosterScreenshotPosition.THREE to listOf(9, 10, 11, 12),
+            ),
+        ).process("tournament-1", "match-1")
+
+        assertEquals(null, result.slots[4].players[0].playerName)
+        assertEquals("S3P1", result.slots[8].players[0].playerName)
+    }
+
+    @Test
+    fun swappedSemanticCachePayloadHitsUsingThePhysicalFingerprint() = runTest {
+        val assetRepository = FakeAssetRepository(mapOf(1 to asset(1)))
+        val cache = FakeCacheRepository()
+        val extractor = PositionTrackingExtractor()
+        val semanticSlotNumbers = mapOf(RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8))
+        val runner = runner(assetRepository, cache, extractor, semanticSlotNumbers)
+
+        val first = runner.process("tournament-1", "match-1")
+        val second = runner.process("tournament-1", "match-1")
+
+        assertEquals("S1P1", first.slots[4].players[0].playerName)
+        assertEquals("S1P1", second.slots[4].players[0].playerName)
+        assertEquals(1, extractor.extractCount)
+        assertEquals(1, cache.saveCount)
     }
 
     @Test
@@ -199,14 +343,21 @@ class MatchLobbyPlayersOcrRunnerTest {
         assets: FakeAssetRepository,
         cache: FakeCacheRepository,
         extractor: PositionTrackingExtractor,
-    ) = AndroidMatchLobbyPlayersOcrRunner(
-        assetRepository = assets,
-        cacheRepository = cache,
-        panelPreparer = FakePanelPreparer(),
-        extractor = extractor,
-        parser = PositionParser(extractor),
-        associator = PositionAssociator(),
-    )
+        semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
+            RosterScreenshotPosition.entries.associateWith { position ->
+                position.tournamentSlotRange.toList()
+            },
+    ): AndroidMatchLobbyPlayersOcrRunner {
+        extractor.semanticSlotNumbers = semanticSlotNumbers
+        return AndroidMatchLobbyPlayersOcrRunner(
+            assetRepository = assets,
+            cacheRepository = cache,
+            panelPreparer = FakePanelPreparer(),
+            extractor = extractor,
+            parser = PositionParser(extractor, semanticSlotNumbers),
+            slotIdentityResolver = LobbySlotIdentityResolver(),
+        )
+    }
 
     private class FakeAssetRepository(
         initialAssets: Map<Int, MatchLobbyScreenshotAssetEntity>,
@@ -253,17 +404,83 @@ class MatchLobbyPlayersOcrRunnerTest {
             )
     }
 
-    private class PositionTrackingExtractor : com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor {
+    private class PositionTrackingExtractor(
+        var semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
+            RosterScreenshotPosition.entries.associateWith { position ->
+                position.tournamentSlotRange.toList()
+            },
+    ) : com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor {
         var position: RosterScreenshotPosition? = null
         var extractCount = 0
         override suspend fun extract(input: RosterRawOcrExtractionInput): List<RosterRawOcrExtractionResult> {
             extractCount++
             position = input.croppedPanelInput.screenshotPosition
-            return emptyList()
+            val screenshotPosition = requireNotNull(position)
+            return RosterVisibleSlotPosition.entries.map { visiblePosition ->
+                val identity = RosterRawOcrRegionIdentity(
+                    screenshotPosition = screenshotPosition,
+                    visibleSlotPosition = visiblePosition,
+                    regionType = RosterRawOcrRegionType.SLOT_CONTENT,
+                )
+                val slotNumber = semanticSlotNumbers[screenshotPosition]
+                    ?.getOrNull(visiblePosition.offset - 1)
+                if (slotNumber == null) {
+                    RosterRawOcrExtractionResult.Empty(identity)
+                } else {
+                    RosterRawOcrExtractionResult.Extracted(
+                        RosterRawOcrRegionEvidence(
+                            regionIdentity = identity,
+                            rawText = slotNumber.toString(),
+                            blocks = listOf(
+                                RawOcrBlock(
+                                    text = slotNumber.toString(),
+                                    geometry = RawOcrGeometry(
+                                        boundingBox = RawOcrBoundingBox(1, 1, 5, 10),
+                                        cornerPoints = null,
+                                    ),
+                                    recognizedLanguage = null,
+                                    confidence = RawOcrConfidence.Unavailable,
+                                    lines = listOf(
+                                        RawOcrLine(
+                                            text = slotNumber.toString(),
+                                            geometry = RawOcrGeometry(
+                                                boundingBox = RawOcrBoundingBox(1, 1, 5, 10),
+                                                cornerPoints = null,
+                                            ),
+                                            recognizedLanguage = null,
+                                            confidence = RawOcrConfidence.Unavailable,
+                                            elements = listOf(
+                                                RawOcrElement(
+                                                    text = slotNumber.toString(),
+                                                    geometry = RawOcrGeometry(
+                                                        boundingBox = RawOcrBoundingBox(1, 1, 5, 10),
+                                                        cornerPoints = null,
+                                                    ),
+                                                    recognizedLanguage = null,
+                                                    confidence = RawOcrConfidence.Unavailable,
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            rawEvidence = emptyList<RosterRawOcrEvidence>(),
+                            regionWidth = 50,
+                            regionHeight = 50,
+                        ),
+                    )
+                }
+            }
         }
     }
 
-    private class PositionParser(private val extractor: PositionTrackingExtractor) : RosterCandidateParser {
+    private class PositionParser(
+        private val extractor: PositionTrackingExtractor,
+        private val semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
+            RosterScreenshotPosition.entries.associateWith { position ->
+                position.tournamentSlotRange.toList()
+            },
+    ) : RosterCandidateParser {
         override fun parse(input: RosterCandidateParseInput): RosterCandidateParseResult {
             val position = requireNotNull(extractor.position)
             return RosterCandidateParseResult(
@@ -294,28 +511,23 @@ class MatchLobbyPlayersOcrRunnerTest {
                                 confidence = com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence.Unavailable,
                             )
                         },
+                        slotNumberCandidate = semanticSlotNumbers[position]
+                            ?.getOrNull(visible.offset - 1)
+                            ?.let { slotNumber ->
+                                RosterSlotNumberCandidate(
+                                    status = RosterCandidateParseStatus.PARSED,
+                                    detectedSlotNumber = slotNumber,
+                                    failure = null,
+                                    rawSourceResults = emptyList(),
+                                    confidence = com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence.Unavailable,
+                                )
+                            }
+                            ?: RosterSlotNumberCandidate.unavailable(),
                     )
                 },
                 inputFailures = emptyList(),
             )
         }
-    }
-
-    private class PositionAssociator : RosterSlotAssociator {
-        override fun associate(input: RosterSlotAssociationInput): RosterSlotAssociationResult =
-            RosterSlotAssociationResult(
-                tournamentSlotCandidates = input.parsedCandidates.slots.map { candidate ->
-                    RosterTournamentSlotCandidate(
-                        tournamentSlotNumber = candidate.intendedTournamentSlot,
-                        sourceScreenshotPosition = candidate.screenshotPosition,
-                        sourceVisibleSlotPosition = candidate.visibleSlotPosition,
-                        teamNameCandidate = candidate.teamNameCandidate,
-                        playerNameCandidates = candidate.playerNameCandidates,
-                        associationStatus = RosterSlotAssociationStatus.ASSOCIATED,
-                    )
-                },
-                failures = emptyList(),
-            )
     }
 
     private object FakeImage : OcrPreprocessingImage {

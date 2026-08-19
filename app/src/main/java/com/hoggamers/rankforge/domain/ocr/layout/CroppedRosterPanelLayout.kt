@@ -36,7 +36,6 @@ data class CroppedRosterPlayerRowRegion(
 data class CroppedRosterSlotRegion(
     val visiblePosition: RosterVisibleSlotPosition,
     val contentRect: NormalizedOcrRect,
-    val slotNumberRect: NormalizedOcrRect,
     val playerRowRegions: List<CroppedRosterPlayerRowRegion>,
 )
 
@@ -76,13 +75,6 @@ object FreeFireMaxCroppedRosterPanelLayout {
         return CroppedRosterSlotRegion(
             visiblePosition = position,
             contentRect = contentRect,
-            slotNumberRect = relativeToSlot(
-                contentRect = contentRect,
-                x = 0.0,
-                y = 0.0,
-                width = 0.15,
-                height = 0.15,
-            ),
             playerRowRegions = (1..REQUIRED_PLAYER_ROW_COUNT).map { rowIndex ->
                 CroppedRosterPlayerRowRegion(
                     rowIndex = rowIndex,

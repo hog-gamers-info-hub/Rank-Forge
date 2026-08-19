@@ -34,6 +34,16 @@ class MatchLobbyOcrCacheRepositoryTest {
     }
 
     @Test
+    fun physicalFingerprintCanReadSwappedSemanticGroup() = runTest {
+        val fingerprint = fingerprint(RosterScreenshotPosition.ONE)
+        val expected = slots(5..8)
+
+        repository.save(fingerprint, expected)
+
+        assertEquals(expected, repository.read(fingerprint))
+    }
+
+    @Test
     fun fingerprintMismatchIsCacheMiss() = runTest {
         val fingerprint = fingerprint(RosterScreenshotPosition.ONE)
         repository.save(fingerprint, slots(RosterScreenshotPosition.ONE))
@@ -41,7 +51,7 @@ class MatchLobbyOcrCacheRepositoryTest {
         assertNull(repository.read(fingerprint.copy(screenshotSha256 = "changed")))
         assertNull(repository.read(fingerprint.copy(cropRight = 0.5)))
         assertNull(repository.read(fingerprint.copy(originalWidth = 200)))
-        assertNull(repository.read(fingerprint.copy(ocrPipelineVersion = 2)))
+        assertNull(repository.read(fingerprint.copy(ocrPipelineVersion = 1)))
     }
 
     @Test
@@ -67,10 +77,12 @@ class MatchLobbyOcrCacheRepositoryTest {
         cropTop = 0.0,
         cropRight = 1.0,
         cropBottom = 1.0,
-        ocrPipelineVersion = 1,
+        ocrPipelineVersion = 3,
     )
 
-    private fun slots(position: RosterScreenshotPosition) = position.tournamentSlotRange.map { slotNumber ->
+    private fun slots(position: RosterScreenshotPosition) = slots(position.tournamentSlotRange)
+
+    private fun slots(slotNumberRange: IntRange) = slotNumberRange.map { slotNumber ->
         MatchLobbyPlayersOcrSlot(
             slotNumber = slotNumber,
             players = (1..4).map { playerNumber -> MatchLobbyPlayersOcrPlayer(playerNumber, "p$playerNumber") },

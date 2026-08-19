@@ -49,7 +49,7 @@ class RoomMatchLobbyOcrCacheRepository @Inject constructor(
             lobbyScreenshotIndex = fingerprint.screenshotPosition.index,
         ) ?: return null
         if (cached.toFingerprint() != fingerprint) return null
-        return codec.decode(cached.processedPayloadJson, fingerprint.screenshotPosition)
+        return codec.decode(cached.processedPayloadJson)
     }
 
     override suspend fun save(
@@ -57,7 +57,7 @@ class RoomMatchLobbyOcrCacheRepository @Inject constructor(
         slots: List<MatchLobbyPlayersOcrSlot>,
     ) {
         val payload = codec.encode(slots)
-        if (codec.decode(payload, fingerprint.screenshotPosition) == null) return
+        if (codec.decode(payload) == null) return
         dao.upsert(
             MatchLobbyOcrCacheEntity(
                 tournamentId = fingerprint.tournamentId,

@@ -46,7 +46,7 @@ class RosterRawOcrExtractorTest {
             FakeEngine(output = RawOcrEngineOutput("raw full text", listOf(block))),
         ).extract(validInput(screenshotPosition = RosterScreenshotPosition.TWO))
 
-        assertEquals(24, results.size)
+        assertEquals(20, results.size)
         val first = (results.first() as RosterRawOcrExtractionResult.Extracted).evidence
         assertEquals(RosterScreenshotPosition.TWO, first.regionIdentity.screenshotPosition)
         assertEquals(RosterVisibleSlotPosition.TOP_LEFT, first.regionIdentity.visibleSlotPosition)
@@ -66,7 +66,7 @@ class RosterRawOcrExtractorTest {
     }
 
     @Test
-    fun regionIdentityDistinguishesSlotContentSlotNumberAndAllPlayerRows() = runTest {
+    fun regionIdentityDistinguishesSlotContentAndAllPlayerRows() = runTest {
         val results = DefaultRosterRawOcrExtractor(
             FakeEngine(output = RawOcrEngineOutput("raw", emptyList())),
         ).extract(validInput())
@@ -77,15 +77,14 @@ class RosterRawOcrExtractorTest {
         assertEquals(
             listOf(
                 RosterRawOcrRegionType.SLOT_CONTENT,
-                RosterRawOcrRegionType.SLOT_NUMBER,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
             ),
-            identities.take(6).map { it.regionType },
+            identities.take(5).map { it.regionType },
         )
-        assertEquals((1..4).toList(), identities.take(6).drop(2).map { it.playerRowIndex })
+        assertEquals((1..4).toList(), identities.take(5).drop(1).map { it.playerRowIndex })
         assertTrue(identities.filter { it.regionType != RosterRawOcrRegionType.PLAYER_ROW }
             .all { it.playerRowIndex == null })
     }
@@ -95,24 +94,23 @@ class RosterRawOcrExtractorTest {
         val engine = RecordingEngine()
         DefaultRosterRawOcrExtractor(engine).extract(validInput())
 
-        assertEquals(24, engine.inputs.size)
+        assertEquals(20, engine.inputs.size)
         assertEquals(
             listOf(
                 RosterRawOcrRegionType.SLOT_CONTENT,
-                RosterRawOcrRegionType.SLOT_NUMBER,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
                 RosterRawOcrRegionType.PLAYER_ROW,
             ),
-            engine.inputs.take(6).map { it.regionIdentity.regionType },
+            engine.inputs.take(5).map { it.regionIdentity.regionType },
         )
         assertEquals(
             layout.slots.first().contentRect.toPixelRect(800, 600),
             engine.inputs.first().pixelRect,
         )
         assertEquals(
-            layout.slots.first().slotNumberRect.toPixelRect(800, 600),
+            layout.slots.first().playerRowRegions.first().rect.toPixelRect(800, 600),
             engine.inputs[1].pixelRect,
         )
     }
@@ -123,7 +121,7 @@ class RosterRawOcrExtractorTest {
             FakeEngine(output = RawOcrEngineOutput("", emptyList())),
         ).extract(validInput())
 
-        assertEquals(24, results.size)
+        assertEquals(20, results.size)
         assertTrue(results.all { it is RosterRawOcrExtractionResult.Empty })
     }
 
@@ -204,7 +202,7 @@ class RosterRawOcrExtractorTest {
         val failedResults = DefaultRosterRawOcrExtractor(
             FakeEngine(failure = IllegalStateException()),
         ).extract(validInput())
-        assertEquals(24, failedResults.size)
+        assertEquals(20, failedResults.size)
         assertTrue(
             failedResults.all {
                 it is RosterRawOcrExtractionResult.Failed &&
