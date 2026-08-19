@@ -9,6 +9,8 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -33,6 +35,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val clock: Clock,
     private val uploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
     private val reconciliationScheduler: ScreenshotReconciliationScheduler,
+    private val autoCropProposer: MatchLobbyAutoCropProposer,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
     val uiState: StateFlow<MatchLobbyScreenshotCropUiState> = _uiState.asStateFlow()
@@ -40,6 +43,9 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private var loadedKey: String? = null
     private var draftEdited = false
     private val missingMarked = mutableSetOf<String>()
+    private val autoCropAttemptedKeys = mutableSetOf<AutoProposalKey>()
+    private val autoProposals = mutableMapOf<AutoProposalKey, OcrNormalizedCropRect>()
+    private var currentAutoProposalKey: AutoProposalKey? = null
 
     fun load(tournamentId: String, matchId: String, lobbyScreenshotIndex: Int) {
         val key = "$tournamentId:$matchId:$lobbyScreenshotIndex"
@@ -47,6 +53,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         loadedKey = key
         loadJob?.cancel()
         draftEdited = false
+        currentAutoProposalKey = null
         if (tournamentId.isBlank() || matchId.isBlank() || lobbyScreenshotIndex !in 1..3) {
             _uiState.value = MatchLobbyScreenshotCropUiState(
                 isLoading = false,
@@ -97,6 +104,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             }.collect { state ->
                 if (state.error == MatchLobbyScreenshotCropError.MISSING_LOCAL_FILE) markMissingIfNeeded(identity)
                 _uiState.value = state
+                maybeLaunchAutoCrop(identity)
             }
         }
     }
@@ -192,6 +200,11 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         val file = localImagePreserver.resolveRelativePath(localRelativePath)
         val exists = file?.let { runCatching { it.isFile && it.length() > 0L }.getOrDefault(false) } == true
         val confirmed = confirmedLobbyCropOrNull()
+        val proposalKey = autoProposalKey()
+        val sourceChanged = currentAutoProposalKey != null && currentAutoProposalKey != proposalKey
+        if (sourceChanged) draftEdited = false
+        val sameSource = currentAutoProposalKey == proposalKey
+        currentAutoProposalKey = proposalKey
         return MatchLobbyScreenshotCropUiState(
             isLoading = false,
             tournamentId = tournamentId,
@@ -201,8 +214,9 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             originalWidth = originalWidth,
             originalHeight = originalHeight,
             confirmedCrop = confirmed,
-            draftCrop = if (draftEdited && previous.lobbyScreenshotIndex == index) previous.draftCrop
-            else confirmed ?: OcrVisualCropDefaults.FullImageCrop,
+            draftCrop = if (sameSource && draftEdited && previous.lobbyScreenshotIndex == index) previous.draftCrop
+            else confirmed ?: autoProposals[proposalKey]
+                ?: OcrVisualCropDefaults.FullImageCrop,
             isFinalized = isFinalized,
             error = if (exists) null else MatchLobbyScreenshotCropError.MISSING_LOCAL_FILE,
         )
@@ -221,4 +235,79 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             is OcrCropValidationResult.Invalid -> null
         }
     }
+
+    private fun maybeLaunchAutoCrop(identity: MatchLobbyScreenshotIdentity) {
+        val current = _uiState.value
+        val proposalKey = currentAutoProposalKey ?: return
+        if (
+            current.isLoading ||
+            current.tournamentId != identity.tournamentId ||
+            current.matchId != identity.matchId ||
+            current.lobbyScreenshotIndex != identity.lobbyScreenshotIndex ||
+            current.isFinalized ||
+            current.imageUri == null ||
+            current.confirmedCrop != null ||
+            draftEdited ||
+            autoProposals.containsKey(proposalKey) ||
+            !autoCropAttemptedKeys.add(proposalKey)
+        ) return
+
+        viewModelScope.launch {
+            val asset = try {
+                assetRepository.getByIdentity(identity)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            } ?: return@launch
+            if (asset.autoProposalKey() != proposalKey) return@launch
+            val localFile = localImagePreserver.resolveRelativePath(asset.localRelativePath)
+                ?.takeIf { file -> runCatching { file.isFile && file.length() > 0L }.getOrDefault(false) }
+                ?: return@launch
+            val result = try {
+                autoCropProposer.propose(localFile)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                MatchLobbyAutoCropResult.NoProposal
+            }
+            val proposedCrop = (result as? MatchLobbyAutoCropResult.Proposed)?.crop ?: return@launch
+            autoProposals[proposalKey] = proposedCrop
+            if (!isCurrentAutoProposal(identity, proposalKey)) return@launch
+            _uiState.update { state ->
+                if (isCurrentAutoProposal(identity, proposalKey)) state.copy(draftCrop = proposedCrop) else state
+            }
+        }
+    }
+
+    private fun isCurrentAutoProposal(
+        identity: MatchLobbyScreenshotIdentity,
+        proposalKey: AutoProposalKey,
+    ): Boolean {
+        val current = _uiState.value
+        return currentAutoProposalKey == proposalKey &&
+            current.tournamentId == identity.tournamentId &&
+            current.matchId == identity.matchId &&
+            current.lobbyScreenshotIndex == identity.lobbyScreenshotIndex &&
+            current.imageUri != null &&
+            !current.isFinalized &&
+            current.confirmedCrop == null &&
+            !draftEdited
+    }
+
+    private fun MatchLobbyScreenshotAssetEntity.autoProposalKey(): AutoProposalKey = AutoProposalKey(
+        tournamentId = tournamentId,
+        matchId = matchId,
+        screenshotIndex = lobbyScreenshotIndex,
+        sha256 = sha256,
+        revision = revision,
+    )
+
+    private data class AutoProposalKey(
+        val tournamentId: String,
+        val matchId: String,
+        val screenshotIndex: Int,
+        val sha256: String,
+        val revision: Long,
+    )
 }

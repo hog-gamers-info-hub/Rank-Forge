@@ -78,6 +78,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
@@ -2203,6 +2204,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
             testOnly = true,
         ),
+        autoCropProposer = MatchLobbyAutoCropProposer {
+            com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult.NoProposal
+        },
     )
 
     private object EmptyLobbyScreenshotAssetRepository : MatchLobbyScreenshotAssetRepository {

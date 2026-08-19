@@ -6,11 +6,13 @@ import com.hoggamers.rankforge.data.ocr.MlKitOcrEngineImpl
 import com.hoggamers.rankforge.data.ocr.MlKitOcrTextRecognizer
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.extraction.MlKitRosterRawOcrExtractor
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyAutoCropProposer
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultAutoCropProposer
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidRosterOcrPanelPreparer
 import com.hoggamers.rankforge.data.ocr.preprocessing.RoomRosterOcrSourceProvider
 import com.hoggamers.rankforge.domain.ocr.OcrTextRecognizer
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.parsing.DefaultRosterOcrValidator
 import com.hoggamers.rankforge.domain.ocr.parsing.FixedLayoutRosterCandidateParser
@@ -53,6 +55,12 @@ abstract class OcrDataBindingsModule {
     abstract fun bindMatchResultAutoCropProposer(
         proposer: AndroidMatchResultAutoCropProposer,
     ): MatchResultAutoCropProposer
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchLobbyAutoCropProposer(
+        proposer: AndroidMatchLobbyAutoCropProposer,
+    ): MatchLobbyAutoCropProposer
 
     @Binds
     @Singleton
