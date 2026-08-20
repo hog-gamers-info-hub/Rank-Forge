@@ -185,6 +185,43 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
+    fun resultLobbyDiagnosticDetailsAreHiddenWhileTheOcrRowRemainsVisible() {
+        val rows = defaultReadyRows().map { row ->
+            if (row.rowIndex == 0) {
+                row.copy(
+                    resultLobbyVoteEvidencePresent = true,
+                    resultLobbyWinningVotePercentDisplayValue = "100%",
+                    resultLobbyDecisionLabel = "Automatic",
+                    resultLobbyDecisionReasonLabel = "Unique vote winner",
+                    resultLobbyVoteSummary = listOf("Slot 1: 100% (P1, P2, P3, P4)"),
+                )
+            } else {
+                row
+            }
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        rows = rows,
+                        correctionDraft = correctionDraft(),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.resultLobbyVote(0))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Winning vote: 100%").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Decision: Automatic").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Reason: Unique vote winner").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Vote summary:").assertCountEquals(0)
+    }
+
+    @Test
     fun unavailableFallbackUsesExpectedPositionHeadingAndBlankPlacement() {
         val rows = defaultReadyRows().map { row ->
             if (row.rowIndex in 10..11) {
