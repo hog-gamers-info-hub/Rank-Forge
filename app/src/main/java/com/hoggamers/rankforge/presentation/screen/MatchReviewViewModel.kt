@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudFailure
@@ -28,6 +29,16 @@ import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.NoOpGoogleSheetsMatchExportRemoteDataSource
+import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
+import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
+import com.hoggamers.rankforge.data.export.ResultDocumentWriter
+import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
+import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.ResultDownloadRequest
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.data.local.NoOpScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
@@ -108,6 +119,9 @@ class MatchReviewViewModel @Inject constructor(
         NoOpMatchResultScreenshotAssetCloudDataSource(),
     private val googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource =
         NoOpGoogleSheetsMatchExportRemoteDataSource(),
+    private val resultDownloadCoordinator: ResultDownloadCoordinator =
+        NoOpResultDownloadCoordinator,
+    private val resultDocumentWriter: ResultDocumentWriter = NoOpResultDocumentWriter,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val clock: Clock = Clock.systemUTC(),
     private val finalizedMatchCloudSync: FinalizedMatchCloudSyncAction =
@@ -127,6 +141,8 @@ class MatchReviewViewModel @Inject constructor(
     private var uploadJob: Job? = null
     private val resultScreenshotJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
     private var exportJob: Job? = null
+    private var resultDownloadJob: Job? = null
+    private var pendingResultDocument: PendingResultDocument? = null
     private var restoredMissingMarkedForMatchId: String? = null
     private val restoredResultMissingMarked = mutableSetOf<String>()
     private var loadedMatchKey: String? = null
@@ -143,6 +159,8 @@ class MatchReviewViewModel @Inject constructor(
         resultScreenshotJobs.values.forEach { it.cancel() }
         resultScreenshotJobs.clear()
         exportJob?.cancel()
+        resultDownloadJob?.cancel()
+        pendingResultDocument = null
         _uiState.update {
             MatchReviewUiState(
                 isLoading = true,
@@ -258,6 +276,7 @@ class MatchReviewViewModel @Inject constructor(
                         finalizationError = current.finalizationError,
                         csvExportResult = current.csvExportResult,
                         googleSheetsExportResult = current.googleSheetsExportResult,
+                        resultDownloadUiState = current.resultDownloadUiState,
                         selectedScreenshotUri = current.selectedScreenshotUri,
                         isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
                         isPhotoPickerRequestActive = current.isPhotoPickerRequestActive,
@@ -481,6 +500,192 @@ class MatchReviewViewModel @Inject constructor(
                     state.copy(googleSheetsExportResult = result)
                 } else {
                     state
+                }
+            }
+        }
+    }
+
+    fun requestResultDownload(
+        scope: ResultDownloadScope,
+        format: ResultExportFileFormat,
+    ) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        if (!current.canDownloadResult || resultDownloadJob?.isActive == true) return
+
+        pendingResultDocument = null
+        resultDownloadJob = viewModelScope.launch {
+            _uiState.update { state ->
+                if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                    state.copy(resultDownloadUiState = ResultDownloadUiState.Generating(scope, format))
+                } else {
+                    state
+                }
+            }
+            val outcome = try {
+                val tournament = getTournamentById(tournamentId).first()
+                val matches = observeMatches(tournamentId).first()
+                val currentMatch = matches.firstOrNull { it.id == matchId }
+                when {
+                    tournament == null || currentMatch == null ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_CONTEXT)
+                    currentMatch.status != MatchStatus.FINALIZED ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    validateMatchResult(currentMatch).errorsByTeamSlot.isNotEmpty() ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    else -> {
+                        val inputSlots = observeTournamentSlots(tournamentId).first()
+                        val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
+                        val request = when (scope) {
+                            ResultDownloadScope.CURRENT_MATCH -> ResultDownloadRequest.CurrentMatch(
+                                com.hoggamers.rankforge.domain.export.MatchCsvExportInput(
+                                    tournament = tournament,
+                                    match = currentMatch,
+                                    teamSlots = inputSlots,
+                                    rosterPlayers = rosterPlayers,
+                                ),
+                            )
+                            ResultDownloadScope.WHOLE_TOURNAMENT -> ResultDownloadRequest.WholeTournament(
+                                com.hoggamers.rankforge.domain.export.TournamentCsvExportInput(
+                                    tournament = tournament,
+                                    matches = matches,
+                                    teamSlots = inputSlots,
+                                    rosterPlayers = rosterPlayers,
+                                ),
+                            )
+                        }
+                        resultDownloadCoordinator.execute(
+                            request = request,
+                            format = format,
+                            onSaving = {
+                                _uiState.update { state ->
+                                    if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                                        state.copy(resultDownloadUiState = ResultDownloadUiState.Saving(format))
+                                    } else {
+                                        state
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                ResultDownloadExecutionResult.Failure(ResultDownloadFailure.GENERATION_FAILED)
+            }
+
+            _uiState.update { state ->
+                if (state.tournamentId != tournamentId || state.matchId != matchId) {
+                    state
+                } else {
+                    when (outcome) {
+                        is ResultDownloadExecutionResult.Saved -> state.copy(
+                            resultDownloadUiState = ResultDownloadUiState.Success(
+                                format = outcome.format,
+                                userSelectedDestination = false,
+                            ),
+                        )
+                        is ResultDownloadExecutionResult.UserDestinationRequired -> {
+                            pendingResultDocument = PendingResultDocument(
+                                format = outcome.format,
+                                displayName = outcome.displayName,
+                                bytes = outcome.bytes,
+                            )
+                            state.copy(
+                                resultDownloadUiState = ResultDownloadUiState.DestinationLaunchRequested(
+                                    format = outcome.format,
+                                    suggestedDisplayName = outcome.displayName,
+                                ),
+                            )
+                        }
+                        is ResultDownloadExecutionResult.Failure -> state.copy(
+                            resultDownloadUiState = ResultDownloadUiState.Failure(outcome.reason),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun onDestinationLaunchHandled() {
+        _uiState.update { state ->
+            val requested = state.resultDownloadUiState as? ResultDownloadUiState.DestinationLaunchRequested
+                ?: return@update state
+            state.copy(
+                resultDownloadUiState = ResultDownloadUiState.WaitingForDestination(
+                    format = requested.format,
+                    suggestedDisplayName = requested.suggestedDisplayName,
+                ),
+            )
+        }
+    }
+
+    fun onDestinationLaunchFailed() {
+        if (_uiState.value.resultDownloadUiState !is ResultDownloadUiState.WaitingForDestination) return
+        pendingResultDocument = null
+        _uiState.update {
+            it.copy(
+                resultDownloadUiState = ResultDownloadUiState.Failure(
+                    ResultDownloadFailure.DESTINATION_LAUNCH_FAILED,
+                ),
+            )
+        }
+    }
+
+    fun onDestinationResult(uri: Uri?) {
+        val state = _uiState.value
+        if (state.resultDownloadUiState !is ResultDownloadUiState.WaitingForDestination) return
+        val pending = pendingResultDocument ?: return
+        if (uri == null) {
+            pendingResultDocument = null
+            _uiState.update { it.copy(resultDownloadUiState = ResultDownloadUiState.Idle) }
+            return
+        }
+
+        startDestinationWrite(uri, pending)
+    }
+
+    internal fun onDestinationResultForTesting() {
+        val state = _uiState.value
+        if (state.resultDownloadUiState !is ResultDownloadUiState.WaitingForDestination) return
+        val pending = pendingResultDocument ?: return
+        startDestinationWrite(null, pending)
+    }
+
+    private fun startDestinationWrite(
+        uri: Uri?,
+        pending: PendingResultDocument,
+    ) {
+
+        pendingResultDocument = null
+        _uiState.update {
+            it.copy(resultDownloadUiState = ResultDownloadUiState.Saving(pending.format))
+        }
+        resultDownloadJob = viewModelScope.launch {
+            val writeResult = try {
+                resultDocumentWriter.write(uri, pending.bytes)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                ResultDocumentWriteResult.Failure(
+                    com.hoggamers.rankforge.data.export.ResultDocumentWriteFailure.WRITE_FAILED,
+                )
+            }
+            _uiState.update { current ->
+                when (writeResult) {
+                    ResultDocumentWriteResult.Success -> current.copy(
+                        resultDownloadUiState = ResultDownloadUiState.Success(
+                            format = pending.format,
+                            userSelectedDestination = true,
+                        ),
+                    )
+                    is ResultDocumentWriteResult.Failure -> current.copy(
+                        resultDownloadUiState = ResultDownloadUiState.Failure(
+                            ResultDownloadFailure.DESTINATION_WRITE_FAILED,
+                        ),
+                    )
                 }
             }
         }
@@ -2119,6 +2324,12 @@ private fun MatchResultScreenshotAssetCloudFailure.toUiError(): ScreenshotUpload
     MatchResultScreenshotAssetCloudFailure.AUTHORIZATION -> ScreenshotUploadError.RLS_DENIED
     else -> ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED
 }
+
+private data class PendingResultDocument(
+    val format: ResultExportFileFormat,
+    val displayName: String,
+    val bytes: ByteArray,
+)
 
 private sealed interface MetadataWriteResult {
     data object NotAttempted : MetadataWriteResult

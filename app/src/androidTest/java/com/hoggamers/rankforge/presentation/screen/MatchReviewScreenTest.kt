@@ -23,9 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
-import com.hoggamers.rankforge.data.export.AndroidExportResult
-import com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason
+import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -2146,7 +2146,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun simplifiedFinalizedReviewShowsGoogleSheetsActionAndHidesLegacyControls() {
+    fun simplifiedFinalizedReviewShowsDownloadResultActionAndHidesLegacyControls() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -2162,10 +2162,12 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
+            .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
@@ -2175,7 +2177,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun draftReviewDoesNotExposeGoogleSheetsAction() {
+    fun draftReviewDoesNotExposeDownloadResultAction() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -2188,43 +2190,32 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
             .assertCountEquals(0)
     }
 
     @Test
-    fun googleSheetsExportStatusesAreDeterministic() {
-        val coordinator = AndroidExportCoordinator()
+    fun downloadStatusesAreDeterministic() {
         val statuses = listOf(
-            AndroidExportResult.GoogleSheetsExporting(
-                coordinator.googleSheetsMatchExporting("tournament-id", "match-id").request,
-            ),
-            coordinator.googleSheetsMatchSuccess("tournament-id", "match-id", 1, 12),
-            coordinator.googleSheetsMatchFailure(
-                "tournament-id",
-                "match-id",
-                AndroidGoogleSheetsExportFailureReason.NETWORK_FAILURE,
-            ),
-            coordinator.blockGoogleSheetsMatch(
-                "tournament-id",
-                "match-id",
-                com.hoggamers.rankforge.data.export.AndroidExportBlockedReason.INVALID_FINALIZED_MATCH,
-            ),
+            ResultDownloadUiState.Generating(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF),
+            ResultDownloadUiState.Saving(ResultExportFileFormat.PDF),
+            ResultDownloadUiState.Success(ResultExportFileFormat.PDF, false),
+            ResultDownloadUiState.Failure(ResultDownloadFailure.SAVE_FAILED),
         )
         val expectedText = listOf(
-            "Exporting to Google Sheets",
-            "Google Sheets export successful",
-            "Google Sheets export failed",
-            "Google Sheets export blocked",
+            "Generating result.",
+            "Saving result.",
+            "PDF saved to Downloads/Rank Forge.",
+            "Unable to save result.",
         )
 
-        var exportResult by mutableStateOf<AndroidExportResult>(statuses.first())
+        var downloadState by mutableStateOf<ResultDownloadUiState>(statuses.first())
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(
                         status = MatchStatus.FINALIZED,
-                        googleSheetsExportResult = exportResult,
+                        resultDownloadUiState = downloadState,
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -2236,14 +2227,160 @@ class MatchReviewScreenTest {
 
         statuses.forEachIndexed { index, status ->
             composeTestRule.runOnIdle {
-                exportResult = status
+                downloadState = status
             }
             composeTestRule.waitForIdle()
-            composeTestRule.onNodeWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG)
+            composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG)
                 .performScrollTo()
                 .assertIsDisplayed()
             composeTestRule.onNodeWithText(expectedText[index]).assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun downloadResultDialogsSelectScopeAndFormat() {
+        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(ResultDownloadScope.CURRENT_MATCH to ResultExportFileFormat.PDF),
+                requests,
+            )
+        }
+    }
+
+    @Test
+    fun wholeTournamentAndPngSelectionCallsExpectedDownload() {
+        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(ResultDownloadScope.WHOLE_TOURNAMENT to ResultExportFileFormat.PNG),
+                requests,
+            )
+        }
+    }
+
+    @Test
+    fun downloadScopeCancelDoesNotStartWork() {
+        var requestCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestResultDownload = { _, _ -> requestCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CANCEL_TEST_TAG).performClick()
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.runOnIdle { assertEquals(0, requestCount) }
+    }
+
+    @Test
+    fun formatBackPreservesScopeAndRequiresFreshFormatSelection() {
+        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(ResultDownloadScope.CURRENT_MATCH to ResultExportFileFormat.PNG),
+                requests,
+            )
+        }
+    }
+
+    @Test
+    fun busyDownloadActionIsDisabled() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        resultDownloadUiState = ResultDownloadUiState.Saving(ResultExportFileFormat.PDF),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
     }
 
     @Test
