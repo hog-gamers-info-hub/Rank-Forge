@@ -695,6 +695,78 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun embeddedOcrPagerReusesTeamSlotAssistantForOptionsCallbacksAndRecomputation() {
+        var ocrState by mutableStateOf(embeddedManualOcrState())
+        val teamSlots = mutableListOf<Pair<Int, String>>()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrState,
+                    onOcrAssignedTeamSlotChanged = { rowIndex, value ->
+                        teamSlots += rowIndex to value
+                        val draft = ocrState.correctionDraft ?: error("Expected correction draft")
+                        val updatedDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+                            draft = draft,
+                            rowIndex = rowIndex,
+                            value = value,
+                        )
+                        ocrState = ocrState.copy(
+                            correctionDraft = updatedDraft,
+                            blockerCount = updatedDraft.blockerCount,
+                            warningCount = updatedDraft.warningCount,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.REMAINING_TEAM_SLOTS)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slots: 11, 12").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            assertEquals(listOf(0 to "11"), teamSlots)
+            assertEquals("11", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
+        }
+        composeTestRule.onNodeWithText("Slots: 12").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 11))
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 12))
+            .assertIsDisplayed()
+
+        composeTestRule.runOnIdle {
+            ocrState = ocrState.copy(
+                finalization = ocrState.finalization.copy(isFinalized = true),
+            )
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.REMAINING_TEAM_SLOTS)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 12))
+            .assertCountEquals(0)
+    }
+
+    @Test
     fun simplifiedInlineFinalizeActionSitsBetweenResultRowsAndOcrReview() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -2685,6 +2757,58 @@ class MatchReviewScreenTest {
                 rows = listOf(secondCorrection, firstCorrection),
             ),
             lobbyPlayers = emptyList(),
+        )
+    }
+
+    private fun embeddedManualOcrState(): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrState()
+        val rows = buildList {
+            add(
+                base.rows.single().copy(
+                    rowIndex = 0,
+                    expectedPlacementLabel = "1",
+                    originalParsedPlacementValue = 1,
+                    originalSuggestedTeamSlot = null,
+                    suggestedTeamSlotDisplayValue = "Unavailable",
+                    blockerLabels = listOf("Team assignment: manual required"),
+                    severity = MatchOcrReviewSeverity.BLOCKING,
+                ),
+            )
+            add(
+                base.rows.single().copy(
+                    rowIndex = 1,
+                    expectedPlacementLabel = "2",
+                    originalParsedPlacementValue = 2,
+                    originalSuggestedTeamSlot = null,
+                    suggestedTeamSlotDisplayValue = "Unavailable",
+                    blockerLabels = listOf("Team assignment: manual required"),
+                    severity = MatchOcrReviewSeverity.BLOCKING,
+                ),
+            )
+            (1..10).forEach { slot ->
+                add(
+                    base.rows.single().copy(
+                        rowIndex = slot + 1,
+                        expectedPlacementLabel = (slot + 2).toString(),
+                        originalParsedPlacementValue = slot + 2,
+                        originalSuggestedTeamSlot = slot,
+                        suggestedTeamSlotDisplayValue = slot.toString(),
+                        blockerLabels = emptyList(),
+                        severity = MatchOcrReviewSeverity.INFORMATIONAL,
+                    ),
+                )
+            }
+        }
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        return base.copy(
+            rowCount = rows.size,
+            rows = rows,
+            blockerCount = draft.blockerCount,
+            warningCount = draft.warningCount,
+            safeRowCount = 10,
+            manualRequiredRowCount = 2,
+            manualReviewRequired = true,
+            correctionDraft = draft,
         )
     }
 

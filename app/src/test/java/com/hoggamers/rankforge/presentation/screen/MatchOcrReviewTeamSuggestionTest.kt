@@ -120,6 +120,9 @@ class MatchOcrReviewTeamSuggestionTest {
             listOf("Slot 10: 100% (P1, P2, P3, P4)", "Slot 1: 50% (P1, P2)"),
             row.resultLobbyVoteSummary,
         )
+        assertEquals((1..12).toList(), row.resultLobbyTeamSlotCandidates.map { it.teamSlot })
+        assertEquals(100, row.resultLobbyTeamSlotCandidates.first { it.teamSlot == 10 }.votePercent)
+        assertTrue(row.resultLobbyTeamSlotCandidates.first { it.teamSlot == 10 }.bestSimilarityScore != null)
         assertTrue(row.warningLabels.contains("OCR preview requires manual confirmation"))
         assertTrue(row.blockerLabels.none { it.startsWith("Team assignment:") })
     }

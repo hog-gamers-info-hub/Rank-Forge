@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -64,6 +65,7 @@ object MatchOcrReviewTestTags {
     const val FINALIZATION_SUCCESS = "match_ocr_review_finalization_success"
     const val FINALIZATION_ERROR = "match_ocr_review_finalization_error"
     const val RESULT_LOBBY_VOTE = "match_ocr_review_result_lobby_vote"
+    const val REMAINING_TEAM_SLOTS = "match_ocr_review_remaining_team_slots"
     private const val ROW_PREFIX = "match_ocr_review_row_"
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
@@ -95,6 +97,8 @@ object MatchOcrReviewTestTags {
     fun resultLobbyDecision(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_decision"
     fun resultLobbyReason(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_reason"
     fun resultLobbySummary(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_summary"
+    fun remainingTeamSlot(slot: Int): String = "${REMAINING_TEAM_SLOTS}_slot_$slot"
+    fun teamSlotOption(rowIndex: Int, slot: Int): String = "${row(rowIndex)}_team_slot_option_$slot"
 }
 
 @Composable
@@ -376,13 +380,21 @@ internal fun MatchOcrReviewResultContent(
     correctionRowsByIndex: Map<Int, MatchOcrReviewRowCorrectionDraft> =
         uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex },
 ) {
-    uiState.correctionDraft?.let { correctionDraft ->
+    val correctionDraft = uiState.correctionDraft
+    val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
+    correctionDraft?.let { draft ->
         MatchOcrReviewCorrectionSummary(
-            correctionDraft = correctionDraft,
+            correctionDraft = draft,
             finalization = uiState.finalization,
             onResetAllCorrections = onResetAllCorrections,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
         )
+    }
+    if (teamSlotAssistant != null &&
+        teamSlotAssistant.unresolvedRowIndexes.isNotEmpty() &&
+        !uiState.finalization.isFinalized
+    ) {
+        MatchOcrReviewRemainingTeamSlotsSection(teamSlotAssistant)
     }
     Column(
         modifier = Modifier
@@ -401,6 +413,14 @@ internal fun MatchOcrReviewResultContent(
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onResetRowCorrection = onResetRowCorrection,
                 correctionEnabled = !uiState.finalization.isFinalized,
+                availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
+                    emptyList()
+                } else {
+                    teamSlotAssistant
+                        ?.availableOptionsByRow
+                        ?.get(row.rowIndex)
+                        .orEmpty()
+                },
             )
         }
     }
@@ -409,6 +429,33 @@ internal fun MatchOcrReviewResultContent(
             warningCount = uiState.correctionDraft?.warningCount ?: 0,
             onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+        )
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewRemainingTeamSlotsSection(
+    assistant: MatchOcrReviewTeamSlotAssistantState,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.REMAINING_TEAM_SLOTS),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_remaining_team_slots_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = if (assistant.remainingTeamSlots.isEmpty()) {
+                stringResource(R.string.match_ocr_review_remaining_team_slots_none)
+            } else {
+                stringResource(
+                    R.string.match_ocr_review_remaining_team_slots_value,
+                    assistant.remainingTeamSlots.joinToString(", "),
+                )
+            },
         )
     }
 }
@@ -727,6 +774,7 @@ internal fun MatchOcrReviewRow(
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
     compactResetAction: Boolean = false,
+    availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
 ) {
     val compactResetCallback: (() -> Unit)? = if (compactResetAction && correctionDraft != null) {
         { onResetRowCorrection(row.rowIndex) }
@@ -775,6 +823,7 @@ internal fun MatchOcrReviewRow(
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onResetRowCorrection = onResetRowCorrection,
                 correctionEnabled = correctionEnabled,
+                availableTeamSlotOptions = availableTeamSlotOptions,
                 showWarningDetails = showWarningDetails,
                 compactFieldRow = compactFieldRow,
                 showBlockerDetails = showBlockerDetails,
@@ -960,6 +1009,7 @@ private fun MatchOcrReviewCorrectionFields(
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
     showResetRowCorrectionAction: Boolean = true,
+    availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
 ) {
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedTextField(
@@ -1053,6 +1103,45 @@ private fun MatchOcrReviewCorrectionFields(
             placementField(Modifier.fillMaxWidth())
             killsField(Modifier.fillMaxWidth())
             teamSlotField(Modifier.fillMaxWidth())
+        }
+    }
+    if (availableTeamSlotOptions.isNotEmpty()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            Text(text = stringResource(R.string.match_ocr_review_remaining_team_slots_options))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            ) {
+                availableTeamSlotOptions.forEach { option ->
+                    TextButton(
+                        onClick = {
+                            onAssignedTeamSlotChanged(
+                                correctionDraft.rowIndex,
+                                option.teamSlot.toString(),
+                            )
+                        },
+                        enabled = correctionEnabled,
+                        modifier = Modifier.testTag(
+                            MatchOcrReviewTestTags.teamSlotOption(
+                                correctionDraft.rowIndex,
+                                option.teamSlot,
+                            ),
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.match_ocr_review_remaining_team_slot,
+                                option.teamSlot,
+                            ),
+                        )
+                    }
+                }
+            }
         }
     }
     if (correctionDraft.isDirty) {
