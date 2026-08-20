@@ -3,11 +3,45 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchReviewUiStateTest {
+    @Test
+    fun onlyValidFinalizedMatchCanDownloadResult() {
+        assertFalse(state().canDownloadResult)
+        assertTrue(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                validationErrors = emptyMap(),
+            ).canDownloadResult,
+        )
+        assertFalse(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                validationErrors = mapOf(1 to setOf(MatchResultValidationError.MISSING_PLACEMENT)),
+            ).canDownloadResult,
+        )
+    }
+
+    @Test
+    fun activeDownloadDisablesNewDownload() {
+        val active = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            resultDownloadUiState = ResultDownloadUiState.Generating(
+                ResultDownloadScope.CURRENT_MATCH,
+                ResultExportFileFormat.PDF,
+            ),
+        )
+
+        assertTrue(active.resultDownloadUiState.isBusy)
+        assertFalse(active.canDownloadResult)
+    }
+
     @Test
     fun neitherResultRoleReadyDisablesOcrReview() {
         assertFalse(state().canOpenOcrReview)
@@ -120,6 +154,7 @@ class MatchReviewUiStateTest {
         isAvailable = true,
         tournamentId = "tournament-id",
         matchId = "match-id",
+        rows = (1..12).map { slot -> MatchReviewRowUiState(slot, "Team $slot") },
         resultScreenshots = listOf(upper, lower),
     )
 

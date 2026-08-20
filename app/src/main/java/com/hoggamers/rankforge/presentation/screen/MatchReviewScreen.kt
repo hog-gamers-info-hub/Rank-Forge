@@ -23,12 +23,14 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -57,6 +59,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
@@ -85,6 +90,18 @@ const val MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG = "match_review_csv_export_act
 const val MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG = "match_review_csv_export_status"
 const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG = "match_review_google_sheets_export_action"
 const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG = "match_review_google_sheets_export_status"
+const val MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG = "match_review_download_result_action"
+const val MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG = "match_review_download_scope_dialog"
+const val MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG = "match_review_download_scope_current_match"
+const val MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG = "match_review_download_scope_tournament"
+const val MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG = "match_review_download_scope_continue"
+const val MATCH_REVIEW_DOWNLOAD_SCOPE_CANCEL_TEST_TAG = "match_review_download_scope_cancel"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG = "match_review_download_format_dialog"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG = "match_review_download_format_pdf"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG = "match_review_download_format_png"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG = "match_review_download_format_back"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG = "match_review_download_format_confirm"
+const val MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG = "match_review_download_status"
 const val MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG = "match_review_correction_action"
 const val MATCH_REVIEW_CORRECTION_CONFIRM_ACTION_TEST_TAG = "match_review_correction_confirm_action"
 const val MATCH_REVIEW_CORRECTION_HISTORY_TEST_TAG = "match_review_correction_history"
@@ -228,6 +245,14 @@ fun MatchReviewRoute(
             )
         },
     )
+    val pdfDestinationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+        onResult = viewModel::onDestinationResult,
+    )
+    val pngDestinationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("image/png"),
+        onResult = viewModel::onDestinationResult,
+    )
     LaunchedEffect(uiState.isPhotoPickerLaunchPending) {
         if (uiState.isPhotoPickerLaunchPending) {
             viewModel.onPhotoPickerLaunchHandled()
@@ -264,6 +289,20 @@ fun MatchReviewRoute(
             } catch (_: Exception) {
                 viewModel.onPhotoPickerLaunchFailed(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
             }
+        }
+    }
+    val destinationRequest = uiState.resultDownloadUiState as?
+        ResultDownloadUiState.DestinationLaunchRequested
+    LaunchedEffect(destinationRequest) {
+        val request = destinationRequest ?: return@LaunchedEffect
+        viewModel.onDestinationLaunchHandled()
+        try {
+            when (request.format) {
+                ResultExportFileFormat.PDF -> pdfDestinationLauncher.launch(request.suggestedDisplayName)
+                ResultExportFileFormat.PNG -> pngDestinationLauncher.launch(request.suggestedDisplayName)
+            }
+        } catch (_: Exception) {
+            viewModel.onDestinationLaunchFailed()
         }
     }
     LaunchedEffect(uiState.navigation) {
@@ -340,6 +379,7 @@ fun MatchReviewRoute(
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
         onPrepareGoogleSheetsExport = viewModel::prepareGoogleSheetsExport,
+        onRequestResultDownload = viewModel::requestResultDownload,
         onFinalize = viewModel::finalizeMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onSelectResultScreenshot = viewModel::requestPhotoPicker,
@@ -385,6 +425,7 @@ fun MatchReviewScreen(
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
     onPrepareGoogleSheetsExport: () -> Unit = {},
+    onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
@@ -428,6 +469,7 @@ fun MatchReviewScreen(
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
             onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
+            onRequestResultDownload = onRequestResultDownload,
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
             onSelectResultScreenshot = onSelectResultScreenshot,
@@ -468,6 +510,7 @@ private fun MatchReviewContent(
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
     onPrepareGoogleSheetsExport: () -> Unit,
+    onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
@@ -495,6 +538,10 @@ private fun MatchReviewContent(
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
+    var showResultScopeDialog by remember { mutableStateOf(false) }
+    var showResultFormatDialog by remember { mutableStateOf(false) }
+    var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
+    var selectedResultFormat by remember { mutableStateOf<ResultExportFileFormat?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
@@ -754,33 +801,48 @@ private fun MatchReviewContent(
         }
         if (uiState.status == MatchStatus.FINALIZED) {
             Button(
-                onClick = onPrepareGoogleSheetsExport,
-                enabled = uiState.canPrepareMatchCsvExport &&
-                    uiState.googleSheetsExportResult !is AndroidExportResult.GoogleSheetsExporting,
+                onClick = {
+                    selectedResultScope = null
+                    selectedResultFormat = null
+                    showResultFormatDialog = false
+                    showResultScopeDialog = true
+                },
+                enabled = uiState.canDownloadResult,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG),
+                    .testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
             ) {
-                Text(text = "Export to Google Sheets")
+                Text(text = stringResource(R.string.match_review_download_result_action))
             }
-            when (uiState.googleSheetsExportResult) {
-                is AndroidExportResult.GoogleSheetsExporting -> Text(
-                    text = "Exporting to Google Sheets",
-                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+            when (val downloadState = uiState.resultDownloadUiState) {
+                is ResultDownloadUiState.Generating -> Text(
+                    text = stringResource(R.string.match_review_download_generating),
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG),
                 )
-                is AndroidExportResult.GoogleSheetsSuccess -> Text(
-                    text = "Google Sheets export successful",
-                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                is ResultDownloadUiState.Saving -> Text(
+                    text = stringResource(R.string.match_review_download_saving),
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG),
                 )
-                is AndroidExportResult.GoogleSheetsFailure -> Text(
-                    text = "Google Sheets export failed",
-                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                is ResultDownloadUiState.Success -> Text(
+                    text = stringResource(
+                        if (downloadState.userSelectedDestination) {
+                            R.string.match_review_download_saved_successfully
+                        } else {
+                            R.string.match_review_download_saved_to_downloads
+                        },
+                        downloadState.format.extension.uppercase(),
+                    ),
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG),
                 )
-                is AndroidExportResult.Blocked -> Text(
-                    text = "Google Sheets export blocked",
-                    modifier = Modifier.testTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG),
+                is ResultDownloadUiState.Failure -> Text(
+                    text = stringResource(downloadState.reason.toMessageRes()),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG),
                 )
-                else -> Unit
+                ResultDownloadUiState.Idle,
+                is ResultDownloadUiState.DestinationLaunchRequested,
+                is ResultDownloadUiState.WaitingForDestination,
+                -> Unit
             }
         }
         if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {
@@ -862,6 +924,153 @@ private fun MatchReviewContent(
                 }
             },
         )
+    }
+    if (showResultScopeDialog) {
+        ResultDownloadScopeDialog(
+            selectedScope = selectedResultScope,
+            onScopeSelected = { selectedResultScope = it },
+            onDismiss = { showResultScopeDialog = false },
+            onContinue = {
+                if (selectedResultScope != null) {
+                    showResultScopeDialog = false
+                    showResultFormatDialog = true
+                }
+            },
+        )
+    }
+    if (showResultFormatDialog) {
+        ResultDownloadFormatDialog(
+            selectedFormat = selectedResultFormat,
+            onFormatSelected = { selectedResultFormat = it },
+            onBack = {
+                selectedResultFormat = null
+                showResultFormatDialog = false
+                showResultScopeDialog = true
+            },
+            onDismiss = { showResultFormatDialog = false },
+            onDownload = {
+                val scope = selectedResultScope
+                val format = selectedResultFormat
+                if (scope != null && format != null) {
+                    showResultFormatDialog = false
+                    onRequestResultDownload(scope, format)
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ResultDownloadScopeDialog(
+    selectedScope: ResultDownloadScope?,
+    onScopeSelected: (ResultDownloadScope) -> Unit,
+    onDismiss: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.match_review_download_result_action)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall)) {
+                ResultDownloadRadioRow(
+                    label = stringResource(R.string.match_review_download_current_match),
+                    selected = selectedScope == ResultDownloadScope.CURRENT_MATCH,
+                    onClick = { onScopeSelected(ResultDownloadScope.CURRENT_MATCH) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG,
+                )
+                ResultDownloadRadioRow(
+                    label = stringResource(R.string.match_review_download_whole_tournament),
+                    selected = selectedScope == ResultDownloadScope.WHOLE_TOURNAMENT,
+                    onClick = { onScopeSelected(ResultDownloadScope.WHOLE_TOURNAMENT) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CANCEL_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.cancel_action))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onContinue,
+                enabled = selectedScope != null,
+                modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.continue_action))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ResultDownloadFormatDialog(
+    selectedFormat: ResultExportFileFormat?,
+    onFormatSelected: (ResultExportFileFormat) -> Unit,
+    onBack: () -> Unit,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.match_review_download_choose_format)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall)) {
+                ResultDownloadRadioRow(
+                    label = stringResource(R.string.match_review_download_pdf),
+                    selected = selectedFormat == ResultExportFileFormat.PDF,
+                    onClick = { onFormatSelected(ResultExportFileFormat.PDF) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG,
+                )
+                ResultDownloadRadioRow(
+                    label = stringResource(R.string.match_review_download_png),
+                    selected = selectedFormat == ResultExportFileFormat.PNG,
+                    onClick = { onFormatSelected(ResultExportFileFormat.PNG) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.back_action))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDownload,
+                enabled = selectedFormat != null,
+                modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.download_action))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ResultDownloadRadioRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label)
     }
 }
 
@@ -1934,4 +2143,15 @@ private fun ScreenshotUploadError.toMessageRes(): Int = when (this) {
         R.string.match_review_screenshot_metadata_cloud_write_failed
     ScreenshotUploadError.RLS_DENIED ->
         R.string.match_review_screenshot_metadata_rls_denied
+}
+
+private fun ResultDownloadFailure.toMessageRes(): Int = when (this) {
+    ResultDownloadFailure.INVALID_CONTEXT -> R.string.match_review_download_invalid_context
+    ResultDownloadFailure.INVALID_MATCH -> R.string.match_review_download_invalid_match
+    ResultDownloadFailure.GENERATION_FAILED -> R.string.match_review_download_generation_failed
+    ResultDownloadFailure.SAVE_FAILED -> R.string.match_review_download_save_failed
+    ResultDownloadFailure.DESTINATION_WRITE_FAILED ->
+        R.string.match_review_download_destination_failed
+    ResultDownloadFailure.DESTINATION_LAUNCH_FAILED ->
+        R.string.match_review_download_destination_launch_failed
 }

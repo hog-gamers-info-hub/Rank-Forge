@@ -5,6 +5,15 @@ import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
+import com.hoggamers.rankforge.data.export.ResultDocumentWriteFailure
+import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
+import com.hoggamers.rankforge.data.export.ResultDocumentWriter
+import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
+import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.ResultDownloadRequest
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.domain.export.MatchExportRow
 import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
@@ -55,6 +64,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1441,6 +1451,384 @@ class MatchReviewViewModelTest {
         assertEquals(matchId, viewModel.uiState.value.matchId)
     }
 
+    @Test
+    fun draftMatchCannotStartResultDownload() = runTest {
+        val coordinator = RecordingResultDownloadCoordinator()
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertTrue(coordinator.requests.isEmpty())
+        assertEquals(ResultDownloadUiState.Idle, viewModel.uiState.value.resultDownloadUiState)
+    }
+
+    @Test
+    fun invalidFinalizedMatchCannotStartResultDownload() = runTest {
+        saveValidFinalizedMatch()
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to ""))
+        val coordinator = RecordingResultDownloadCoordinator()
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertTrue(coordinator.requests.isEmpty())
+        assertEquals(ResultDownloadUiState.Idle, viewModel.uiState.value.resultDownloadUiState)
+    }
+
+    @Test
+    fun currentMatchPdfUsesExactLocalContextAndSucceeds() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PDF, "result.pdf"),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        val request = coordinator.requests.single()
+        assertTrue(request.request is ResultDownloadRequest.CurrentMatch)
+        val input = (request.request as ResultDownloadRequest.CurrentMatch).input
+        assertEquals(TOURNAMENT_ID, input.tournament.id)
+        assertEquals(matchId, input.match.id)
+        assertEquals(ResultExportFileFormat.PDF, request.format)
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PDF, false),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun currentMatchPngUsesPngPathAndSucceeds() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PNG)
+        advanceUntilIdle()
+
+        assertEquals(ResultExportFileFormat.PNG, coordinator.requests.single().format)
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PNG, false),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun wholeTournamentUsesAllLocalMatchesAndApprovedTournamentPath() = runTest {
+        saveValidFinalizedMatch()
+        val draftMatchId = "draft-second-match"
+        repository.createDraftMatch(
+            Match(
+                id = draftMatchId,
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 7, 25),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.WHOLE_TOURNAMENT, ResultExportFileFormat.PNG)
+        advanceUntilIdle()
+
+        val request = coordinator.requests.single().request as ResultDownloadRequest.WholeTournament
+        assertEquals(setOf(matchId, draftMatchId), request.input.matches.map { it.id }.toSet())
+        assertEquals(ResultExportFileFormat.PNG, coordinator.requests.single().format)
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PNG, false),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun generationAndSaveFailuresAreDeterministic() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Failure(ResultDownloadFailure.GENERATION_FAILED),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultDownloadUiState.Failure(ResultDownloadFailure.GENERATION_FAILED),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+
+        coordinator.result = ResultDownloadExecutionResult.Failure(ResultDownloadFailure.SAVE_FAILED)
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultDownloadUiState.Failure(ResultDownloadFailure.SAVE_FAILED),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun duplicateResultDownloadWhileActiveStartsOnlyOneOperation() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator().apply {
+            gate = CompletableDeferred()
+        }
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertEquals(1, coordinator.requests.size)
+        checkNotNull(coordinator.gate).complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun safDestinationRequestRetainsBytesPrivatelyAndCancellationReturnsIdle() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PDF,
+                displayName = "RankForge_Summer_Cup_Match_1_Result.pdf",
+                bytes = byteArrayOf(1, 2, 3),
+            ),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultDownloadUiState.DestinationLaunchRequested(
+                ResultExportFileFormat.PDF,
+                "RankForge_Summer_Cup_Match_1_Result.pdf",
+            ),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+
+        viewModel.onDestinationLaunchHandled()
+        assertTrue(viewModel.uiState.value.resultDownloadUiState is ResultDownloadUiState.WaitingForDestination)
+        viewModel.onDestinationResult(null)
+        assertEquals(ResultDownloadUiState.Idle, viewModel.uiState.value.resultDownloadUiState)
+    }
+
+    @Test
+    fun safDestinationLaunchFailureClearsPendingAndAllowsRetry() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PDF,
+                displayName = "result.pdf",
+                bytes = byteArrayOf(7, 8, 9),
+            ),
+        )
+        val writer = RecordingResultDocumentWriter()
+        val viewModel = reviewViewModel(
+            resultDownloadCoordinator = coordinator,
+            resultDocumentWriter = writer,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        viewModel.onDestinationLaunchHandled()
+        viewModel.onDestinationLaunchFailed()
+
+        assertEquals(
+            ResultDownloadUiState.Failure(ResultDownloadFailure.DESTINATION_LAUNCH_FAILED),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+        viewModel.onDestinationResultForTesting()
+        advanceUntilIdle()
+        assertTrue(writer.bytesWritten.isEmpty())
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(2, coordinator.requests.size)
+        assertTrue(viewModel.uiState.value.resultDownloadUiState is ResultDownloadUiState.DestinationLaunchRequested)
+    }
+
+    @Test
+    fun safDestinationWriteFailureClearsPendingBytes() = runTest {
+        saveValidFinalizedMatch()
+        val writer = RecordingResultDocumentWriter(ResultDocumentWriteResult.Failure(
+            ResultDocumentWriteFailure.WRITE_FAILED,
+        ))
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PDF,
+                displayName = "result.pdf",
+                bytes = byteArrayOf(10, 11),
+            ),
+        )
+        val viewModel = reviewViewModel(
+            resultDownloadCoordinator = coordinator,
+            resultDocumentWriter = writer,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        viewModel.onDestinationLaunchHandled()
+        viewModel.onDestinationResultForTesting()
+        advanceUntilIdle()
+
+        assertEquals(
+            ResultDownloadUiState.Failure(ResultDownloadFailure.DESTINATION_WRITE_FAILED),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+        assertEquals(1, writer.bytesWritten.size)
+        viewModel.onDestinationResultForTesting()
+        advanceUntilIdle()
+        assertEquals(1, writer.bytesWritten.size)
+    }
+
+    @Test
+    fun repositoryRefreshPreservesActiveResultDownloadStateWithoutDuplicateOperation() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator().apply {
+            gate = CompletableDeferred()
+        }
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultDownloadUiState.Saving(ResultExportFileFormat.PDF),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            ResultDownloadUiState.Saving(ResultExportFileFormat.PDF),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+        assertEquals(1, coordinator.requests.size)
+        checkNotNull(coordinator.gate).complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun wholeTournamentPdfUsesAllLocalMatchesAndSucceeds() = runTest {
+        saveValidFinalizedMatch()
+        val draftMatchId = "draft-pdf-second-match"
+        repository.createDraftMatch(
+            Match(
+                id = draftMatchId,
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 7, 25),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PDF, "result.pdf"),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.WHOLE_TOURNAMENT, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        val request = coordinator.requests.single()
+        assertTrue(request.request is ResultDownloadRequest.WholeTournament)
+        assertEquals(ResultExportFileFormat.PDF, request.format)
+        assertEquals(
+            setOf(matchId, draftMatchId),
+            (request.request as ResultDownloadRequest.WholeTournament).input.matches.map { it.id }.toSet(),
+        )
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PDF, false),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun safDestinationSuccessWritesBytesOnceAndClearsPendingDocument() = runTest {
+        saveValidFinalizedMatch()
+        val writer = RecordingResultDocumentWriter()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PNG,
+                displayName = "result.png",
+                bytes = byteArrayOf(4, 5, 6),
+            ),
+        )
+        val viewModel = reviewViewModel(
+            resultDownloadCoordinator = coordinator,
+            resultDocumentWriter = writer,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PNG)
+        advanceUntilIdle()
+        viewModel.onDestinationLaunchHandled()
+        viewModel.onDestinationResultForTesting()
+        advanceUntilIdle()
+
+        assertEquals(listOf(byteArrayOf(4, 5, 6).toList()), writer.bytesWritten)
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PNG, true),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun loadingAnotherMatchClearsPendingSafDownload() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                ResultExportFileFormat.PDF,
+                "result.pdf",
+                byteArrayOf(1),
+            ),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        viewModel.load(TOURNAMENT_ID, "another-match")
+        advanceUntilIdle()
+
+        assertEquals(ResultDownloadUiState.Idle, viewModel.uiState.value.resultDownloadUiState)
+    }
+
     private fun screenshotObjectPath(
         userId: String,
         localMatchId: String,
@@ -1489,6 +1877,8 @@ class MatchReviewViewModelTest {
         screenshotMetadataCloudDataSource: ScreenshotMetadataCloudDataSource =
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
         googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource = RecordingGoogleSheetsMatchExport(),
+        resultDownloadCoordinator: ResultDownloadCoordinator = RecordingResultDownloadCoordinator(),
+        resultDocumentWriter: ResultDocumentWriter = RecordingResultDocumentWriter(),
         screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
         matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
             com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository(),
@@ -1509,6 +1899,8 @@ class MatchReviewViewModelTest {
         screenshotMetadataRepository = screenshotMetadataRepository,
         screenshotMetadataCloudDataSource = screenshotMetadataCloudDataSource,
         googleSheetsMatchExport = googleSheetsMatchExport,
+        resultDownloadCoordinator = resultDownloadCoordinator,
+        resultDocumentWriter = resultDocumentWriter,
         screenshotOwnerProvider = screenshotOwnerProvider,
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
         finalizedMatchCloudSync = finalizedMatchCloudSync,
@@ -1552,6 +1944,46 @@ class MatchReviewViewModelTest {
         ): GoogleSheetsMatchExportExecutionResult {
             requests += Request(tournamentId, matchId, rows)
             gate?.await()
+            return result
+        }
+    }
+
+    private class RecordingResultDownloadCoordinator(
+        var result: ResultDownloadExecutionResult = ResultDownloadExecutionResult.Saved(
+            format = ResultExportFileFormat.PDF,
+            displayName = "result.pdf",
+        ),
+    ) : ResultDownloadCoordinator {
+        data class Request(
+            val request: ResultDownloadRequest,
+            val format: ResultExportFileFormat,
+        )
+
+        val requests = mutableListOf<Request>()
+        var gate: CompletableDeferred<Unit>? = null
+
+        override suspend fun execute(
+            request: ResultDownloadRequest,
+            format: ResultExportFileFormat,
+            onSaving: suspend () -> Unit,
+        ): ResultDownloadExecutionResult {
+            requests += Request(request, format)
+            onSaving()
+            gate?.await()
+            return result
+        }
+    }
+
+    private class RecordingResultDocumentWriter(
+        private val result: ResultDocumentWriteResult = ResultDocumentWriteResult.Success,
+    ) : ResultDocumentWriter {
+        val bytesWritten = mutableListOf<List<Byte>>()
+
+        override suspend fun write(
+            uri: android.net.Uri?,
+            bytes: ByteArray,
+        ): ResultDocumentWriteResult {
+            bytesWritten += bytes.toList()
             return result
         }
     }

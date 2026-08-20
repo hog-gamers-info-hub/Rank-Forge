@@ -1,6 +1,9 @@
 ﻿package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
+import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -145,6 +148,7 @@ data class MatchReviewUiState(
     val finalizationError: FinalizeMatchGlobalError? = null,
     val csvExportResult: AndroidExportResult? = null,
     val googleSheetsExportResult: AndroidExportResult? = null,
+    val resultDownloadUiState: ResultDownloadUiState = ResultDownloadUiState.Idle,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
     val isPhotoPickerRequestActive: Boolean = false,
@@ -183,6 +187,13 @@ data class MatchReviewUiState(
     val canPrepareMatchCsvExport: Boolean
         get() = status == MatchStatus.FINALIZED && isValid
 
+    val canDownloadResult: Boolean
+        get() = status == MatchStatus.FINALIZED &&
+            isValid &&
+            rows.size == 12 &&
+            rows.all { it.teamName.isNotBlank() } &&
+            !resultDownloadUiState.isBusy
+
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT
 
@@ -195,6 +206,44 @@ data class MatchReviewUiState(
             !matchId.isNullOrBlank() &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_UPPER) &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+}
+
+sealed interface ResultDownloadUiState {
+    data object Idle : ResultDownloadUiState
+
+    data class Generating(
+        val scope: ResultDownloadScope,
+        val format: ResultExportFileFormat,
+    ) : ResultDownloadUiState
+
+    data class Saving(
+        val format: ResultExportFileFormat,
+    ) : ResultDownloadUiState
+
+    data class DestinationLaunchRequested(
+        val format: ResultExportFileFormat,
+        val suggestedDisplayName: String,
+    ) : ResultDownloadUiState
+
+    data class WaitingForDestination(
+        val format: ResultExportFileFormat,
+        val suggestedDisplayName: String,
+    ) : ResultDownloadUiState
+
+    data class Success(
+        val format: ResultExportFileFormat,
+        val userSelectedDestination: Boolean,
+    ) : ResultDownloadUiState
+
+    data class Failure(
+        val reason: ResultDownloadFailure,
+    ) : ResultDownloadUiState
+
+    val isBusy: Boolean
+        get() = this is Generating ||
+            this is Saving ||
+            this is DestinationLaunchRequested ||
+            this is WaitingForDestination
 }
 
 private fun List<MatchResultScreenshotSlotUiState>.isOcrReady(
