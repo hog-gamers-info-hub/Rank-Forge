@@ -9,8 +9,6 @@ enum class MatchResultScreenshotCropError {
     MISSING_LOCAL_FILE,
     FINALIZED_MATCH,
     INVALID_CROP,
-    CONTENT_INVALID,
-    CONTENT_VALIDATION_FAILED,
     SAVE_FAILED,
 }
 
@@ -25,7 +23,6 @@ data class MatchResultScreenshotCropUiState(
     val confirmedCrop: OcrNormalizedCropRect? = null,
     val draftCrop: OcrNormalizedCropRect = OcrVisualCropDefaults.FullImageCrop,
     val isFinalized: Boolean = false,
-    val isValidating: Boolean = false,
     val isSaving: Boolean = false,
     val error: MatchResultScreenshotCropError? = null,
 )

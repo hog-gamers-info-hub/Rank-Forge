@@ -6,17 +6,12 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultCropContentValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
-import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
-import com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentIndeterminateReason
-import com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentInvalidReason
-import com.hoggamers.rankforge.domain.ocr.validation.OcrCropContentValidationResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -25,8 +20,6 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import java.nio.file.Files
 import java.time.LocalDate
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,12 +32,9 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -87,17 +77,15 @@ class MatchResultScreenshotCropValidationGateTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun validContentPersistsAndConfirmsOnce() = runTest {
+    fun structurallyValidCropPersistsAndConfirmsOnceWithoutSemanticValidation() = runTest {
         val repository = GateAssetRepository()
-        val validator = ControlledValidator(OcrCropContentValidationResult.Valid)
-        val viewModel = viewModel(repository, validator)
+        val viewModel = viewModel(repository)
         load(viewModel)
         var confirmations = 0
 
         viewModel.confirmCrop { confirmations++ }
         advanceUntilIdle()
 
-        assertEquals(1, validator.calls)
         assertEquals(1, repository.persistConfirmedCropCalls)
         assertEquals(1, confirmations)
     }
@@ -105,8 +93,7 @@ class MatchResultScreenshotCropValidationGateTest {
     @Test
     fun backToBackConfirmBeforeFirstCoroutineAdvancesLaunchesOneAttempt() = runTest {
         val repository = GateAssetRepository()
-        val validator = ControlledValidator(OcrCropContentValidationResult.Valid)
-        val viewModel = viewModel(repository, validator)
+        val viewModel = viewModel(repository)
         load(viewModel)
         var confirmations = 0
 
@@ -114,51 +101,9 @@ class MatchResultScreenshotCropValidationGateTest {
         viewModel.confirmCrop { confirmations++ }
         advanceUntilIdle()
 
-        assertEquals(1, validator.calls)
         assertEquals(1, repository.persistConfirmedCropCalls)
         assertEquals(1, repository.uploadCheckpointCalls)
         assertEquals(1, confirmations)
-    }
-
-    @Test
-    fun invalidContentDoesNotPersistOrConfirm() = runTest {
-        val repository = GateAssetRepository()
-        val viewModel = viewModel(
-            repository,
-            ControlledValidator(OcrCropContentValidationResult.Invalid(OcrCropContentInvalidReason.CROP_INCOMPLETE)),
-        )
-        load(viewModel)
-        var confirmations = 0
-
-        viewModel.confirmCrop { confirmations++ }
-        advanceUntilIdle()
-
-        assertEquals(0, repository.persistConfirmedCropCalls)
-        assertEquals(0, repository.uploadCheckpointCalls)
-        assertEquals(0, confirmations)
-        assertEquals(MatchResultScreenshotCropError.CONTENT_INVALID, viewModel.uiState.value.error)
-    }
-
-    @Test
-    fun autoProposedDraftStillRequiresCv03AndInvalidContentDoesNotPersist() = runTest {
-        val repository = GateAssetRepository()
-        val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
-        val proposer = FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic))
-        val viewModel = viewModel(
-            repository,
-            ControlledValidator(OcrCropContentValidationResult.Invalid(OcrCropContentInvalidReason.CROP_INCOMPLETE)),
-            proposer,
-        )
-        load(viewModel)
-
-        assertEquals(automatic, viewModel.uiState.value.draftCrop)
-        viewModel.confirmCrop {}
-        advanceUntilIdle()
-
-        assertEquals(1, proposer.calls)
-        assertEquals(MatchResultScreenshotCropError.CONTENT_INVALID, viewModel.uiState.value.error)
-        assertEquals(0, repository.persistConfirmedCropCalls)
-        assertEquals(0, repository.uploadCheckpointCalls)
     }
 
     @Test
@@ -166,11 +111,7 @@ class MatchResultScreenshotCropValidationGateTest {
         val repository = GateAssetRepository()
         val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
         val proposer = FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic))
-        val viewModel = viewModel(
-            repository,
-            ControlledValidator(OcrCropContentValidationResult.Valid),
-            proposer,
-        )
+        val viewModel = viewModel(repository, proposer)
         load(viewModel)
         var confirmations = 0
 
@@ -184,14 +125,12 @@ class MatchResultScreenshotCropValidationGateTest {
     }
 
     @Test
-    fun userModifiedAutoProposalIsValidatedAndPersistedInsteadOfOriginalProposal() = runTest {
+    fun userModifiedAutoProposalIsPersistedInsteadOfOriginalProposal() = runTest {
         val repository = GateAssetRepository()
         val automatic = OcrNormalizedCropRect(0.15, 0.15, 0.85, 0.85)
         val manual = OcrNormalizedCropRect(0.2, 0.1, 0.8, 0.9)
-        val validator = ControlledValidator(OcrCropContentValidationResult.Valid)
         val viewModel = viewModel(
             repository,
-            validator,
             FixedAutoCropProposer(MatchResultAutoCropResult.Proposed(automatic)),
         )
         load(viewModel)
@@ -199,142 +138,57 @@ class MatchResultScreenshotCropValidationGateTest {
         viewModel.confirmCrop {}
         advanceUntilIdle()
 
-        assertTrue(validator.lastPixelCrop != null)
         assertEquals(manual.left, repository.asset.cropLeft!!, 0.0)
         assertEquals(manual.right, repository.asset.cropRight!!, 0.0)
         assertEquals(1, repository.persistConfirmedCropCalls)
     }
 
     @Test
-    fun indeterminateContentDoesNotPersistOrConfirm() = runTest {
+    fun invalidGeometrySkipsPersistence() = runTest {
         val repository = GateAssetRepository()
-        val viewModel = viewModel(
-            repository,
-            ControlledValidator(
-                OcrCropContentValidationResult.Indeterminate(
-                    OcrCropContentIndeterminateReason.OCR_RECOGNITION_FAILED,
-                ),
-            ),
-        )
-        load(viewModel)
-        var confirmations = 0
-
-        viewModel.confirmCrop { confirmations++ }
-        advanceUntilIdle()
-
-        assertEquals(0, repository.persistConfirmedCropCalls)
-        assertEquals(0, repository.uploadCheckpointCalls)
-        assertEquals(0, confirmations)
-        assertEquals(MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED, viewModel.uiState.value.error)
-    }
-
-    @Test
-    fun duplicateConfirmWhileValidationIsSuspendedLaunchesOneValidator() = runTest {
-        val repository = GateAssetRepository()
-        val validator = ControlledValidator()
-        val viewModel = viewModel(repository, validator)
-        load(viewModel)
-
-        viewModel.confirmCrop {}
-        runCurrent()
-        viewModel.confirmCrop {}
-        assertEquals(1, validator.calls)
-
-        validator.release.complete(OcrCropContentValidationResult.Valid)
-        advanceUntilIdle()
-    }
-
-    @Test
-    fun assetFlowEmissionDuringSuspendedValidationDoesNotAllowDuplicateConfirm() = runTest {
-        val repository = GateAssetRepository()
-        val validator = ControlledValidator()
-        val viewModel = viewModel(repository, validator)
-        load(viewModel)
-        var confirmations = 0
-
-        viewModel.confirmCrop { confirmations++ }
-        runCurrent()
-        repository.updateAsset(
-            repository.asset.copy(
-                uploadStatus = ScreenshotUploadStatus.PENDING.name,
-                revision = repository.asset.revision + 1L,
-            ),
-        )
-        runCurrent()
-
-        assertTrue(viewModel.uiState.value.isValidating)
-        viewModel.confirmCrop { confirmations++ }
-        assertEquals(1, validator.calls)
-
-        validator.release.complete(OcrCropContentValidationResult.Valid)
-        advanceUntilIdle()
-
-        assertEquals(1, repository.persistConfirmedCropCalls)
-        assertEquals(1, repository.uploadCheckpointCalls)
-        assertEquals(1, confirmations)
-    }
-
-    @Test
-    fun staleCropResultCannotPersist() = runTest {
-        val repository = GateAssetRepository()
-        val validator = ControlledValidator()
-        val viewModel = viewModel(repository, validator)
-        load(viewModel)
-        var confirmations = 0
-
-        viewModel.confirmCrop { confirmations++ }
-        runCurrent()
-        viewModel.onCropChanged(OcrNormalizedCropRect(0.2, 0.1, 0.8, 0.9))
-        validator.release.complete(OcrCropContentValidationResult.Valid)
-        advanceUntilIdle()
-
-        assertEquals(0, repository.persistConfirmedCropCalls)
-        assertEquals(0, repository.uploadCheckpointCalls)
-        assertEquals(0, confirmations)
-        assertFalse(viewModel.uiState.value.isValidating)
-    }
-
-    @Test
-    fun cancellationPropagatesWithoutContentInvalidError() = runTest {
-        val repository = GateAssetRepository()
-        val validator = object : MatchResultCropContentValidator {
-            override suspend fun validate(
-                role: MatchResultScreenshotRole,
-                localFile: java.io.File,
-                pixelCrop: OcrPixelCropRect,
-            ): OcrCropContentValidationResult = throw CancellationException("cancelled")
-        }
-        val viewModel = viewModel(repository, validator)
-        load(viewModel)
-        var confirmations = 0
-
-        viewModel.confirmCrop { confirmations++ }
-        runCurrent()
-        advanceUntilIdle()
-
-        assertEquals(0, repository.persistConfirmedCropCalls)
-        assertEquals(0, repository.uploadCheckpointCalls)
-        assertEquals(0, confirmations)
-        assertTrue(viewModel.uiState.value.error != MatchResultScreenshotCropError.CONTENT_INVALID)
-        assertTrue(viewModel.uiState.value.error != MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED)
-        assertFalse(viewModel.uiState.value.isValidating)
-        assertFalse(viewModel.uiState.value.isSaving)
-    }
-
-    @Test
-    fun invalidGeometrySkipsSemanticValidationAndPersistence() = runTest {
-        val repository = GateAssetRepository()
-        val validator = ControlledValidator(OcrCropContentValidationResult.Valid)
-        val viewModel = viewModel(repository, validator)
+        val viewModel = viewModel(repository)
         load(viewModel)
         viewModel.onCropChanged(OcrNormalizedCropRect(0.0, 0.0, 1.0, 0.05))
 
         viewModel.confirmCrop {}
         advanceUntilIdle()
 
-        assertEquals(0, validator.calls)
         assertEquals(0, repository.persistConfirmedCropCalls)
         assertEquals(MatchResultScreenshotCropError.INVALID_CROP, viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun replacedAssetCannotPersistAnOldConfirmation() = runTest {
+        val repository = GateAssetRepository()
+        val viewModel = viewModel(repository)
+        load(viewModel)
+        repository.onNextGetByIdentity = {
+            repository.updateAsset(repository.asset.copy(sha256 = "b".repeat(64)))
+        }
+
+        viewModel.confirmCrop {}
+        advanceUntilIdle()
+
+        assertEquals(0, repository.persistConfirmedCropCalls)
+        assertEquals(0, repository.uploadCheckpointCalls)
+    }
+
+    @Test
+    fun cropChangedDuringConfirmationCannotPersistTheOldCrop() = runTest {
+        val repository = GateAssetRepository()
+        val viewModel = viewModel(repository)
+        load(viewModel)
+        val replacementCrop = OcrNormalizedCropRect(0.2, 0.1, 0.8, 0.9)
+        repository.onNextGetByIdentity = {
+            viewModel.onCropChanged(replacementCrop)
+        }
+
+        viewModel.confirmCrop {}
+        advanceUntilIdle()
+
+        assertEquals(0, repository.persistConfirmedCropCalls)
+        assertEquals(0, repository.uploadCheckpointCalls)
+        assertEquals(replacementCrop, viewModel.uiState.value.draftCrop)
     }
 
     private fun TestScope.load(viewModel: MatchResultScreenshotCropViewModel) {
@@ -348,7 +202,6 @@ class MatchResultScreenshotCropValidationGateTest {
 
     private fun viewModel(
         repository: GateAssetRepository,
-        validator: MatchResultCropContentValidator,
         autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
             MatchResultAutoCropResult.OcrFailed
         },
@@ -381,7 +234,6 @@ class MatchResultScreenshotCropValidationGateTest {
                 scope = CoroutineScope(SupervisorJob() + dispatcher),
                 testOnly = true,
             ),
-            contentValidator = validator,
             autoCropProposer = autoCropProposer,
         )
     }
@@ -394,24 +246,6 @@ class MatchResultScreenshotCropValidationGateTest {
         override suspend fun propose(localFile: java.io.File): MatchResultAutoCropResult {
             calls++
             return result
-        }
-    }
-
-    private class ControlledValidator(
-        private val immediateResult: OcrCropContentValidationResult? = null,
-    ) : MatchResultCropContentValidator {
-        var calls = 0
-        var lastPixelCrop: OcrPixelCropRect? = null
-        val release = CompletableDeferred<OcrCropContentValidationResult>()
-
-        override suspend fun validate(
-            role: MatchResultScreenshotRole,
-            localFile: java.io.File,
-            pixelCrop: OcrPixelCropRect,
-        ): OcrCropContentValidationResult {
-            calls++
-            lastPixelCrop = pixelCrop
-            return immediateResult ?: release.await()
         }
     }
 
@@ -448,6 +282,7 @@ class MatchResultScreenshotCropValidationGateTest {
         private val state = MutableStateFlow(asset)
         var persistConfirmedCropCalls = 0
         var uploadCheckpointCalls = 0
+        var onNextGetByIdentity: (() -> Unit)? = null
 
         fun updateAsset(value: MatchResultScreenshotAssetEntity) {
             asset = value
@@ -460,8 +295,14 @@ class MatchResultScreenshotCropValidationGateTest {
         override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> =
             state.map { it.takeIf { asset -> asset.matches(identity) } }
 
-        override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? =
-            state.value.takeIf { it.matches(identity) }
+        override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? {
+            val result = state.value.takeIf { it.matches(identity) }
+            onNextGetByIdentity?.also {
+                onNextGetByIdentity = null
+                it()
+            }
+            return result
+        }
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             state.map { listOf(it).filter { asset -> asset.tournamentId == tournamentId } }

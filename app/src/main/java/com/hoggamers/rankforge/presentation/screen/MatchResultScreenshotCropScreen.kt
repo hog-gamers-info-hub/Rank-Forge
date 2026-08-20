@@ -159,9 +159,6 @@ fun MatchResultScreenshotCropScreen(
         if (uiState.isSaving) {
             Text(text = stringResource(R.string.match_result_screenshot_crop_saving))
         }
-        if (uiState.isValidating) {
-            Text(text = stringResource(R.string.match_result_screenshot_crop_validating))
-        }
     }
 }
 
@@ -177,8 +174,5 @@ private fun MatchResultScreenshotCropError.toStringRes(): Int = when (this) {
     MatchResultScreenshotCropError.MISSING_LOCAL_FILE -> R.string.match_result_screenshot_crop_missing_local_file
     MatchResultScreenshotCropError.FINALIZED_MATCH -> R.string.match_result_screenshot_crop_finalized_read_only
     MatchResultScreenshotCropError.INVALID_CROP -> R.string.match_result_screenshot_crop_invalid_crop
-    MatchResultScreenshotCropError.CONTENT_INVALID -> R.string.match_result_screenshot_crop_content_invalid
-    MatchResultScreenshotCropError.CONTENT_VALIDATION_FAILED ->
-        R.string.match_result_screenshot_crop_content_validation_failed
     MatchResultScreenshotCropError.SAVE_FAILED -> R.string.match_result_screenshot_crop_save_failed
 }
