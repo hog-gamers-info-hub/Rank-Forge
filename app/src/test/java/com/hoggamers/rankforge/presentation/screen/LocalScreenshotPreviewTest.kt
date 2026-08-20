@@ -2,10 +2,35 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class LocalScreenshotPreviewTest {
+    @Test
+    fun pendingDecodeStateIsDistinctFromFailure() {
+        assertNotEquals(
+            LocalScreenshotPreviewState.Failed,
+            LocalScreenshotPreviewState.Loading,
+        )
+    }
+
+    @Test
+    fun successfulDecodeMapsToReadyState() {
+        assertEquals(
+            LocalScreenshotPreviewState.Ready,
+            localScreenshotPreviewStateAfterDecode(decodeSucceeded = true),
+        )
+    }
+
+    @Test
+    fun failedDecodeMapsToFailedState() {
+        assertEquals(
+            LocalScreenshotPreviewState.Failed,
+            localScreenshotPreviewStateAfterDecode(decodeSucceeded = false),
+        )
+    }
+
     @Test
     fun smallImageUsesNoSampling() {
         assertEquals(1, calculateLocalScreenshotPreviewSampleSize(1024, 768))
