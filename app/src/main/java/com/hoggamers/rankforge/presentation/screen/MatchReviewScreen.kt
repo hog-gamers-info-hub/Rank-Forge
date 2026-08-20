@@ -1465,6 +1465,7 @@ private fun MatchReviewResultRowsPagerContent(
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
     val rows = uiState.rows
     val pagerState = rememberPagerState(pageCount = { rows.size })
+    val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
 
     LaunchedEffect(pagerState, rows.size) {
         val lastPage = rows.lastIndex
@@ -1483,6 +1484,12 @@ private fun MatchReviewResultRowsPagerContent(
             showResetAllCorrectionsAction = false,
             showFinalizeAction = false,
         )
+    }
+    if (teamSlotAssistant != null &&
+        teamSlotAssistant.unresolvedRowIndexes.isNotEmpty() &&
+        !uiState.finalization.isFinalized
+    ) {
+        MatchOcrReviewRemainingTeamSlotsSection(teamSlotAssistant)
     }
     Column(
         modifier = Modifier
@@ -1509,6 +1516,14 @@ private fun MatchReviewResultRowsPagerContent(
                             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                             onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
+                            availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
+                                emptyList()
+                            } else {
+                                teamSlotAssistant
+                                    ?.availableOptionsByRow
+                                    ?.get(row.rowIndex)
+                                    .orEmpty()
+                            },
                             showWarningDetails = false,
                             compactFieldRow = true,
                             showBlockerDetails = false,

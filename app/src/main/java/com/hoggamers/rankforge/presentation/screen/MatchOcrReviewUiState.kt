@@ -295,9 +295,16 @@ data class MatchOcrReviewRowUiState(
     val resultLobbyDecisionLabel: String? = null,
     val resultLobbyDecisionReasonLabel: String? = null,
     val resultLobbyVoteSummary: List<String> = emptyList(),
+    val resultLobbyTeamSlotCandidates: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
     val originalParsedPlacementValue: Int? = null,
     val originalParsedKillValue: Int? = null,
     val originalSuggestedTeamSlot: Int? = null,
+)
+
+data class MatchOcrReviewTeamSlotCandidateUiState(
+    val teamSlot: Int,
+    val votePercent: Int,
+    val bestSimilarityScore: Int?,
 )
 
 enum class MatchOcrReviewSeverity {

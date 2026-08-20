@@ -91,6 +91,15 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
                 resultLobbyDecisionLabel = result.decisionStatus.toVoteLabel(),
                 resultLobbyDecisionReasonLabel = result.decisionReason.toVoteReasonLabel(),
                 resultLobbyVoteSummary = result.matchResult.slotVoteScores.toVoteSummary(),
+                resultLobbyTeamSlotCandidates = result.matchResult.slotVoteScores.map { score ->
+                    MatchOcrReviewTeamSlotCandidateUiState(
+                        teamSlot = score.teamSlot,
+                        votePercent = score.votePercent,
+                        bestSimilarityScore = result.matchResult.playerSlotVoteEvidence
+                            .filter { evidence -> evidence.teamSlot == score.teamSlot }
+                            .maxOfOrNull { evidence -> evidence.bestSimilarityScore },
+                    )
+                },
                 warningLabels = warnings.distinct(),
                 blockerLabels = blockers.distinct(),
                 severity = when {
