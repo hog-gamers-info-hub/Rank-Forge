@@ -41,6 +41,8 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
+private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
+
 object MatchOcrReviewTestTags {
     const val SCREEN = "match_ocr_review_screen"
     const val LOADING = "match_ocr_review_loading"
@@ -812,7 +814,10 @@ internal fun MatchOcrReviewRow(
                 compactResetTestTag = compactResetTestTag,
             )
         }
-        if (row.resultLobbyVoteEvidencePresent) {
+        if (
+            SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS &&
+            row.resultLobbyVoteEvidencePresent
+        ) {
             MatchOcrReviewResultLobbyVoteSection(row)
         }
         if (correctionDraft != null) {
