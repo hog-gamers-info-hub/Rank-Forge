@@ -172,10 +172,16 @@ fun MatchReviewRoute(
     LaunchedEffect(tournamentId, matchId) {
         viewModel.load(tournamentId, matchId)
     }
+    LaunchedEffect(tournamentId, matchId, lobbyScreenshotIntakeViewModel) {
+        lobbyScreenshotIntakeViewModel?.load(
+            tournamentId = tournamentId,
+            matchId = matchId,
+        )
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val lobbyUiState by (lobbyScreenshotIntakeViewModel?.uiState
-        ?: flowOf(MatchLobbyScreenshotIntakeUiState()))
-        .collectAsStateWithLifecycle(MatchLobbyScreenshotIntakeUiState())
+        ?: flowOf(MatchLobbyScreenshotIntakeUiState(isLoading = false)))
+        .collectAsStateWithLifecycle(MatchLobbyScreenshotIntakeUiState(isLoading = false))
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
     val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
@@ -370,7 +376,7 @@ fun MatchReviewRoute(
 @Composable
 fun MatchReviewScreen(
     uiState: MatchReviewUiState,
-    lobbyUiState: MatchLobbyScreenshotIntakeUiState = MatchLobbyScreenshotIntakeUiState(),
+    lobbyUiState: MatchLobbyScreenshotIntakeUiState = MatchLobbyScreenshotIntakeUiState(isLoading = false),
     onEnterPlacements: () -> Unit,
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit = {},
@@ -405,7 +411,9 @@ fun MatchReviewScreen(
     onOcrDismissFinalizeWarnings: () -> Unit = {},
 ) {
     when {
-        uiState.isLoading -> RankForgeLoadingState(
+        uiState.isLoading ||
+            (uiState.isAvailable && !showLegacyManualReviewContent && lobbyUiState.isLoading) ->
+            RankForgeLoadingState(
             message = stringResource(R.string.match_review_loading),
         )
         uiState.isNotFound -> MatchReviewNotFoundState(onBackToDetails)

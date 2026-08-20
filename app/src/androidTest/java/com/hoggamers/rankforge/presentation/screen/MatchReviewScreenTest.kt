@@ -88,6 +88,55 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun simplifiedReviewKeepsFullScreenLoadingWhileLobbyLoads() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = MatchLobbyScreenshotIntakeUiState(isLoading = true),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    matchLobbyScreenshotIntake = {
+                        androidx.compose.material3.Text("Lobby screenshot slots")
+                    },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Loading match review").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Review Match 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Lobby screenshot slots").assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedReviewRendersAfterLobbyTransitionsFromLoadingToReady() {
+        var lobbyUiState by mutableStateOf(MatchLobbyScreenshotIntakeUiState(isLoading = true))
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = lobbyUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    matchLobbyScreenshotIntake = {
+                        androidx.compose.material3.Text("Lobby screenshot slots")
+                    },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Loading match review").assertIsDisplayed()
+        composeTestRule.runOnIdle { lobbyUiState = allLobbyReadyState() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Lobby screenshot slots").assertIsDisplayed()
+    }
+
+    @Test
     fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
         composeTestRule.setContent {
             RankForgeTheme {

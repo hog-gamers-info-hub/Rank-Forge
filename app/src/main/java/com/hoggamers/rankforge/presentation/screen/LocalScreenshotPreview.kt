@@ -82,8 +82,27 @@ internal fun calculateLocalScreenshotPreviewAspectRatio(
 }
 
 private data class LocalScreenshotPreviewDecodeResult(
-    val bitmap: Bitmap?,
+    val bitmap: Bitmap,
     val aspectRatio: Float?,
+)
+
+internal enum class LocalScreenshotPreviewState {
+    Loading,
+    Ready,
+    Failed,
+}
+
+internal fun localScreenshotPreviewStateAfterDecode(
+    decodeSucceeded: Boolean,
+): LocalScreenshotPreviewState = if (decodeSucceeded) {
+    LocalScreenshotPreviewState.Ready
+} else {
+    LocalScreenshotPreviewState.Failed
+}
+
+private data class LocalScreenshotPreviewRenderState(
+    val state: LocalScreenshotPreviewState,
+    val decoded: LocalScreenshotPreviewDecodeResult? = null,
 )
 
 @Composable
@@ -96,8 +115,8 @@ fun LocalScreenshotPreview(
     modifier: Modifier = Modifier,
     testTag: String? = null,
 ) {
-    val decoded by produceState<LocalScreenshotPreviewDecodeResult?>(
-        initialValue = null,
+    val preview by produceState(
+        initialValue = LocalScreenshotPreviewRenderState(LocalScreenshotPreviewState.Loading),
         imageUri,
         crop?.left,
         crop?.top,
@@ -113,25 +132,33 @@ fun LocalScreenshotPreview(
                 sourceImageWidth = sourceImageWidth,
                 sourceImageHeight = sourceImageHeight,
             )
+        }.let { decoded ->
+            LocalScreenshotPreviewRenderState(
+                state = localScreenshotPreviewStateAfterDecode(decoded != null),
+                decoded = decoded,
+            )
         }
     }
     val previewModifier = modifier
         .fillMaxWidth()
         .heightIn(max = 320.dp)
         .let { current ->
-            decoded?.aspectRatio?.let(current::aspectRatio) ?: current
+            preview.decoded?.aspectRatio?.let(current::aspectRatio) ?: current
         }
     val taggedModifier = if (testTag == null) previewModifier else previewModifier.testTag(testTag)
-    val bitmap = decoded?.bitmap
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            modifier = taggedModifier,
-        )
-    } else {
-        Text(
+    when (preview.state) {
+        LocalScreenshotPreviewState.Loading -> Unit
+        LocalScreenshotPreviewState.Ready -> {
+            preview.decoded?.bitmap?.let { bitmap ->
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = contentDescription,
+                    contentScale = ContentScale.Fit,
+                    modifier = taggedModifier,
+                )
+            }
+        }
+        LocalScreenshotPreviewState.Failed -> Text(
             text = stringResource(R.string.local_screenshot_preview_unavailable),
             color = MaterialTheme.colorScheme.error,
             modifier = taggedModifier,
