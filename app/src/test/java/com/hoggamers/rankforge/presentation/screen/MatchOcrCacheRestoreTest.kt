@@ -13,6 +13,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionRe
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
@@ -78,8 +79,13 @@ class MatchOcrCacheRestoreTest {
                     lobbyResult = MatchLobbyPlayersOcrResult(
                         slots = listOf(
                             MatchLobbyPlayersOcrSlot(
-                                slotNumber = 1,
-                                players = listOf(MatchLobbyPlayersOcrPlayer(1, "Cached player")),
+                                slotNumber = 5,
+                                players = listOf(
+                                    MatchLobbyPlayersOcrPlayer(1, "Cached Alpha"),
+                                    MatchLobbyPlayersOcrPlayer(2, "Cached Bravo"),
+                                    MatchLobbyPlayersOcrPlayer(3, "Cached Charlie"),
+                                    MatchLobbyPlayersOcrPlayer(4, "Cached Delta"),
+                                ),
                             ),
                         ),
                     ),
@@ -93,7 +99,10 @@ class MatchOcrCacheRestoreTest {
         val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
         assertEquals(MatchOcrCacheAvailability.READY, viewModel.cacheAvailability.value)
         assertEquals((0..11).toList(), state.rows.map { it.rowIndex })
-        assertEquals("Cached player", state.lobbyPlayers.single().players.single().playerName)
+        assertEquals("Cached Alpha", state.lobbyPlayers.single().players.first().playerName)
+        assertEquals("5", state.rows.first().suggestedTeamSlotDisplayValue)
+        assertEquals(5, state.rows.first().originalSuggestedTeamSlot)
+        assertEquals("5", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
         assertFalse(state.finalization.isFinalized)
     }
 
@@ -154,7 +163,18 @@ class MatchOcrCacheRestoreTest {
                         position = position,
                         source = source,
                         placement = field(position.toString(), MatchResultOcrFieldType.PLACEMENT),
-                        playerSlots = emptyList(),
+                    playerSlots = if (position == 1) {
+                        listOf("Cached Alpha", "Cached Bravo", "Cached Charlie", "Cached Delta")
+                            .mapIndexed { index, playerName ->
+                                MatchResultOcrPlayerSlot(
+                                    slot = index + 1,
+                                    player = field(playerName, MatchResultOcrFieldType.PLAYER),
+                                    kill = field("0", MatchResultOcrFieldType.KILL),
+                                )
+                            }
+                    } else {
+                        emptyList()
+                    },
                     )
                 },
             ),
