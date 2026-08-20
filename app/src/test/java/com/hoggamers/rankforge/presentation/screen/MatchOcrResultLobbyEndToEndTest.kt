@@ -67,7 +67,7 @@ class MatchOcrResultLobbyEndToEndTest {
     fun liveFullPermutationPreservesResultSemanticsAndFinalizesToLobbySlots() = runTest(dispatcher) {
         val expectedLobbySlotByResultPosition = listOf(7, 1, 12, 4, 9, 2, 11, 5, 3, 10, 6, 8)
         val resultRows = expectedLobbySlotByResultPosition.mapIndexed { index, lobbySlot ->
-            val resolvedPlayers = teamPlayers(lobbySlot)
+            val resolvedPlayers = permutationTeamPlayers(lobbySlot)
             val resolvedKills = (index + 1..index + 4).toList()
             resultRow(
                 position = index + 1,
@@ -81,7 +81,9 @@ class MatchOcrResultLobbyEndToEndTest {
                 },
             )
         }
-        val lobbyResult = fullLobbyResult()
+        val lobbyResult = fullLobbyResult(
+            overrides = (1..12).associateWith { slot -> permutationTeamPlayers(slot) },
+        )
         val repository = createRepository()
         val viewModel = viewModel(repository, resultRows, lobbyResult)
 
@@ -96,6 +98,8 @@ class MatchOcrResultLobbyEndToEndTest {
         assertEquals((1..12).toList(), state.rows.map { it.originalParsedPlacementValue })
         assertEquals((1..12).toSet(), state.rows.mapNotNull { it.originalSuggestedTeamSlot }.toSet())
         assertTrue(state.rows.all { "OCR preview requires manual confirmation" in it.warningLabels })
+        assertTrue(state.rows.all { it.resultLobbyWinningVotePercentDisplayValue == "100%" })
+        assertTrue(state.rows.all { it.resultLobbyDecisionLabel == "Automatic" })
 
         val preview = state.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
         resultRows.forEach { resultRow ->
@@ -161,25 +165,29 @@ class MatchOcrResultLobbyEndToEndTest {
                 resultPlayers = listOf("S1Delta", "S1Bravo", "S1Alpha", "S1Charlie"),
                 lobbyPlayers = teamPlayers(1),
                 expectedLobbySlot = 1,
+                expectedWinningVotePercent = "100%",
             ),
             RealismCase(
                 name = "ocr normalization",
                 resultPlayers = listOf("PLAYER0NE", "NOVA", "RIN", "KAI"),
                 lobbyPlayers = listOf("PLAYERONE", "NOVA", "RIN", "KAI"),
                 expectedLobbySlot = 1,
+                expectedWinningVotePercent = "100%",
             ),
             RealismCase(
                 name = "three of four",
                 resultPlayers = listOf("Unit7", "Nova", "Rin", "NewWolf"),
                 lobbyPlayers = listOf("Unit7", "Nova", "Rin", "OldWolf"),
                 expectedLobbySlot = 6,
+                expectedWinningVotePercent = "75%",
             ),
             RealismCase(
                 name = "missing player",
                 resultPlayers = listOf("S1Alpha", "S1Bravo", null, "S1Delta"),
                 lobbyPlayers = teamPlayers(1),
                 expectedLobbySlot = 1,
-                expectAutomaticAssignment = false,
+                expectAutomaticAssignment = true,
+                expectedWinningVotePercent = "75%",
             ),
         )
 
@@ -187,14 +195,16 @@ class MatchOcrResultLobbyEndToEndTest {
             val repository = createRepository()
             val resultRows = scenarioRows(
                 resultPlayers = case.resultPlayers,
-                otherRowsAreUnrelated = case.expectedLobbySlot != 1,
+                otherRowsAreUnrelated = true,
             )
-            val lobbyResult = fullLobbyResult(mapOf(case.expectedLobbySlot to case.lobbyPlayers))
+            val lobbyResult = lobbyResultWithOnlySlot(case.expectedLobbySlot, case.lobbyPlayers)
             val viewModel = viewModel(repository, resultRows, lobbyResult)
             val state = loadState(viewModel)
             val row = state.rows.first()
 
             assertEquals(case.name, case.expectedLobbySlot.toString(), row.suggestedTeamSlotDisplayValue)
+            assertEquals(case.name, case.expectedWinningVotePercent, row.resultLobbyWinningVotePercentDisplayValue)
+            assertEquals(case.name, "Automatic", row.resultLobbyDecisionLabel)
             if (case.expectAutomaticAssignment) {
                 assertEquals(case.name, case.expectedLobbySlot, row.originalSuggestedTeamSlot)
                 assertEquals(
@@ -217,39 +227,50 @@ class MatchOcrResultLobbyEndToEndTest {
     }
 
     @Test
-    fun liveTwoPlayerEvidenceRemainsManual() = runTest(dispatcher) {
+    fun liveTwoPlayerEvidenceAutoAssignsWithUniqueWinner() = runTest(dispatcher) {
         val repository = createRepository()
-        val resultRows = scenarioRows(listOf("S1Alpha", "S1Bravo", null, "UNMATCHED-1"))
-        val viewModel = viewModel(repository, resultRows, fullLobbyResult())
+        val resultRows = scenarioRows(
+            listOf("S1Alpha", "S1Bravo", null, "UNMATCHED-1"),
+            otherRowsAreUnrelated = true,
+        )
+        val viewModel = viewModel(
+            repository,
+            resultRows,
+            lobbyResultWithOnlySlot(1, listOf("S1Alpha", "S1Bravo", "Other1", "Other2")),
+        )
 
         val state = loadState(viewModel)
         val row = state.rows.first()
-        assertEquals("Review required", row.assignmentSafetyStatusLabel)
-        assertTrue(row.topThreeSuggestionsSummary.first().contains("matches 2"))
-        assertNull(row.originalSuggestedTeamSlot)
-        assertEquals("", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
+        assertEquals("Safe automatic assignment", row.assignmentSafetyStatusLabel)
+        assertEquals("50%", row.resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Automatic", row.resultLobbyDecisionLabel)
+        assertEquals(1, row.originalSuggestedTeamSlot)
+        assertEquals("1", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
     }
 
     @Test
-    fun liveCompetingCandidatesRemainReviewOnly() = runTest(dispatcher) {
+    fun liveCompetingCandidatesAreResolvedByVoteCount() = runTest(dispatcher) {
         val repository = createRepository()
         val resultRows = scenarioRows(
             resultPlayers = teamPlayers(1),
             otherRowsAreUnrelated = true,
         )
-        val lobbyResult = fullLobbyResult(
-            overrides = mapOf(
-                2 to listOf("S1Alpha", "S1Bravo", "S1Charlie", "S2Old"),
-            ),
+        val lobbyResult = lobbyResultWithOnlySlots(
+            mapOf(1 to teamPlayers(1), 2 to listOf("S1Alpha", "S1Bravo", "S1Charlie", "S2Old")),
         )
         val viewModel = viewModel(repository, resultRows, lobbyResult)
 
         val state = loadState(viewModel)
         val row = state.rows.first()
-        assertEquals("Review required", row.assignmentSafetyStatusLabel)
-        assertTrue(row.blockerLabels.any { "INSUFFICIENT_CANDIDATE_LEAD" in it })
-        assertNull(row.originalSuggestedTeamSlot)
-        assertEquals("", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
+        assertEquals("Safe automatic assignment", row.assignmentSafetyStatusLabel)
+        assertEquals("100%", row.resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Automatic", row.resultLobbyDecisionLabel)
+        assertEquals(
+            listOf("Slot 1: 100% (P1, P2, P3, P4)", "Slot 2: 75% (P1, P2, P3)"),
+            row.resultLobbyVoteSummary,
+        )
+        assertEquals(1, row.originalSuggestedTeamSlot)
+        assertEquals("1", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
     }
 
     @Test
@@ -262,12 +283,15 @@ class MatchOcrResultLobbyEndToEndTest {
                 killValues = listOf(1, 2, 3, 4),
             )
         }
-        val viewModel = viewModel(repository, resultRows, fullLobbyResult())
+        val viewModel = viewModel(repository, resultRows, lobbyResultWithOnlySlot(7, teamPlayers(7)))
 
         val state = loadState(viewModel)
         state.rows.take(2).forEach { row ->
             assertEquals("Review required", row.assignmentSafetyStatusLabel)
-            assertTrue(row.blockerLabels.any { "DUPLICATE_TEAM_CANDIDATE" in it })
+            assertEquals("100%", row.resultLobbyWinningVotePercentDisplayValue)
+            assertTrue(row.blockerLabels.any { "DUPLICATE_SLOT_ACROSS_RESULT_ROWS" in it })
+            assertEquals("7", row.suggestedTeamSlotDisplayValue)
+            assertEquals("Manual required", row.resultLobbyDecisionLabel)
             assertNull(row.originalSuggestedTeamSlot)
         }
         assertTrue(state.correctionDraft!!.rows.take(2).all { it.assignedTeamSlotDraftValue.isBlank() })
@@ -276,10 +300,34 @@ class MatchOcrResultLobbyEndToEndTest {
     @Test
     fun manualCorrectionResolvesOnlyTheUnassignedSlot() = runTest(dispatcher) {
         val repository = createRepository()
-        val resultRows = scenarioRows(listOf("S1Alpha", "S1Bravo", null, "UNMATCHED-1"))
-        val viewModel = viewModel(repository, resultRows, fullLobbyResult())
+        val resultRows = (1..12).map { position ->
+            resultRow(
+                position = position,
+                playerNames = if (position == 1) {
+                    listOf("ABC", "R1", "R2", "R3")
+                } else {
+                    permutationTeamPlayers(position)
+                },
+                killValues = listOf(1, 2, 3, 4),
+            )
+        }
+        val viewModel = viewModel(
+            repository,
+            resultRows,
+            fullLobbyResult(
+                overrides = (1..12).associateWith { slot ->
+                    if (slot == 1) {
+                        listOf("ABD", "Other1", "Other2", "Other3")
+                    } else {
+                        permutationTeamPlayers(slot)
+                    }
+                },
+            ),
+        )
 
         val before = loadState(viewModel)
+        assertEquals("25%", before.rows.first().resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Manual required", before.rows.first().resultLobbyDecisionLabel)
         assertTrue(before.correctionDraft!!.rows.first().validation.blockers.isNotEmpty())
         assertEquals("", before.correctionDraft.rows.first().assignedTeamSlotDraftValue)
 
@@ -345,8 +393,8 @@ class MatchOcrResultLobbyEndToEndTest {
     fun lobbyOcrRemainsAuthoritativeOverConflictingPersistedRoster() = runTest(dispatcher) {
         val repository = createRepository(withSlotOneRoster = true)
         val resultRows = scenarioRows(teamPlayers(1), otherRowsAreUnrelated = true)
-        val lobbyResult = fullLobbyResult(
-            overrides = mapOf(
+        val lobbyResult = lobbyResultWithOnlySlots(
+            mapOf(
                 1 to unrelatedPlayers(1),
                 5 to teamPlayers(1),
             ),
@@ -356,6 +404,8 @@ class MatchOcrResultLobbyEndToEndTest {
         val state = loadState(viewModel)
         val row = state.rows.first()
         assertEquals("5", row.suggestedTeamSlotDisplayValue)
+        assertEquals("100%", row.resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Automatic", row.resultLobbyDecisionLabel)
         assertEquals(5, row.originalSuggestedTeamSlot)
         assertEquals("5", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
         assertFalse(row.suggestedTeamSlotDisplayValue == "1")
@@ -488,6 +538,36 @@ class MatchOcrResultLobbyEndToEndTest {
         },
     )
 
+    private fun lobbyResultWithOnlySlot(
+        slot: Int,
+        players: List<String?>,
+    ): MatchLobbyPlayersOcrResult = lobbyResultWithOnlySlots(mapOf(slot to players))
+
+    private fun lobbyResultWithOnlySlots(
+        overrides: Map<Int, List<String?>>,
+    ): MatchLobbyPlayersOcrResult = MatchLobbyPlayersOcrResult(
+        slots = (1..12).map { slotNumber ->
+            MatchLobbyPlayersOcrSlot(
+                slotNumber = slotNumber,
+                players = (overrides[slotNumber] ?: listOf(null, null, null, null))
+                    .mapIndexed { index, playerName -> MatchLobbyPlayersOcrPlayer(index + 1, playerName) },
+            )
+        },
+    )
+
+    private fun permutationTeamPlayers(teamSlot: Int): List<String?> {
+        val token = listOf(
+            "AA", "BB", "CC", "DD", "EE", "FF", "GG", "HH", "JJ", "KK", "MM", "NN",
+        )[teamSlot - 1]
+        val repeatedToken = token.repeat(2)
+        return listOf(
+            "$repeatedToken-Alpha",
+            "$repeatedToken-Bravo",
+            "$repeatedToken-Charlie",
+            "$repeatedToken-Delta",
+        )
+    }
+
     private fun resultRow(
         position: Int,
         playerNames: List<String?>,
@@ -586,6 +666,7 @@ class MatchOcrResultLobbyEndToEndTest {
         val lobbyPlayers: List<String?>,
         val expectedLobbySlot: Int,
         val expectAutomaticAssignment: Boolean = true,
+        val expectedWinningVotePercent: String,
     )
 
     private companion object {

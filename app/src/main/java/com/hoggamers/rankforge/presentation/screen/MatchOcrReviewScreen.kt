@@ -63,6 +63,7 @@ object MatchOcrReviewTestTags {
     const val DISMISS_FINALIZE_WARNINGS = "match_ocr_review_dismiss_finalize_warnings"
     const val FINALIZATION_SUCCESS = "match_ocr_review_finalization_success"
     const val FINALIZATION_ERROR = "match_ocr_review_finalization_error"
+    const val RESULT_LOBBY_VOTE = "match_ocr_review_result_lobby_vote"
     private const val ROW_PREFIX = "match_ocr_review_row_"
 
     fun row(rowIndex: Int): String = ROW_PREFIX + rowIndex
@@ -89,6 +90,11 @@ object MatchOcrReviewTestTags {
     fun rowBlocker(rowIndex: Int): String = "${row(rowIndex)}_blocker"
     fun rowWarning(rowIndex: Int): String = "${row(rowIndex)}_warning_label"
     fun resetRow(rowIndex: Int): String = "${row(rowIndex)}_reset"
+    fun resultLobbyVote(rowIndex: Int): String = "${RESULT_LOBBY_VOTE}_row_$rowIndex"
+    fun resultLobbyWinningVote(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_winning_vote"
+    fun resultLobbyDecision(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_decision"
+    fun resultLobbyReason(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_reason"
+    fun resultLobbySummary(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_summary"
 }
 
 @Composable
@@ -758,6 +764,9 @@ internal fun MatchOcrReviewRow(
                 compactResetTestTag = compactResetTestTag,
             )
         }
+        if (row.resultLobbyVoteEvidencePresent) {
+            MatchOcrReviewResultLobbyVoteSection(row)
+        }
         if (correctionDraft != null) {
             MatchOcrReviewCorrectionFields(
                 correctionDraft = correctionDraft,
@@ -771,6 +780,42 @@ internal fun MatchOcrReviewRow(
                 showBlockerDetails = showBlockerDetails,
                 showResetRowCorrectionAction = !compactResetAction,
             )
+        }
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewResultLobbyVoteSection(
+    row: MatchOcrReviewRowUiState,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MatchOcrReviewTestTags.resultLobbyVote(row.rowIndex)),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = "Winning vote: ${row.resultLobbyWinningVotePercentDisplayValue ?: "Unavailable"}",
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.resultLobbyWinningVote(row.rowIndex)),
+        )
+        Text(
+            text = "Decision: ${row.resultLobbyDecisionLabel ?: "Unavailable"}",
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.resultLobbyDecision(row.rowIndex)),
+        )
+        Text(
+            text = "Reason: ${row.resultLobbyDecisionReasonLabel ?: "Unavailable"}",
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.resultLobbyReason(row.rowIndex)),
+        )
+        if (row.resultLobbyVoteSummary.isNotEmpty()) {
+            Column(
+                modifier = Modifier.testTag(MatchOcrReviewTestTags.resultLobbySummary(row.rowIndex)),
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            ) {
+                Text(text = "Vote summary:")
+                row.resultLobbyVoteSummary.forEach { summary ->
+                    Text(text = summary)
+                }
+            }
         }
     }
 }

@@ -707,9 +707,24 @@ class MatchOcrReviewViewModel @Inject constructor(
             rows = rows,
             blockerCount = correctionDraft.blockerCount,
             warningCount = correctionDraft.warningCount,
-            safeRowCount = rows.count { it.assignmentSafetyStatusLabel == SAFE_AUTOMATIC_ASSIGNMENT_LABEL },
-            manualRequiredRowCount = rows.count { it.assignmentSafetyStatusLabel == MANUAL_REQUIRED_LABEL },
-            reviewRequiredRowCount = rows.count { it.assignmentSafetyStatusLabel == REVIEW_REQUIRED_LABEL },
+            safeRowCount = rows.count { row ->
+                if (row.resultLobbyVoteEvidencePresent) {
+                    row.resultLobbyDecisionLabel == RESULT_LOBBY_AUTOMATIC_LABEL
+                } else {
+                    row.assignmentSafetyStatusLabel == SAFE_AUTOMATIC_ASSIGNMENT_LABEL
+                }
+            },
+            manualRequiredRowCount = rows.count { row ->
+                if (row.resultLobbyVoteEvidencePresent) {
+                    row.resultLobbyDecisionLabel == RESULT_LOBBY_MANUAL_LABEL
+                } else {
+                    row.assignmentSafetyStatusLabel == MANUAL_REQUIRED_LABEL
+                }
+            },
+            reviewRequiredRowCount = rows.count { row ->
+                !row.resultLobbyVoteEvidencePresent &&
+                    row.assignmentSafetyStatusLabel == REVIEW_REQUIRED_LABEL
+            },
             manualReviewRequired = correctionDraft.blockerCount > 0 || correctionDraft.warningCount > 0,
             hasUnavailableEvidence = rows.any { row ->
                 row.confidenceTierLabel == UNAVAILABLE_LABEL ||
@@ -919,5 +934,7 @@ private fun List<MatchResultOcrPreviewRoleResult>.processedResultRows(): List<Ma
 private const val SAFE_AUTOMATIC_ASSIGNMENT_LABEL = "Safe automatic assignment"
 private const val REVIEW_REQUIRED_LABEL = "Review required"
 private const val MANUAL_REQUIRED_LABEL = "Manual required"
+private const val RESULT_LOBBY_AUTOMATIC_LABEL = "Automatic"
+private const val RESULT_LOBBY_MANUAL_LABEL = "Manual required"
 private const val UNAVAILABLE_LABEL = "Unavailable"
 private const val NO_SUGGESTIONS_LABEL = "No suggestions"

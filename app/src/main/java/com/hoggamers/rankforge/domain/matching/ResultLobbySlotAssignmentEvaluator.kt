@@ -8,6 +8,10 @@ data class ResultLobbySlotAssignmentRowResult(
     val confidenceAssessment: TeamMatchConfidenceAssessment,
     val assignmentSafety: RowTeamAssignmentSafetyResult,
     val automaticAssignedTeamSlot: Int?,
+    val proposedTeamSlot: Int?,
+    val winningVotePercent: Int?,
+    val decisionStatus: ResultLobbySlotDecisionStatus,
+    val decisionReason: ResultLobbySlotDecisionReason,
 )
 
 data class ResultLobbySlotAssignmentEvaluation(
@@ -18,9 +22,9 @@ data class ResultLobbySlotAssignmentEvaluation(
 /**
  * Pure orchestration for turning Result-to-Lobby candidate evidence into safe derived assignments.
  *
- * This component preserves the Slice 2 match result and composes the existing confidence
- * classifier and assignment safety evaluator. It never mutates OCR evidence or writes an
- * assignment back into an OCR model.
+ * This component aggregates independent Result-row votes globally. The legacy confidence
+ * assessment is retained only for the existing review presentation contract; it does not
+ * decide the Result-Lobby assignment.
  */
 object ResultLobbySlotAssignmentEvaluator {
     fun evaluate(
@@ -38,52 +42,89 @@ object ResultLobbySlotAssignmentEvaluator {
             }
             .sortedBy { it.resultPosition }
 
-        val rowAssessments = orderedMatchResults.map { matchResult ->
+        val duplicateSlots = orderedMatchResults
+            .mapNotNull { it.automaticAssignedTeamSlot }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+
+        val rowResults = orderedMatchResults.map { matchResult ->
             val confidenceAssessment = TeamMatchConfidenceTierClassifier.classify(
                 matchResult.rankedCandidates,
             )
-            RowEvaluationInput(
+            val hasDuplicateSlot = matchResult.automaticAssignedTeamSlot?.let { it in duplicateSlots } == true
+            val decisionReason = if (hasDuplicateSlot) {
+                ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+            } else {
+                matchResult.decisionReason
+            }
+            val automaticAssignedTeamSlot = matchResult.automaticAssignedTeamSlot
+                ?.takeUnless { hasDuplicateSlot }
+            val assignmentSafety = compatibilitySafetyResult(
                 matchResult = matchResult,
                 confidenceAssessment = confidenceAssessment,
+                hasDuplicateSlot = hasDuplicateSlot,
+            )
+            ResultLobbySlotAssignmentRowResult(
+                resultPosition = matchResult.resultPosition,
+                matchResult = matchResult,
+                confidenceAssessment = confidenceAssessment,
+                assignmentSafety = assignmentSafety,
+                automaticAssignedTeamSlot = automaticAssignedTeamSlot,
+                proposedTeamSlot = matchResult.proposedTeamSlot,
+                winningVotePercent = matchResult.winningVotePercent,
+                decisionStatus = if (hasDuplicateSlot) {
+                    ResultLobbySlotDecisionStatus.MANUAL
+                } else {
+                    matchResult.decisionStatus
+                },
+                decisionReason = decisionReason,
             )
         }
-        val assignmentSafety = TeamAssignmentSafetyEvaluator.evaluate(
-            rowAssessments.map { assessment ->
-                RowTeamMatchConfidenceAssessment(
-                    rowIndex = assessment.matchResult.resultPosition - RESULT_POSITION_OFFSET,
-                    confidenceAssessment = assessment.confidenceAssessment,
-                )
-            },
-        )
-        val safetyByRowIndex = assignmentSafety.rowResults.associateBy { it.rowIndex }
 
         return ResultLobbySlotAssignmentEvaluation(
-            rows = rowAssessments.map { assessment ->
-                val assignmentSafetyResult = requireNotNull(
-                    safetyByRowIndex[
-                        assessment.matchResult.resultPosition - RESULT_POSITION_OFFSET,
-                    ],
-                )
-                ResultLobbySlotAssignmentRowResult(
-                    resultPosition = assessment.matchResult.resultPosition,
-                    matchResult = assessment.matchResult,
-                    confidenceAssessment = assessment.confidenceAssessment,
-                    assignmentSafety = assignmentSafetyResult,
-                    automaticAssignedTeamSlot = assignmentSafetyResult
-                        .takeIf {
-                            it.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT
-                        }
-                        ?.proposedTeamSlot,
-                )
-            },
-            assignmentSafety = assignmentSafety,
+            rows = rowResults,
+            assignmentSafety = TeamAssignmentSafetyResult(
+                rowCount = rowResults.size,
+                safeAssignmentCount = rowResults.count {
+                    it.assignmentSafety.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT
+                },
+                rowResults = rowResults.map { it.assignmentSafety },
+            ),
         )
     }
 
-    private data class RowEvaluationInput(
-        val matchResult: ResultLobbySlotMatchResult,
-        val confidenceAssessment: TeamMatchConfidenceAssessment,
-    )
+    private fun compatibilitySafetyResult(
+        matchResult: ResultLobbySlotMatchResult,
+        confidenceAssessment: TeamMatchConfidenceAssessment,
+        hasDuplicateSlot: Boolean,
+    ): RowTeamAssignmentSafetyResult {
+        val safetyStatus = when {
+            hasDuplicateSlot -> TeamAssignmentSafetyStatus.REVIEW_REQUIRED
+            matchResult.decisionStatus == ResultLobbySlotDecisionStatus.AUTOMATIC ->
+                TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT
+            matchResult.decisionReason == ResultLobbySlotDecisionReason.NO_PLAUSIBLE_MATCH ->
+                TeamAssignmentSafetyStatus.MANUAL_REQUIRED
+            else -> TeamAssignmentSafetyStatus.REVIEW_REQUIRED
+        }
+        val reasons = when {
+            hasDuplicateSlot -> setOf(TeamAssignmentSafetyReason.DUPLICATE_TEAM_CANDIDATE)
+            matchResult.decisionReason == ResultLobbySlotDecisionReason.NO_PLAUSIBLE_MATCH -> setOf(
+                TeamAssignmentSafetyReason.NOT_AUTOMATIC_TIER,
+                TeamAssignmentSafetyReason.NO_SUGGESTION,
+            )
+            matchResult.decisionStatus == ResultLobbySlotDecisionStatus.AUTOMATIC -> emptySet()
+            else -> setOf(TeamAssignmentSafetyReason.NOT_AUTOMATIC_TIER)
+        }
+        return RowTeamAssignmentSafetyResult(
+            rowIndex = matchResult.resultPosition - RESULT_POSITION_OFFSET,
+            confidenceAssessment = confidenceAssessment,
+            safetyStatus = safetyStatus,
+            proposedTeamSlot = matchResult.proposedTeamSlot,
+            reasons = reasons,
+        )
+    }
 
     private const val RESULT_POSITION_OFFSET = 1
 }

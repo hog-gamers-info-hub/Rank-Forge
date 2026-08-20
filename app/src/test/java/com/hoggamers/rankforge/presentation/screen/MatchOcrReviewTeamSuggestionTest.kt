@@ -80,10 +80,11 @@ class MatchOcrReviewTeamSuggestionTest {
         assertEquals(1, firstRow.originalSuggestedTeamSlot)
         assertEquals("1", firstDraft.assignedTeamSlotDraftValue)
         assertFalse(firstDraft.validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT))
+        assertEquals(1, state.safeRowCount)
     }
 
     @Test
-    fun reviewRequiredShowsSuggestionButDoesNotPrefillDraft() {
+    fun strongSingleVotePrefillsDraft() {
         val rows = mapWithLobbyEvidence(
             preview = completePreviewUiState(slotsForPosition = mapOf(1 to listOf("Alpha"))),
             lobbyOverrides = mapOf(1 to exactPlayers),
@@ -92,10 +93,78 @@ class MatchOcrReviewTeamSuggestionTest {
         val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
 
         assertEquals("1", row.suggestedTeamSlotDisplayValue)
-        assertEquals("Review required", row.assignmentSafetyStatusLabel)
-        assertEquals(null, row.originalSuggestedTeamSlot)
-        assertEquals("", draft.rows.first().assignedTeamSlotDraftValue)
-        assertTrue(row.blockerLabels.any { it.contains("review required") })
+        assertEquals("Safe automatic assignment", row.assignmentSafetyStatusLabel)
+        assertEquals(1, row.originalSuggestedTeamSlot)
+        assertEquals("1", draft.rows.first().assignedTeamSlotDraftValue)
+        assertTrue(row.blockerLabels.none { it.contains("review required") })
+    }
+
+    @Test
+    fun votePresentationUsesWinningPercentAndDeterministicSummary() {
+        val rows = mapWithLobbyEvidence(
+            preview = completePreviewUiState(
+                slotsForPosition = mapOf(1 to exactPlayers.filterNotNull()),
+            ),
+            lobbyOverrides = mapOf(
+                10 to exactPlayers,
+                1 to listOf("Alpha", "Bravo", "Other1", "Other2"),
+            ),
+        )
+        val row = rows.first()
+
+        assertTrue(row.resultLobbyVoteEvidencePresent)
+        assertEquals("100%", row.resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Automatic", row.resultLobbyDecisionLabel)
+        assertEquals("Unique vote winner", row.resultLobbyDecisionReasonLabel)
+        assertEquals(
+            listOf("Slot 10: 100% (P1, P2, P3, P4)", "Slot 1: 50% (P1, P2)"),
+            row.resultLobbyVoteSummary,
+        )
+        assertTrue(row.warningLabels.contains("OCR preview requires manual confirmation"))
+        assertTrue(row.blockerLabels.none { it.startsWith("Team assignment:") })
+    }
+
+    @Test
+    fun voteTieShowsManualReasonAndExactlyOneVoteBlocker() {
+        val rows = mapWithLobbyEvidence(
+            preview = completePreviewUiState(
+                slotsForPosition = mapOf(1 to exactPlayers.filterNotNull()),
+            ),
+            lobbyOverrides = mapOf(
+                10 to listOf("Alpha", "Bravo", "Other1", "Other2"),
+                1 to listOf("Charlie", "Delta", "Other3", "Other4"),
+            ),
+        )
+        val row = rows.first()
+
+        assertEquals("Unavailable", row.suggestedTeamSlotDisplayValue)
+        assertEquals("50%", row.resultLobbyWinningVotePercentDisplayValue)
+        assertEquals("Manual required", row.resultLobbyDecisionLabel)
+        assertEquals("Top vote tie", row.resultLobbyDecisionReasonLabel)
+        assertNull(row.originalSuggestedTeamSlot)
+        assertEquals(1, row.blockerLabels.count { it.startsWith("Team assignment:") })
+        assertTrue(row.blockerLabels.single { it.startsWith("Team assignment:") }.contains("TOP_VOTE_TIE"))
+    }
+
+    @Test
+    fun duplicateVotePresentationKeepsProposalButBlocksAutomaticPrefill() {
+        val rows = mapWithLobbyEvidence(
+            preview = completePreviewUiState(
+                slotsForPosition = mapOf(
+                    1 to exactPlayers.filterNotNull(),
+                    2 to exactPlayers.filterNotNull(),
+                ),
+            ),
+            lobbyOverrides = mapOf(1 to exactPlayers),
+        )
+
+        rows.take(2).forEach { row ->
+            assertEquals("1", row.suggestedTeamSlotDisplayValue)
+            assertEquals("Manual required", row.resultLobbyDecisionLabel)
+            assertEquals("Duplicate slot across Result rows", row.resultLobbyDecisionReasonLabel)
+            assertNull(row.originalSuggestedTeamSlot)
+            assertEquals(1, row.blockerLabels.count { it.startsWith("Team assignment:") })
+        }
     }
 
     @Test
@@ -108,7 +177,7 @@ class MatchOcrReviewTeamSuggestionTest {
 
         assertEquals("Manual required", row.assignmentSafetyStatusLabel)
         assertEquals(null, row.originalSuggestedTeamSlot)
-        assertTrue(row.blockerLabels.any { it.contains("manual assignment required") })
+        assertTrue(row.blockerLabels.any { it == "Team assignment: manual required (NO_PLAUSIBLE_MATCH)" })
     }
 
     @Test
@@ -136,7 +205,7 @@ class MatchOcrReviewTeamSuggestionTest {
         val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
 
         assertEquals("Manual required", rows.first().assignmentSafetyStatusLabel)
-        assertEquals("1", rows.first().suggestedTeamSlotDisplayValue)
+        assertEquals("Unavailable", rows.first().suggestedTeamSlotDisplayValue)
         assertNull(rows.first().originalSuggestedTeamSlot)
         assertEquals("", draft.rows.first().assignedTeamSlotDraftValue)
         assertTrue(draft.rows.first().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT))

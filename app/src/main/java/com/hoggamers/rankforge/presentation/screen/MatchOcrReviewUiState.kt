@@ -290,6 +290,11 @@ data class MatchOcrReviewRowUiState(
     val warningLabels: List<String>,
     val blockerLabels: List<String>,
     val severity: MatchOcrReviewSeverity,
+    val resultLobbyVoteEvidencePresent: Boolean = false,
+    val resultLobbyWinningVotePercentDisplayValue: String? = null,
+    val resultLobbyDecisionLabel: String? = null,
+    val resultLobbyDecisionReasonLabel: String? = null,
+    val resultLobbyVoteSummary: List<String> = emptyList(),
     val originalParsedPlacementValue: Int? = null,
     val originalParsedKillValue: Int? = null,
     val originalSuggestedTeamSlot: Int? = null,
@@ -385,6 +390,8 @@ object MatchOcrReviewUiStateMapper {
         val rows = input.rows
             .sortedBy { it.rowIndex }
             .map(::mapRow)
+        val resultLobbyVoteRows = rows.filter { it.resultLobbyVoteEvidencePresent }
+        val legacyRows = rows.filterNot { it.resultLobbyVoteEvidencePresent }
         val blockerCount = rows.count { it.blockerLabels.isNotEmpty() }
         val warningCount = rows.count { it.blockerLabels.isEmpty() && it.warningLabels.isNotEmpty() }
         val safetyResults = input.rows.mapNotNull { it.safetyResult }
@@ -397,14 +404,19 @@ object MatchOcrReviewUiStateMapper {
             rows = rows,
             blockerCount = blockerCount,
             warningCount = warningCount,
-            safeRowCount = safetyResults.count {
-                it.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT
-            },
-            manualRequiredRowCount = safetyResults.count {
-                it.safetyStatus == TeamAssignmentSafetyStatus.MANUAL_REQUIRED
-            },
-            reviewRequiredRowCount = safetyResults.count {
-                it.safetyStatus == TeamAssignmentSafetyStatus.REVIEW_REQUIRED
+            safeRowCount = resultLobbyVoteRows.count { it.resultLobbyDecisionLabel == "Automatic" } +
+                legacyRows.count { row ->
+                    safetyResults.firstOrNull { it.rowIndex == row.rowIndex }
+                        ?.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT
+                },
+            manualRequiredRowCount = resultLobbyVoteRows.count { it.resultLobbyDecisionLabel == "Manual required" } +
+                legacyRows.count { row ->
+                    safetyResults.firstOrNull { it.rowIndex == row.rowIndex }
+                        ?.safetyStatus == TeamAssignmentSafetyStatus.MANUAL_REQUIRED
+                },
+            reviewRequiredRowCount = legacyRows.count { row ->
+                safetyResults.firstOrNull { it.rowIndex == row.rowIndex }
+                    ?.safetyStatus == TeamAssignmentSafetyStatus.REVIEW_REQUIRED
             },
             manualReviewRequired = blockerCount > 0 || warningCount > 0,
             hasUnavailableEvidence = rows.any { row ->

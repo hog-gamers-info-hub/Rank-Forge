@@ -55,7 +55,7 @@ class ResultLobbySlotAssignmentEvaluatorTest {
     }
 
     @Test
-    fun evaluate_twoPlayerEvidenceDoesNotAutoAssign() {
+    fun evaluate_twoPlayerEvidenceAutoAssignsWithUniqueVoteWinner() {
         val row = evaluate(
             rank(
                 resultPosition = 3,
@@ -65,14 +65,13 @@ class ResultLobbySlotAssignmentEvaluatorTest {
         ).rows.single()
 
         assertEquals(2, topScore(row).contributingMatchCount)
-        assertEquals(TeamMatchConfidenceTier.CONFIRMATION_REQUIRED, row.confidenceAssessment.tier)
-        assertEquals(TeamAssignmentSafetyStatus.REVIEW_REQUIRED, row.assignmentSafety.safetyStatus)
-        assertNull(row.automaticAssignedTeamSlot)
-        assertTrue(row.assignmentSafety.reasons.contains(TeamAssignmentSafetyReason.NOT_AUTOMATIC_TIER))
+        assertEquals(TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT, row.assignmentSafety.safetyStatus)
+        assertEquals(3, row.automaticAssignedTeamSlot)
+        assertEquals(ResultLobbySlotDecisionStatus.AUTOMATIC, row.decisionStatus)
     }
 
     @Test
-    fun evaluateCandidateLeadBelowTenDoesNotAutoAssign() {
+    fun evaluateCandidateLeadDoesNotOverrideVoteWinner() {
         val row = evaluate(
             rank(
                 resultPosition = 1,
@@ -87,9 +86,9 @@ class ResultLobbySlotAssignmentEvaluatorTest {
         assertEquals(100, topScore(row).confidenceScore)
         assertEquals(92, row.matchResult.rankedCandidates.suggestions[1]
             .teamCandidateScore.confidenceScore)
-        assertEquals(TeamAssignmentSafetyStatus.REVIEW_REQUIRED, row.assignmentSafety.safetyStatus)
-        assertNull(row.automaticAssignedTeamSlot)
-        assertTrue(row.assignmentSafety.reasons.contains(TeamAssignmentSafetyReason.INSUFFICIENT_CANDIDATE_LEAD))
+        assertEquals(TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT, row.assignmentSafety.safetyStatus)
+        assertEquals(1, row.automaticAssignedTeamSlot)
+        assertEquals(ResultLobbySlotDecisionStatus.AUTOMATIC, row.decisionStatus)
     }
 
     @Test
@@ -142,8 +141,8 @@ class ResultLobbySlotAssignmentEvaluatorTest {
         val matchResults = (1..12).map { resultPosition ->
             rank(
                 resultPosition = resultPosition,
-                resultPlayers = teamPlayers(resultPosition),
-                lobbyOverrides = (1..12).associateWith { teamSlot -> teamPlayers(teamSlot) },
+                resultPlayers = isolatedTeamPlayers(resultPosition),
+                lobbyOverrides = mapOf(resultPosition to isolatedTeamPlayers(resultPosition)),
             )
         }
 
@@ -237,6 +236,18 @@ class ResultLobbySlotAssignmentEvaluatorTest {
         "Charlie$teamSlot",
         "Delta$teamSlot",
     )
+
+    private fun isolatedTeamPlayers(teamSlot: Int): List<String?> = listOf(
+        isolatedName(teamSlot, "QWER"),
+        isolatedName(teamSlot, "ASDF"),
+        isolatedName(teamSlot, "ZXCV"),
+        isolatedName(teamSlot, "TYUI"),
+    )
+
+    private fun isolatedName(teamSlot: Int, suffix: String): String {
+        val token = ('A'.code + teamSlot - 1).toChar()
+        return "$token$token$token$token$suffix"
+    }
 
     private fun unrelatedPlayers(teamSlot: Int): List<String?> = listOf(
         "ZZ${teamSlot}Quartz",
