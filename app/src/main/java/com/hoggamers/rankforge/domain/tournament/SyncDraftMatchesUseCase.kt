@@ -17,6 +17,7 @@ class SyncDraftMatchesUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val cloudSyncRepository: DraftMatchCloudSyncRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : DraftMatchCloudSyncAction, DraftMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -36,6 +37,9 @@ class SyncDraftMatchesUseCase @Inject constructor(
             false
         }
         if (!authenticated) return DraftMatchCloudSyncResult.AuthenticationRequired
+        if (deletionIntentRepository.isBlocking(tournamentId)) {
+            return DraftMatchCloudSyncResult.ValidationFailure
+        }
 
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()

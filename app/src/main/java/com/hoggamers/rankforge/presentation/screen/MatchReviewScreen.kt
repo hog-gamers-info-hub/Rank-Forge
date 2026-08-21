@@ -27,6 +27,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -80,6 +82,12 @@ const val MATCH_REVIEW_ISSUES_STATUS_TEST_TAG = "match_review_issues_status"
 const val MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG = "match_review_placements_action"
 const val MATCH_REVIEW_KILLS_ACTION_TEST_TAG = "match_review_kills_action"
 const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
+const val MATCH_REVIEW_DELETE_ACTION_TEST_TAG = "match_review_delete_action"
+const val MATCH_REVIEW_DELETE_DIALOG_TEST_TAG = "match_review_delete_dialog"
+const val MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG = "match_review_delete_confirm_action"
+const val MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG = "match_review_delete_cancel_action"
+const val MATCH_REVIEW_DELETE_PROGRESS_TEST_TAG = "match_review_delete_progress"
+const val MATCH_REVIEW_DELETE_ERROR_TEST_TAG = "match_review_delete_error"
 const val MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG = "match_review_ocr_review_action"
 const val MATCH_REVIEW_OCR_READY_TEST_TAG = "match_review_ocr_ready"
 const val MATCH_REVIEW_OCR_STALE_TEST_TAG = "match_review_ocr_stale"
@@ -367,7 +375,7 @@ fun MatchReviewRoute(
             null -> Unit
         }
     }
-    BackHandler(onBack = viewModel::onBackToDetails)
+    BackHandler(enabled = !uiState.isDeleting, onBack = viewModel::onBackToDetails)
 
     MatchReviewScreen(
         uiState = uiState,
@@ -402,6 +410,7 @@ fun MatchReviewRoute(
         onPrepareGoogleSheetsExport = viewModel::prepareGoogleSheetsExport,
         onRequestResultDownload = viewModel::requestResultDownload,
         onFinalize = viewModel::finalizeMatch,
+        onDeleteMatch = viewModel::deleteMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onSelectResultScreenshot = viewModel::requestPhotoPicker,
         onSelectResultScreenshotBatch = viewModel::requestMultiPhotoPicker,
@@ -451,6 +460,7 @@ fun MatchReviewScreen(
     onPrepareGoogleSheetsExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
+    onDeleteMatch: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
     onSelectResultScreenshotBatch: (() -> Unit)? = null,
@@ -497,6 +507,7 @@ fun MatchReviewScreen(
             onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
             onRequestResultDownload = onRequestResultDownload,
             onFinalize = onFinalize,
+            onDeleteMatch = onDeleteMatch,
             onSelectScreenshot = onSelectScreenshot,
             onSelectResultScreenshot = onSelectResultScreenshot,
             onSelectResultScreenshotBatch = onSelectResultScreenshotBatch,
@@ -540,6 +551,7 @@ private fun MatchReviewContent(
     onPrepareGoogleSheetsExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
     onFinalize: () -> Unit,
+    onDeleteMatch: () -> Unit,
     onSelectScreenshot: () -> Unit,
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
     onSelectResultScreenshotBatch: (() -> Unit)?,
@@ -567,6 +579,7 @@ private fun MatchReviewContent(
     onOcrDismissFinalizeWarnings: () -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
     var showResultScopeDialog by remember { mutableStateOf(false) }
     var showResultFormatDialog by remember { mutableStateOf(false) }
@@ -893,8 +906,41 @@ private fun MatchReviewContent(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        if (uiState.deletionError != null) {
+            Text(
+                text = stringResource(uiState.deletionError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MATCH_REVIEW_DELETE_ERROR_TEST_TAG),
+            )
+        }
+        if (uiState.isDeleting) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_DELETE_PROGRESS_TEST_TAG),
+                horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                Text(stringResource(R.string.match_review_deleting_action))
+            }
+        }
+        Button(
+            onClick = { showDeleteConfirmation = true },
+            enabled = !uiState.isDeleting,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
+        ) {
+            Text(stringResource(R.string.match_review_delete_action))
+        }
         TextButton(
             onClick = onBackToDetails,
+            enabled = !uiState.isDeleting,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
@@ -909,6 +955,41 @@ private fun MatchReviewContent(
                 ),
             )
         }
+    }
+
+    if (showDeleteConfirmation && !uiState.isDeleting) {
+        AlertDialog(
+            modifier = Modifier.testTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG),
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text(stringResource(R.string.match_review_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.match_review_delete_message,
+                        uiState.matchNumber ?: 0,
+                    ),
+                )
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmation = false },
+                    modifier = Modifier.testTag(MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.cancel_action))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteMatch()
+                    },
+                    modifier = Modifier.testTag(MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.match_review_delete_confirm_action))
+                }
+            },
+        )
     }
 
     if (showFinalizeConfirmation) {
@@ -2114,6 +2195,19 @@ private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.t
         R.string.match_review_finalize_not_draft_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.INVALID_DATA ->
         R.string.match_review_finalize_invalid_data_error
+}
+
+private fun MatchDeletionUiError.toMessageRes(): Int = when (this) {
+    MatchDeletionUiError.TARGET_NOT_FOUND -> R.string.match_review_delete_target_not_found_error
+    MatchDeletionUiError.AUTHENTICATION_REQUIRED -> R.string.match_review_delete_authentication_error
+    MatchDeletionUiError.AUTHORIZATION_FAILURE -> R.string.match_review_delete_authorization_error
+    MatchDeletionUiError.VALIDATION_FAILURE -> R.string.match_review_delete_validation_error
+    MatchDeletionUiError.STORAGE_FAILURE -> R.string.match_review_delete_storage_error
+    MatchDeletionUiError.REMOTE_FAILURE -> R.string.match_review_delete_remote_error
+    MatchDeletionUiError.LOCAL_CLEANUP_FAILURE -> R.string.match_review_delete_local_cleanup_error
+    MatchDeletionUiError.PREPARATION_FAILURE,
+    MatchDeletionUiError.UNKNOWN,
+    -> R.string.match_review_delete_generic_error
 }
 
 private fun PhotoPickerError.toMessageRes(): Int = when (this) {

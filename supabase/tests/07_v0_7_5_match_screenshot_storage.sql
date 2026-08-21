@@ -21,7 +21,7 @@ select is((
     where schemaname = 'storage'
         and tablename = 'objects'
         and policyname like 'match_screenshots_%_owner'
-), 3::bigint, 'storage has only insert, select, and update owner policies');
+), 4::bigint, 'storage has insert, select, update, and delete owner policies');
 select ok((
     select with_check ~ 'auth\.uid'
     from pg_policies
@@ -50,7 +50,7 @@ select is((
         and tablename = 'objects'
         and policyname like 'match_screenshots_%'
         and lower(cmd) = 'delete'
-), 0::bigint, 'cloud delete remains outside v0.7.5');
+), 1::bigint, 'deletion backend adds one owner delete policy');
 select is((
     select count(*)
     from pg_policies
@@ -58,7 +58,7 @@ select is((
         and tablename = 'objects'
         and policyname like 'match_screenshots_%'
         and (coalesce(qual, '') || coalesce(with_check, '')) ~ 'match-screenshots'
-), 3::bigint, 'all policies are limited to the approved bucket');
+), 4::bigint, 'all policies are limited to the approved bucket');
 select is((
     select count(*)
     from pg_policies
@@ -66,7 +66,7 @@ select is((
         and tablename = 'objects'
         and policyname like 'match_screenshots_%'
         and (coalesce(qual, '') || coalesce(with_check, '')) ~ 'tournaments'
-), 3::bigint, 'all policies require tournament-scoped paths');
+), 4::bigint, 'all policies require tournament-scoped paths');
 select is((
     select count(*)
     from pg_policies
@@ -74,7 +74,7 @@ select is((
         and tablename = 'objects'
         and policyname like 'match_screenshots_%'
         and (coalesce(qual, '') || coalesce(with_check, '')) ~ 'matches'
-), 3::bigint, 'all policies require match-scoped paths');
+), 4::bigint, 'all policies require match-scoped paths');
 select is((
     select count(*)
     from pg_policies
@@ -82,7 +82,7 @@ select is((
         and tablename = 'objects'
         and policyname like 'match_screenshots_%'
         and roles = array['authenticated'::name]
-), 3::bigint, 'all screenshot policies target authenticated users');
+), 4::bigint, 'all screenshot policies target authenticated users');
 select is((
     select count(*)
     from pg_policies

@@ -50,9 +50,13 @@ class ResolveDraftConflictUseCase @Inject constructor(
     private val localRepository: MatchRestorationLocalRepository,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
     private val queueRepository: PersistentSyncQueueRepository,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : DraftConflictResolver {
     override suspend fun keepLocal(context: ConflictResolutionContext): DraftConflictResolutionResult {
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
+            return DraftConflictResolutionResult.Unsupported
+        }
+        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val currentRevision = context.currentCloudRevision
@@ -88,6 +92,9 @@ class ResolveDraftConflictUseCase @Inject constructor(
 
     override suspend fun acceptCloudDraft(context: ConflictResolutionContext): DraftConflictResolutionResult {
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
+            return DraftConflictResolutionResult.Unsupported
+        }
+        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val localMatches = try {

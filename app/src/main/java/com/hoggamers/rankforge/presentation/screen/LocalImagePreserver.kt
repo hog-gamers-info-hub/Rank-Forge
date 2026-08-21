@@ -416,6 +416,99 @@ class LocalImagePreserver(
         }
     }
 
+    suspend fun cleanupMatchAssets(
+        tournamentId: String,
+        matchId: String,
+        referencedRelativePaths: Collection<String>,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (!deleteReferencedFiles(referencedRelativePaths, matchDirectory(tournamentId, matchId))) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        val cleanups = buildList {
+            add(cleanupIfPresent(matchDirectory(tournamentId, matchId)) { cleanup(tournamentId, matchId) })
+            add(
+                cleanupIfPresent(
+                    matchResultScreenshotDirectory(
+                        tournamentId,
+                        matchId,
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    ),
+                ) {
+                    cleanupMatchResultScreenshot(
+                        tournamentId,
+                        matchId,
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    )
+                },
+            )
+            add(
+                cleanupIfPresent(
+                    matchResultScreenshotDirectory(
+                        tournamentId,
+                        matchId,
+                        MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    ),
+                ) {
+                    cleanupMatchResultScreenshot(
+                        tournamentId,
+                        matchId,
+                        MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    )
+                },
+            )
+            (1..3).forEach { index ->
+                add(
+                    cleanupIfPresent(lobbyScreenshotDirectory(tournamentId, matchId, index)) {
+                        cleanupLobbyScreenshot(tournamentId, matchId, index)
+                    },
+                )
+            }
+        }
+        if (cleanups.all { it == LocalImageCleanupResult.Cleaned }) {
+            LocalImageCleanupResult.Cleaned
+        } else {
+            LocalImageCleanupResult.Failed
+        }
+    }
+
+    suspend fun cleanupTournamentAssets(
+        tournamentId: String,
+        matchIds: Collection<String>,
+        templateGenerations: Collection<String>,
+        referencedRelativePaths: Collection<String>,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (!deleteReferencedFiles(referencedRelativePaths, tournamentDirectory(tournamentId))) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        val cleanups = buildList {
+            (1..3).forEach { index ->
+                add(
+                    cleanupIfPresent(rosterScreenshotDirectory(tournamentId, index)) {
+                        cleanupRosterScreenshot(tournamentId, index)
+                    },
+                )
+            }
+            matchIds.forEach { matchId -> add(cleanupMatchAssets(tournamentId, matchId, emptyList())) }
+            templateGenerations.forEach { generation ->
+                add(
+                    cleanupIfPresent(lobbyTemplateGenerationDirectory(tournamentId, generation)) {
+                        cleanupLobbyTemplateGeneration(tournamentId, generation)
+                    },
+                )
+            }
+        }
+        if (cleanups.all { it == LocalImageCleanupResult.Cleaned }) {
+            LocalImageCleanupResult.Cleaned
+        } else {
+            LocalImageCleanupResult.Failed
+        }
+    }
+
+    private suspend fun cleanupIfPresent(
+        directory: File,
+        cleanup: suspend () -> LocalImageCleanupResult,
+    ): LocalImageCleanupResult = if (directory.exists()) cleanup() else LocalImageCleanupResult.Cleaned
+
     suspend fun cleanupRosterScreenshot(
         tournamentId: String,
         rosterScreenshotIndex: Int,
@@ -618,6 +711,9 @@ class LocalImagePreserver(
     private fun matchDirectory(tournamentId: String, matchId: String): File =
         File(File(appPrivateRoot, SCREENSHOTS_DIRECTORY), "${encodeSegment(tournamentId)}/${encodeSegment(matchId)}")
 
+    private fun tournamentDirectory(tournamentId: String): File =
+        File(File(appPrivateRoot, SCREENSHOTS_DIRECTORY), encodeSegment(tournamentId))
+
     private fun rosterScreenshotDirectory(tournamentId: String, rosterScreenshotIndex: Int): File =
         File(File(appPrivateRoot, SCREENSHOTS_DIRECTORY), "${encodeSegment(tournamentId)}/roster/$rosterScreenshotIndex")
 
@@ -669,6 +765,18 @@ class LocalImagePreserver(
                     (file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX))
             }
             .all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }
+    }
+
+    private fun deleteReferencedFiles(
+        relativePaths: Collection<String>,
+        ownerDirectory: File,
+    ): Boolean {
+        val ownerPath = runCatching { ownerDirectory.canonicalFile.toPath() }.getOrNull() ?: return false
+        return relativePaths.all { relativePath ->
+            val file = resolveRelativePath(relativePath) ?: return@all false
+            val filePath = runCatching { file.canonicalFile.toPath() }.getOrNull() ?: return@all false
+            filePath.startsWith(ownerPath) && runCatching { fileOperations.delete(file) }.getOrDefault(false)
+        }
     }
 
     private fun safeDelete(file: File) {

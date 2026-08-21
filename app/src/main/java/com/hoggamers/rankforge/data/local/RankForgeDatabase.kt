@@ -39,6 +39,7 @@ interface RankForgeStateDao {
         MatchCorrectionEntity::class,
         SyncQueueEntity::class,
         SyncRevisionEntity::class,
+        DeletionIntentEntity::class,
         ScreenshotMetadataEntity::class,
         MatchResultScreenshotAssetEntity::class,
         MatchResultOcrCacheEntity::class,
@@ -50,7 +51,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -66,6 +67,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchCorrectionDao(): MatchCorrectionDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncRevisionDao(): SyncRevisionDao
+    abstract fun deletionIntentDao(): DeletionIntentDao
     abstract fun screenshotMetadataDao(): ScreenshotMetadataDao
     abstract fun matchResultScreenshotAssetDao(): MatchResultScreenshotAssetDao
     abstract fun matchResultOcrCacheDao(): MatchResultOcrCacheDao
@@ -589,6 +591,32 @@ abstract class RankForgeDatabase : RoomDatabase() {
                         ON matches.`id` = placements.`match_id`
                     WHERE matches.`status` = 'FINALIZED'
                     """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `deletion_intents` (
+                        `target_type` TEXT NOT NULL,
+                        `target_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `phase` TEXT NOT NULL,
+                        `updated_at_epoch_millis` INTEGER NOT NULL,
+                        PRIMARY KEY(`target_type`, `target_id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_deletion_intents_tournament_id` " +
+                        "ON `deletion_intents` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_deletion_intents_phase` " +
+                        "ON `deletion_intents` (`phase`)",
                 )
             }
         }

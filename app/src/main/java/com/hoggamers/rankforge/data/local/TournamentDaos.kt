@@ -16,8 +16,42 @@ interface SyncRevisionDao {
     @Upsert
     suspend fun upsert(revision: SyncRevisionEntity)
 
+    @Query("DELETE FROM sync_revisions WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
+
     @Query("UPDATE sync_revisions SET local_revision = local_revision + 1 WHERE tournament_id = :tournamentId")
     suspend fun incrementLocalRevision(tournamentId: String)
+}
+
+@Dao
+interface DeletionIntentDao {
+    @Query("SELECT * FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId")
+    suspend fun read(targetType: String, targetId: String): DeletionIntentEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(intent: DeletionIntentEntity)
+
+    @Query(
+        "UPDATE deletion_intents SET phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING', " +
+            "updated_at_epoch_millis = :updatedAtEpochMillis " +
+            "WHERE target_type = :targetType AND target_id = :targetId",
+    )
+    suspend fun markRemoteDeleted(targetType: String, targetId: String, updatedAtEpochMillis: Long)
+
+    @Query("DELETE FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId")
+    suspend fun delete(targetType: String, targetId: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM deletion_intents WHERE tournament_id = :tournamentId)")
+    suspend fun isBlocking(tournamentId: String): Boolean
+
+    @Query("SELECT * FROM deletion_intents ORDER BY updated_at_epoch_millis")
+    suspend fun readAll(): List<DeletionIntentEntity>
+
+    @Query(
+        "SELECT * FROM deletion_intents " +
+            "WHERE phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING' ORDER BY updated_at_epoch_millis",
+    )
+    suspend fun readPendingLocalCleanup(): List<DeletionIntentEntity>
 }
 
 @Dao
@@ -98,6 +132,9 @@ interface MatchDao {
 
     @Upsert
     suspend fun upsert(match: MatchEntity)
+
+    @Query("DELETE FROM matches WHERE id = :matchId")
+    suspend fun deleteById(matchId: String)
 
     @Query("DELETE FROM matches WHERE tournament_id = :tournamentId")
     suspend fun deleteByTournamentId(tournamentId: String)
@@ -202,6 +239,12 @@ interface RosterScreenshotMetadataDao {
         tournamentId: String,
         index: Int,
     ): RosterScreenshotMetadataEntity?
+
+    @Query(
+        "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId " +
+            "ORDER BY roster_screenshot_index",
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<RosterScreenshotMetadataEntity>
 
     @Query(
         "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId AND sha256 = :sha256 AND roster_screenshot_index != :index LIMIT 1",

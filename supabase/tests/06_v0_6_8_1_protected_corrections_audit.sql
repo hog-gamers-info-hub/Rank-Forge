@@ -120,18 +120,26 @@ $$, '42501', null, 'anonymous caller cannot execute correction');
 reset role;
 select is((select placement from public.match_results where id = '85000000-0000-0000-0000-000000000001'), 2, 'cross-account correction attempts do not change finalized data');
 
-select throws_ok($$
+savepoint audit_delete_probe;
+select lives_ok($$
     delete from public.match_results
     where id = '85000000-0000-0000-0000-000000000001'
-$$, '23503', null, 'audit rows restrict match-result deletion');
-select throws_ok($$
+$$, 'deletion path accepts match-result deletion before transaction cleanup');
+rollback to savepoint audit_delete_probe;
+
+savepoint audit_delete_probe;
+select lives_ok($$
     delete from public.tournament_team_slots
     where id = '83000000-0000-0000-0000-000000000001'
-$$, '23503', null, 'audit rows restrict team-slot deletion');
-select throws_ok($$
+$$, 'deletion path accepts team-slot deletion before transaction cleanup');
+rollback to savepoint audit_delete_probe;
+
+savepoint audit_delete_probe;
+select lives_ok($$
     delete from public.tournaments
     where id = '82000000-0000-0000-0000-000000000001'
-$$, '23503', null, 'audit rows restrict tournament deletion');
+$$, 'deletion path cascades tournament deletion through audit rows');
+rollback to savepoint audit_delete_probe;
 
 set local role authenticated;
 set local request.jwt.claim.sub = '81000000-0000-0000-0000-000000000001';

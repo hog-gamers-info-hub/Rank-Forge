@@ -22,6 +22,18 @@ enum class MatchReviewNavigation {
     RESULT_SCREENSHOT_2_CROP,
 }
 
+enum class MatchDeletionUiError {
+    TARGET_NOT_FOUND,
+    AUTHENTICATION_REQUIRED,
+    AUTHORIZATION_FAILURE,
+    VALIDATION_FAILURE,
+    STORAGE_FAILURE,
+    REMOTE_FAILURE,
+    LOCAL_CLEANUP_FAILURE,
+    PREPARATION_FAILURE,
+    UNKNOWN,
+}
+
 enum class PhotoPickerError {
     LAUNCH_FAILED,
 }
@@ -155,6 +167,8 @@ data class MatchReviewUiState(
     val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
     val validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
     val navigation: MatchReviewNavigation? = null,
+    val isDeleting: Boolean = false,
+    val deletionError: MatchDeletionUiError? = null,
     val isFinalizing: Boolean = false,
     val finalizationError: FinalizeMatchGlobalError? = null,
     val csvExportResult: AndroidExportResult? = null,

@@ -48,6 +48,105 @@ class MatchReviewScreenTest {
     val composeTestRule = createComposeRule()
 
     @Test
+    fun deleteMatchActionOpensConfirmationAndCancelDoesNotInvokeDeletion() {
+        var deleteRequests = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onDeleteMatch = { deleteRequests++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Delete Match?").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Are you sure you want to delete Match 1?",
+            substring = true,
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG).assertCountEquals(0)
+        composeTestRule.runOnIdle { assertEquals(0, deleteRequests) }
+    }
+
+    @Test
+    fun deleteConfirmationStartsLockedProgressState() {
+        var uiState by mutableStateOf(availableState())
+        var deleteRequests = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = uiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onDeleteMatch = {
+                        deleteRequests++
+                        uiState = uiState.copy(isDeleting = true)
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.runOnIdle { assertEquals(1, deleteRequests) }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_PROGRESS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun deleteActionRemainsAvailableForFinalizedMatches() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun deletionErrorLeavesMatchReviewVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        deletionError = MatchDeletionUiError.REMOTE_FAILURE,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ERROR_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("The match could not be deleted from the cloud. Try again.")
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun simplifiedReviewShowsLobbyBeforeResultAndHidesLegacyManualContent() {
         composeTestRule.setContent {
             RankForgeTheme {

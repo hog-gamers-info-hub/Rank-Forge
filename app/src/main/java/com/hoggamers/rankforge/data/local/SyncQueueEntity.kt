@@ -28,4 +28,7 @@ interface SyncQueueDao {
     suspend fun incrementAttemptCount(id: String)
     @androidx.room.Query("DELETE FROM sync_queue_entries WHERE id = :id")
     suspend fun delete(id: String)
+
+    @androidx.room.Query("DELETE FROM sync_queue_entries WHERE tournamentId = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
 }

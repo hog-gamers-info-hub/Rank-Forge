@@ -25,6 +25,9 @@ import com.hoggamers.rankforge.domain.tournament.CreateNextMatchFailure
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.CloudDeletionFailureCategory
+import com.hoggamers.rankforge.domain.tournament.DeleteTournamentResult
+import com.hoggamers.rankforge.domain.tournament.DeleteTournamentUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -36,6 +39,23 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+private fun DeleteTournamentResult.toUiError(): TournamentDeletionUiError = when (this) {
+    DeleteTournamentResult.TargetNotFound -> TournamentDeletionUiError.TARGET_NOT_FOUND
+    DeleteTournamentResult.AuthenticationRequired -> TournamentDeletionUiError.AUTHENTICATION_REQUIRED
+    DeleteTournamentResult.PendingSyncPreparationFailed -> TournamentDeletionUiError.PREPARATION_FAILURE
+    DeleteTournamentResult.RemoteDeletedLocalCleanupFailed -> TournamentDeletionUiError.LOCAL_CLEANUP_FAILURE
+    is DeleteTournamentResult.StorageDeletionFailed -> category.toUiError(TournamentDeletionUiError.STORAGE_FAILURE)
+    is DeleteTournamentResult.RemoteDeletionFailed -> category.toUiError(TournamentDeletionUiError.REMOTE_FAILURE)
+    DeleteTournamentResult.Success -> error("Successful deletion has no UI error")
+}
+
+private fun CloudDeletionFailureCategory.toUiError(default: TournamentDeletionUiError): TournamentDeletionUiError = when (this) {
+    CloudDeletionFailureCategory.AUTHENTICATION -> TournamentDeletionUiError.AUTHENTICATION_REQUIRED
+    CloudDeletionFailureCategory.AUTHORIZATION -> TournamentDeletionUiError.AUTHORIZATION_FAILURE
+    CloudDeletionFailureCategory.VALIDATION -> TournamentDeletionUiError.VALIDATION_FAILURE
+    else -> default
+}
 
 @HiltViewModel
 class TournamentDetailsViewModel @Inject constructor(
@@ -50,11 +70,13 @@ class TournamentDetailsViewModel @Inject constructor(
     private val syncDraftMatches: DraftMatchCloudSyncAction,
     private val applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
+    private val deleteTournamentUseCase: DeleteTournamentUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
     private var exportJob: Job? = null
+    private var deletionJob: Job? = null
     private var loadedTournamentId: String? = null
 
     fun load(tournamentId: String) {
@@ -62,6 +84,7 @@ class TournamentDetailsViewModel @Inject constructor(
         loadedTournamentId = tournamentId
         loadJob?.cancel()
         exportJob?.cancel()
+        deletionJob?.cancel()
         _uiState.update { TournamentDetailsUiState(isLoading = true) }
         loadJob = viewModelScope.launch {
             combine(
@@ -86,6 +109,9 @@ class TournamentDetailsViewModel @Inject constructor(
                         calculatePointsMessage = current.calculatePointsMessage,
                         matchReviewRequest = current.matchReviewRequest,
                         isCreatingMatch = current.isCreatingMatch,
+                        navigation = current.navigation,
+                        isDeleting = current.isDeleting,
+                        deletionError = current.deletionError,
                     )
                 }
             }
@@ -182,6 +208,61 @@ class TournamentDetailsViewModel @Inject constructor(
 
     fun onMatchReviewRequestHandled() {
         _uiState.update { it.copy(matchReviewRequest = null) }
+    }
+
+    fun deleteTournament() {
+        val current = _uiState.value
+        val tournamentId = current.tournament?.id
+        if (current.isDeleting || tournamentId.isNullOrBlank()) return
+        _uiState.update {
+            it.copy(
+                isDeleting = true,
+                deletionError = null,
+            )
+        }
+        deletionJob = viewModelScope.launch {
+            val useCase = deleteTournamentUseCase ?: run {
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = TournamentDeletionUiError.UNKNOWN,
+                    )
+                }
+                return@launch
+            }
+            val result = try {
+                useCase(tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = TournamentDeletionUiError.UNKNOWN,
+                    )
+                }
+                return@launch
+            }
+            when (result) {
+                DeleteTournamentResult.Success -> _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = null,
+                        navigation = TournamentDetailsNavigation.TOURNAMENT_LIST,
+                    )
+                }
+                else -> _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = result.toUiError(),
+                    )
+                }
+            }
+        }
+    }
+
+    fun onNavigationHandled() {
+        _uiState.update { it.copy(navigation = null) }
     }
 
     private fun requestMatchCreation(tournamentId: String) {

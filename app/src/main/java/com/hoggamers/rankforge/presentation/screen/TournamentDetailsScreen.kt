@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +22,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
@@ -59,6 +64,12 @@ const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG =
     "tournament_standings_google_sheets_export_action"
 const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG =
     "tournament_standings_google_sheets_export_status"
+const val TOURNAMENT_DELETE_ACTION_TEST_TAG = "tournament_delete_action"
+const val TOURNAMENT_DELETE_DIALOG_TEST_TAG = "tournament_delete_dialog"
+const val TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG = "tournament_delete_confirm_action"
+const val TOURNAMENT_DELETE_CANCEL_ACTION_TEST_TAG = "tournament_delete_cancel_action"
+const val TOURNAMENT_DELETE_PROGRESS_TEST_TAG = "tournament_delete_progress"
+const val TOURNAMENT_DELETE_ERROR_TEST_TAG = "tournament_delete_error"
 private const val SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS = false
 
 @Composable
@@ -88,6 +99,13 @@ fun TournamentDetailsRoute(
             onReviewMatch(request.tournamentId, request.matchId)
         }
     }
+    LaunchedEffect(uiState.navigation) {
+        if (uiState.navigation == TournamentDetailsNavigation.TOURNAMENT_LIST) {
+            viewModel.onNavigationHandled()
+            onBackToList()
+        }
+    }
+    BackHandler(enabled = uiState.isDeleting) {}
     val uploadUiState = if (uploadViewModel == null) {
         TournamentCloudUploadUiState.Idle
     } else {
@@ -131,6 +149,9 @@ fun TournamentDetailsRoute(
             viewModel.prepareGoogleSheetsStandingsExport()
         },
         googleSheetsExportResult = uiState.googleSheetsExportResult,
+        onDeleteTournament = { viewModel.deleteTournament() },
+        isDeleting = uiState.isDeleting,
+        deletionError = uiState.deletionError,
         uploadUiState = uploadUiState,
         onUpload = { id -> uploadViewModel?.upload(id) },
         draftMatchSyncUiState = draftMatchSyncUiState,
@@ -173,6 +194,9 @@ fun TournamentDetailsScreen(
     onPrepareGoogleSheetsStandingsExport: (String) -> Unit = {},
     googleSheetsExportResult: AndroidExportResult? = null,
     showLegacyControls: Boolean = SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS,
+    onDeleteTournament: (String) -> Unit = {},
+    isDeleting: Boolean = false,
+    deletionError: TournamentDeletionUiError? = null,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -211,6 +235,9 @@ fun TournamentDetailsScreen(
             onPrepareGoogleSheetsStandingsExport = onPrepareGoogleSheetsStandingsExport,
             googleSheetsExportResult = googleSheetsExportResult,
             showLegacyControls = showLegacyControls,
+            onDeleteTournament = onDeleteTournament,
+            isDeleting = isDeleting,
+            deletionError = deletionError,
         )
     }
 }
@@ -246,7 +273,11 @@ private fun TournamentDetailsContent(
     onPrepareGoogleSheetsStandingsExport: (String) -> Unit,
     googleSheetsExportResult: AndroidExportResult?,
     showLegacyControls: Boolean,
+    onDeleteTournament: (String) -> Unit,
+    isDeleting: Boolean,
+    deletionError: TournamentDeletionUiError?,
 ) {
+    var showDeleteConfirmation by remember(tournament.id) { mutableStateOf(false) }
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG)
@@ -283,6 +314,7 @@ private fun TournamentDetailsContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             Button(
                 onClick = { onEnterTeams(tournament.id) },
+                enabled = !isDeleting,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(text = stringResource(R.string.enter_teams_action))
@@ -311,10 +343,16 @@ private fun TournamentDetailsContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             MatchList(
                 tournament = tournament,
-                onCreateMatch = onCreateMatch,
-                onEnterMatchPlacements = onEnterMatchPlacements,
-                onEnterMatchKills = onEnterMatchKills,
-                onReviewMatch = onReviewMatch,
+                onCreateMatch = { if (!isDeleting) onCreateMatch(it) },
+                onEnterMatchPlacements = { tournamentId, matchId ->
+                    if (!isDeleting) onEnterMatchPlacements(tournamentId, matchId)
+                },
+                onEnterMatchKills = { tournamentId, matchId ->
+                    if (!isDeleting) onEnterMatchKills(tournamentId, matchId)
+                },
+                onReviewMatch = { tournamentId, matchId ->
+                    if (!isDeleting) onReviewMatch(tournamentId, matchId)
+                },
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             MatchCloudRestorationSection(tournament.id, matchCloudRestorationUiState, onRestoreMatches)
@@ -323,15 +361,17 @@ private fun TournamentDetailsContent(
 
         TeamSlotList(
             slots = tournament.slots,
-            onEnterTeams = { onEnterTeams(tournament.id) },
+            onEnterTeams = { if (!isDeleting) onEnterTeams(tournament.id) },
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         SimplifiedMatchList(
             tournament = tournament,
             onCalculatePointsRequested = onCalculatePointsRequested,
             calculatePointsMessage = calculatePointsMessage,
-            isCreatingMatch = isCreatingMatch,
-            onOpenMatchReview = onReviewMatch,
+            isCreatingMatch = isCreatingMatch || isDeleting,
+            onOpenMatchReview = { tournamentId, matchId ->
+                if (!isDeleting) onReviewMatch(tournamentId, matchId)
+            },
         )
         pendingTeamCountConfirmation?.let { confirmation ->
             TeamCountConfirmationDialog(
@@ -344,11 +384,73 @@ private fun TournamentDetailsContent(
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         Button(
             onClick = { onOpenStandings(tournament.id) },
+            enabled = !isDeleting,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(OPEN_STANDINGS_ACTION_TEST_TAG),
         ) {
             Text(text = stringResource(R.string.open_standings_action))
+        }
+        if (deletionError != null) {
+            Text(
+                text = stringResource(deletionError.toMessageRes()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(TOURNAMENT_DELETE_ERROR_TEST_TAG),
+            )
+        }
+        if (isDeleting) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TOURNAMENT_DELETE_PROGRESS_TEST_TAG),
+                horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.height(RankForgeSpacing.Medium))
+                Text(stringResource(R.string.tournament_delete_in_progress))
+            }
+        }
+        Button(
+            onClick = { showDeleteConfirmation = true },
+            enabled = !isDeleting && !showDeleteConfirmation,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TOURNAMENT_DELETE_ACTION_TEST_TAG),
+        ) {
+            Text(stringResource(R.string.tournament_delete_action))
+        }
+        if (showDeleteConfirmation && !isDeleting) {
+            AlertDialog(
+                modifier = Modifier.testTag(TOURNAMENT_DELETE_DIALOG_TEST_TAG),
+                onDismissRequest = { showDeleteConfirmation = false },
+                title = { Text(stringResource(R.string.tournament_delete_title)) },
+                text = {
+                    Text(stringResource(R.string.tournament_delete_message, tournament.name))
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteConfirmation = false },
+                        modifier = Modifier.testTag(TOURNAMENT_DELETE_CANCEL_ACTION_TEST_TAG),
+                    ) {
+                        Text(stringResource(R.string.cancel_action))
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirmation = false
+                            onDeleteTournament(tournament.id)
+                        },
+                        modifier = Modifier.testTag(TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG),
+                    ) {
+                        Text(stringResource(R.string.tournament_delete_confirm_action))
+                    }
+                },
+            )
         }
         if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -434,12 +536,26 @@ private fun TournamentDetailsContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             Button(
                 onClick = onBackToList,
+                enabled = !isDeleting,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(text = stringResource(R.string.back_to_tournament_list_action))
             }
         }
     }
+}
+
+private fun TournamentDeletionUiError.toMessageRes(): Int = when (this) {
+    TournamentDeletionUiError.TARGET_NOT_FOUND -> R.string.tournament_delete_target_not_found_error
+    TournamentDeletionUiError.AUTHENTICATION_REQUIRED -> R.string.tournament_delete_authentication_error
+    TournamentDeletionUiError.AUTHORIZATION_FAILURE -> R.string.tournament_delete_authorization_error
+    TournamentDeletionUiError.VALIDATION_FAILURE -> R.string.tournament_delete_validation_error
+    TournamentDeletionUiError.STORAGE_FAILURE -> R.string.tournament_delete_storage_error
+    TournamentDeletionUiError.REMOTE_FAILURE -> R.string.tournament_delete_remote_error
+    TournamentDeletionUiError.LOCAL_CLEANUP_FAILURE -> R.string.tournament_delete_local_cleanup_error
+    TournamentDeletionUiError.PREPARATION_FAILURE,
+    TournamentDeletionUiError.UNKNOWN,
+    -> R.string.tournament_delete_generic_error
 }
 
 private fun com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.toUiMessage(): String =

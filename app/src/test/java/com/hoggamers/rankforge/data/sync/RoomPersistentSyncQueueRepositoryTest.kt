@@ -79,5 +79,8 @@ class RoomPersistentSyncQueueRepositoryTest {
         override suspend fun updateStatus(id: String, status: String, failureCategory: String?) { entries.value = entries.value.map { if (it.id == id) it.copy(status = status, failureCategory = failureCategory) else it } }
         override suspend fun incrementAttemptCount(id: String) { entries.value = entries.value.map { if (it.id == id) it.copy(attemptCount = it.attemptCount + 1) else it } }
         override suspend fun delete(id: String) { entries.value = entries.value.filterNot { it.id == id } }
+        override suspend fun deleteByTournamentId(tournamentId: String) {
+            entries.value = entries.value.filterNot { it.tournamentId == tournamentId }
+        }
     }
 }

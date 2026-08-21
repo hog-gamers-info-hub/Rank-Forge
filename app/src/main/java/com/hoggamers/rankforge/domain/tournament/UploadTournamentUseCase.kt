@@ -17,6 +17,7 @@ class UploadTournamentUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val cloudUploadRepository: TournamentCloudUploadRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : TournamentCloudUploadAction, TournamentCloudUploadRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -39,6 +40,9 @@ class UploadTournamentUseCase @Inject constructor(
         val ownerId = (authState as? AuthState.SignedIn)?.user?.id
             ?.takeIf { it.isNotBlank() }
             ?: return TournamentCloudUploadResult.AuthenticationRequired
+        if (deletionIntentRepository.isBlocking(tournamentId)) {
+            return TournamentCloudUploadResult.ValidationFailure
+        }
 
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()

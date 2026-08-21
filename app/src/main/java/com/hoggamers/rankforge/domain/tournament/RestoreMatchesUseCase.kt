@@ -18,6 +18,7 @@ class RestoreMatchesUseCase @Inject constructor(
     private val queueRecorder: RecordSyncQueueOutcome,
     private val matchScreenshotRestorationAction: MatchScreenshotRestorationAction =
         NoOpMatchScreenshotRestorationAction,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : MatchCloudRestorationAction, MatchCloudRestorationRetryAction {
     override suspend fun invoke(
         tournamentId: String,
@@ -30,6 +31,9 @@ class RestoreMatchesUseCase @Inject constructor(
         tournamentId: String,
     ): MatchCloudRestorationResult {
         if (!isAuthenticated()) return MatchCloudRestorationResult.AuthenticationRequired
+        if (deletionIntentRepository.isBlocking(tournamentId)) {
+            return MatchCloudRestorationResult.ValidationFailure
+        }
         return when (val result = cloudRepository.readOwnedMatches(tournamentId)) {
             is MatchCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is MatchCloudRestorationRemoteResult.Success -> {

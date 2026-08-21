@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.sync
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 enum class SyncQueueOperationType {
     TOURNAMENT_UPLOAD,
@@ -25,4 +26,16 @@ data class SyncOperationIdentity(
         ): SyncOperationIdentity = SyncOperationIdentity(operationType, tournamentId)
     }
 }
-interface PersistentSyncQueueRepository { fun observeAll(): Flow<List<SyncQueueEntry>>; suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String? = null): SyncQueueEntry; suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?); suspend fun incrementAttemptCount(id: String); suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?); suspend fun markCompleted(id: String); suspend fun remove(id: String) }
+interface PersistentSyncQueueRepository {
+    fun observeAll(): Flow<List<SyncQueueEntry>>
+    suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String? = null): SyncQueueEntry
+    suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?)
+    suspend fun incrementAttemptCount(id: String)
+    suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?)
+    suspend fun markCompleted(id: String)
+    suspend fun remove(id: String)
+
+    suspend fun purgeByTournamentId(tournamentId: String) {
+        observeAll().first().filter { it.tournamentId == tournamentId }.forEach { remove(it.id) }
+    }
+}

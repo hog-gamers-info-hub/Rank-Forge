@@ -106,6 +106,7 @@ select throws_ok($$
     where id = '50000000-0000-0000-0000-000000000001'
 $$, '23503', null, 'match rejects an invalid finalized_by reference');
 select throws_ok($$
+    set constraints match_results_team_slot_id_fkey immediate;
     delete from public.tournament_team_slots where id = '30000000-0000-0000-0000-000000000001'
 $$, '23503', null, 'referenced team slot cannot be deleted');
 
