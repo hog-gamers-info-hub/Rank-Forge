@@ -21,11 +21,15 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.LocalDate
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -34,6 +38,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -123,6 +128,608 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 2) != null)
         assertEquals(2, viewModel.uiState.value.pendingCropNavigationSlotIndex)
         assertTrue(viewModel.uiState.value.slot(2)?.hasLinkedAsset == true)
+    }
+
+    @Test
+    fun multiSelectionCapturesEmptySlotsAndMapsThreeUrisInPickerOrder() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-batch-three").toFile()),
+            bytesByUri = mapOf("one" to byteArrayOf(1), "two" to byteArrayOf(2), "three" to byteArrayOf(3)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        assertEquals(listOf(1, 2, 3), viewModel.uiState.value.multiPhotoPickerRequest?.targetSlotIndices)
+        viewModel.onMultiPhotoPickerResult(listOf("one", "two", "three"))
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 2, 3), lobbyRepository.snapshot().map { it.lobbyScreenshotIndex }.sorted())
+        assertEquals(
+            MatchLobbyScreenshotCropBatch(1, listOf(2, 3)),
+            viewModel.uiState.value.pendingCropBatch,
+        )
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun multiSelectionTruncatesAtTwoUrisAndSkipsOccupiedSlot() = runTest {
+        val preserver = preserver(Files.createTempDirectory("lobby-batch-skip").toFile())
+        val viewModel = viewModel(
+            preserver,
+            bytesByUri = mapOf("existing" to byteArrayOf(0), "two" to byteArrayOf(2), "three" to byteArrayOf(3)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("existing")
+        advanceUntilIdle()
+        viewModel.onCropNavigationHandled()
+
+        viewModel.requestMultiPhotoPicker()
+        assertEquals(listOf(2, 3), viewModel.uiState.value.multiPhotoPickerRequest?.targetSlotIndices)
+        viewModel.onMultiPhotoPickerResult(listOf("two", "three", "ignored"))
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 2, 3), lobbyRepository.snapshot().map { it.lobbyScreenshotIndex }.sorted())
+        assertEquals(MatchLobbyScreenshotCropBatch(2, listOf(3)), viewModel.uiState.value.pendingCropBatch)
+        assertEquals(2, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun failedBatchCandidateIsExcludedAndOnlyFirstSuccessfulItemNavigates() = runTest {
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "bad") ImageCandidateReadResult.Metadata("image/gif", 100, 100)
+                else ImageCandidateReadResult.Metadata("image/png", 100, 100)
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-batch-failure").toFile()),
+            validator = validator,
+            bytesByUri = mapOf("one" to byteArrayOf(1), "bad" to byteArrayOf(2), "three" to byteArrayOf(3)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "bad", "three"))
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 3), lobbyRepository.snapshot().map { it.lobbyScreenshotIndex }.sorted())
+        assertEquals(MatchLobbyScreenshotCropBatch(1, listOf(3)), viewModel.uiState.value.pendingCropBatch)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun successfulLobbyCropConfirmationAdvancesOrderedBatchAndClearsAfterLast() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-crop-confirm-batch").toFile()),
+            bytesByUri = mapOf(
+                "one" to byteArrayOf(1),
+                "two" to byteArrayOf(2),
+                "three" to byteArrayOf(3),
+            ),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "two", "three"))
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.onCropConfirmed(tournamentId, matchId, 1))
+        assertEquals(MatchLobbyScreenshotCropBatch(2, listOf(3)), viewModel.uiState.value.pendingCropBatch)
+        assertEquals(3, viewModel.onCropConfirmed(tournamentId, matchId, 2))
+        assertEquals(MatchLobbyScreenshotCropBatch(3, emptyList()), viewModel.uiState.value.pendingCropBatch)
+        assertNull(viewModel.onCropConfirmed(tournamentId, matchId, 3))
+        assertNull(viewModel.uiState.value.pendingCropBatch)
+    }
+
+    @Test
+    fun lobbyCropCancelClearsBatchAndManualCropDoesNotResumeIt() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-crop-cancel-batch").toFile()),
+            bytesByUri = mapOf("one" to byteArrayOf(1), "two" to byteArrayOf(2)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "two"))
+        advanceUntilIdle()
+
+        viewModel.cancelCropBatch(tournamentId, matchId)
+        assertNull(viewModel.uiState.value.pendingCropBatch)
+        assertNull(viewModel.onCropConfirmed(tournamentId, matchId, 1))
+    }
+
+    @Test
+    fun singleLobbyBatchConfirmationReturnsToReviewAndClearsBatch() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-single-crop-confirm").toFile()),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("picked"))
+        advanceUntilIdle()
+
+        assertNull(viewModel.onCropConfirmed(tournamentId, matchId, 1))
+        assertNull(viewModel.uiState.value.pendingCropBatch)
+    }
+
+    @Test
+    fun cancelledBatchClearsRequestAndDoesNotNavigate() = runTest {
+        val viewModel = viewModel(preserver(Files.createTempDirectory("lobby-batch-cancel").toFile()))
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(emptyList())
+
+        assertEquals(null, viewModel.uiState.value.multiPhotoPickerRequest)
+        assertEquals(null, viewModel.uiState.value.pendingCropBatch)
+        assertEquals(null, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun individualReplacementClearsAnOlderPendingBatch() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-batch-replacement").toFile()),
+            bytesByUri = mapOf("first" to byteArrayOf(1), "replacement" to byteArrayOf(2)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("first"))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.pendingCropBatch != null)
+
+        viewModel.requestPhotoPicker(1)
+
+        assertEquals(null, viewModel.uiState.value.pendingCropBatch)
+        assertTrue(viewModel.uiState.value.slot(1)?.isPhotoPickerRequestActive == true)
+    }
+
+    @Test
+    fun cancellingLobbyBatchMidValidationClearsOldFlagsAndKeepsReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "mid") {
+                    started.complete(Unit)
+                    release.await()
+                }
+                ImageCandidateReadResult.Metadata("image/png", 100, 100)
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-cancel-validation").toFile()),
+            validator = validator,
+            bytesByUri = mapOf("one" to byteArrayOf(1), "mid" to byteArrayOf(2), "three" to byteArrayOf(3)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "mid", "three"))
+        advanceUntilIdle()
+
+        assertTrue(started.isCompleted)
+        assertTrue(viewModel.uiState.value.slot(2)?.isValidationInProgress == true)
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+
+        viewModel.requestPhotoPicker(2)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.slot(2)?.isPhotoPickerRequestActive == true)
+        assertFalse(viewModel.uiState.value.slot(2)?.isValidationInProgress == true)
+        assertFalse(viewModel.uiState.value.slot(3)?.isBusy == true)
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+    }
+
+    @Test
+    fun cancellingLobbyBatchMidPreservationClearsOldFlagsAndKeepsReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var ownerCalls = 0
+        val ownerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String {
+                ownerCalls++
+                if (ownerCalls == 2) {
+                    started.complete(Unit)
+                    release.await()
+                }
+                return "owner-1"
+            }
+        }
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-cancel-preservation").toFile()),
+            ownerProvider = ownerProvider,
+            bytesByUri = mapOf("one" to byteArrayOf(1), "mid" to byteArrayOf(2), "three" to byteArrayOf(3)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "mid", "three"))
+        advanceUntilIdle()
+
+        assertTrue(started.isCompleted)
+        assertTrue(viewModel.uiState.value.slot(2)?.isPreservationInProgress == true)
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+
+        viewModel.requestPhotoPicker(2)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.slot(2)?.isPhotoPickerRequestActive == true)
+        assertFalse(viewModel.uiState.value.slot(2)?.isPreservationInProgress == true)
+        assertFalse(viewModel.uiState.value.slot(3)?.isBusy == true)
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+    }
+
+    @Test
+    fun lateLobbyBatchCompletionCannotMutateReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "late") {
+                    started.complete(Unit)
+                    try {
+                        release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { release.await() }
+                    }
+                }
+                ImageCandidateReadResult.Metadata("image/png", 100, 100)
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-late-completion").toFile()),
+            validator = validator,
+            bytesByUri = mapOf("one" to byteArrayOf(1), "late" to byteArrayOf(2)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "late"))
+        advanceUntilIdle()
+        assertTrue(started.isCompleted)
+
+        viewModel.requestPhotoPicker(2)
+        assertTrue(viewModel.uiState.value.slot(2)?.isPhotoPickerRequestActive == true)
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.slot(2)?.isPhotoPickerRequestActive == true)
+        assertFalse(lobbyRepository.readByMatchAndIndex(matchId, 2) != null)
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+    }
+
+    @Test
+    fun lateInvalidValidationFromCancelledBatchIsIgnoredAndReplacementStateRemainsUnchanged() = runTest {
+        val oldStarted = CompletableDeferred<Unit>()
+        val oldRelease = CompletableDeferred<Unit>()
+        val replacementStarted = CompletableDeferred<Unit>()
+        val replacementRelease = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                when (uri) {
+                    "late-invalid" -> {
+                        oldStarted.complete(Unit)
+                        try {
+                            oldRelease.await()
+                        } catch (_: CancellationException) {
+                            withContext(NonCancellable) { oldRelease.await() }
+                        }
+                        ImageCandidateReadResult.Metadata("image/gif", 100, 100)
+                    }
+                    "replacement" -> {
+                        replacementStarted.complete(Unit)
+                        replacementRelease.await()
+                        ImageCandidateReadResult.Metadata("image/png", 100, 100)
+                    }
+                    else -> ImageCandidateReadResult.Metadata("image/png", 100, 100)
+                }
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-late-invalid").toFile()),
+            validator = validator,
+            bytesByUri = mapOf(
+                "first" to byteArrayOf(1),
+                "late-invalid" to byteArrayOf(2),
+                "replacement" to byteArrayOf(3),
+            ),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("first", "late-invalid"))
+        advanceUntilIdle()
+        assertTrue(oldStarted.isCompleted)
+
+        viewModel.requestPhotoPicker(2)
+        viewModel.onPhotoPickerResult("replacement")
+        advanceUntilIdle()
+        assertTrue(replacementStarted.isCompleted)
+
+        val beforeLateCompletion = viewModel.uiState.value.slot(2)!!
+        assertTrue(beforeLateCompletion.isValidationInProgress)
+        assertNull(beforeLateCompletion.imageValidationError)
+
+        oldRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val afterLateCompletion = viewModel.uiState.value.slot(2)!!
+        assertTrue(afterLateCompletion.isValidationInProgress)
+        assertNull(afterLateCompletion.imageValidationError)
+
+        replacementRelease.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.slot(2)?.hasLinkedAsset == true)
+    }
+
+    @Test
+    fun lateOwnerFailureFromCancelledBatchCannotClearOrOverwriteNewerOperation() = runTest {
+        val oldStarted = CompletableDeferred<Unit>()
+        val oldRelease = CompletableDeferred<Unit>()
+        val replacementStarted = CompletableDeferred<Unit>()
+        val replacementRelease = CompletableDeferred<Unit>()
+        var ownerCalls = 0
+        val ownerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String? {
+                ownerCalls += 1
+                return when (ownerCalls) {
+                    2 -> {
+                        oldStarted.complete(Unit)
+                        try {
+                            oldRelease.await()
+                        } catch (_: CancellationException) {
+                            withContext(NonCancellable) { oldRelease.await() }
+                        }
+                        null
+                    }
+                    3 -> {
+                        replacementStarted.complete(Unit)
+                        replacementRelease.await()
+                        "owner-1"
+                    }
+                    else -> "owner-1"
+                }
+            }
+        }
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-late-owner").toFile()),
+            ownerProvider = ownerProvider,
+            bytesByUri = mapOf(
+                "first" to byteArrayOf(1),
+                "late-owner" to byteArrayOf(2),
+                "replacement" to byteArrayOf(3),
+            ),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("first", "late-owner"))
+        advanceUntilIdle()
+        assertTrue(oldStarted.isCompleted)
+
+        viewModel.requestPhotoPicker(2)
+        viewModel.onPhotoPickerResult("replacement")
+        advanceUntilIdle()
+        assertTrue(replacementStarted.isCompleted)
+
+        oldRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val afterLateCompletion = viewModel.uiState.value.slot(2)!!
+        assertTrue(afterLateCompletion.isPreservationInProgress)
+        assertNull(afterLateCompletion.preservationError)
+
+        replacementRelease.complete(Unit)
+        advanceUntilIdle()
+        val completedReplacement = viewModel.uiState.value.slot(2)!!
+        assertTrue(completedReplacement.hasLinkedAsset)
+        assertNull(completedReplacement.preservationError)
+    }
+
+    @Test
+    fun currentGenerationInvalidValidationStillReportsCorrectError() = runTest {
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "bad") {
+                    ImageCandidateReadResult.Metadata("image/gif", 100, 100)
+                } else {
+                    ImageCandidateReadResult.Metadata("image/png", 100, 100)
+                }
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-current-invalid").toFile()),
+            validator = validator,
+            bytesByUri = mapOf("bad" to byteArrayOf(1)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("bad")
+        advanceUntilIdle()
+
+        val slot = viewModel.uiState.value.slot(1)!!
+        assertEquals(ImageValidationError.UNSUPPORTED_FORMAT, slot.imageValidationError)
+        assertFalse(slot.isBusy)
+    }
+
+    @Test
+    fun currentGenerationOwnerFailureStillReportsCorrectError() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-current-owner-failure").toFile()),
+            ownerProvider = object : ScreenshotOwnerProvider {
+                override suspend fun currentOwnerUserId(): String? = null
+            },
+            bytesByUri = mapOf("owner-failure" to byteArrayOf(1)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("owner-failure")
+        advanceUntilIdle()
+
+        val slot = viewModel.uiState.value.slot(1)!!
+        assertEquals(MatchLobbyScreenshotPreservationError.OWNER_MISSING, slot.preservationError)
+        assertFalse(slot.isBusy)
+        assertFalse(slot.hasLinkedAsset)
+        assertNull(lobbyRepository.readByMatchAndIndex(matchId, 1))
+    }
+
+    @Test
+    fun staleDuplicateFingerprintCleanupCompletionIsIgnoredAndCannotMutateReplacementState() = runTest {
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val cleanupRelease = CompletableDeferred<Unit>()
+        val replacementStarted = CompletableDeferred<Unit>()
+        val replacementRelease = CompletableDeferred<Unit>()
+        val operations = TestFileOperations(
+            gateListFilesCall = 3,
+            gateStarted = cleanupStarted,
+            gateRelease = cleanupRelease,
+        )
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "replacement") {
+                    replacementStarted.complete(Unit)
+                    replacementRelease.await()
+                }
+                ImageCandidateReadResult.Metadata("image/png", 100, 100)
+            },
+        )
+        val viewModel = viewModel(
+            preserver(
+                Files.createTempDirectory("lobby-stale-cleanup").toFile(),
+                operations = operations,
+                ioDispatcher = Dispatchers.IO,
+            ),
+            validator = validator,
+            bytesByUri = mapOf(
+                "first" to byteArrayOf(1),
+                "duplicate" to byteArrayOf(2),
+                "replacement" to byteArrayOf(3),
+            ),
+        )
+        lobbyRepository.saveResults += MatchLobbyScreenshotAssetSaveResult.Saved
+        lobbyRepository.saveResults += MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(
+            existing = asset(2, matchId, "screenshots/existing.png", "existing"),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("first", "duplicate"))
+        advanceUntilIdle()
+        cleanupStarted.await()
+
+        viewModel.requestPhotoPicker(2)
+        viewModel.onPhotoPickerResult("replacement")
+        advanceUntilIdle()
+        assertTrue(replacementStarted.isCompleted)
+
+        val beforeLateCleanup = viewModel.uiState.value.slot(2)!!
+        assertTrue(beforeLateCleanup.isValidationInProgress)
+        assertNull(beforeLateCleanup.preservationError)
+
+        cleanupRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val afterLateCleanup = viewModel.uiState.value.slot(2)!!
+        assertTrue(afterLateCleanup.isValidationInProgress)
+        assertNull(afterLateCleanup.preservationError)
+
+        replacementRelease.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun currentGenerationDuplicateFingerprintCleanupStillReportsSaveFailure() = runTest {
+        val viewModel = viewModel(
+            preserver(
+                Files.createTempDirectory("lobby-current-cleanup").toFile(),
+                operations = TestFileOperations(failDelete = true),
+            ),
+            bytesByUri = mapOf("duplicate" to byteArrayOf(1)),
+        )
+        lobbyRepository.saveResults += MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(
+            existing = asset(1, matchId, "screenshots/existing.png", "existing"),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("duplicate")
+        advanceUntilIdle()
+
+        val slot = viewModel.uiState.value.slot(1)!!
+        assertEquals(MatchLobbyScreenshotPreservationError.SAVE_FAILED, slot.preservationError)
+        assertFalse(slot.isBusy)
+        assertFalse(slot.hasLinkedAsset)
+    }
+
+    @Test
+    fun loadingAnotherLobbyMatchClearsActiveBatchStateAndIgnoresLateCompletion() = runTest {
+        val otherMatchId = "lobby-other-match"
+        tournamentRepository.createDraftMatch(
+            Match(
+                id = otherMatchId,
+                tournamentId = tournamentId,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 8, 13),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "mid") {
+                    started.complete(Unit)
+                    try {
+                        release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { release.await() }
+                    }
+                }
+                ImageCandidateReadResult.Metadata("image/png", 100, 100)
+            },
+        )
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-match-change").toFile()),
+            validator = validator,
+            bytesByUri = mapOf("one" to byteArrayOf(1), "mid" to byteArrayOf(2)),
+        )
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("one", "mid"))
+        advanceUntilIdle()
+        assertTrue(started.isCompleted)
+
+        viewModel.load(tournamentId, otherMatchId)
+        advanceUntilIdle()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(otherMatchId, viewModel.uiState.value.matchId)
+        assertFalse(viewModel.uiState.value.slots.any { it.isBusy })
+        assertEquals(null, viewModel.uiState.value.multiPhotoPickerRequest)
+        assertEquals(null, viewModel.uiState.value.pendingCropBatch)
+        assertEquals(null, viewModel.uiState.value.pendingCropNavigationSlotIndex)
     }
 
     @Test
@@ -450,6 +1057,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         validator: ImageCandidateValidator = ImageCandidateValidator(ImageCandidateMetadataReader { ImageCandidateReadResult.Metadata("image/png", 100, 100) }),
         cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
         bytesByUri: Map<String, ByteArray> = mapOf("picked" to byteArrayOf(1, 2, 3)),
+        ownerProvider: ScreenshotOwnerProvider? = null,
     ) = MatchLobbyScreenshotIntakeViewModel(
         observeMatches = ObserveMatchesUseCase(tournamentRepository),
         imageCandidateValidator = validator,
@@ -462,7 +1070,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         ),
         localImagePreserver = preserver,
         assetRepository = lobbyRepository,
-        screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+        screenshotOwnerProvider = ownerProvider ?: object : ScreenshotOwnerProvider {
             override suspend fun currentOwnerUserId(): String = "owner-1"
         },
         clock = java.time.Clock.systemUTC(),
@@ -480,12 +1088,54 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         cloudDataSource = cloudDataSource,
     )
 
-    private fun preserver(root: java.io.File) = LocalImagePreserver(
+    private fun preserver(
+        root: java.io.File,
+        operations: LocalImageFileOperations = TestFileOperations(),
+        ioDispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+    ) = LocalImagePreserver(
         appPrivateRoot = root,
         sourceStreamOpener = ImageSourceStreamOpener { byteArrayOf(1, 2, 3).inputStream() },
         mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
-        ioDispatcher = Dispatchers.Unconfined,
+        fileOperations = operations,
+        ioDispatcher = ioDispatcher,
     )
+
+    private class TestFileOperations(
+        private val failDelete: Boolean = false,
+        private val gateListFilesCall: Int? = null,
+        private val gateStarted: CompletableDeferred<Unit>? = null,
+        private val gateRelease: CompletableDeferred<Unit>? = null,
+    ) : LocalImageFileOperations {
+        private var listFilesCalls = 0
+
+        override fun ensureDirectory(directory: java.io.File): Boolean =
+            directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+
+        override fun createTempFile(directory: java.io.File): java.io.File =
+            java.io.File.createTempFile("original-", ".tmp", directory)
+
+        override fun openOutput(file: java.io.File): java.io.OutputStream =
+            java.io.FileOutputStream(file)
+
+        override fun atomicMove(source: java.io.File, target: java.io.File): Boolean {
+            if (target.exists()) target.delete()
+            return source.renameTo(target)
+        }
+
+        override fun listFiles(directory: java.io.File): List<java.io.File>? {
+            listFilesCalls += 1
+            if (listFilesCalls == gateListFilesCall) {
+                gateStarted?.complete(Unit)
+                gateRelease?.let { release ->
+                    kotlinx.coroutines.runBlocking { release.await() }
+                }
+            }
+            return if (!directory.exists()) emptyList() else directory.listFiles()?.toList()
+        }
+
+        override fun delete(file: java.io.File): Boolean =
+            if (failDelete) false else !file.exists() || file.delete()
+    }
 
     private fun asset(index: Int, assetMatchId: String, path: String, sha: String) = MatchLobbyScreenshotAssetEntity(
         tournamentId = tournamentId,
@@ -518,6 +1168,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
     private class FakeLobbyRepository : MatchLobbyScreenshotAssetRepository {
         private val state = MutableStateFlow<List<MatchLobbyScreenshotAssetEntity>>(emptyList())
+        val saveResults = mutableListOf<MatchLobbyScreenshotAssetSaveResult>()
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.filter { asset -> asset.matchId == matchId }) } } }
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> =
@@ -525,7 +1176,13 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity) = state.value.firstOrNull { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = state.asStateFlow()
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = state.value.firstOrNull { it.tournamentId == identity.tournamentId && it.sha256 == sha256 && !(it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex) }
-        override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult { state.value = state.value.filterNot { it.matchId == asset.matchId && it.lobbyScreenshotIndex == asset.lobbyScreenshotIndex } + asset; return MatchLobbyScreenshotAssetSaveResult.Saved }
+        override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult {
+            val result = saveResults.removeFirstOrNull() ?: MatchLobbyScreenshotAssetSaveResult.Saved
+            if (result == MatchLobbyScreenshotAssetSaveResult.Saved) {
+                state.value = state.value.filterNot { it.matchId == asset.matchId && it.lobbyScreenshotIndex == asset.lobbyScreenshotIndex } + asset
+            }
+            return result
+        }
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) { state.value = state.value.filterNot { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex } }

@@ -89,6 +89,10 @@ fun MatchLobbyScreenshotIntakeRoute(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { viewModel.onPhotoPickerResult(it?.toString()) },
     )
+    val multiPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 3),
+        onResult = { uris -> viewModel.onMultiPhotoPickerResult(uris.map { it.toString() }) },
+    )
     uiState.slots.firstOrNull { it.isPhotoPickerLaunchPending }?.let { slot ->
         LaunchedEffect(slot.index, slot.isPhotoPickerLaunchPending) {
             viewModel.onPhotoPickerLaunchHandled(slot.index)
@@ -99,9 +103,22 @@ fun MatchLobbyScreenshotIntakeRoute(
             }
         }
     }
+    val multiPickerRequest = uiState.multiPhotoPickerRequest
+    LaunchedEffect(multiPickerRequest?.requestId, multiPickerRequest?.isLaunchPending) {
+        val request = multiPickerRequest?.takeIf { it.isLaunchPending } ?: return@LaunchedEffect
+        viewModel.onMultiPhotoPickerLaunchHandled(request.requestId)
+        try {
+            multiPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        } catch (_: Exception) {
+            viewModel.onMultiPhotoPickerLaunchFailed(request.requestId)
+        }
+    }
     MatchLobbyScreenshotIntakeScreen(
         uiState = uiState,
         onSelect = viewModel::requestPhotoPicker,
+        onSelectBatch = viewModel::requestMultiPhotoPicker,
         onCrop = viewModel::requestCropEditor,
         onRemove = viewModel::removeScreenshot,
         onSaveLobbyForNextMatches = viewModel::saveLobbyForNextMatches,
@@ -116,6 +133,7 @@ fun MatchLobbyScreenshotIntakeRoute(
 fun MatchLobbyScreenshotIntakeScreen(
     uiState: MatchLobbyScreenshotIntakeUiState,
     onSelect: (Int) -> Unit,
+    onSelectBatch: (() -> Unit)? = null,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     onSaveLobbyForNextMatches: () -> Unit = {},
@@ -197,7 +215,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 activeSlotIndex = slot.index
                                 scope.launch { pagerState.animateScrollToPage(targetPage) }
                             } else if (!hasSelection) {
-                                onSelect(slot.index)
+                                (onSelectBatch ?: { onSelect(slot.index) })()
                             }
                             Unit
                         }
@@ -235,6 +253,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             isFinalized = uiState.isFinalized,
                             isAvailable = uiState.isAvailable,
                             onSelect = onSelect,
+                            onSelectBatch = onSelectBatch,
                             onCrop = onCrop,
                             onRemove = onRemove,
                         )
@@ -248,7 +267,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                     .minByOrNull { it.index }
                     ?.let { nextEmptySlot ->
                         Button(
-                            onClick = { onSelect(nextEmptySlot.index) },
+                            onClick = { (onSelectBatch ?: { onSelect(nextEmptySlot.index) })() },
                             enabled = uiState.isAvailable &&
                                 !uiState.isFinalized &&
                                 !nextEmptySlot.isBusy,
@@ -276,6 +295,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         isFinalized = uiState.isFinalized,
                         isAvailable = uiState.isAvailable,
                         onSelect = onSelect,
+                        onSelectBatch = onSelectBatch,
                         onCrop = onCrop,
                         onRemove = onRemove,
                         compactActions = compactActions,
@@ -430,6 +450,7 @@ private fun LobbyScreenshotDetail(
     isFinalized: Boolean,
     isAvailable: Boolean,
     onSelect: (Int) -> Unit,
+    onSelectBatch: (() -> Unit)?,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
 ) {
@@ -499,6 +520,7 @@ private fun LobbyScreenshotDetail(
                 isFinalized = isFinalized,
                 isAvailable = isAvailable,
                 onSelect = onSelect,
+                onSelectBatch = onSelectBatch,
                 onCrop = onCrop,
                 onRemove = onRemove,
                 compactActions = true,
@@ -593,11 +615,12 @@ private fun LobbyScreenshotActions(
     isFinalized: Boolean,
     isAvailable: Boolean,
     onSelect: (Int) -> Unit,
+    onSelectBatch: (() -> Unit)?,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     compactActions: Boolean,
 ) {
-    if (slot.hasLinkedAsset && !slot.isLocalFileMissing) {
+    if (slot.hasLinkedAsset) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -626,7 +649,7 @@ private fun LobbyScreenshotActions(
         }
     } else {
         Button(
-            onClick = { onSelect(slot.index) },
+            onClick = { (onSelectBatch ?: { onSelect(slot.index) })() },
             enabled = isAvailable && !isFinalized && !slot.isBusy,
             modifier = Modifier
                 .fillMaxWidth()

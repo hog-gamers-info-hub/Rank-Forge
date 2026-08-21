@@ -107,6 +107,7 @@ fun RankForgeNavHost(
         }
     },
     matchLobbyScreenshotIntakeViewModelProvider: (@Composable (String, String) -> MatchLobbyScreenshotIntakeViewModel)? = null,
+    matchLobbyScreenshotIntakeViewModelFactory: ((String, String) -> MatchLobbyScreenshotIntakeViewModel)? = null,
     matchCreationViewModelFactory: ((String) -> MatchCreationViewModel)? = null,
     matchPlacementViewModelFactory: ((String, String) -> MatchPlacementViewModel)? = null,
     matchKillViewModelFactory: ((String, String) -> MatchKillViewModel)? = null,
@@ -638,10 +639,14 @@ fun RankForgeNavHost(
                     ),
                 )
             }
-            val lobbyScreenshotIntakeViewModel = matchLobbyScreenshotIntakeViewModelProvider?.invoke(
-                destination.tournamentId,
-                destination.matchId,
-            )
+            val lobbyScreenshotIntakeViewModel =
+                matchLobbyScreenshotIntakeViewModelFactory?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                ) ?: matchLobbyScreenshotIntakeViewModelProvider?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                )
             val matchLobbyScreenshotIntake = @Composable {
                 matchLobbyScreenshotIntakeContent(
                     destination.tournamentId,
@@ -699,8 +704,19 @@ fun RankForgeNavHost(
         }
         composable<MatchLobbyScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchLobbyScreenshotCropDestination>()
+            val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+            val lobbyBatchViewModel = remember(destination.tournamentId, destination.matchId) {
+                matchLobbyScreenshotIntakeViewModelFactory?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                )
+            } ?: matchLobbyScreenshotIntakeViewModelProvider?.let {
+                hiltViewModel<MatchLobbyScreenshotIntakeViewModel>(
+                    navController.getBackStackEntry(reviewDestination),
+                )
+            }
             val onBackToReview: () -> Unit = {
-                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+                lobbyBatchViewModel?.cancelCropBatch(destination.tournamentId, destination.matchId)
                 if (!navController.popBackStack(reviewDestination, inclusive = false)) {
                     navController.navigate(reviewDestination) {
                         popUpTo(
@@ -715,6 +731,26 @@ fun RankForgeNavHost(
                     }
                 }
             }
+            val onConfirmed: () -> Unit = {
+                val nextIndex = lobbyBatchViewModel?.onCropConfirmed(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    index = destination.lobbyScreenshotIndex,
+                )
+                if (nextIndex == null) {
+                    onBackToReview()
+                } else {
+                    navController.navigate(
+                        MatchLobbyScreenshotCropDestination(
+                            tournamentId = destination.tournamentId,
+                            matchId = destination.matchId,
+                            lobbyScreenshotIndex = nextIndex,
+                        ),
+                    ) {
+                        popUpTo(backStackEntry.destination.id) { inclusive = true }
+                    }
+                }
+            }
             val cropViewModel = matchLobbyScreenshotCropViewModelFactory?.invoke(
                 destination.tournamentId,
                 destination.matchId,
@@ -726,7 +762,7 @@ fun RankForgeNavHost(
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
                     onCancel = onBackToReview,
-                    onConfirmed = onBackToReview,
+                    onConfirmed = onConfirmed,
                 )
             } else {
                 MatchLobbyScreenshotCropRoute(
@@ -734,16 +770,25 @@ fun RankForgeNavHost(
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
                     onCancel = onBackToReview,
-                    onConfirmed = onBackToReview,
+                    onConfirmed = onConfirmed,
                     viewModel = cropViewModel,
                 )
             }
         }
         composable<MatchResultScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchResultScreenshotCropDestination>()
+            val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+            val reviewBatchViewModel = remember(destination.tournamentId, destination.matchId) {
+                matchReviewViewModelFactory?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                )
+            } ?: hiltViewModel<MatchReviewViewModel>(
+                navController.getBackStackEntry(reviewDestination),
+            )
             val cropViewModel = matchResultScreenshotCropViewModelFactory?.invoke()
             val onBackToReview: () -> Unit = {
-                val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
+                reviewBatchViewModel.cancelResultCropBatch(destination.tournamentId, destination.matchId)
                 if (!navController.popBackStack(reviewDestination, inclusive = false)) {
                     navController.navigate(reviewDestination) {
                         popUpTo(
@@ -758,13 +803,38 @@ fun RankForgeNavHost(
                     }
                 }
             }
+            val onConfirmed: () -> Unit = {
+                val role = runCatching {
+                    MatchResultScreenshotRole.valueOf(destination.screenshotRole)
+                }.getOrNull()
+                val nextRole = role?.let {
+                    reviewBatchViewModel.onResultCropConfirmed(
+                        tournamentId = destination.tournamentId,
+                        matchId = destination.matchId,
+                        role = it,
+                    )
+                }
+                if (nextRole == null) {
+                    onBackToReview()
+                } else {
+                    navController.navigate(
+                        MatchResultScreenshotCropDestination(
+                            tournamentId = destination.tournamentId,
+                            matchId = destination.matchId,
+                            screenshotRole = nextRole.name,
+                        ),
+                    ) {
+                        popUpTo(backStackEntry.destination.id) { inclusive = true }
+                    }
+                }
+            }
             if (cropViewModel == null) {
                 MatchResultScreenshotCropRoute(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
                     onCancel = onBackToReview,
-                    onConfirmed = onBackToReview,
+                    onConfirmed = onConfirmed,
                 )
             } else {
                 MatchResultScreenshotCropRoute(
@@ -772,7 +842,7 @@ fun RankForgeNavHost(
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
                     onCancel = onBackToReview,
-                    onConfirmed = onBackToReview,
+                    onConfirmed = onConfirmed,
                     viewModel = cropViewModel,
                 )
             }
