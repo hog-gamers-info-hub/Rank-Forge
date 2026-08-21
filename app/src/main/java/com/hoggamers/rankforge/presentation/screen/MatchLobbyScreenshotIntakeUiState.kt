@@ -64,6 +64,17 @@ data class MatchLobbyScreenshotSlotUiState(
             isPreservationInProgress
 }
 
+data class MatchLobbyScreenshotCropBatch(
+    val currentSlotIndex: Int,
+    val remainingSlotIndices: List<Int>,
+)
+
+data class MatchLobbyScreenshotMultiPhotoPickerRequest(
+    val requestId: Long,
+    val targetSlotIndices: List<Int>,
+    val isLaunchPending: Boolean = true,
+)
+
 data class MatchLobbyScreenshotIntakeUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -72,6 +83,8 @@ data class MatchLobbyScreenshotIntakeUiState(
     val status: MatchStatus? = null,
     val slots: List<MatchLobbyScreenshotSlotUiState> = defaultMatchLobbyScreenshotSlots(),
     val pendingCropNavigationSlotIndex: Int? = null,
+    val pendingCropBatch: MatchLobbyScreenshotCropBatch? = null,
+    val multiPhotoPickerRequest: MatchLobbyScreenshotMultiPhotoPickerRequest? = null,
     val intakeError: MatchLobbyScreenshotIntakeError? = null,
     val isLobbyTemplateMutationInProgress: Boolean = false,
     val isLobbySavedForNextMatches: Boolean = false,

@@ -245,6 +245,10 @@ fun MatchReviewRoute(
             )
         },
     )
+    val resultScreenshotMultiPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 2),
+        onResult = { uris -> viewModel.onMultiPhotoPickerResult(uris.map { it.toString() }) },
+    )
     val pdfDestinationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf"),
         onResult = viewModel::onDestinationResult,
@@ -289,6 +293,23 @@ fun MatchReviewRoute(
             } catch (_: Exception) {
                 viewModel.onPhotoPickerLaunchFailed(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
             }
+        }
+    }
+    val resultScreenshotMultiPickerRequest = uiState.resultScreenshotMultiPhotoPickerRequest
+    LaunchedEffect(
+        resultScreenshotMultiPickerRequest?.requestId,
+        resultScreenshotMultiPickerRequest?.isLaunchPending,
+    ) {
+        val request = resultScreenshotMultiPickerRequest
+            ?.takeIf { it.isLaunchPending }
+            ?: return@LaunchedEffect
+        viewModel.onMultiPhotoPickerLaunchHandled(request.requestId)
+        try {
+            resultScreenshotMultiPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        } catch (_: Exception) {
+            viewModel.onMultiPhotoPickerLaunchFailed(request.requestId)
         }
     }
     val destinationRequest = uiState.resultDownloadUiState as?
@@ -383,7 +404,9 @@ fun MatchReviewRoute(
         onFinalize = viewModel::finalizeMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
         onSelectResultScreenshot = viewModel::requestPhotoPicker,
+        onSelectResultScreenshotBatch = viewModel::requestMultiPhotoPicker,
         onOpenResultScreenshotCrop = { role ->
+            viewModel.cancelResultCropBatch(tournamentId, matchId)
             onOpenResultScreenshotCrop(tournamentId, matchId, role)
         },
         onLinkScreenshot = viewModel::linkScreenshot,
@@ -430,6 +453,7 @@ fun MatchReviewScreen(
     onFinalize: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    onSelectResultScreenshotBatch: (() -> Unit)? = null,
     onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit = {},
     onLinkScreenshot: () -> Unit = {},
     onUnlinkScreenshot: () -> Unit = {},
@@ -475,6 +499,7 @@ fun MatchReviewScreen(
             onFinalize = onFinalize,
             onSelectScreenshot = onSelectScreenshot,
             onSelectResultScreenshot = onSelectResultScreenshot,
+            onSelectResultScreenshotBatch = onSelectResultScreenshotBatch,
             onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
             onLinkScreenshot = onLinkScreenshot,
             onUnlinkScreenshot = onUnlinkScreenshot,
@@ -517,6 +542,7 @@ private fun MatchReviewContent(
     onFinalize: () -> Unit,
     onSelectScreenshot: () -> Unit,
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onSelectResultScreenshotBatch: (() -> Unit)?,
     onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit,
     onLinkScreenshot: () -> Unit,
     onUnlinkScreenshot: () -> Unit,
@@ -671,6 +697,7 @@ private fun MatchReviewContent(
             resultScreenshots = uiState.resultScreenshots,
             isEditable = uiState.isEditable,
             onSelectScreenshot = onSelectResultScreenshot,
+            onSelectBatch = onSelectResultScreenshotBatch,
             onOpenCrop = onOpenResultScreenshotCrop,
             onRemoveScreenshot = onRemoveResultScreenshot,
         )
@@ -1578,6 +1605,7 @@ private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onSelectBatch: (() -> Unit)?,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
 ) {
@@ -1649,7 +1677,7 @@ private fun ResultScreenshotSelector(
             val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
             val slot = resultScreenshots.slot(role)
             Button(
-                onClick = { onSelectScreenshot(role) },
+                onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
                 enabled = isEditable && !slot.isBusy,
                 modifier = Modifier
                     .fillMaxWidth()

@@ -133,6 +133,17 @@ data class MatchResultScreenshotSlotUiState(
             isUploadInProgress
 }
 
+data class MatchResultScreenshotCropBatch(
+    val currentRole: MatchResultScreenshotRole,
+    val remainingRoles: List<MatchResultScreenshotRole>,
+)
+
+data class MatchResultScreenshotMultiPhotoPickerRequest(
+    val requestId: Long,
+    val targetRoles: List<MatchResultScreenshotRole>,
+    val isLaunchPending: Boolean = true,
+)
+
 data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
@@ -177,6 +188,8 @@ data class MatchReviewUiState(
     val screenshotUploadObjectPath: String? = null,
     val screenshotUploadError: ScreenshotUploadError? = null,
     val resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
+    val pendingResultScreenshotCropBatch: MatchResultScreenshotCropBatch? = null,
+    val resultScreenshotMultiPhotoPickerRequest: MatchResultScreenshotMultiPhotoPickerRequest? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && !isAvailable

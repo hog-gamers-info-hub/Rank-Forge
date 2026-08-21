@@ -147,6 +147,12 @@ class MatchReviewViewModel @Inject constructor(
     private var restoredMissingMarkedForMatchId: String? = null
     private val restoredResultMissingMarked = mutableSetOf<String>()
     private var loadedMatchKey: String? = null
+    private var resultScreenshotBatchJob: Job? = null
+    private var screenshotIntakeGeneration = 0L
+    private var activeResultBatchGeneration: Long? = null
+    private var activeResultBatchRoles: Set<MatchResultScreenshotRole> = emptySet()
+    private var activeResultBatchSelectedUris: Map<MatchResultScreenshotRole, String> = emptyMap()
+    private var nextResultMultiPhotoPickerRequestId = 0L
 
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
@@ -159,6 +165,8 @@ class MatchReviewViewModel @Inject constructor(
         uploadJob?.cancel()
         resultScreenshotJobs.values.forEach { it.cancel() }
         resultScreenshotJobs.clear()
+        cancelActiveResultBatchAndClearTransientState()
+        screenshotIntakeGeneration++
         exportJob?.cancel()
         resultDownloadJob?.cancel()
         pendingResultDocument = null
@@ -312,6 +320,8 @@ class MatchReviewViewModel @Inject constructor(
                             restored = state.resultScreenshots,
                             current = current.resultScreenshots,
                         ),
+                        pendingResultScreenshotCropBatch = current.pendingResultScreenshotCropBatch,
+                        resultScreenshotMultiPhotoPickerRequest = current.resultScreenshotMultiPhotoPickerRequest,
                     )
                 }
             }
@@ -351,6 +361,46 @@ class MatchReviewViewModel @Inject constructor(
 
     fun onNavigationHandled() {
         _uiState.update { it.copy(navigation = null) }
+    }
+
+    fun onResultCropConfirmed(
+        tournamentId: String,
+        matchId: String,
+        role: MatchResultScreenshotRole,
+    ): MatchResultScreenshotRole? {
+        val current = _uiState.value
+        val batch = current.pendingResultScreenshotCropBatch
+        if (
+            current.tournamentId != tournamentId ||
+            current.matchId != matchId ||
+            batch?.currentRole != role
+        ) {
+            return null
+        }
+        val nextRole = batch.remainingRoles.firstOrNull()
+        _uiState.update {
+            it.copy(
+                pendingResultScreenshotCropBatch = nextRole?.let {
+                    MatchResultScreenshotCropBatch(
+                        currentRole = it,
+                        remainingRoles = batch.remainingRoles.drop(1),
+                    )
+                },
+            )
+        }
+        return nextRole
+    }
+
+    fun cancelResultCropBatch(tournamentId: String, matchId: String) {
+        val current = _uiState.value
+        if (
+            current.tournamentId != tournamentId ||
+            current.matchId != matchId ||
+            current.pendingResultScreenshotCropBatch == null
+        ) {
+            return
+        }
+        _uiState.update { it.copy(pendingResultScreenshotCropBatch = null) }
     }
 
     fun prepareCsvExport() {
@@ -710,14 +760,20 @@ class MatchReviewViewModel @Inject constructor(
     fun requestPhotoPicker(role: MatchResultScreenshotRole) {
         val current = _uiState.value
         val slot = current.resultScreenshots.slot(role)
-        if (!current.isAvailable || current.resultScreenshots.any { it.isPhotoPickerRequestActive }) return
+        if (!current.isAvailable || current.resultScreenshotMultiPhotoPickerRequest != null ||
+            current.resultScreenshots.any { it.isPhotoPickerRequestActive }
+        ) return
         if (current.status == MatchStatus.FINALIZED) {
             _uiState.updateSlot(role) {
                 it.copy(preservationError = ScreenshotPreservationError.FINALIZED_MATCH)
             }
             return
         }
-        if (slot.isBusy) return
+        val isBusyOwnedByActiveBatch = activeResultBatchGeneration != null &&
+            role in activeResultBatchRoles
+        if (slot.isBusy && !isBusyOwnedByActiveBatch) return
+        cancelActiveResultBatchAndClearTransientState()
+        screenshotIntakeGeneration++
         _uiState.updateSlot(role) {
             it.copy(
                 isPhotoPickerLaunchPending = true,
@@ -727,6 +783,36 @@ class MatchReviewViewModel @Inject constructor(
                 duplicateError = null,
                 duplicateInfo = null,
                 preservationError = null,
+            )
+        }
+        _uiState.update { it.copy(pendingResultScreenshotCropBatch = null) }
+    }
+
+    fun requestMultiPhotoPicker() {
+        val current = _uiState.value
+        if (!current.isAvailable || !current.isEditable) return
+        if (current.resultScreenshotMultiPhotoPickerRequest != null ||
+            current.resultScreenshots.any { it.isBusy }
+        ) return
+        val targetRoles = listOf(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+        ).filter { role ->
+            val slot = current.resultScreenshots.slot(role)
+            !slot.hasLinkedAsset && slot.selectedScreenshotUri.isNullOrBlank()
+        }.take(2)
+        if (targetRoles.isEmpty()) return
+        cancelActiveResultBatchAndClearTransientState()
+        screenshotIntakeGeneration++
+        val request = MatchResultScreenshotMultiPhotoPickerRequest(
+            requestId = ++nextResultMultiPhotoPickerRequestId,
+            targetRoles = targetRoles,
+        )
+        _uiState.update {
+            it.copy(
+                navigation = null,
+                pendingResultScreenshotCropBatch = null,
+                resultScreenshotMultiPhotoPickerRequest = request,
             )
         }
     }
@@ -747,6 +833,33 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    fun onMultiPhotoPickerLaunchHandled(requestId: Long) {
+        _uiState.update { state ->
+            state.resultScreenshotMultiPhotoPickerRequest
+                ?.takeIf { it.requestId == requestId }
+                ?.let {
+                    state.copy(resultScreenshotMultiPhotoPickerRequest = it.copy(isLaunchPending = false))
+                }
+                ?: state
+        }
+    }
+
+    fun onMultiPhotoPickerLaunchFailed(requestId: Long) {
+        _uiState.update { state ->
+            val request = state.resultScreenshotMultiPhotoPickerRequest?.takeIf { it.requestId == requestId }
+                ?: return@update state
+            state.copy(
+                resultScreenshotMultiPhotoPickerRequest = null,
+                pendingResultScreenshotCropBatch = null,
+                resultScreenshots = state.resultScreenshots.map { slot ->
+                    if (slot.role in request.targetRoles) {
+                        slot.copy(photoPickerError = PhotoPickerError.LAUNCH_FAILED)
+                    } else slot
+                },
+            )
+        }
+    }
+
     fun onPhotoPickerResult(role: MatchResultScreenshotRole, selectedUri: String?) {
         if (selectedUri == null) {
             _uiState.updateSlot(role) {
@@ -757,7 +870,96 @@ class MatchReviewViewModel @Inject constructor(
             }
             return
         }
+        cancelActiveResultBatchAndClearTransientState()
+        val generation = ++screenshotIntakeGeneration
         resultScreenshotJobs.remove(role)?.cancel()
+        _uiState.update { it.copy(pendingResultScreenshotCropBatch = null) }
+        if (selectedUri.isBlank()) {
+            resultScreenshotJobs[role] = viewModelScope.launch {
+                processResultScreenshotSelection(role, selectedUri, generation)
+            }
+            return
+        }
+        resultScreenshotJobs[role] = viewModelScope.launch {
+            processResultScreenshotSelection(role, selectedUri, generation)
+        }
+    }
+
+    fun onMultiPhotoPickerResult(selectedUris: List<String>) {
+        val request = _uiState.value.resultScreenshotMultiPhotoPickerRequest ?: return
+        val generation = ++screenshotIntakeGeneration
+        cancelActiveResultBatchAndClearTransientState()
+        _uiState.update { state ->
+            if (state.resultScreenshotMultiPhotoPickerRequest?.requestId != request.requestId) {
+                state
+            } else {
+                state.copy(
+                    resultScreenshotMultiPhotoPickerRequest = null,
+                    pendingResultScreenshotCropBatch = null,
+                    resultScreenshots = state.resultScreenshots.map { slot ->
+                        if (slot.role in request.targetRoles.take(selectedUris.size)) {
+                            slot.copy(
+                                isValidationInProgress = true,
+                                imageValidationError = null,
+                                duplicateError = null,
+                                duplicateInfo = null,
+                                preservationError = null,
+                            )
+                        } else slot
+                    },
+                )
+            }
+        }
+        val assignments = request.targetRoles.zip(selectedUris.take(request.targetRoles.size))
+        if (assignments.isEmpty()) return
+        val targetRoles = assignments.map { it.first }.toSet()
+        activeResultBatchGeneration = generation
+        activeResultBatchRoles = targetRoles
+        activeResultBatchSelectedUris = assignments.toMap()
+        resultScreenshotBatchJob = viewModelScope.launch {
+            try {
+                val successfulRoles = buildList {
+                    assignments.forEach { (role, uri) ->
+                        if (processResultScreenshotSelection(
+                                role = role,
+                                selectedUri = uri,
+                                generation = generation,
+                                requestCropNavigation = false,
+                            )
+                        ) {
+                            add(role)
+                        }
+                    }
+                }
+                if (generation == screenshotIntakeGeneration && successfulRoles.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            pendingResultScreenshotCropBatch = MatchResultScreenshotCropBatch(
+                                currentRole = successfulRoles.first(),
+                                remainingRoles = successfulRoles.drop(1),
+                            ),
+                            navigation = when (successfulRoles.first()) {
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER ->
+                                    MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER ->
+                                    MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP
+                            },
+                        )
+                    }
+                }
+            } finally {
+                clearResultBatchTransientStateIfOwned(generation, targetRoles)
+            }
+        }
+    }
+
+    private suspend fun processResultScreenshotSelection(
+        role: MatchResultScreenshotRole,
+        selectedUri: String,
+        generation: Long,
+        requestCropNavigation: Boolean = true,
+    ): Boolean {
+        if (generation != screenshotIntakeGeneration) return false
         if (selectedUri.isBlank()) {
             _uiState.updateSlot(role) {
                 it.copy(
@@ -777,7 +979,7 @@ class MatchReviewViewModel @Inject constructor(
                     preservationError = null,
                 )
             }
-            return
+            return false
         }
         _uiState.updateSlot(role) {
             it.copy(
@@ -798,47 +1000,56 @@ class MatchReviewViewModel @Inject constructor(
                 preservationError = null,
             )
         }
-        resultScreenshotJobs[role] = viewModelScope.launch {
-            val validation = runCatching { imageCandidateValidator.validate(selectedUri) }
-                .getOrElse { ImageCandidateValidationResult.Invalid(ImageValidationError.DECODE_FAILED) }
-            val metadata = if (validation == ImageCandidateValidationResult.Valid) {
-                runCatching { imageCandidateValidator.readValidMetadata(selectedUri) }.getOrNull()
-            } else {
-                null
-            }
-            if (validation is ImageCandidateValidationResult.Invalid || metadata == null) {
-                _uiState.updateSlotIfCurrent(role, selectedUri) {
-                    it.copy(
-                        isValidationInProgress = false,
-                        isSelectedScreenshotValidated = false,
-                        selectedScreenshotMimeType = null,
-                        selectedScreenshotWidth = null,
-                        selectedScreenshotHeight = null,
-                        imageValidationError = (validation as? ImageCandidateValidationResult.Invalid)?.error
-                            ?: ImageValidationError.DECODE_FAILED,
-                    )
-                }
-                return@launch
-            }
+        if (generation != screenshotIntakeGeneration) return false
+        val validation = runCatching { imageCandidateValidator.validate(selectedUri) }
+            .getOrElse { ImageCandidateValidationResult.Invalid(ImageValidationError.DECODE_FAILED) }
+        val metadata = if (validation == ImageCandidateValidationResult.Valid) {
+            runCatching { imageCandidateValidator.readValidMetadata(selectedUri) }.getOrNull()
+        } else {
+            null
+        }
+        if (generation != screenshotIntakeGeneration) return false
+        if (validation is ImageCandidateValidationResult.Invalid || metadata == null) {
             _uiState.updateSlotIfCurrent(role, selectedUri) {
                 it.copy(
                     isValidationInProgress = false,
-                    isSelectedScreenshotValidated = true,
-                    selectedScreenshotMimeType = metadata.mimeType,
-                    selectedScreenshotWidth = metadata.width,
-                    selectedScreenshotHeight = metadata.height,
-                    imageValidationError = null,
+                    isSelectedScreenshotValidated = false,
+                    selectedScreenshotMimeType = null,
+                    selectedScreenshotWidth = null,
+                    selectedScreenshotHeight = null,
+                    imageValidationError = (validation as? ImageCandidateValidationResult.Invalid)?.error
+                        ?: ImageValidationError.DECODE_FAILED,
                 )
             }
-            preserveValidatedResultScreenshot(role, selectedUri, metadata)
+            return false
         }
+        _uiState.updateSlotIfCurrent(role, selectedUri) {
+            it.copy(
+                isValidationInProgress = false,
+                isSelectedScreenshotValidated = true,
+                selectedScreenshotMimeType = metadata.mimeType,
+                selectedScreenshotWidth = metadata.width,
+                selectedScreenshotHeight = metadata.height,
+                imageValidationError = null,
+            )
+        }
+        return preserveValidatedResultScreenshot(
+            role = role,
+            selectedUri = selectedUri,
+            metadata = metadata,
+            generation = generation,
+            requestCropNavigation = requestCropNavigation,
+        )
     }
 
     private suspend fun preserveValidatedResultScreenshot(
         role: MatchResultScreenshotRole,
         selectedUri: String,
         metadata: ImageCandidateReadResult.Metadata,
-    ) {
+        generation: Long,
+        requestCropNavigation: Boolean = true,
+    ): Boolean {
+        if (generation != screenshotIntakeGeneration) return false
         val current = _uiState.value
         val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() }
         val matchId = current.matchId?.takeIf { it.isNotBlank() }
@@ -858,7 +1069,7 @@ class MatchReviewViewModel @Inject constructor(
             _uiState.updateSlotIfCurrent(role, selectedUri) {
                 it.copy(preservationError = setupError)
             }
-            return
+            return false
         }
         val previousFingerprint = current.resultScreenshots.slot(role).fingerprint
         _uiState.updateSlotIfCurrent(role, selectedUri) {
@@ -869,14 +1080,15 @@ class MatchReviewViewModel @Inject constructor(
                 preservationError = null,
             )
         }
-        when (
-            val duplicateResult = matchResultScreenshotDuplicateDetector.link(
-                identity = identity,
-                selectedUri = selectedUri,
-                currentFingerprint = previousFingerprint,
-            )
-        ) {
+        val duplicateResult = matchResultScreenshotDuplicateDetector.link(
+            identity = identity,
+            selectedUri = selectedUri,
+            currentFingerprint = previousFingerprint,
+        )
+        if (generation != screenshotIntakeGeneration) return false
+        when (duplicateResult) {
             is MatchResultScreenshotDuplicateLinkResult.Linked -> {
+                if (generation != screenshotIntakeGeneration) return false
                 _uiState.updateSlotIfCurrent(role, selectedUri) {
                     it.copy(
                         isDuplicateDetectionInProgress = false,
@@ -894,6 +1106,7 @@ class MatchReviewViewModel @Inject constructor(
                     is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservation.file
                     is LocalImagePreservationResult.Failed -> null
                 }
+                if (generation != screenshotIntakeGeneration) return false
                 if (preservedFile == null) {
                     matchResultScreenshotDuplicateDetector.rollback(
                         identity = identity,
@@ -906,7 +1119,7 @@ class MatchReviewViewModel @Inject constructor(
                             preservationError = (preservation as LocalImagePreservationResult.Failed).error.toUiError(),
                         )
                     }
-                    return
+                    return false
                 }
                 val assetResult = saveMatchResultScreenshotAsset(
                     identity = identity,
@@ -915,6 +1128,7 @@ class MatchReviewViewModel @Inject constructor(
                     fingerprint = duplicateResult.fingerprint,
                     cleanupFailed = preservation is LocalImagePreservationResult.PreservedWithCleanupFailure,
                 )
+                if (generation != screenshotIntakeGeneration) return false
                 if (assetResult !is MatchResultAssetWriteResult.Written) {
                     matchResultScreenshotDuplicateDetector.rollback(
                         identity = identity,
@@ -927,7 +1141,7 @@ class MatchReviewViewModel @Inject constructor(
                             preservationError = ScreenshotPreservationError.ROOM_WRITE_FAILED,
                         )
                     }
-                    return
+                    return false
                 }
                 _uiState.updateSlotIfCurrent(role, selectedUri) {
                     (assetResult.asset.toSlotUiState(localImagePreserver) ?: it).copy(
@@ -949,10 +1163,13 @@ class MatchReviewViewModel @Inject constructor(
                         uploadError = null,
                     )
                 }
-                requestResultScreenshotCropNavigationIfReady(
-                    identity = identity,
-                    selectedUri = selectedUri,
-                )
+                if (requestCropNavigation) {
+                    requestResultScreenshotCropNavigationIfReady(
+                        identity = identity,
+                        selectedUri = selectedUri,
+                    )
+                }
+                return true
             }
 
             MatchResultScreenshotDuplicateLinkResult.SameIdentity -> {
@@ -963,6 +1180,7 @@ class MatchReviewViewModel @Inject constructor(
                         duplicateError = null,
                     )
                 }
+                return false
             }
 
             is MatchResultScreenshotDuplicateLinkResult.LinkedToOtherIdentity -> {
@@ -973,6 +1191,7 @@ class MatchReviewViewModel @Inject constructor(
                         duplicateInfo = null,
                     )
                 }
+                return false
             }
 
             MatchResultScreenshotDuplicateLinkResult.FingerprintFailure -> {
@@ -983,6 +1202,7 @@ class MatchReviewViewModel @Inject constructor(
                         duplicateInfo = null,
                     )
                 }
+                return false
             }
 
             MatchResultScreenshotDuplicateLinkResult.StateConflict -> {
@@ -993,6 +1213,7 @@ class MatchReviewViewModel @Inject constructor(
                         duplicateInfo = null,
                     )
                 }
+                return false
             }
         }
     }
@@ -1054,6 +1275,55 @@ class MatchReviewViewModel @Inject constructor(
         return when (matchResultScreenshotAssetRepository.saveOrReplace(asset)) {
             MatchResultScreenshotAssetSaveResult.Saved -> MatchResultAssetWriteResult.Written(asset)
             else -> MatchResultAssetWriteResult.Failed
+        }
+    }
+
+    private fun cancelActiveResultBatchAndClearTransientState() {
+        val generation = activeResultBatchGeneration ?: return
+        val targetRoles = activeResultBatchRoles
+        val selectedUris = activeResultBatchSelectedUris
+        resultScreenshotBatchJob?.cancel()
+        clearResultBatchTransientStateIfOwned(generation, targetRoles, selectedUris)
+    }
+
+    private fun clearResultBatchTransientStateIfOwned(
+        generation: Long,
+        targetRoles: Set<MatchResultScreenshotRole>,
+        selectedUris: Map<MatchResultScreenshotRole, String> = activeResultBatchSelectedUris,
+    ) {
+        if (activeResultBatchGeneration != generation) return
+        activeResultBatchGeneration = null
+        activeResultBatchRoles = emptySet()
+        activeResultBatchSelectedUris = emptyMap()
+        _uiState.update { state ->
+            state.copy(
+                resultScreenshots = state.resultScreenshots.map { slot ->
+                    if (slot.role in targetRoles) {
+                        val isOldUnlinkedCandidate = !slot.hasLinkedAsset &&
+                            selectedUris[slot.role] == slot.selectedScreenshotUri
+                        if (isOldUnlinkedCandidate) {
+                            slot.copy(
+                                selectedScreenshotUri = null,
+                                selectedScreenshotMimeType = null,
+                                selectedScreenshotWidth = null,
+                                selectedScreenshotHeight = null,
+                                isValidationInProgress = false,
+                                isSelectedScreenshotValidated = false,
+                                isDuplicateDetectionInProgress = false,
+                                isPreservationInProgress = false,
+                            )
+                        } else {
+                            slot.copy(
+                                isValidationInProgress = false,
+                                isDuplicateDetectionInProgress = false,
+                                isPreservationInProgress = false,
+                            )
+                        }
+                    } else {
+                        slot
+                    }
+                },
+            )
         }
     }
 

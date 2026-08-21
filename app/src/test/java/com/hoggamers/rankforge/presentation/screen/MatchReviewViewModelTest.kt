@@ -65,7 +65,9 @@ import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -74,6 +76,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -240,6 +243,442 @@ class MatchReviewViewModelTest {
         assertFalse(viewModel.uiState.value.isSelectedScreenshotValidated)
         assertEquals(ImageValidationError.EMPTY_URI, viewModel.uiState.value.imageValidationError)
         assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+    }
+
+    @Test
+    fun multiResultSelectionMapsUpperThenLowerAndNavigatesOnlyToUpper() = runTest {
+        val viewModel = batchReviewViewModel(
+            bytesByUri = mapOf("upper" to byteArrayOf(1), "lower" to byteArrayOf(2)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        assertEquals(
+            listOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            viewModel.uiState.value.resultScreenshotMultiPhotoPickerRequest?.targetRoles,
+        )
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "lower"))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER).hasLinkedAsset)
+        assertTrue(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER).hasLinkedAsset)
+        assertEquals(
+            MatchResultScreenshotCropBatch(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            ),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun oneResultUriTargetsUpperWhenBothRolesAreEmpty() = runTest {
+        val viewModel = batchReviewViewModel(bytesByUri = mapOf("only" to byteArrayOf(1)))
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("only"))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER).hasLinkedAsset)
+        assertFalse(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER).hasLinkedAsset)
+        assertEquals(
+            MatchResultScreenshotCropBatch(MatchResultScreenshotRole.MATCH_RESULT_UPPER, emptyList()),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+    }
+
+    @Test
+    fun existingUpperRoleIsSkippedByAnewResultBatch() = runTest {
+        val viewModel = batchReviewViewModel(bytesByUri = mapOf("upper" to byteArrayOf(1), "lower" to byteArrayOf(2)))
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper"))
+        advanceUntilIdle()
+        viewModel.onNavigationHandled()
+
+        viewModel.requestMultiPhotoPicker()
+        assertEquals(
+            listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            viewModel.uiState.value.resultScreenshotMultiPhotoPickerRequest?.targetRoles,
+        )
+        viewModel.onMultiPhotoPickerResult(listOf("lower"))
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchResultScreenshotCropBatch(MatchResultScreenshotRole.MATCH_RESULT_LOWER, emptyList()),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun successfulResultCropConfirmationAdvancesUpperThenLowerAndClearsAfterLast() = runTest {
+        val viewModel = batchReviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "lower"))
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            viewModel.onResultCropConfirmed(
+                TOURNAMENT_ID,
+                matchId,
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            ),
+        )
+        assertEquals(
+            MatchResultScreenshotCropBatch(
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                emptyList(),
+            ),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        assertNull(
+            viewModel.onResultCropConfirmed(
+                TOURNAMENT_ID,
+                matchId,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+        )
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+    }
+
+    @Test
+    fun resultCropCancelClearsBatchAndMismatchedRoleCannotConsumeIt() = runTest {
+        val viewModel = batchReviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "lower"))
+        advanceUntilIdle()
+
+        assertNull(
+            viewModel.onResultCropConfirmed(
+                TOURNAMENT_ID,
+                matchId,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+        )
+        assertEquals(
+            MatchResultScreenshotCropBatch(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            ),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        viewModel.cancelResultCropBatch(TOURNAMENT_ID, matchId)
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+    }
+
+    @Test
+    fun singleResultBatchConfirmationReturnsToReviewAndClearsBatch() = runTest {
+        val viewModel = batchReviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper"))
+        advanceUntilIdle()
+
+        assertNull(
+            viewModel.onResultCropConfirmed(
+                TOURNAMENT_ID,
+                matchId,
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            ),
+        )
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+    }
+
+    @Test
+    fun failedResultBatchCandidateIsExcludedAndFirstSuccessfulRoleNavigates() = runTest {
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "bad") ImageCandidateReadResult.Metadata("image/gif", 1080, 1920)
+                else ImageCandidateReadResult.Metadata("image/png", 1080, 1920)
+            },
+        )
+        val viewModel = batchReviewViewModel(
+            validator = validator,
+            bytesByUri = mapOf("bad" to byteArrayOf(1), "lower" to byteArrayOf(2)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("bad", "lower"))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER).hasLinkedAsset)
+        assertTrue(viewModel.uiState.value.resultScreenshots.slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER).hasLinkedAsset)
+        assertEquals(
+            MatchResultScreenshotCropBatch(MatchResultScreenshotRole.MATCH_RESULT_LOWER, emptyList()),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun cancelledResultBatchClearsRequestAndDoesNotNavigate() = runTest {
+        val viewModel = batchReviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(emptyList())
+
+        assertNull(viewModel.uiState.value.resultScreenshotMultiPhotoPickerRequest)
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun individualResultReplacementClearsAnOlderPendingBatch() = runTest {
+        val viewModel = batchReviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper"))
+        advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .isPhotoPickerRequestActive,
+        )
+    }
+
+    @Test
+    fun cancellingResultBatchMidValidationClearsOldFlagsAndKeepsReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "mid") {
+                    started.complete(Unit)
+                    release.await()
+                }
+                ImageCandidateReadResult.Metadata("image/png", 1080, 1920)
+            },
+        )
+        val viewModel = batchReviewViewModel(
+            validator = validator,
+            bytesByUri = mapOf("upper" to byteArrayOf(1), "mid" to byteArrayOf(2), "lower" to byteArrayOf(3)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "mid"))
+        advanceUntilIdle()
+
+        assertTrue(started.isCompleted)
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .isValidationInProgress,
+        )
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .hasLinkedAsset,
+        )
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        advanceUntilIdle()
+
+        val lower = viewModel.uiState.value.resultScreenshots
+            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        assertTrue(lower.isPhotoPickerRequestActive)
+        assertFalse(lower.isValidationInProgress)
+        assertFalse(lower.isDuplicateDetectionInProgress)
+        assertFalse(lower.isPreservationInProgress)
+        assertNull(lower.selectedScreenshotUri)
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .hasLinkedAsset,
+        )
+
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_LOWER, null)
+        viewModel.requestMultiPhotoPicker()
+        assertEquals(
+            listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            viewModel.uiState.value.resultScreenshotMultiPhotoPickerRequest?.targetRoles,
+        )
+    }
+
+    @Test
+    fun cancellingResultBatchMidPreservationClearsOldFlagsAndKeepsReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var ownerCalls = 0
+        val ownerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String? {
+                ownerCalls++
+                if (ownerCalls == 2) {
+                    started.complete(Unit)
+                    release.await()
+                }
+                return "owner-id"
+            }
+        }
+        val viewModel = batchReviewViewModel(
+            ownerProvider = ownerProvider,
+            bytesByUri = mapOf("upper" to byteArrayOf(1), "mid" to byteArrayOf(2)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "mid"))
+        advanceUntilIdle()
+
+        assertTrue(started.isCompleted)
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .isPreservationInProgress,
+        )
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .hasLinkedAsset,
+        )
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        advanceUntilIdle()
+
+        val lower = viewModel.uiState.value.resultScreenshots
+            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        assertTrue(lower.isPhotoPickerRequestActive)
+        assertFalse(lower.isPreservationInProgress)
+        assertFalse(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .isBusy,
+        )
+    }
+
+    @Test
+    fun lateResultBatchCompletionCannotMutateReplacementState() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "late") {
+                    started.complete(Unit)
+                    try {
+                        release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { release.await() }
+                    }
+                }
+                ImageCandidateReadResult.Metadata("image/png", 1080, 1920)
+            },
+        )
+        val viewModel = batchReviewViewModel(
+            validator = validator,
+            bytesByUri = mapOf("upper" to byteArrayOf(1), "late" to byteArrayOf(2)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "late"))
+        advanceUntilIdle()
+        assertTrue(started.isCompleted)
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .isPhotoPickerRequestActive,
+        )
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .isPhotoPickerRequestActive,
+        )
+        assertFalse(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .hasLinkedAsset,
+        )
+        assertTrue(
+            viewModel.uiState.value.resultScreenshots
+                .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .hasLinkedAsset,
+        )
+    }
+
+    @Test
+    fun loadingAnotherResultMatchClearsActiveBatchStateAndIgnoresLateCompletion() = runTest {
+        val otherMatchId = "review-other-match"
+        repository.createDraftMatch(
+            Match(
+                id = otherMatchId,
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val validator = ImageCandidateValidator(
+            ImageCandidateMetadataReader { uri ->
+                if (uri == "mid") {
+                    started.complete(Unit)
+                    try {
+                        release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { release.await() }
+                    }
+                }
+                ImageCandidateReadResult.Metadata("image/png", 1080, 1920)
+            },
+        )
+        val viewModel = batchReviewViewModel(
+            validator = validator,
+            bytesByUri = mapOf("upper" to byteArrayOf(1), "mid" to byteArrayOf(2)),
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("upper", "mid"))
+        advanceUntilIdle()
+        assertTrue(started.isCompleted)
+
+        viewModel.load(TOURNAMENT_ID, otherMatchId)
+        advanceUntilIdle()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(otherMatchId, viewModel.uiState.value.matchId)
+        assertFalse(viewModel.uiState.value.resultScreenshots.any { it.isBusy })
+        assertNull(viewModel.uiState.value.resultScreenshotMultiPhotoPickerRequest)
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -1945,6 +2384,37 @@ class MatchReviewViewModelTest {
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
         finalizedMatchCloudSync = finalizedMatchCloudSync,
         )
+
+    private fun batchReviewViewModel(
+        validator: ImageCandidateValidator = ImageCandidateValidator(
+            ImageCandidateMetadataReader {
+                ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1920)
+            },
+        ),
+        bytesByUri: Map<String, ByteArray> = mapOf(
+            "upper" to byteArrayOf(1),
+            "lower" to byteArrayOf(2),
+        ),
+        ownerProvider: ScreenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
+    ): MatchReviewViewModel {
+        val assetRepository = FakeMatchResultScreenshotAssetRepository()
+        val fingerprintGenerator = ImageSourceFingerprintGenerator(
+            ImageSourceStreamOpener { uri ->
+                (bytesByUri[uri] ?: uri.encodeToByteArray()).inputStream()
+            },
+            Dispatchers.Unconfined,
+        )
+        return reviewViewModel(
+            imageCandidateValidator = validator,
+            matchResultScreenshotDuplicateDetector = MatchResultScreenshotDuplicateDetector(
+                fingerprintGenerator = fingerprintGenerator,
+                assetRepository = assetRepository,
+            ),
+            localImagePreserver = localImagePreserver(bytesByUri),
+            screenshotOwnerProvider = ownerProvider,
+            matchResultScreenshotAssetRepository = assetRepository,
+        )
+    }
 
     private class RecordingFinalizedMatchCloudSync(
         private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success(1),
