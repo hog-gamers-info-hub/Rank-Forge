@@ -8,9 +8,10 @@ import {
 export const GOOGLE_EXPORT_VERIFICATION_TIMEOUT_MS = 10_000;
 export const MAX_VERIFICATION_DATA_ROWS = 50_000;
 export const EXPORT_VERIFICATION_COLUMN_COUNT = 20;
+const MAX_EXPORT_VERIFICATION_COLUMN_COUNT = 21;
 export const EXPORT_VERIFICATION_ROW_COUNT = 12;
 
-export type ExportVerificationCell = string | number;
+export type ExportVerificationCell = string | number | null;
 export type ExportVerificationRows =
   readonly (readonly ExportVerificationCell[])[];
 
@@ -45,17 +46,22 @@ function quoteSheetName(worksheetName: string): string {
 }
 
 function isSupportedCell(value: unknown): value is ExportVerificationCell {
-  return typeof value === "string" ||
+  return value === null ||
+    typeof value === "string" ||
     (typeof value === "number" && Number.isInteger(value));
 }
 
 function assertExpectedDimensions(
   expectedRows: ExportVerificationRows,
 ): void {
+  const expectedColumnCount = expectedRows[0]?.length ?? 0;
   if (
-    expectedRows.length !== EXPORT_VERIFICATION_ROW_COUNT ||
+    expectedRows.length < 1 ||
+    expectedRows.length > EXPORT_VERIFICATION_ROW_COUNT ||
     !expectedRows.every((row) =>
-      row.length === EXPORT_VERIFICATION_COLUMN_COUNT &&
+      row.length === expectedColumnCount &&
+      expectedColumnCount >= EXPORT_VERIFICATION_COLUMN_COUNT &&
+      expectedColumnCount <= MAX_EXPORT_VERIFICATION_COLUMN_COUNT &&
       row.every(isSupportedCell)
     )
   ) {
@@ -69,7 +75,9 @@ function parseRows(value: unknown): ExportVerificationCell[][] {
   }
 
   return value.map((row) => {
-    if (!Array.isArray(row) || row.length > EXPORT_VERIFICATION_COLUMN_COUNT) {
+    if (
+      !Array.isArray(row) || row.length > MAX_EXPORT_VERIFICATION_COLUMN_COUNT
+    ) {
       throw new EdgeFunctionError("EXPORT_VERIFICATION_FAILURE");
     }
 
@@ -94,8 +102,7 @@ function exactRowEquals(
   actual: readonly ExportVerificationCell[],
   expected: readonly ExportVerificationCell[],
 ): boolean {
-  return actual.length === EXPORT_VERIFICATION_COLUMN_COUNT &&
-    expected.length === EXPORT_VERIFICATION_COLUMN_COUNT &&
+  return actual.length === expected.length &&
     expected.every((cell, index) => exactCellEquals(actual[index], cell));
 }
 
@@ -103,7 +110,7 @@ function exactBlockEquals(
   actualRows: readonly (readonly ExportVerificationCell[])[],
   expectedRows: ExportVerificationRows,
 ): boolean {
-  return actualRows.length === EXPORT_VERIFICATION_ROW_COUNT &&
+  return actualRows.length === expectedRows.length &&
     expectedRows.every((row, index) => exactRowEquals(actualRows[index], row));
 }
 
@@ -291,7 +298,9 @@ export async function reconcileUncertainExport(
   const observedRows = await readValues(
     accessToken,
     spreadsheetId,
-    `${quoteSheetName(target.worksheetName)}!A2:T${gridRowCount}`,
+    `${quoteSheetName(target.worksheetName)}!A2:${
+      expectedRows[0].length === 21 ? "U" : "T"
+    }${gridRowCount}`,
     options,
   );
 
@@ -312,14 +321,14 @@ export async function reconcileUncertainExport(
 
   for (
     let startIndex = 0;
-    startIndex <= observedRows.length - EXPORT_VERIFICATION_ROW_COUNT;
+    startIndex <= observedRows.length - expectedRows.length;
     startIndex += 1
   ) {
     if (
       exactBlockEquals(
         observedRows.slice(
           startIndex,
-          startIndex + EXPORT_VERIFICATION_ROW_COUNT,
+          startIndex + expectedRows.length,
         ),
         expectedRows,
       )
@@ -334,12 +343,12 @@ export async function reconcileUncertainExport(
 
   const exactStart = exactBlockStarts[0];
   const exactCandidateIndexes = Array.from(
-    { length: EXPORT_VERIFICATION_ROW_COUNT },
+    { length: expectedRows.length },
     (_, index) => exactStart + index,
   );
 
   if (
-    candidateIndexes.length !== EXPORT_VERIFICATION_ROW_COUNT ||
+    candidateIndexes.length !== expectedRows.length ||
     !candidateIndexes.every((index, offset) =>
       index === exactCandidateIndexes[offset]
     )

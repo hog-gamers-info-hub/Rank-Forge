@@ -3,6 +3,7 @@ import type {
   StandingsExportRequest,
   StandingsExportRow,
 } from "./standingsExport.ts";
+import { APPROVED_EXPORT_SCHEMA_VERSIONS } from "./standingsExport.ts";
 import type {
   OfficialMatch,
   OfficialMatchResult,
@@ -26,9 +27,9 @@ export interface OfficialStandingTotals {
   totalKills: number;
   totalKillPoints: number;
   totalPoints: number;
-  bestPlacement: number;
+  bestPlacement: number | null;
   firstPlaceCount: number;
-  latestMatchPlacement: number;
+  latestMatchPlacement: number | null;
 }
 
 export interface RankedOfficialStanding extends OfficialStandingTotals {
@@ -104,7 +105,10 @@ export function rankOfficialStandings(
       right.totalPoints - left.totalPoints ||
       right.firstPlaceCount - left.firstPlaceCount ||
       right.totalKills - left.totalKills ||
-      left.latestMatchPlacement - right.latestMatchPlacement ||
+      (left.latestMatchPlacement === null ? 1 : 0) -
+        (right.latestMatchPlacement === null ? 1 : 0) ||
+      (left.latestMatchPlacement ?? 0) -
+        (right.latestMatchPlacement ?? 0) ||
       left.teamSlot - right.teamSlot
     )
     .map((standing, index) => {
@@ -145,8 +149,7 @@ function validateTeamSlots(
       !REQUIRED_SLOT_NUMBERS.has(teamSlot.slot_number) ||
       byId.has(teamSlot.id) ||
       byNumber.has(teamSlot.slot_number) ||
-      typeof teamSlot.team_name !== "string" ||
-      teamSlot.team_name.length === 0
+      typeof teamSlot.team_name !== "string"
     ) {
       mismatch();
     }
@@ -222,100 +225,115 @@ function reconstructStandings(
   }
 
   const totalsBySlot = new Map<number, OfficialStandingTotals>();
+  const legacySnapshot = matchResults.every((result) =>
+    result.participation_status === undefined
+  );
 
-  for (const slot of REQUIRED_SLOT_NUMBERS) {
-    totalsBySlot.set(slot, {
-      teamSlot: slot,
-      matchesPlayed: 0,
-      totalPositionPoints: 0,
-      totalKills: 0,
-      totalKillPoints: 0,
-      totalPoints: 0,
-      bestPlacement: 13,
-      firstPlaceCount: 0,
-      latestMatchPlacement: 13,
-    });
-  }
-
-  finalizedMatches.forEach((match, matchIndex) => {
+  finalizedMatches.forEach((match) => {
     const results = resultsByMatchId.get(match.id) ?? [];
 
-    if (results.length !== 12) {
+    if (results.length < 1 || results.length > 12) {
       mismatch();
     }
 
     const placements = new Set<number>();
     const teamSlotIds = new Set<string>();
     const seenSlotNumbers = new Set<number>();
+    const participatedResults = results.filter((result) =>
+      (result.participation_status ?? "PARTICIPATED") === "PARTICIPATED"
+    );
+
+    if (participatedResults.length < 1) {
+      mismatch();
+    }
 
     for (const result of results) {
       const teamSlot = teamSlotsById.get(result.team_slot_id);
       const placement = result.placement;
+      const participatedIndex = participatedResults.indexOf(result);
+      const expectedPlacement = participatedIndex + 1;
+      const status = result.participation_status ?? "PARTICIPATED";
 
       if (
         result.match_id !== match.id ||
         result.review_status !== "confirmed" ||
-        placement === null ||
-        !REQUIRED_SLOT_NUMBERS.has(placement) ||
+        !Number.isInteger(result.kills) ||
         result.kills < 0 ||
+        (status === "PARTICIPATED"
+          ? placement !== expectedPlacement
+          : status === "NO_SHOW"
+          ? placement !== null || result.kills !== 0
+          : true) ||
         teamSlot === undefined ||
-        placements.has(placement) ||
+        typeof teamSlot.team_name !== "string" ||
+        teamSlot.team_name.length === 0 ||
+        (placement !== null && placements.has(placement)) ||
         teamSlotIds.has(result.team_slot_id) ||
         seenSlotNumbers.has(teamSlot.slot_number)
       ) {
         mismatch();
       }
 
-      const placementPoints = POSITION_POINTS.get(placement);
+      const totals = totalsBySlot.get(teamSlot.slot_number) ?? {
+        teamSlot: teamSlot.slot_number,
+        matchesPlayed: 0,
+        totalPositionPoints: 0,
+        totalKills: 0,
+        totalKillPoints: 0,
+        totalPoints: 0,
+        bestPlacement: legacySnapshot ? 13 : null,
+        firstPlaceCount: 0,
+        latestMatchPlacement: legacySnapshot ? 13 : null,
+      };
 
-      if (placementPoints === undefined) {
-        mismatch();
-      }
+      if (status === "PARTICIPATED") {
+        const placementPoints = POSITION_POINTS.get(placement!);
+        if (placementPoints === undefined) {
+          mismatch();
+        }
+        totals.matchesPlayed += 1;
+        totals.totalPositionPoints += placementPoints;
+        totals.totalKills += result.kills;
+        totals.totalKillPoints += result.kills;
+        totals.totalPoints += placementPoints + result.kills;
+        totals.bestPlacement = totals.bestPlacement === null
+          ? placement
+          : Math.min(totals.bestPlacement, placement!);
 
-      const totals = totalsBySlot.get(teamSlot.slot_number);
+        if (placement === 1) {
+          totals.firstPlaceCount += 1;
+        }
 
-      if (totals === undefined) {
-        mismatch();
-      }
-
-      totals.matchesPlayed += 1;
-      totals.totalPositionPoints += placementPoints;
-      totals.totalKills += result.kills;
-      totals.totalKillPoints += result.kills;
-      totals.totalPoints += placementPoints + result.kills;
-      totals.bestPlacement = Math.min(totals.bestPlacement, placement);
-
-      if (placement === 1) {
-        totals.firstPlaceCount += 1;
-      }
-
-      if (matchIndex === finalizedMatches.length - 1) {
         totals.latestMatchPlacement = placement;
       }
 
-      placements.add(placement);
+      totalsBySlot.set(teamSlot.slot_number, totals);
+
+      if (placement !== null) {
+        placements.add(placement);
+      }
       teamSlotIds.add(result.team_slot_id);
       seenSlotNumbers.add(teamSlot.slot_number);
     }
 
     if (
-      placements.size !== 12 ||
-      teamSlotIds.size !== 12 ||
-      seenSlotNumbers.size !== 12 ||
-      [...REQUIRED_SLOT_NUMBERS].some((value) => !placements.has(value)) ||
-      [...REQUIRED_SLOT_NUMBERS].some((value) => !seenSlotNumbers.has(value))
+      placements.size !== participatedResults.length ||
+      teamSlotIds.size !== results.length ||
+      seenSlotNumbers.size !== results.length ||
+      Array.from(
+        { length: participatedResults.length },
+        (_, index) => index + 1,
+      ).some(
+        (value) => !placements.has(value) || !seenSlotNumbers.has(value),
+      )
     ) {
       mismatch();
     }
   });
 
   if (
-    totalsBySlot.size !== 12 ||
-    [...totalsBySlot.values()].some((standing) =>
-      standing.matchesPlayed !== finalizedMatches.length ||
-      standing.bestPlacement === 13 ||
-      standing.latestMatchPlacement === 13
-    )
+    totalsBySlot.size < 1 ||
+    [...totalsBySlot.values()].some((standing) => standing.matchesPlayed < 0)
   ) {
     mismatch();
   }
@@ -387,7 +405,7 @@ function compareOfficialRows(
 
     if (
       teamSlot === undefined ||
-      row.export_schema_version !== "phase_10_v1" ||
+      !APPROVED_EXPORT_SCHEMA_VERSIONS.has(row.export_schema_version) ||
       row.export_type !== "tournament_standings" ||
       row.tournament_id !== tournament.id ||
       row.tournament_name !== tournament.name ||

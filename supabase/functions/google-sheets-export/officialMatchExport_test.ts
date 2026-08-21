@@ -49,12 +49,13 @@ function assertEquals(
 
 function validRequest(
   finalizedAt = "",
+  participantCount = 12,
 ): MatchExportRequest {
   return parseMatchExportRequest({
     operation: "export_match",
     tournament_id: TOURNAMENT_ID,
     match_id: MATCH_ID,
-    rows: Array.from({ length: 12 }, (_, index) => {
+    rows: Array.from({ length: participantCount }, (_, index) => {
       const placement = index + 1;
       const kills = index;
 
@@ -88,7 +89,7 @@ function teamSlotId(slotNumber: number): string {
   return `team-slot-${slotNumber}`;
 }
 
-function validOfficialData(): OfficialMatchExportData {
+function validOfficialData(participantCount = 12): OfficialMatchExportData {
   return {
     tournament: {
       id: TOURNAMENT_ID,
@@ -108,10 +109,10 @@ function validOfficialData(): OfficialMatchExportData {
         id: teamSlotId(slotNumber),
         tournament_id: TOURNAMENT_ID,
         slot_number: slotNumber,
-        team_name: `Team ${slotNumber}`,
+        team_name: slotNumber <= participantCount ? `Team ${slotNumber}` : "",
       };
     }),
-    matchResults: Array.from({ length: 12 }, (_, index) => {
+    matchResults: Array.from({ length: participantCount }, (_, index) => {
       const slotNumber = index + 1;
 
       return {
@@ -123,7 +124,7 @@ function validOfficialData(): OfficialMatchExportData {
         review_status: "confirmed",
       };
     }),
-    players: Array.from({ length: 12 }, (_, index) => {
+    players: Array.from({ length: participantCount }, (_, index) => {
       const slotNumber = index + 1;
 
       return ["A", "B", "C", "D"].map((suffix) => ({
@@ -161,6 +162,10 @@ function assertRejected(
 
 Deno.test("valid finalized official data matches export payload", () => {
   validateOfficialMatchExport(validRequest(), validOfficialData());
+});
+
+Deno.test("valid ten-participant official data allows blank inactive slots", () => {
+  validateOfficialMatchExport(validRequest("", 10), validOfficialData(10));
 });
 
 Deno.test("official tournament identity and name must match", () => {
@@ -211,14 +216,64 @@ Deno.test("official team slots must be unique and tournament-scoped", () => {
   });
 });
 
-Deno.test("official data requires exactly twelve confirmed results", () => {
+Deno.test("official results and request rows must have the same participant count", () => {
   assertRejected((_request, data) => {
-    data.matchResults.pop();
+    data.matchResults = validOfficialData(10).matchResults;
   });
 
+  const request = validRequest("", 10);
+  const data = validOfficialData(10);
+  data.matchResults.pop();
+
+  try {
+    validateOfficialMatchExport(request, data);
+  } catch (error) {
+    assert(error instanceof EdgeFunctionError);
+    assertEquals(error.code, "MATCH_EXPORT_DATA_MISMATCH");
+    return;
+  }
+
+  throw new Error("Expected MATCH_EXPORT_DATA_MISMATCH");
+});
+
+Deno.test("official results must remain confirmed", () => {
   assertRejected((_request, data) => {
     data.matchResults[0].review_status = "draft";
   });
+});
+
+Deno.test("a referenced inactive slot with a blank team name is rejected", () => {
+  const request = validRequest("", 10);
+  const data = validOfficialData(10);
+  data.matchResults[0].team_slot_id = teamSlotId(11);
+  request.rows[0].team_slot = 11;
+  request.rows[0].team_name = "";
+
+  try {
+    validateOfficialMatchExport(request, data);
+  } catch (error) {
+    assert(error instanceof EdgeFunctionError);
+    assertEquals(error.code, "MATCH_EXPORT_DATA_MISMATCH");
+    return;
+  }
+
+  throw new Error("Expected MATCH_EXPORT_DATA_MISMATCH");
+});
+
+Deno.test("ten-participant official placements must cover one through ten", () => {
+  const request = validRequest("", 10);
+  const data = validOfficialData(10);
+  data.matchResults[9].placement = 11;
+
+  try {
+    validateOfficialMatchExport(request, data);
+  } catch (error) {
+    assert(error instanceof EdgeFunctionError);
+    assertEquals(error.code, "MATCH_EXPORT_DATA_MISMATCH");
+    return;
+  }
+
+  throw new Error("Expected MATCH_EXPORT_DATA_MISMATCH");
 });
 
 Deno.test("official placements and result team slots must be unique", () => {

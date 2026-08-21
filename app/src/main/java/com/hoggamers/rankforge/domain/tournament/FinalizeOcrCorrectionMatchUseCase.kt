@@ -25,6 +25,7 @@ data class FinalizeOcrCorrectionRowInput(
     val confidenceSummary: String? = null,
     val safetySummary: String? = null,
     val manualReviewRequired: Boolean = false,
+    val isExcluded: Boolean = false,
 )
 
 enum class FinalizeOcrCorrectionMatchWarning {
@@ -78,15 +79,17 @@ class FinalizeOcrCorrectionMatchUseCase(
     private val repository: TournamentRepository,
     private val finalizeMatch: FinalizeMatchUseCase,
     private val clock: Clock = Clock.systemUTC(),
+    private val validateMatchResult: ValidateMatchResultUseCase = ValidateMatchResultUseCase(),
 ) {
-    suspend operator fun invoke(input: FinalizeOcrCorrectionMatchInput): FinalizeOcrCorrectionMatchResult =
-        try {
+    suspend operator fun invoke(input: FinalizeOcrCorrectionMatchInput): FinalizeOcrCorrectionMatchResult {
+        return try {
             finalize(input)
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
             FinalizeOcrCorrectionMatchResult.UnexpectedFailure
         }
+    }
 
     private suspend fun finalize(
         input: FinalizeOcrCorrectionMatchInput,
@@ -103,7 +106,6 @@ class FinalizeOcrCorrectionMatchUseCase(
                 failuresByRowIndex = rowValidation.failuresByRowIndex,
             )
         }
-
         val tournament = repository.observeById(input.tournamentId).first()
             ?: return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_TOURNAMENT),
@@ -123,8 +125,30 @@ class FinalizeOcrCorrectionMatchUseCase(
             )
         }
 
-        val availableTeamSlots = repository.observeSlotsByTournamentId(input.tournamentId)
-            .first()
+        val slots = repository.observeSlotsByTournamentId(input.tournamentId).first()
+        val participation = slots.analyzeTeamSlotParticipation()
+        if (!participation.isReadyForMatchCreation) {
+            // Invalid participation is reported through the existing draft-integrity contract.
+            return FinalizeOcrCorrectionMatchResult.Blocked(
+                failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
+            )
+        }
+
+        val participantValidation = validateMatchResult.validateForInitialFinalization(
+            rows = rowValidation.finalizeRows,
+            registeredTeamSlots = participation.activeSlotNumbers,
+        )
+        val positionedTeamSlots = rowValidation.finalizeRows
+            .map { it.teamSlotNumber }
+            .toSet()
+        if (rowValidation.finalizeRows.isEmpty() || !participantValidation.isValid) {
+            return FinalizeOcrCorrectionMatchResult.Blocked(
+                failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
+                validation = participantValidation,
+            )
+        }
+
+        val availableTeamSlots = slots
             .map { it.slotNumber }
             .toSet()
         val unavailableTeamSlotRows = rowValidation.finalizeRows
@@ -135,6 +159,7 @@ class FinalizeOcrCorrectionMatchUseCase(
             return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.TEAM_SLOT_UNAVAILABLE),
                 failuresByRowIndex = correctionRows
+                    .filterNot { it.isExcluded }
                     .mapNotNull { row ->
                         val teamSlotNumber = row.correctedTeamSlotNumber?.trim()?.toIntOrNull()
                         if (teamSlotNumber != null && teamSlotNumber in unavailableTeamSlotRows) {
@@ -148,7 +173,7 @@ class FinalizeOcrCorrectionMatchUseCase(
         }
 
         val warningRows = correctionRows
-            .filter { it.warnings.isNotEmpty() }
+            .filter { !it.isExcluded && it.warnings.isNotEmpty() }
             .map { it.rowIndex }
             .toSet()
         if (warningRows.isNotEmpty() && !input.warningConfirmationAccepted) {
@@ -158,15 +183,14 @@ class FinalizeOcrCorrectionMatchUseCase(
             )
         }
 
-        return when (
-            val result = finalizeMatch(
-                FinalizeMatchInput(
-                    matchId = input.matchId,
-                    rows = rowValidation.finalizeRows,
-                    ocrEvidence = input.toPreservedEvidence(correctionRows, rowValidation),
-                ),
-            )
-        ) {
+        val finalizeMatchResult = finalizeMatch(
+            FinalizeMatchInput(
+                matchId = input.matchId,
+                rows = rowValidation.finalizeRows,
+                ocrEvidence = input.toPreservedEvidence(correctionRows, rowValidation),
+            ),
+        )
+        return when (val result = finalizeMatchResult) {
             is FinalizeMatchResult.Finalized -> FinalizeOcrCorrectionMatchResult.Finalized(result.match)
             is FinalizeMatchResult.Invalid -> FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(result.globalError.toOcrCorrectionFailure()),
@@ -196,9 +220,21 @@ class FinalizeOcrCorrectionMatchUseCase(
             }
 
         val parsedRows = rows.map { row ->
-            val placement = row.correctedPlacement.parsePlacement()
-            val kills = row.correctedKills.parseKills()
-            val teamSlot = row.correctedTeamSlotNumber.parseTeamSlot()
+            val placement = if (row.isExcluded) {
+                ParsedInt(null, null)
+            } else {
+                row.correctedPlacement.parsePlacement()
+            }
+            val kills = if (row.isExcluded) {
+                ParsedInt(null, null)
+            } else {
+                row.correctedKills.parseKills()
+            }
+            val teamSlot = if (row.isExcluded) {
+                ParsedInt(null, null)
+            } else {
+                row.correctedTeamSlotNumber.parseTeamSlot()
+            }
 
             if (placement.failure != null) {
                 failures.addForRow(row.rowIndex, failuresByRowIndex, placement.failure)
@@ -215,19 +251,25 @@ class FinalizeOcrCorrectionMatchUseCase(
                 placement = placement.value,
                 kills = kills.value,
                 teamSlotNumber = teamSlot.value,
+                isExcluded = row.isExcluded,
             )
         }
 
-        parsedRows.duplicateIndexesByValue { it.placement }
+        parsedRows
+            .filterNot { it.isExcluded }
+            .duplicateIndexesByValue { it.placement }
             .forEach { rowIndex ->
                 failures.addForRow(rowIndex, failuresByRowIndex, FinalizeOcrCorrectionMatchFailure.DUPLICATE_PLACEMENT)
             }
-        parsedRows.duplicateIndexesByValue { it.teamSlotNumber }
+        parsedRows
+            .filterNot { it.isExcluded }
+            .duplicateIndexesByValue { it.teamSlotNumber }
             .forEach { rowIndex ->
                 failures.addForRow(rowIndex, failuresByRowIndex, FinalizeOcrCorrectionMatchFailure.DUPLICATE_TEAM_SLOT)
             }
 
         val finalizeRows = parsedRows.mapNotNull { row ->
+            if (row.isExcluded) return@mapNotNull null
             val teamSlotNumber = row.teamSlotNumber ?: return@mapNotNull null
             val placement = row.placement ?: return@mapNotNull null
             val kills = row.kills ?: return@mapNotNull null
@@ -270,7 +312,7 @@ class FinalizeOcrCorrectionMatchUseCase(
                     manualReviewRequired = row.manualReviewRequired,
                 )
             },
-            correctionSnapshots = correctionRows.map { row ->
+            correctionSnapshots = correctionRows.filterNot { it.isExcluded }.map { row ->
                 val parsed = parsedRowsByIndex.getValue(row.rowIndex)
                 PreservedMatchOcrCorrectionSnapshot(
                     rowIndex = row.rowIndex,
@@ -371,6 +413,7 @@ class FinalizeOcrCorrectionMatchUseCase(
         val placement: Int?,
         val kills: Int?,
         val teamSlotNumber: Int?,
+        val isExcluded: Boolean,
     )
 
     private data class RowValidation(

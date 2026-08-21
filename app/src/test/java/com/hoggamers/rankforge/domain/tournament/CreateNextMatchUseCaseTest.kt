@@ -65,7 +65,7 @@ class CreateNextMatchUseCaseTest {
     }
 
     @Test
-    fun noTeamsAndGapAreControlledFailures() = runTest {
+    fun noTeamsAreRejectedButSparseTeamsAreAllowed() = runTest {
         repository.create(tournament("empty"))
         repository.create(tournament("gapped"))
         repository.saveTeamNames("gapped", mapOf(1 to "Team 1", 3 to "Team 3"))
@@ -74,10 +74,7 @@ class CreateNextMatchUseCaseTest {
             CreateNextMatchFailure.NO_PARTICIPATING_TEAMS,
             (useCase("empty") as CreateNextMatchResult.Rejected).failure,
         )
-        assertEquals(
-            CreateNextMatchFailure.INVALID_TEAM_SLOTS,
-            (useCase("gapped") as CreateNextMatchResult.Rejected).failure,
-        )
+        assertTrue(useCase("gapped") is CreateNextMatchResult.Created)
     }
 
     @Test

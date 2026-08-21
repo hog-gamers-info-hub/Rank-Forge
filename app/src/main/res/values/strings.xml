@@ -175,8 +175,9 @@
     <string name="tournament_standing_kill_points_value">Kill points: %1$d</string>
     <string name="tournament_standing_first_place_finishes_value">First-place finishes: %1$d</string>
     <string name="tournament_standing_latest_placement_value">Latest placement: %1$d</string>
+    <string name="tournament_standing_latest_placement_none">Latest placement: —</string>
     <string name="tournament_standing_matches_included_value">Matches included: %1$d</string>
-    <string name="tournament_standing_complete_tie_message">Complete tie: unresolved by approved tie-break rules.</string>
+    <string name="tournament_standing_complete_tie_message">Complete tie; displayed in Team Slot order.</string>
     <string name="edit_roster_action">Edit Roster for Slot %1$d</string>
     <string name="roster_entry_title">Slot %1$d - Players Name</string>
     <string name="roster_entry_loading">Loading roster</string>
@@ -346,6 +347,7 @@
     <string name="match_ocr_review_correction_blockers_title">Correction blockers</string>
     <string name="match_ocr_review_correction_warnings_title">Correction warnings</string>
     <string name="match_ocr_review_reset_row_action">Reset row correction</string>
+    <string name="match_ocr_review_exclude_row_action">Exclude OCR row</string>
     <string name="match_ocr_review_reset_all_action">Reset all corrections</string>
     <string name="match_ocr_review_correction_status_valid">valid</string>
     <string name="match_ocr_review_correction_status_warning">warning</string>

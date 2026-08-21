@@ -23,6 +23,8 @@ export const STANDINGS_EXPORT_COLUMNS = [
   "tie_break_status",
 ] as const;
 
+export const MAX_STANDINGS_EXPORT_ROWS = 12;
+
 const STANDINGS_EXPORT_REQUEST_KEYS = [
   "operation",
   "tournament_id",
@@ -34,6 +36,11 @@ const APPROVED_TIE_BREAK_STATUSES = new Set([
   "tie_break_applied",
   "unresolved_tie",
   "resolved_by_existing_order",
+]);
+
+export const APPROVED_EXPORT_SCHEMA_VERSIONS = new Set([
+  "phase_10_v1",
+  "phase_10_v2",
 ]);
 
 const UUID_PATTERN =
@@ -57,7 +64,7 @@ export interface StandingsExportRow {
   total_kills: number;
   total_kill_points: number;
   total_points: number;
-  best_placement: number;
+  best_placement: number | null;
   first_place_count: number;
   tie_break_status: string;
 }
@@ -68,7 +75,7 @@ export interface StandingsExportRequest {
   rows: StandingsExportRow[];
 }
 
-export type StandingsExportCell = string | number;
+export type StandingsExportCell = string | number | null;
 
 function invalidPayload(): never {
   throw new EdgeFunctionError("INVALID_STANDINGS_EXPORT_PAYLOAD");
@@ -143,7 +150,9 @@ function parseStandingsExportRow(value: unknown): StandingsExportRow {
     total_kills: readInteger(value, "total_kills"),
     total_kill_points: readInteger(value, "total_kill_points"),
     total_points: readInteger(value, "total_points"),
-    best_placement: readInteger(value, "best_placement"),
+    best_placement: value.best_placement === null
+      ? null
+      : readInteger(value, "best_placement"),
     first_place_count: readInteger(value, "first_place_count"),
     tie_break_status: readString(value, "tie_break_status"),
   };
@@ -152,7 +161,10 @@ function parseStandingsExportRow(value: unknown): StandingsExportRow {
 function validateStandingsExportRows(
   request: StandingsExportRequest,
 ): void {
-  if (request.rows.length !== 12) {
+  if (
+    request.rows.length < 1 ||
+    request.rows.length > MAX_STANDINGS_EXPORT_ROWS
+  ) {
     invalidPayload();
   }
 
@@ -164,7 +176,7 @@ function validateStandingsExportRows(
     const expectedRank = index + 1;
 
     if (
-      row.export_schema_version !== "phase_10_v1" ||
+      !APPROVED_EXPORT_SCHEMA_VERSIONS.has(row.export_schema_version) ||
       row.export_type !== "tournament_standings" ||
       row.tournament_id !== request.tournament_id ||
       row.tournament_name !== tournamentName ||
@@ -175,7 +187,8 @@ function validateStandingsExportRows(
       row.team_slot < 1 ||
       row.team_slot > 12 ||
       teamSlots.has(row.team_slot) ||
-      row.matches_played !== row.exported_match_count ||
+      row.matches_played < 0 ||
+      row.matches_played > row.exported_match_count ||
       row.total_position_points < 0 ||
       row.total_kills < 0 ||
       row.total_kill_points < 0 ||
@@ -183,10 +196,11 @@ function validateStandingsExportRows(
       row.total_points < 0 ||
       row.total_points !==
         row.total_position_points + row.total_kill_points ||
-      row.best_placement < 1 ||
-      row.best_placement > 12 ||
+      (row.best_placement !== null &&
+        (row.best_placement < 1 ||
+          row.best_placement > MAX_STANDINGS_EXPORT_ROWS)) ||
       row.first_place_count < 0 ||
-      row.first_place_count > row.exported_match_count ||
+      row.first_place_count > row.matches_played ||
       !APPROVED_TIE_BREAK_STATUSES.has(row.tie_break_status)
     ) {
       invalidPayload();
@@ -222,7 +236,8 @@ export function parseStandingsExportRequest(
     typeof value.tournament_id !== "string" ||
     !isValidUuid(value.tournament_id) ||
     !Array.isArray(value.rows) ||
-    value.rows.length !== 12
+    value.rows.length < 1 ||
+    value.rows.length > MAX_STANDINGS_EXPORT_ROWS
   ) {
     invalidPayload();
   }

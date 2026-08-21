@@ -110,6 +110,21 @@ class MatchOcrReviewTeamSlotAssistantTest {
         assertTrue(12 in state.availableOptionsByRow.getValue(0).map { it.teamSlot })
     }
 
+    @Test
+    fun excludedRowDoesNotClaimItsAssignedTeamSlot() {
+        val excluded = draft((1..11).map { it.toString() } + "12")
+        val excludedDraft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+            draft = excluded,
+            rowIndex = 11,
+        )
+
+        val state = MatchOcrReviewTeamSlotAssistant.derive(excludedDraft)
+
+        assertFalse(12 in state.claimedTeamSlots)
+        assertTrue(12 in state.remainingTeamSlots)
+        assertFalse(11 in state.unresolvedRowIndexes)
+    }
+
     private fun derive(
         slots: List<String>,
         manualRowIndexes: Set<Int> = emptySet(),

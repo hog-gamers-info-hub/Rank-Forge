@@ -9,6 +9,12 @@ data class MatchOcrReviewCorrectionDraft(
     val isDirty: Boolean
         get() = rows.any { it.isDirty }
 
+    val includedRows: List<MatchOcrReviewRowCorrectionDraft>
+        get() = rows.filterNot { it.isExcluded }
+
+    val excludedCount: Int
+        get() = rows.count { it.isExcluded }
+
     val blockerCount: Int
         get() = rows.count { it.validation.blockers.isNotEmpty() }
 
@@ -35,10 +41,12 @@ data class MatchOcrReviewRowCorrectionDraft(
     val assignedTeamSlotDraftValue: String,
     val originallyRequiredManualReview: Boolean,
     val weakConfidenceOrSafetyEvidence: Boolean,
+    val isExcluded: Boolean = false,
     val validation: MatchOcrReviewRowCorrectionValidation,
 ) {
     val isDirty: Boolean
-        get() = placementDraftValue != originalPlacementValue ||
+        get() = isExcluded ||
+            placementDraftValue != originalPlacementValue ||
             killsDraftValue != originalKillsValue ||
             assignedTeamSlotDraftValue != originalAssignedTeamSlotValue
 }
@@ -101,6 +109,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                 assignedTeamSlotDraftValue = originalAssignedTeamSlotValue,
                 originallyRequiredManualReview = row.blockerLabels.isNotEmpty() || row.warningLabels.isNotEmpty(),
                 weakConfidenceOrSafetyEvidence = row.hasWeakConfidenceOrSafetyEvidence(),
+                isExcluded = false,
                 validation = MatchOcrReviewRowCorrectionValidation(),
             )
         }
@@ -136,6 +145,13 @@ object MatchOcrReviewCorrectionDraftReducer {
         row.copy(assignedTeamSlotDraftValue = value)
     }
 
+    fun onRowExcluded(
+        draft: MatchOcrReviewCorrectionDraft,
+        rowIndex: Int,
+    ): MatchOcrReviewCorrectionDraft = updateRow(draft, rowIndex) { row ->
+        row.copy(isExcluded = true)
+    }
+
     fun onResetRowCorrection(
         draft: MatchOcrReviewCorrectionDraft,
         rowIndex: Int,
@@ -144,6 +160,7 @@ object MatchOcrReviewCorrectionDraftReducer {
             placementDraftValue = row.originalPlacementValue,
             killsDraftValue = row.originalKillsValue,
             assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
+            isExcluded = false,
         )
     }
 
@@ -155,6 +172,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                         placementDraftValue = row.originalPlacementValue,
                         killsDraftValue = row.originalKillsValue,
                         assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
+                        isExcluded = false,
                     )
                 },
             ),
@@ -169,14 +187,14 @@ object MatchOcrReviewCorrectionDraftReducer {
             .map { it.rowIndex }
             .toSet()
         val placementDuplicates = duplicateRowIndexesForValues(
-            draft.rows.mapNotNull { row ->
+            draft.includedRows.mapNotNull { row ->
                 row.placementDraftValue.trim().toStrictPositiveIntOrNull()
                     ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
                     ?.let { row.rowIndex to it }
             },
         )
         val teamSlotDuplicates = duplicateRowIndexesForValues(
-            draft.rows.mapNotNull { row ->
+            draft.includedRows.mapNotNull { row ->
                 row.assignedTeamSlotDraftValue.trim().toStrictPositiveIntOrNull()
                     ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
                     ?.let { row.rowIndex to it }
@@ -195,44 +213,47 @@ object MatchOcrReviewCorrectionDraftReducer {
                     blockers += MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT
                 }
 
-                when {
-                    placement.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_PLACEMENT
-                    placement.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->
-                        blockers += MatchOcrReviewCorrectionReason.INVALID_PLACEMENT
-                    row.rowIndex in placementDuplicates -> blockers += MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
-                }
+                if (!row.isExcluded) {
+                    when {
+                        placement.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_PLACEMENT
+                        placement.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->
+                            blockers += MatchOcrReviewCorrectionReason.INVALID_PLACEMENT
+                        row.rowIndex in placementDuplicates ->
+                            blockers += MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
+                    }
 
-                when {
-                    kills.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
-                    kills.isStrictNegativeInteger() -> blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
-                    kills.toStrictNonNegativeIntOrNull() == null ->
-                        blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
-                }
+                    when {
+                        kills.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
+                        kills.isStrictNegativeInteger() -> blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
+                        kills.toStrictNonNegativeIntOrNull() == null ->
+                            blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
+                    }
 
-                when {
-                    teamSlot.isBlank() && draft.assignmentRequired ->
-                        blockers += MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT
-                    teamSlot.isNotBlank() &&
-                        teamSlot.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->
-                        blockers += MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT
-                    teamSlot.isNotBlank() && row.rowIndex in teamSlotDuplicates ->
-                        blockers += MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
-                }
+                    when {
+                        teamSlot.isBlank() && draft.assignmentRequired ->
+                            blockers += MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT
+                        teamSlot.isNotBlank() &&
+                            teamSlot.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->
+                            blockers += MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT
+                        teamSlot.isNotBlank() && row.rowIndex in teamSlotDuplicates ->
+                            blockers += MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
+                    }
 
-                if (row.placementDraftValue != row.originalPlacementValue) {
-                    warnings += MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR
-                }
-                if (row.killsDraftValue != row.originalKillsValue) {
-                    warnings += MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR
-                }
-                if (row.assignedTeamSlotDraftValue != row.originalAssignedTeamSlotValue) {
-                    warnings += MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION
-                }
-                if (row.originallyRequiredManualReview) {
-                    warnings += MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW
-                }
-                if (row.weakConfidenceOrSafetyEvidence) {
-                    warnings += MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE
+                    if (row.placementDraftValue != row.originalPlacementValue) {
+                        warnings += MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR
+                    }
+                    if (row.killsDraftValue != row.originalKillsValue) {
+                        warnings += MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR
+                    }
+                    if (row.assignedTeamSlotDraftValue != row.originalAssignedTeamSlotValue) {
+                        warnings += MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION
+                    }
+                    if (row.originallyRequiredManualReview) {
+                        warnings += MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW
+                    }
+                    if (row.weakConfidenceOrSafetyEvidence) {
+                        warnings += MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE
+                    }
                 }
 
                 row.copy(

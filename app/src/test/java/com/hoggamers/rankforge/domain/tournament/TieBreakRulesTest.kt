@@ -85,6 +85,18 @@ class TieBreakRulesTest {
     }
 
     @Test
+    fun missingLatestPlacementRanksAfterActualPlacementBeforeTeamSlotFallback() {
+        val result = tieBreakRules(
+            listOf(
+                standing(teamSlotNumber = 1, latestMatchPlacement = null),
+                standing(teamSlotNumber = 2, latestMatchPlacement = 12),
+            ),
+        )
+
+        assertEquals(listOf(2, 1), teamSlots(result))
+    }
+
+    @Test
     fun laterCriteriaAreNotUsedWhenTotalPointsResolveTheOrder() {
         val result = tieBreakRules(
             listOf(
@@ -118,6 +130,56 @@ class TieBreakRulesTest {
         )
 
         assertEquals(listOf(1, 2), teamSlots(result))
+        assertTrue(result.all { it.isCompleteTie })
+    }
+
+    @Test
+    fun noShowOnlyCompleteTieUsesTeamSlotForStableOrdering() {
+        val result = tieBreakRules(
+            listOf(
+                standing(
+                    teamSlotNumber = 10,
+                    latestMatchPlacement = null,
+                    matchesIncluded = 0,
+                ),
+                standing(
+                    teamSlotNumber = 7,
+                    latestMatchPlacement = null,
+                    matchesIncluded = 0,
+                ),
+            ),
+        )
+
+        assertEquals(listOf(7, 10), teamSlots(result))
+        assertTrue(result.all { it.isCompleteTie })
+    }
+
+    @Test
+    fun participatedCompleteTieUsesTeamSlotForStableOrderingAfterApprovedCriteria() {
+        val result = tieBreakRules(
+            listOf(
+                standing(
+                    teamSlotNumber = 10,
+                    totalPoints = 20,
+                    totalPositionPoints = 15,
+                    totalKillPoints = 5,
+                    firstPlaceFinishes = 1,
+                    latestMatchPlacement = 4,
+                    matchesIncluded = 1,
+                ),
+                standing(
+                    teamSlotNumber = 7,
+                    totalPoints = 20,
+                    totalPositionPoints = 15,
+                    totalKillPoints = 5,
+                    firstPlaceFinishes = 1,
+                    latestMatchPlacement = 4,
+                    matchesIncluded = 1,
+                ),
+            ),
+        )
+
+        assertEquals(listOf(7, 10), teamSlots(result))
         assertTrue(result.all { it.isCompleteTie })
     }
 
@@ -188,7 +250,7 @@ class TieBreakRulesTest {
         totalPositionPoints: Int = totalPoints,
         totalKillPoints: Int = 0,
         firstPlaceFinishes: Int = 0,
-        latestMatchPlacement: Int = 12,
+        latestMatchPlacement: Int? = 12,
         matchesIncluded: Int = 1,
     ): CumulativeTournamentStanding =
         CumulativeTournamentStanding(
@@ -201,4 +263,3 @@ class TieBreakRulesTest {
             matchesIncluded = matchesIncluded,
         )
 }
-

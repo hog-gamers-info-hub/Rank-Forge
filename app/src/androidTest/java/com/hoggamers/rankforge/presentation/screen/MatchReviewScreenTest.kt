@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -895,6 +896,160 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithText("DIRECT_NUMERIC")
             .assertCountEquals(0)
+    }
+
+    @Test
+    fun inlinePosition11WithFourNotDetectedPlayersShowsDelete() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateForPosition11(),
+                    onExcludeOcrRow = {},
+                )
+            }
+        }
+
+        (1..4).forEach { slot ->
+            composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, slot))
+                .performScrollTo()
+                .assertTextContains("$slot. Not detected", substring = true)
+        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun inlineDeleteUsesStructuralRowIndex() {
+        var capturedRowIndex: Int? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateForPosition11(),
+                    onExcludeOcrRow = { capturedRowIndex = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(10, capturedRowIndex)
+        }
+    }
+
+    @Test
+    fun inlineOneDetectedPlayerHidesDelete() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateForPosition11(
+                        playersBySlot = mapOf(3 to "DetectedPlayer"),
+                    ),
+                    onExcludeOcrRow = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 3))
+            .performScrollTo()
+            .assertTextContains("3. DetectedPlayer", substring = true)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.deleteRow(10))
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun inlineAllNotDetectedRowKeepsDeleteAndResetAvailable() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateForPosition11(),
+                    onExcludeOcrRow = {},
+                    onOcrResetRowCorrection = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(10))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun inlineExcludedRowIsNotRendered() {
+        val state = inlineOcrStateForPosition11()
+        val correctionDraft = state.correctionDraft ?: error("Expected correction draft")
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = state.copy(
+                        correctionDraft = correctionDraft.copy(
+                            rows = listOf(correctionDraft.rows.single().copy(isExcluded = true)),
+                        ),
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithText("Position - 11").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(10))
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun inlineExcludedRowKeepsNeighborStructuralPositionAndPreviewAlignment() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateWithExcludedPosition11AndPosition12(),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Position - 11").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Position - 12").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 1))
+            .performScrollTo()
+            .assertTextContains("1. Position 12 Player", substring = true)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(11))
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -2757,6 +2912,109 @@ class MatchReviewScreenTest {
                 rows = listOf(secondCorrection, firstCorrection),
             ),
             lobbyPlayers = emptyList(),
+        )
+    }
+
+    private fun inlineOcrStateForPosition11(
+        playersBySlot: Map<Int, String> = emptyMap(),
+    ): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrState()
+        val row = base.rows.single().copy(
+            rowIndex = 10,
+            expectedPlacementLabel = "11",
+            detectedPlacementDisplayValue = "11",
+            detectedPlayerNameEvidenceLabel = "Unavailable",
+            suggestedTeamSlotDisplayValue = "Unavailable",
+            originalParsedPlacementValue = 11,
+            originalSuggestedTeamSlot = null,
+            blockerLabels = listOf("Team assignment: manual team slot required"),
+            severity = MatchOcrReviewSeverity.BLOCKING,
+        )
+        val correction = base.correctionDraft?.rows?.single()?.copy(
+            rowIndex = 10,
+            originalPlacementValue = "11",
+            placementDraftValue = "11",
+            originalAssignedTeamSlotValue = "",
+            assignedTeamSlotDraftValue = "",
+        ) ?: error("Expected correction draft")
+        val preview = previewRow(11, MatchResultScreenshotRole.MATCH_RESULT_LOWER).copy(
+            slots = previewRow(11, MatchResultScreenshotRole.MATCH_RESULT_LOWER).slots.map { slot ->
+                slot.copy(
+                    playerText = playersBySlot[slot.slot].orEmpty(),
+                    playerOcrText = playersBySlot[slot.slot].orEmpty(),
+                )
+            },
+        )
+        return base.copy(
+            rowCount = 1,
+            rows = listOf(row),
+            blockerCount = 1,
+            safeRowCount = 0,
+            manualRequiredRowCount = 1,
+            manualReviewRequired = true,
+            correctionDraft = base.correctionDraft.copy(rows = listOf(correction)),
+            matchResultOcrPreview = MatchResultOcrPreviewUiState.Ready(
+                roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                rows = listOf(preview),
+                ignoredLowerRows = emptyList(),
+                manualReviewRows = emptyList(),
+            ),
+            lobbyPlayers = emptyList(),
+        )
+    }
+
+    private fun inlineOcrStateWithExcludedPosition11AndPosition12(): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrStateForPosition11()
+        val row11 = base.rows.single()
+        val row12 = row11.copy(
+            rowIndex = 11,
+            expectedPlacementLabel = "12",
+            detectedPlacementDisplayValue = "12",
+            detectedKillDisplayValue = "12",
+            detectedPlayerNameEvidenceLabel = "Position 12 Player",
+            originalParsedPlacementValue = 12,
+            originalParsedKillValue = 12,
+            suggestedTeamSlotDisplayValue = "1",
+            originalSuggestedTeamSlot = 1,
+            blockerLabels = emptyList(),
+            severity = MatchOcrReviewSeverity.INFORMATIONAL,
+        )
+        val baseDraft = base.correctionDraft ?: error("Expected correction draft")
+        val correction11 = baseDraft.rows.single().copy(isExcluded = true)
+        val correction12 = correction11.copy(
+            rowIndex = 11,
+            originalPlacementValue = "12",
+            originalKillsValue = "12",
+            originalAssignedTeamSlotValue = "1",
+            placementDraftValue = "12",
+            killsDraftValue = "12",
+            assignedTeamSlotDraftValue = "1",
+            isExcluded = false,
+        )
+        val preview11 = previewRow(11, MatchResultScreenshotRole.MATCH_RESULT_LOWER).copy(
+            slots = previewRow(11, MatchResultScreenshotRole.MATCH_RESULT_LOWER).slots.map {
+                it.copy(playerText = "Position 11 Player", playerOcrText = "Position 11 Player")
+            },
+        )
+        val preview12 = previewRow(12, MatchResultScreenshotRole.MATCH_RESULT_LOWER).copy(
+            slots = previewRow(12, MatchResultScreenshotRole.MATCH_RESULT_LOWER).slots.map {
+                it.copy(playerText = "Position 12 Player", playerOcrText = "Position 12 Player")
+            },
+        )
+        return base.copy(
+            rowCount = 2,
+            rows = listOf(row11, row12),
+            blockerCount = 0,
+            safeRowCount = 1,
+            manualRequiredRowCount = 0,
+            manualReviewRequired = false,
+            correctionDraft = baseDraft.copy(rows = listOf(correction11, correction12)),
+            matchResultOcrPreview = MatchResultOcrPreviewUiState.Ready(
+                roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                rows = listOf(preview11, preview12),
+                ignoredLowerRows = emptyList(),
+                manualReviewRows = emptyList(),
+            ),
         )
     }
 

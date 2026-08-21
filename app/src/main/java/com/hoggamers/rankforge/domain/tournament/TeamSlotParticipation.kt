@@ -8,7 +8,7 @@ data class TeamSlotParticipation(
         get() = activeSlotNumbers.size
 
     val isReadyForMatchCreation: Boolean
-        get() = activeCount > 0 && !hasGap
+        get() = activeCount > 0
 }
 
 fun Map<Int, String>.analyzeTeamSlotParticipation(): TeamSlotParticipation =
@@ -33,10 +33,11 @@ private fun IntRange.analyzeTeamSlotParticipation(
     for (slotNumber in this) {
         if (nameForSlot(slotNumber).trim().isBlank()) {
             foundBlank = true
-        } else if (foundBlank) {
-            hasGap = true
         } else {
             activeSlotNumbers += slotNumber
+            if (foundBlank) {
+                hasGap = true
+            }
         }
     }
     return TeamSlotParticipation(

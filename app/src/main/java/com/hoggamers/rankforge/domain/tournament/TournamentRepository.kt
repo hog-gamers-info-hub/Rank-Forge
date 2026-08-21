@@ -84,6 +84,7 @@ interface TournamentRepository {
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
     ): FinalizeMatchRepositoryResult =
         error("Match finalization is not supported by this repository.")
 
@@ -91,6 +92,7 @@ interface TournamentRepository {
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
         evidence: PreservedMatchOcrEvidence,
     ): FinalizeMatchRepositoryResult =
         error("OCR evidence finalization is not supported by this repository.")
@@ -99,6 +101,7 @@ interface TournamentRepository {
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
     ): SubmitMatchCorrectionRepositoryResult =
         error("Match correction is not supported by this repository.")
 

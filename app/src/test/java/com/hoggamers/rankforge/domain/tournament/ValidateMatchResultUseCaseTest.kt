@@ -29,6 +29,81 @@ class ValidateMatchResultUseCaseTest {
     }
 
     @Test
+    fun tenExpectedTeamSlotsAreValid() {
+        val result = validate(
+            rows = (1..10).map { teamSlotNumber ->
+                MatchResultRowInput(
+                    teamSlotNumber = teamSlotNumber,
+                    placement = teamSlotNumber.toString(),
+                    kills = "0",
+                )
+            },
+            expectedTeamSlots = (1..10).toList(),
+        )
+
+        assertTrue(result.isValid)
+    }
+
+    @Test
+    fun participantAwareValidationRejectsMissingActiveSlot() {
+        val result = validate(
+            rows = (1..9).map { teamSlotNumber ->
+                MatchResultRowInput(teamSlotNumber, teamSlotNumber.toString(), "0")
+            } + MatchResultRowInput(11, "10", "0"),
+            expectedTeamSlots = (1..10).toList(),
+        )
+
+        assertTrue(!result.isValid)
+        assertTrue(
+            MatchResultValidationError.MISSING_TEAM_RESULT_ROW in
+                result.errorsByTeamSlot.getValue(10),
+        )
+    }
+
+    @Test
+    fun participantAwareValidationRejectsInactiveSlot() {
+        val result = validate(
+            rows = (1..9).map { teamSlotNumber ->
+                MatchResultRowInput(teamSlotNumber, teamSlotNumber.toString(), "0")
+            } + MatchResultRowInput(11, "10", "0"),
+            expectedTeamSlots = (1..10).toList(),
+        )
+
+        assertTrue(MatchResultValidationError.DUPLICATE_TEAM in result.errorsByTeamSlot.getValue(11))
+    }
+
+    @Test
+    fun participantAwareValidationRejectsPlacementAboveActiveCount() {
+        val rows = (1..10).map { teamSlotNumber ->
+            MatchResultRowInput(
+                teamSlotNumber = teamSlotNumber,
+                placement = if (teamSlotNumber == 10) "11" else teamSlotNumber.toString(),
+                kills = "0",
+            )
+        }
+
+        val result = validate(rows, expectedTeamSlots = (1..10).toList())
+
+        assertTrue(MatchResultValidationError.INVALID_PLACEMENT in result.errorsByTeamSlot.getValue(10))
+    }
+
+    @Test
+    fun participantAwareValidationRejectsDuplicatePlacement() {
+        val rows = (1..10).map { teamSlotNumber ->
+            MatchResultRowInput(
+                teamSlotNumber = teamSlotNumber,
+                placement = if (teamSlotNumber == 10) "9" else teamSlotNumber.toString(),
+                kills = "0",
+            )
+        }
+
+        val result = validate(rows, expectedTeamSlots = (1..10).toList())
+
+        assertTrue(MatchResultValidationError.DUPLICATE_PLACEMENT in result.errorsByTeamSlot.getValue(9))
+        assertTrue(MatchResultValidationError.DUPLICATE_PLACEMENT in result.errorsByTeamSlot.getValue(10))
+    }
+
+    @Test
     fun missingRowsAndFieldsAreDetected() {
         val result = validate(
             listOf(

@@ -3,6 +3,7 @@
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -41,6 +42,90 @@ class CumulativeTournamentStandingsTest {
             result.first { it.teamSlotNumber == 1 },
         )
         assertEquals(14, result.first { it.teamSlotNumber == 2 }.totalPoints)
+    }
+
+    @Test
+    fun tenTeamFinalizedMatchProducesExactlyTenStandingsFromActiveResultRows() {
+        val result = standings(
+            listOf(
+                match(
+                    id = "ten-team-match",
+                    matchNumber = 1,
+                    activeCount = 10,
+                    killsByTeamSlot = mapOf(2 to 5),
+                ),
+            ),
+        )
+
+        assertEquals(10, result.size)
+        assertEquals((1..10).toList(), result.map { it.teamSlotNumber })
+        assertEquals(12, result.first { it.teamSlotNumber == 1 }.totalPoints)
+        assertEquals(14, result.first { it.teamSlotNumber == 2 }.totalPoints)
+        assertTrue(result.all { it.matchesIncluded == 1 })
+    }
+
+    @Test
+    fun noShowRowsRemainInStandingsWithoutPointsOrPlayedMatches() {
+        val result = standings(
+            listOf(
+                match(
+                    id = "mixed-match-1",
+                    matchNumber = 1,
+                    participantResults = listOf(
+                        MatchParticipantResult(1, MatchParticipationStatus.NO_SHOW, null, 0),
+                        MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 1, 2),
+                        MatchParticipantResult(3, MatchParticipationStatus.NO_SHOW, null, 0),
+                    ),
+                ),
+                match(
+                    id = "mixed-match-2",
+                    matchNumber = 2,
+                    participantResults = listOf(
+                        MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 0),
+                        MatchParticipantResult(2, MatchParticipationStatus.NO_SHOW, null, 0),
+                        MatchParticipantResult(3, MatchParticipationStatus.NO_SHOW, null, 0),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(1, 2, 3), result.map { it.teamSlotNumber })
+        val noShowOnly = result.first { it.teamSlotNumber == 3 }
+        assertEquals(0, noShowOnly.totalPoints)
+        assertEquals(0, noShowOnly.totalKillPoints)
+        assertEquals(0, noShowOnly.matchesPlayed)
+        assertNull(noShowOnly.latestMatchPlacement)
+
+        val mixed = result.first { it.teamSlotNumber == 1 }
+        assertEquals(1, mixed.matchesPlayed)
+        assertEquals(1, mixed.latestMatchPlacement)
+    }
+
+    @Test
+    fun correctedTenTeamMatchUsesItsCurrentFinalizedValues() {
+        val result = standings(
+            listOf(
+                match(
+                    id = "corrected-ten-team-match",
+                    matchNumber = 1,
+                    activeCount = 10,
+                    placementsByTeamSlot = placementsWithFirstTwoSwapped(activeCount = 10),
+                    killsByTeamSlot = mapOf(1 to 7),
+                ),
+            ),
+        )
+
+        assertEquals(10, result.size)
+        assertEquals(16, result.first { it.teamSlotNumber == 1 }.totalPoints)
+        assertEquals(2, result.first { it.teamSlotNumber == 1 }.latestMatchPlacement)
+        assertEquals(7, result.first { it.teamSlotNumber == 1 }.totalKillPoints)
+    }
+
+    @Test
+    fun twelveTeamFinalizedMatchStillProducesTwelveStandingsRows() {
+        val result = standings(listOf(match(id = "twelve-team-match", matchNumber = 1)))
+
+        assertEquals(12, result.size)
     }
 
     @Test
@@ -306,8 +391,10 @@ class CumulativeTournamentStandingsTest {
         id: String,
         matchNumber: Int,
         status: MatchStatus = MatchStatus.FINALIZED,
-        placementsByTeamSlot: Map<Int, Int> = defaultPlacements(),
+        activeCount: Int = 12,
+        placementsByTeamSlot: Map<Int, Int> = defaultPlacements(activeCount),
         killsByTeamSlot: Map<Int, Int> = emptyMap(),
+        participantResults: List<MatchParticipantResult> = emptyList(),
     ): Match =
         Match(
             id = id,
@@ -322,13 +409,14 @@ class CumulativeTournamentStandingsTest {
             kills = placementsByTeamSlot.keys.map { teamSlotNumber ->
                 MatchKill(teamSlotNumber, killsByTeamSlot[teamSlotNumber] ?: 0)
             },
+            participantResults = participantResults,
         )
 
-    private fun defaultPlacements(): Map<Int, Int> =
-        (1..12).associateWith { it }
+    private fun defaultPlacements(activeCount: Int = 12): Map<Int, Int> =
+        (1..activeCount).associateWith { it }
 
-    private fun placementsWithFirstTwoSwapped(): Map<Int, Int> =
-        defaultPlacements() + mapOf(1 to 2, 2 to 1)
+    private fun placementsWithFirstTwoSwapped(activeCount: Int = 12): Map<Int, Int> =
+        defaultPlacements(activeCount) + mapOf(1 to 2, 2 to 1)
 
     private fun placementsWithTeamOneInFirst(): Map<Int, Int> =
         defaultPlacements()

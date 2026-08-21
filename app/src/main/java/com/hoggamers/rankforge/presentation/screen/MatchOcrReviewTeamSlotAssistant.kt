@@ -22,14 +22,18 @@ object MatchOcrReviewTeamSlotAssistant {
         evidenceByRow: Map<Int, List<MatchOcrReviewTeamSlotCandidateUiState>> = emptyMap(),
     ): MatchOcrReviewTeamSlotAssistantState {
         val claimedTeamSlots = correctionDraft.rows
+            .filterNot { it.isExcluded }
             .mapNotNull { it.assignedTeamSlotDraftValue.validTeamSlotOrNull() }
             .toSet()
         val remainingTeamSlots = TeamSlot.SLOT_NUMBERS
             .filterNot { it in claimedTeamSlots }
         val unresolvedRows = correctionDraft.rows
             .filter { row ->
-                row.rowIndex in manualRowIndexes ||
-                    row.validation.blockers.any { it in teamSlotBlockers }
+                !row.isExcluded &&
+                    (
+                        row.rowIndex in manualRowIndexes ||
+                            row.validation.blockers.any { it in teamSlotBlockers }
+                        )
             }
             .sortedBy { it.rowIndex }
 

@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.time.LocalDate
@@ -34,14 +36,44 @@ object MatchCloudRestorationMapper {
                 payload.matchNumber !in 1..10) return MatchCloudRestorationMappingResult.Invalid
             val date = runCatching { LocalDate.parse(payload.matchDate) }.getOrNull() ?: return MatchCloudRestorationMappingResult.Invalid
             val rows = payloads.results.filter { it.matchId == payload.id }
-            if (rows.map { it.teamSlotId }.distinct().size != rows.size || rows.any { row ->
-                    row.id.toUuidOrNull() == null || row.kills < 0 || teamSlotNumber(tournamentUuid, row.teamSlotId) == null
+            if (rows.map { it.id }.distinct().size != rows.size ||
+                rows.map { it.teamSlotId }.distinct().size != rows.size || rows.any { row ->
+                    row.id.toUuidOrNull() == null || row.kills < 0 || teamSlotNumber(tournamentUuid, row.teamSlotId) == null ||
+                        row.matchId != payload.id
                 }) return MatchCloudRestorationMappingResult.Invalid
-            val placements = rows.mapNotNull { row -> row.placement?.let { MatchPlacement(teamSlotNumber(tournamentUuid, row.teamSlotId)!!, it) } }
-            if (placements.any { it.position !in TeamSlot.SLOT_NUMBERS } || placements.map { it.position }.distinct().size != placements.size) return MatchCloudRestorationMappingResult.Invalid
-            if (status == MatchStatus.FINALIZED && (rows.size != 12 || placements.size != 12 || placements.map { it.position }.toSet() != TeamSlot.SLOT_NUMBERS.toSet())) return MatchCloudRestorationMappingResult.Invalid
+            val participantResults = if (status == MatchStatus.FINALIZED) rows.map { row ->
+                val slot = teamSlotNumber(tournamentUuid, row.teamSlotId)!!
+                val participationStatus = when (row.participationStatus?.uppercase()) {
+                    null, "PARTICIPATED" -> MatchParticipationStatus.PARTICIPATED
+                    "NO_SHOW" -> MatchParticipationStatus.NO_SHOW
+                    else -> return MatchCloudRestorationMappingResult.Invalid
+                }
+                runCatching { MatchParticipantResult(slot, participationStatus, row.placement, row.kills) }
+                    .getOrNull() ?: return MatchCloudRestorationMappingResult.Invalid
+            } else emptyList()
+            if (status == MatchStatus.FINALIZED) {
+                val participated = participantResults.filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+                if (participantResults.isEmpty() || participated.isEmpty() ||
+                    participated.mapNotNull { it.placement }.toSet() != (1..participated.size).toSet()
+                ) return MatchCloudRestorationMappingResult.Invalid
+            }
+            val placements = participantResults.mapNotNull { it.placement?.let { position -> MatchPlacement(it.teamSlotNumber, position) } }
+            val draftPlacements = if (status == MatchStatus.DRAFT) rows.mapNotNull { row ->
+                row.placement?.let { position -> MatchPlacement(teamSlotNumber(tournamentUuid, row.teamSlotId)!!, position) }
+            } else emptyList()
+            val draftKills = if (status == MatchStatus.DRAFT) rows.map {
+                MatchKill(teamSlotNumber(tournamentUuid, it.teamSlotId)!!, it.kills)
+            } else emptyList()
+            if (draftPlacements.any { it.position !in TeamSlot.SLOT_NUMBERS } ||
+                draftPlacements.map { it.position }.distinct().size != draftPlacements.size
+            ) return MatchCloudRestorationMappingResult.Invalid
             Match(id = payload.id, tournamentId = payloads.tournamentId, matchNumber = payload.matchNumber, date = date, mapName = payload.mapName, status = status,
-                placements = placements.sortedBy { it.teamSlotNumber }, kills = rows.map { MatchKill(teamSlotNumber(tournamentUuid, it.teamSlotId)!!, it.kills) }.sortedBy { it.teamSlotNumber })
+                placements = (if (status == MatchStatus.DRAFT) draftPlacements else placements).sortedBy { it.teamSlotNumber },
+                kills = (if (status == MatchStatus.DRAFT) draftKills else participantResults
+                    .filter { it.placement != null }
+                    .map { MatchKill(it.teamSlotNumber, it.kills) }).sortedBy { it.teamSlotNumber },
+                participantResults = participantResults.sortedBy { it.teamSlotNumber },
+            )
         }
         if (payloads.results.any { it.matchId !in payloads.matches.map { match -> match.id }.toSet() }) return MatchCloudRestorationMappingResult.Invalid
         val cloudRevision = payloads.cloudRevision.takeIf { it > 0 }?.let(::CloudRevision)

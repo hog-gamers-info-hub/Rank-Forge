@@ -34,6 +34,7 @@ interface RankForgeStateDao {
         MatchEntity::class,
         MatchPlacementEntity::class,
         MatchKillEntity::class,
+        MatchParticipantResultEntity::class,
         MatchDraftValueEntity::class,
         MatchCorrectionEntity::class,
         SyncQueueEntity::class,
@@ -49,7 +50,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -60,6 +61,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchDao(): MatchDao
     abstract fun matchPlacementDao(): MatchPlacementDao
     abstract fun matchKillDao(): MatchKillDao
+    abstract fun matchParticipantResultDao(): MatchParticipantResultDao
     abstract fun matchDraftValueDao(): MatchDraftValueDao
     abstract fun matchCorrectionDao(): MatchCorrectionDao
     abstract fun syncQueueDao(): SyncQueueDao
@@ -539,6 +541,54 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_match_lobby_ocr_cache_tournament_id` " +
                         "ON `match_lobby_ocr_cache` (`tournament_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_participant_results` (
+                        `match_id` TEXT NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        `participation_status` TEXT NOT NULL,
+                        `placement` INTEGER,
+                        `kills` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`, `team_slot_number`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        CHECK (`participation_status` IN ('PARTICIPATED', 'NO_SHOW')),
+                        CHECK (`kills` >= 0),
+                        CHECK (
+                            (`participation_status` = 'PARTICIPATED' AND `placement` IS NOT NULL) OR
+                            (`participation_status` = 'NO_SHOW' AND `placement` IS NULL AND `kills` = 0)
+                        )
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_participant_results_match_id` " +
+                        "ON `match_participant_results` (`match_id`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_match_participant_results_match_id_placement` " +
+                        "ON `match_participant_results` (`match_id`, `placement`)",
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `match_participant_results` (
+                        `match_id`, `team_slot_number`, `participation_status`, `placement`, `kills`
+                    )
+                    SELECT placements.`match_id`, placements.`team_slot_number`,
+                        'PARTICIPATED', placements.`position`, kills.`kills`
+                    FROM `match_placements` AS placements
+                    INNER JOIN `match_kills` AS kills
+                        ON kills.`match_id` = placements.`match_id`
+                        AND kills.`team_slot_number` = placements.`team_slot_number`
+                    INNER JOIN `matches` AS matches
+                        ON matches.`id` = placements.`match_id`
+                    WHERE matches.`status` = 'FINALIZED'
+                    """.trimIndent(),
                 )
             }
         }

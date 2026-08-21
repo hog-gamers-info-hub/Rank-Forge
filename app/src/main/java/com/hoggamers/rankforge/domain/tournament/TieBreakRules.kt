@@ -19,6 +19,7 @@ class TieBreakRules {
                 compareByDescending<CumulativeTournamentStanding> { it.totalPoints }
                     .thenByDescending { it.firstPlaceFinishes }
                     .thenByDescending { it.totalKillPoints }
+                    .thenBy { it.latestMatchPlacement == null }
                     .thenBy { it.latestMatchPlacement }
                     .thenBy { it.teamSlotNumber },
             )
@@ -42,6 +43,6 @@ class TieBreakRules {
         val totalPoints: Int,
         val firstPlaceFinishes: Int,
         val totalKills: Int,
-        val latestMatchPlacement: Int,
+        val latestMatchPlacement: Int?,
     )
 }

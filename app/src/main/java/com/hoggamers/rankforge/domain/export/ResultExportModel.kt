@@ -3,7 +3,7 @@ package com.hoggamers.rankforge.domain.export
 import java.time.LocalDate
 
 data class ResultExportRow(
-    val rank: Int,
+    val rank: Int?,
     val teamName: String,
     val win: Int,
     val totalKills: Int,

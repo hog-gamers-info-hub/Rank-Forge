@@ -3,7 +3,9 @@
 import com.hoggamers.rankforge.domain.tournament.KillPointsEngine
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.PositionPointsEngine
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -13,6 +15,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -31,7 +34,7 @@ class TournamentCsvExporterTest {
 
         val success = result as TournamentCsvExportResult.Success
         assertTrue(success.csv.startsWith(EXPECTED_HEADER))
-        assertTrue(success.csv.contains("phase_10_v1,tournament_standings"))
+        assertTrue(success.csv.contains("phase_10_v2,tournament_standings"))
     }
 
     @Test
@@ -48,6 +51,123 @@ class TournamentCsvExporterTest {
         assertEquals(13, csv.linesByRecord().size)
         assertEquals(12, csv.dataRows().size)
         assertFalse(csv.endsWith("\r\n"))
+    }
+
+    @Test
+    fun tenTeamTournamentExportsTenStandingsRows() {
+        val csv = exportSuccess(
+            validInput(
+                matches = listOf(validMatch(participantCount = 10)),
+                teamSlots = validTeamSlots(activeCount = 10),
+            ),
+        )
+
+        assertEquals(11, csv.linesByRecord().size)
+        assertEquals(10, csv.dataRows().size)
+        assertTrue(csv.dataRows().all { row -> row[TEAM_SLOT_COLUMN].toInt() in 1..10 })
+    }
+
+    @Test
+    fun tenTeamHistoricalMatchDoesNotUseCurrentActiveTeamCount() {
+        val csv = exportSuccess(
+            validInput(
+                matches = listOf(validMatch(participantCount = 10)),
+                teamSlots = validTeamSlots(),
+            ),
+        )
+
+        assertEquals(10, csv.dataRows().size)
+        assertTrue(csv.dataRows().none { row -> row[TEAM_SLOT_COLUMN] in setOf("11", "12") })
+    }
+
+    @Test
+    fun mixedTenAndTwelveTeamHistoryAggregatesOnlyParticipatingMatches() {
+        val csv = exportSuccess(
+            validInput(
+                matches = listOf(
+                    validMatch(
+                        id = "ten-team-match",
+                        matchNumber = 1,
+                        participantCount = 10,
+                        kills = validKills(participantCount = 10, killsPerTeam = 2),
+                    ),
+                    validMatch(
+                        id = "twelve-team-match",
+                        matchNumber = 2,
+                        participantCount = 12,
+                        kills = validKills(participantCount = 12, killsPerTeam = 3),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(12, csv.dataRows().size)
+        assertTrue(csv.dataRows().all { row -> row[EXPORTED_MATCH_COUNT_COLUMN] == "2" })
+        assertEquals("2", csv.rowForTeamSlot(1)[MATCHES_PLAYED_COLUMN])
+        assertEquals("5", csv.rowForTeamSlot(1)[TOTAL_KILLS_COLUMN])
+        assertEquals("1", csv.rowForTeamSlot(1)[BEST_PLACEMENT_COLUMN])
+        assertEquals("1", csv.rowForTeamSlot(11)[MATCHES_PLAYED_COLUMN])
+        assertEquals("3", csv.rowForTeamSlot(11)[TOTAL_KILLS_COLUMN])
+        assertEquals("11", csv.rowForTeamSlot(11)[BEST_PLACEMENT_COLUMN])
+    }
+
+    @Test
+    fun blankInactiveStructuralTeamNamesAreAllowed() {
+        val result = exporter.export(
+            validInput(
+                matches = listOf(validMatch(participantCount = 10)),
+                teamSlots = validTeamSlots(activeCount = 10),
+            ),
+        )
+
+        assertTrue(result is TournamentCsvExportResult.Success)
+    }
+
+    @Test
+    fun malformedTenTeamFinalizedMatchesAreRejected() {
+        val cases = listOf(
+            validMatch(
+                participantCount = 10,
+                placements = validPlacements(10).dropLast(1),
+            ) to TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT,
+            validMatch(
+                participantCount = 10,
+                kills = validKills(9),
+            ) to TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT,
+            validMatch(
+                participantCount = 10,
+                kills = validKills(11),
+            ) to TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT,
+            validMatch(
+                participantCount = 10,
+                placements = validPlacements(10).replacePlacement(10, 11),
+            ) to TournamentCsvExportFailure.INVALID_PLACEMENT,
+            validMatch(
+                participantCount = 10,
+                placements = validPlacements(10).replacePlacement(2, 1),
+            ) to TournamentCsvExportFailure.DUPLICATE_PLACEMENT,
+            validMatch(
+                participantCount = 10,
+                placements = validPlacements(10).dropLast(1) + MatchPlacement(1, 10),
+            ) to TournamentCsvExportFailure.DUPLICATE_TEAM_SLOT,
+            validMatch(
+                participantCount = 10,
+                kills = validKills(10).replaceKill(1, -1),
+            ) to TournamentCsvExportFailure.INVALID_KILL_COUNT,
+            validMatch(participantCount = 0) to TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT,
+            validMatch(
+                participantCount = 13,
+                placements = validPlacements(13),
+                kills = validKills(13),
+            ) to TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT,
+        )
+
+        cases.forEach { (match, failure) ->
+            assertFailure(
+                exporter.export(validInput(matches = listOf(match))),
+                failure,
+            )
+        }
     }
 
     @Test
@@ -309,6 +429,84 @@ class TournamentCsvExporterTest {
             result,
             TournamentCsvExportFailure.MISSING_TEAM_IDENTITY,
         )
+    }
+
+    @Test
+    fun sparseFinalizedMatchUsesPersistedParticipantSlots() {
+        val slots = listOf(1, 2, 3, 4, 5, 6, 8, 9, 11, 12)
+        val result = exporter.export(
+            validInput(
+                teamSlots = validTeamSlots(),
+                matches = listOf(
+                    validMatch(
+                        placements = slots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+                        kills = slots.mapIndexed { index, slot -> MatchKill(slot, index) },
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(result is TournamentCsvExportResult.Success)
+    }
+
+    @Test
+    fun noShowOnlyTeamsRemainInStandingsWithNullableBestPlacement() {
+        val result = exporter.export(
+            validInput(
+                matches = listOf(
+                    validMatch().copy(
+                        participantResults = listOf(
+                            MatchParticipantResult(1, MatchParticipationStatus.NO_SHOW, null, 0),
+                            MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 1, 2),
+                            MatchParticipantResult(3, MatchParticipationStatus.NO_SHOW, null, 0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val rows = (result as TournamentCsvExportResult.Success).csv.dataRows()
+        assertEquals(3, rows.size)
+
+        val noShowOnly = rows.single { it[TEAM_SLOT_COLUMN] == "3" }
+        assertEquals("0", noShowOnly[MATCHES_PLAYED_COLUMN])
+        assertEquals("0", noShowOnly[TOTAL_KILLS_COLUMN])
+        assertEquals("0", noShowOnly[TOTAL_POINTS_COLUMN])
+        assertNull(noShowOnly[BEST_PLACEMENT_COLUMN].ifEmpty { null })
+    }
+
+    @Test
+    fun noShowOnlyCompleteTieExportsInStableTeamSlotOrder() {
+        val noShowSlots = setOf(7, 10)
+        val participatedSlots = TeamSlot.SLOT_NUMBERS.filterNot { it in noShowSlots }
+        val participantResults = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+            if (slotNumber in noShowSlots) {
+                MatchParticipantResult(
+                    teamSlotNumber = slotNumber,
+                    participationStatus = MatchParticipationStatus.NO_SHOW,
+                    placement = null,
+                    kills = 0,
+                )
+            } else {
+                MatchParticipantResult(
+                    teamSlotNumber = slotNumber,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = participatedSlots.indexOf(slotNumber) + 1,
+                    kills = 0,
+                )
+            }
+        }
+
+        val rows = exportSuccess(
+            validInput(
+                matches = listOf(validMatch().copy(participantResults = participantResults)),
+            ),
+        ).dataRows()
+
+        val exportedSlots = rows.map { row -> row[TEAM_SLOT_COLUMN] }
+        assertTrue(exportedSlots.indexOf("7") < exportedSlots.indexOf("10"))
+        assertEquals("unresolved_tie", rows.single { it[TEAM_SLOT_COLUMN] == "7" }[TIE_BREAK_STATUS_COLUMN])
+        assertEquals("unresolved_tie", rows.single { it[TEAM_SLOT_COLUMN] == "10" }[TIE_BREAK_STATUS_COLUMN])
     }
 
     @Test
@@ -603,8 +801,9 @@ class TournamentCsvExporterTest {
         tournamentId: String = TOURNAMENT_ID,
         matchNumber: Int = 1,
         status: MatchStatus = MatchStatus.FINALIZED,
-        placements: List<MatchPlacement> = validPlacements(),
-        kills: List<MatchKill> = validKills(),
+        participantCount: Int = 12,
+        placements: List<MatchPlacement> = validPlacements(participantCount),
+        kills: List<MatchKill> = validKills(participantCount),
     ): Match =
         Match(
             id = id,
@@ -617,38 +816,39 @@ class TournamentCsvExporterTest {
             kills = kills,
         )
 
-    private fun validPlacements(): List<MatchPlacement> =
-        TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+    private fun validPlacements(participantCount: Int = 12): List<MatchPlacement> =
+        (1..participantCount).map { slotNumber ->
             MatchPlacement(
                 teamSlotNumber = slotNumber,
                 position = slotNumber,
             )
         }
 
-    private fun reversedPlacements(): List<MatchPlacement> =
-        TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+    private fun reversedPlacements(participantCount: Int = 12): List<MatchPlacement> =
+        (1..participantCount).map { slotNumber ->
             MatchPlacement(
                 teamSlotNumber = slotNumber,
-                position = 13 - slotNumber,
+                position = participantCount + 1 - slotNumber,
             )
         }
 
     private fun validKills(
+        participantCount: Int = 12,
         killsPerTeam: Int = 0,
     ): List<MatchKill> =
-        TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+        (1..participantCount).map { slotNumber ->
             MatchKill(
                 teamSlotNumber = slotNumber,
                 kills = killsPerTeam,
             )
         }
 
-    private fun validTeamSlots(): List<TeamSlot> =
+    private fun validTeamSlots(activeCount: Int = 12): List<TeamSlot> =
         TeamSlot.SLOT_NUMBERS.map { slotNumber ->
             TeamSlot(
                 tournamentId = TOURNAMENT_ID,
                 slotNumber = slotNumber,
-                teamName = "Team $slotNumber",
+                teamName = if (slotNumber <= activeCount) "Team $slotNumber" else "",
             )
         }
 

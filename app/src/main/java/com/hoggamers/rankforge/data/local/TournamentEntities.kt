@@ -623,6 +623,30 @@ data class MatchKillEntity(
 )
 
 @Entity(
+    tableName = "match_participant_results",
+    primaryKeys = ["match_id", "team_slot_number"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["match_id"]),
+        Index(value = ["match_id", "placement"], unique = true),
+    ],
+)
+data class MatchParticipantResultEntity(
+    @ColumnInfo(name = "match_id") val matchId: String,
+    @ColumnInfo(name = "team_slot_number") val teamSlotNumber: Int,
+    @ColumnInfo(name = "participation_status") val participationStatus: String,
+    val placement: Int?,
+    val kills: Int,
+)
+
+@Entity(
     tableName = "match_draft_values",
     primaryKeys = ["match_id", "team_slot_number"],
     foreignKeys = [

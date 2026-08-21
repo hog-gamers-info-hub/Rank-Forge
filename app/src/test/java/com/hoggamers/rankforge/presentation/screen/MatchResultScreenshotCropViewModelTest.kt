@@ -76,7 +76,10 @@ class MatchResultScreenshotCropViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
-        tournamentRepository.saveTeamNames(CROP_TOURNAMENT_ID, mapOf(1 to "Team 1"))
+        tournamentRepository.saveTeamNames(
+            CROP_TOURNAMENT_ID,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
         matchId = "crop-match-id"
         tournamentRepository.createDraftMatch(
             Match(

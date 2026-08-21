@@ -102,7 +102,75 @@ class MatchCorrectionUseCaseTest {
         assertTrue(repository.observeMatchById("match-id").first()!!.correctionHistory.isEmpty())
     }
 
-    private suspend fun createDraftRepository(): InMemoryTournamentRepository {
+    @Test
+    fun tenTeamCorrectionSwapsPlacementsAndKeepsTenStoredResults() = runTest {
+        val repository = createTenTeamFinalizedRepository()
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
+        )(
+            SubmitMatchCorrectionInput("match-id", correctedRows(10)),
+        )
+
+        val submitted = result as SubmitMatchCorrectionResult.Submitted
+        assertEquals(10, submitted.match.placements.size)
+        assertEquals(10, submitted.match.kills.size)
+        assertEquals(setOf(1, 2), submitted.match.placements
+            .filter { it.teamSlotNumber <= 2 }
+            .map { it.position }
+            .toSet())
+        assertTrue(submitted.match.placements.none { it.teamSlotNumber > 10 })
+    }
+
+    @Test
+    fun tenTeamCorrectionRejectsMissingOrExtraIncomingRows() = runTest {
+        val repository = createTenTeamFinalizedRepository()
+
+        listOf(
+            correctedRows(10).dropLast(1),
+            correctedRows(10) + MatchResultRowInput(11, "11", "10"),
+        ).forEach { rows ->
+            val result = SubmitMatchCorrectionUseCase(
+                repository,
+                ValidateMatchResultUseCase(),
+                ProtectedMatchCorrectionAction { error("cloud correction must not be called") },
+            )(
+                SubmitMatchCorrectionInput("match-id", rows),
+            )
+
+            assertTrue(result is SubmitMatchCorrectionResult.Invalid)
+            assertEquals(10, repository.observeMatchById("match-id").first()!!.placements.size)
+        }
+    }
+
+    @Test
+    fun localCorrectionPersistsParticipantStatusTransitionAndStatusAwareAudit() = runTest {
+        val repository = createThreeTeamFinalizedRepository()
+        val corrected = listOf(
+            MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 4),
+            MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 2, 2),
+            MatchParticipantResult(3, MatchParticipationStatus.PARTICIPATED, 3, 1),
+        )
+
+        val result = repository.submitMatchCorrection(
+            matchId = "match-id",
+            placements = corrected.map { MatchPlacement(it.teamSlotNumber, it.placement!!) },
+            kills = corrected.map { MatchKill(it.teamSlotNumber, it.kills) },
+            participantResults = corrected,
+        )
+
+        val submitted = result as SubmitMatchCorrectionRepositoryResult.Submitted
+        assertEquals(corrected, submitted.match.participantResults)
+        assertEquals(MatchParticipationStatus.PARTICIPATED, submitted.match.participantResults.last().participationStatus)
+        assertEquals(MatchParticipationStatus.NO_SHOW, submitted.match.correctionHistory.single().previousParticipantResults.last().participationStatus)
+        assertEquals(MatchParticipationStatus.PARTICIPATED, submitted.match.correctionHistory.single().correctedParticipantResults.last().participationStatus)
+    }
+
+    private suspend fun createDraftRepository(
+        activeCount: Int? = null,
+    ): InMemoryTournamentRepository {
         val repository = InMemoryTournamentRepository()
         repository.create(
             Tournament(
@@ -114,6 +182,12 @@ class MatchCorrectionUseCaseTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
+        activeCount?.let { count ->
+            repository.saveTeamNames(
+                "tournament-id",
+                (1..count).associateWith { slotNumber -> "Team $slotNumber" },
+            )
+        }
         repository.createDraftMatch(
             Match(
                 id = "match-id",
@@ -137,7 +211,37 @@ class MatchCorrectionUseCaseTest {
         return repository
     }
 
-    private fun correctedRows() = (1..12).map { slotNumber ->
+    private suspend fun createTenTeamFinalizedRepository(): InMemoryTournamentRepository {
+        val repository = createDraftRepository(activeCount = 10)
+        assertTrue(
+            repository.finalizeDraftMatch(
+                "match-id",
+                (1..10).map { MatchPlacement(it, it) },
+                (1..10).map { MatchKill(it, it - 1) },
+            ) is FinalizeMatchRepositoryResult.Finalized,
+        )
+        return repository
+    }
+
+    private suspend fun createThreeTeamFinalizedRepository(): InMemoryTournamentRepository {
+        val repository = createDraftRepository(activeCount = 3)
+        val participantResults = listOf(
+            MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 3),
+            MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 2, 2),
+            MatchParticipantResult(3, MatchParticipationStatus.NO_SHOW, null, 0),
+        )
+        assertTrue(
+            repository.finalizeDraftMatch(
+                "match-id",
+                participantResults.mapNotNull { it.placement?.let { position -> MatchPlacement(it.teamSlotNumber, position) } },
+                participantResults.filter { it.placement != null }.map { MatchKill(it.teamSlotNumber, it.kills) },
+                participantResults,
+            ) is FinalizeMatchRepositoryResult.Finalized,
+        )
+        return repository
+    }
+
+    private fun correctedRows(count: Int = 12) = (1..count).map { slotNumber ->
         MatchResultRowInput(
             teamSlotNumber = slotNumber,
             placement = when (slotNumber) {

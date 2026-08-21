@@ -34,6 +34,7 @@ export interface OfficialMatchResult {
   team_slot_id: string;
   placement: number | null;
   kills: number;
+  participation_status?: "PARTICIPATED" | "NO_SHOW";
   review_status: string;
 }
 
@@ -180,6 +181,9 @@ function parseMatchResult(value: unknown): OfficialMatchResult {
     team_slot_id: value.team_slot_id,
     placement: value.placement,
     kills: value.kills,
+    participation_status: value.participation_status === "NO_SHOW"
+      ? "NO_SHOW"
+      : "PARTICIPATED",
     review_status: value.review_status,
   };
 }
@@ -280,7 +284,8 @@ export async function readOfficialMatchResults(
   context: SupabaseDataContext,
 ): Promise<OfficialMatchResult[]> {
   const rows = await readRows(context, "match_results", {
-    select: "id,match_id,team_slot_id,placement,kills,review_status",
+    select:
+      "id,match_id,team_slot_id,participation_status,placement,kills,review_status",
     match_id: `eq.${matchId}`,
     order: "placement.asc.nullslast",
   });
@@ -297,7 +302,8 @@ export async function readOfficialMatchResultsForMatches(
   }
 
   const rows = await readRows(context, "match_results", {
-    select: "id,match_id,team_slot_id,placement,kills,review_status",
+    select:
+      "id,match_id,team_slot_id,participation_status,placement,kills,review_status",
     match_id: `in.(${matchIds.join(",")})`,
     order: "match_id.asc,placement.asc.nullslast",
   });

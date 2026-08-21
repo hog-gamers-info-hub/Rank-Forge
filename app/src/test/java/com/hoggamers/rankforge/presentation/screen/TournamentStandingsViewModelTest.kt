@@ -70,6 +70,33 @@ class TournamentStandingsViewModelTest {
     }
 
     @Test
+    fun tenTeamFinalizedMatchProducesTenRowsWithoutInactivePlaceholders() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..10).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.createDraftMatch(match("ten-team-finalized", 1))
+        repository.createDraftMatch(match("draft", 2))
+        repository.finalizeDraftMatch(
+            matchId = "ten-team-finalized",
+            placements = (1..10).map { slot -> MatchPlacement(slot, slot) },
+            kills = (1..10).map { slot -> MatchKill(slot, if (slot == 2) 5 else 0) },
+        )
+
+        val viewModel = standingsViewModel()
+        viewModel.load("tournament-id")
+        advanceUntilIdle()
+
+        val rows = viewModel.uiState.value.rows
+        assertEquals(10, rows.size)
+        assertEquals((1..10).toSet(), rows.map { it.teamSlotNumber }.toSet())
+        assertTrue(rows.none { it.teamSlotNumber > 10 })
+        assertEquals(14, rows.first { it.teamSlotNumber == 2 }.totalPoints)
+        assertTrue(rows.all { it.matchesIncluded == 1 })
+    }
+
+    @Test
     fun noFinalizedMatchesProduceEmptyStandings() = runTest {
         repository.create(tournament())
         repository.createDraftMatch(match("draft", 1))

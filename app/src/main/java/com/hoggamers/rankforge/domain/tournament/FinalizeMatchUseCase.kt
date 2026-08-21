@@ -33,17 +33,55 @@ class FinalizeMatchUseCase(
                 validation = MatchResultValidation(),
                 globalError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
             )
+        val participation = repository.observeSlotsByTournamentId(match.tournamentId)
+            .first()
+            .analyzeTeamSlotParticipation()
+        if (!participation.isReadyForMatchCreation) {
+            return FinalizeMatchResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = FinalizeMatchGlobalError.INVALID_DATA,
+            )
+        }
         if (match.status != MatchStatus.DRAFT) {
             return FinalizeMatchResult.Invalid(
-                validation = validateMatchResult(match),
+                validation = validateMatchResult(match, participation.activeSlotNumbers),
                 globalError = FinalizeMatchGlobalError.MATCH_NOT_DRAFT,
             )
         }
 
-        val validation = validateMatchResult(input.rows)
+        if (input.rows.isEmpty()) {
+            return FinalizeMatchResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = FinalizeMatchGlobalError.INVALID_DATA,
+            )
+        }
+
+        val validation = validateMatchResult.validateForInitialFinalization(
+            rows = input.rows,
+            registeredTeamSlots = participation.activeSlotNumbers,
+        )
         if (!validation.isValid) {
             return FinalizeMatchResult.Invalid(validation)
         }
+
+        val rowsByTeamSlot = input.rows.associateBy { it.teamSlotNumber }
+        val participantResults = participation.activeSlotNumbers
+            .sorted()
+            .map { teamSlotNumber ->
+                rowsByTeamSlot[teamSlotNumber]?.let { row ->
+                    MatchParticipantResult(
+                        teamSlotNumber = teamSlotNumber,
+                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                        placement = row.placement!!.trim().toInt(),
+                        kills = row.kills!!.trim().toInt(),
+                    )
+                } ?: MatchParticipantResult(
+                    teamSlotNumber = teamSlotNumber,
+                    participationStatus = MatchParticipationStatus.NO_SHOW,
+                    placement = null,
+                    kills = 0,
+                )
+            }
 
         val placements = input.rows.map { row ->
             MatchPlacement(
@@ -63,12 +101,14 @@ class FinalizeMatchUseCase(
                     matchId = input.matchId,
                     placements = placements,
                     kills = kills,
+                    participantResults = participantResults,
                 )
             } else {
                 repository.finalizeDraftMatchWithOcrEvidence(
                     matchId = input.matchId,
                     placements = placements,
                     kills = kills,
+                    participantResults = participantResults,
                     evidence = input.ocrEvidence,
                 )
             }

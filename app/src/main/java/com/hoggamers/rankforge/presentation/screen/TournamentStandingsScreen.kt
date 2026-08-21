@@ -138,10 +138,12 @@ private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
             ),
         )
         Text(
-            text = stringResource(
-                R.string.tournament_standing_latest_placement_value,
-                row.latestMatchPlacement,
-            ),
+            text = row.latestMatchPlacement?.let { placement ->
+                stringResource(
+                    R.string.tournament_standing_latest_placement_value,
+                    placement,
+                )
+            } ?: stringResource(R.string.tournament_standing_latest_placement_none),
         )
         Text(
             text = stringResource(
@@ -152,7 +154,7 @@ private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
         if (row.isCompleteTie) {
             Text(
                 text = stringResource(R.string.tournament_standing_complete_tie_message),
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag(
                     TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX + row.teamSlotNumber,
                 ),

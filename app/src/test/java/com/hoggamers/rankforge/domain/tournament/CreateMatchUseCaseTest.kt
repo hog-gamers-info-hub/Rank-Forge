@@ -115,14 +115,14 @@ class CreateMatchUseCaseTest {
     }
 
     @Test
-    fun gappedTeamSlotsAreRejectedWithoutMutation() = runTest {
+    fun sparseTeamSlotsCanCreateMatchWithoutMutation() = runTest {
         repository.create(tournament("first").copy(status = TournamentStatus.DRAFT))
         repository.saveTeamNames("first", mapOf(1 to "Alpha", 3 to "Charlie"))
 
         val result = useCase(validInput("first"))
 
-        assertEquals(MatchValidationError.INVALID_TEAM_SLOTS, (result as CreateMatchResult.Invalid).errors[MatchField.TOURNAMENT])
-        assertTrue(repository.observeMatchesByTournamentId("first").first().isEmpty())
+        assertTrue(result is CreateMatchResult.Created)
+        assertEquals(1, repository.observeMatchesByTournamentId("first").first().size)
     }
 
     @Test
@@ -159,4 +159,3 @@ class CreateMatchUseCaseTest {
         status = TournamentStatus.CONFIRMED,
     )
 }
-

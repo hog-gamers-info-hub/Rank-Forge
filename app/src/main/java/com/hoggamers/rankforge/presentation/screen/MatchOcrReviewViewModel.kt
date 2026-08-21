@@ -433,6 +433,15 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    fun onExcludeRow(rowIndex: Int) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+                draft = draft,
+                rowIndex = rowIndex,
+            )
+        }
+    }
+
     fun onResetRowCorrection(rowIndex: Int) {
         updateCorrectionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(draft, rowIndex)
@@ -634,6 +643,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 manualReviewRequired = reviewRow?.let {
                     it.blockerLabels.isNotEmpty() || it.warningLabels.isNotEmpty()
                 } ?: row.originallyRequiredManualReview,
+                isExcluded = row.isExcluded,
             )
         }
     }

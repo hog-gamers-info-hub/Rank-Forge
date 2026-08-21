@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class TournamentRevisionRestorePayload(val id: String, val revision: Int)
 @Serializable data class MatchCloudRestorePayload(val id: String, @SerialName("tournament_id") val tournamentId: String, @SerialName("match_number") val matchNumber: Int, @SerialName("match_date") val matchDate: String, @SerialName("map_name") val mapName: String, val status: String, val revision: Int)
-@Serializable data class MatchResultCloudRestorePayload(val id: String, @SerialName("match_id") val matchId: String, @SerialName("team_slot_id") val teamSlotId: String, val placement: Int?, val kills: Int)
+@Serializable data class MatchResultCloudRestorePayload(val id: String, @SerialName("match_id") val matchId: String, @SerialName("team_slot_id") val teamSlotId: String, val placement: Int?, val kills: Int, @SerialName("participation_status") val participationStatus: String? = null)
 
 interface MatchCloudRestorationRemoteDataSource { suspend fun readOwnedMatches(tournamentId: String): MatchCloudRestorationRemoteResult<MatchCloudRestorationPayloads> }
 

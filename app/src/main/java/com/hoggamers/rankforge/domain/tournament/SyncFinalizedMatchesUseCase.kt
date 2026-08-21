@@ -42,6 +42,7 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
                 ?: return FinalizedMatchCloudSyncResult.ValidationFailure
             FinalizedMatchCloudSyncSnapshot(
                 tournament = tournament,
+                teamSlots = tournamentRepository.observeSlotsByTournamentId(tournamentId).first(),
                 matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first(),
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)

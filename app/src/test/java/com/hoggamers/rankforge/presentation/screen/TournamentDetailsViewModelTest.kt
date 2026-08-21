@@ -201,7 +201,7 @@ class TournamentDetailsViewModelTest {
     }
 
     @Test
-    fun gappedTeamSlotsBlockCalculatePointsWithoutConfirmation() = runTest {
+    fun sparseTeamSlotsRequestCountConfirmation() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", mapOf(1 to "Alpha", 3 to "Charlie"))
         val syncAction = RecordingDraftMatchCloudSyncAction()
@@ -212,10 +212,18 @@ class TournamentDetailsViewModelTest {
         viewModel.onCalculatePointsRequested()
         advanceUntilIdle()
 
-        assertNull(viewModel.uiState.value.pendingTeamCountConfirmation)
-        assertEquals(CalculatePointsMessage.INVALID_TEAM_SLOTS, viewModel.uiState.value.calculatePointsMessage)
+        assertEquals(
+            TeamCountConfirmationUiState(enteredCount = 2, emptyCount = 10),
+            viewModel.uiState.value.pendingTeamCountConfirmation,
+        )
+        assertNull(viewModel.uiState.value.calculatePointsMessage)
         assertNull(viewModel.uiState.value.matchReviewRequest)
         assertTrue(syncAction.tournamentIds.isEmpty())
+
+        viewModel.useEnteredTeams()
+        advanceUntilIdle()
+
+        assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
     }
 
     @Test

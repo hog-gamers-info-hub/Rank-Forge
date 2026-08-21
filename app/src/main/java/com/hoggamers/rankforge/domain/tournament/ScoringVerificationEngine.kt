@@ -138,7 +138,7 @@ class ScoringVerificationEngine(
         }
 
         val standings = cumulativeStandingsEngine(uniqueFinalizedMatches)
-        val expectedStandings = expectedStandings(matchVerifications)
+        val expectedStandings = expectedStandings(uniqueFinalizedMatches, matchVerifications)
         val cumulativeTotalsConsistent = standings == expectedStandings
         val tieBreakStandings = tieBreakRules(standings)
         val tieBreakOrderingVerified = tieBreakStandings == tieBreakRules(standings)
@@ -170,7 +170,22 @@ class ScoringVerificationEngine(
     }
 
     private fun verifyMatch(match: Match): MatchScoringVerification {
-        val validation = validateMatchResult(match)
+        val participantResults = match.finalizedParticipantResultsOrNull()
+        val validation = if (participantResults == null) {
+            validateMatchResult(match)
+        } else {
+            validateMatchResult.validateParticipantResults(
+                rows = participantResults.map { result ->
+                    MatchResultRowInput(
+                        teamSlotNumber = result.teamSlotNumber,
+                        placement = result.placement?.toString(),
+                        kills = result.kills.toString(),
+                        participationStatus = result.participationStatus,
+                    )
+                },
+                expectedTeamSlots = participantResults.map { it.teamSlotNumber },
+            )
+        }
         if (!validation.isValid) {
             return MatchScoringVerification(
                 matchId = match.id,
@@ -180,20 +195,30 @@ class ScoringVerificationEngine(
             )
         }
 
-        val killsByTeamSlot = match.kills.associateBy { it.teamSlotNumber }
-        val teamScores = match.placements
+        val teamScores = (participantResults ?: match.placements.map { placement ->
+            val confirmedKills = checkNotNull(match.kills.firstOrNull {
+                it.teamSlotNumber == placement.teamSlotNumber
+            }).kills
+            MatchParticipantResult(
+                teamSlotNumber = placement.teamSlotNumber,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = placement.position,
+                kills = confirmedKills,
+            )
+        })
+            .filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
             .sortedBy { it.teamSlotNumber }
-            .map { placement ->
-                val confirmedKills = checkNotNull(killsByTeamSlot[placement.teamSlotNumber]).kills
-                val positionPoints = positionPointsEngine(placement.position)
-                val killPoints = killPointsEngine(confirmedKills)
+            .map { result ->
+                val confirmedPlacement = requireNotNull(result.placement)
+                val positionPoints = positionPointsEngine(confirmedPlacement)
+                val killPoints = killPointsEngine(result.kills)
                 VerifiedMatchTeamScore(
-                    teamSlotNumber = placement.teamSlotNumber,
-                    confirmedPlacement = placement.position,
-                    confirmedKills = confirmedKills,
+                    teamSlotNumber = result.teamSlotNumber,
+                    confirmedPlacement = confirmedPlacement,
+                    confirmedKills = result.kills,
                     positionPoints = positionPoints,
                     killPoints = killPoints,
-                    matchTotal = matchTotalEngine(placement.position, confirmedKills),
+                    matchTotal = matchTotalEngine(confirmedPlacement, result.kills),
                 )
             }
         val matchTotalConsistent = teamScores.all { score ->
@@ -209,10 +234,16 @@ class ScoringVerificationEngine(
     }
 
     private fun expectedStandings(
+        matches: List<Match>,
         matchVerifications: List<MatchScoringVerification>,
     ): List<CumulativeTournamentStanding> {
         val totalsByTeamSlot = mutableMapOf<Int, MutableStandingTotals>()
-        matchVerifications.forEach { verification ->
+        matches.zip(matchVerifications).forEach { (match, verification) ->
+            match.finalizedParticipantResultsOrNull()
+                ?.filter { it.participationStatus == MatchParticipationStatus.NO_SHOW }
+                ?.forEach { result ->
+                    totalsByTeamSlot.getOrPut(result.teamSlotNumber) { MutableStandingTotals() }
+                }
             verification.teamScores.forEach { score ->
                 val totals = totalsByTeamSlot.getOrPut(score.teamSlotNumber) {
                     MutableStandingTotals()
@@ -234,7 +265,7 @@ class ScoringVerificationEngine(
                     totalKillPoints = totals.totalKillPoints,
                     totalPoints = totals.totalPoints,
                     firstPlaceFinishes = totals.firstPlaceFinishes,
-                    latestMatchPlacement = checkNotNull(totals.latestMatchPlacement),
+                    latestMatchPlacement = totals.latestMatchPlacement,
                     matchesIncluded = totals.matchesIncluded,
                 )
             }

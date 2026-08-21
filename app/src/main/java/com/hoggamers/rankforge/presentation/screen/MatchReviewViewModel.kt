@@ -70,6 +70,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -222,7 +223,7 @@ class MatchReviewViewModel @Inject constructor(
                         )
                     }
                     val validation = if (match.status == MatchStatus.FINALIZED || draftValues.isEmpty()) {
-                        validateMatchResult(match)
+                        validateMatchForReview(match)
                     } else {
                         validateMatchResult(
                             rows.map { row ->
@@ -532,7 +533,7 @@ class MatchReviewViewModel @Inject constructor(
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_CONTEXT)
                     currentMatch.status != MatchStatus.FINALIZED ->
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
-                    validateMatchResult(currentMatch).errorsByTeamSlot.isNotEmpty() ->
+                    validateMatchForReview(currentMatch).errorsByTeamSlot.isNotEmpty() ->
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
                     else -> {
                         val inputSlots = observeTournamentSlots(tournamentId).first()
@@ -608,6 +609,21 @@ class MatchReviewViewModel @Inject constructor(
             }
         }
     }
+
+    private fun validateMatchForReview(match: Match) =
+        match.finalizedParticipantResultsOrNull()?.let { participantResults ->
+            validateMatchResult.validateParticipantResults(
+                rows = participantResults.map { result ->
+                    MatchResultRowInput(
+                        teamSlotNumber = result.teamSlotNumber,
+                        placement = result.placement?.toString(),
+                        kills = result.kills.toString(),
+                        participationStatus = result.participationStatus,
+                    )
+                },
+                expectedTeamSlots = participantResults.map { result -> result.teamSlotNumber },
+            )
+        } ?: validateMatchResult(match)
 
     fun onDestinationLaunchHandled() {
         _uiState.update { state ->

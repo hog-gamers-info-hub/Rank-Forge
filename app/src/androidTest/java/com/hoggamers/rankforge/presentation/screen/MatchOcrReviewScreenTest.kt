@@ -185,6 +185,221 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
+    fun allFourNotDetectedPlayersShowDeleteAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        preview = previewWithPlayers(position = 1),
+                    ),
+                    onBack = {},
+                    onExcludeRow = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun oneDetectedPlayerHidesDeleteAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        preview = previewWithPlayers(position = 1, playersBySlot = mapOf(2 to "Detected Player")),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.deleteRow(0)).assertCountEquals(0)
+    }
+
+    @Test
+    fun nonTrailingPositionWithFourNotDetectedPlayersShowsDeleteAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        preview = previewWithPlayers(position = 5),
+                    ),
+                    onBack = {},
+                    onExcludeRow = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(4))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun deleteActionInvokesCallbackWithStructuralRowIndex() {
+        var excludedRowIndex: Int? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        preview = previewWithPlayers(position = 6),
+                    ),
+                    onBack = {},
+                    onExcludeRow = { excludedRowIndex = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(5))
+            .performScrollTo()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(5, excludedRowIndex)
+        }
+    }
+
+    @Test
+    fun excludedRowIsHiddenWithoutRemovingStructuralDraftRow() {
+        val excludedDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 4)
+        }
+        assertEquals(12, excludedDraft.rows.size)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(correctionDraft = excludedDraft),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(4)).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(3))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(5))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun excludedPositionDoesNotRenumberFollowingVisiblePosition() {
+        val excludedDraft = correctionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 4)
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = excludedDraft,
+                        preview = compactPreview(),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(6))
+            .performScrollTo()
+            .assertTextEquals("Position - 6")
+    }
+
+    @Test
+    fun eligibleDeleteKeepsExistingResetActionAvailable() {
+        var resetRowIndex: Int? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        preview = previewWithPlayers(position = 1),
+                    ),
+                    onBack = {},
+                    onExcludeRow = {},
+                    onResetRowCorrection = { resetRowIndex = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(0, resetRowIndex)
+        }
+    }
+
+    @Test
+    fun finalizedEligibleDeleteIsShownButDisabled() {
+        var excludeCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        correctionDraft = correctionDraft(),
+                        finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+                        preview = previewWithPlayers(position = 1),
+                    ),
+                    onBack = {},
+                    onExcludeRow = { excludeCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeTestRule.runOnIdle {
+            assertEquals(0, excludeCount)
+        }
+    }
+
+    @Test
+    fun syntheticMissingPreviewRowShowsDeleteForFourRenderedNotDetectedPlayers() {
+        val rows = defaultReadyRows().map { row ->
+            if (row.rowIndex == 0) {
+                row.copy(
+                    detectedPlacementDisplayValue = "Unavailable",
+                    detectedKillDisplayValue = "Unavailable",
+                    detectedPlayerNameEvidenceLabel = "Unavailable",
+                    suggestedTeamSlotDisplayValue = "Unavailable",
+                    blockerLabels = listOf("OCR evidence unavailable; manual correction required"),
+                    originalParsedPlacementValue = null,
+                    originalParsedKillValue = null,
+                    originalSuggestedTeamSlot = null,
+                )
+            } else {
+                row
+            }
+        }
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(rows = rows, correctionDraft = correctionDraft()),
+                    onBack = {},
+                    onExcludeRow = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun resultLobbyDiagnosticDetailsAreHiddenWhileTheOcrRowRemainsVisible() {
         val rows = defaultReadyRows().map { row ->
             if (row.rowIndex == 0) {
@@ -987,6 +1202,26 @@ class MatchOcrReviewScreenTest {
             ignoredLowerRows = emptyList(),
             manualReviewRows = emptyList(),
         )
+
+    private fun previewWithPlayers(
+        position: Int,
+        playersBySlot: Map<Int, String> = emptyMap(),
+    ): MatchResultOcrPreviewUiState.Ready {
+        val preview = compactPreview()
+        return preview.copy(
+            rows = preview.rows.map { row ->
+                if (row.position == position) {
+                    row.copy(
+                        slots = row.slots.map { slot ->
+                            slot.copy(playerText = playersBySlot[slot.slot].orEmpty())
+                        },
+                    )
+                } else {
+                    row
+                }
+            },
+        )
+    }
 
     private fun correctionDraft(
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },

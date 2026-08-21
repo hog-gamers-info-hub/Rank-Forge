@@ -54,6 +54,13 @@ function isInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
 
+function isValidRowsWritten(
+  value: unknown,
+  _operationType: ExportOperationType,
+): boolean {
+  return isInteger(value) && value >= 1 && value <= 12;
+}
+
 function invalidState(): never {
   throw new EdgeFunctionError("EXPORT_IDEMPOTENCY_FAILURE");
 }
@@ -142,7 +149,8 @@ function parseClaim(
     ) ||
     !isInteger(attemptCount) ||
     attemptCount < 1 ||
-    !(rowsWritten === null || rowsWritten === 12) ||
+    !(rowsWritten === null ||
+      isValidRowsWritten(rowsWritten, input.operationType)) ||
     !(
       exportedMatchCount === null ||
       (
@@ -172,7 +180,8 @@ function parseClaim(
     !(
       state === "succeeded" &&
       leaseToken === null &&
-      rowsWritten === 12 &&
+      rowsWritten !== null &&
+      isValidRowsWritten(rowsWritten, input.operationType) &&
       (
         (
           input.operationType === "export_match" &&
@@ -218,7 +227,7 @@ function parseClaim(
     leaseToken,
     state,
     attemptCount,
-    rowsWritten,
+    rowsWritten: rowsWritten as number | null,
     exportedMatchCount,
   };
 }
@@ -321,7 +330,9 @@ export async function completeExportOperationSuccess(
   validateOperationIdAndLease(operationId, leaseToken);
 
   if (
-    rowsWritten !== 12 ||
+    !Number.isInteger(rowsWritten) ||
+    rowsWritten < 1 ||
+    rowsWritten > 12 ||
     !(
       exportedMatchCount === null ||
       (

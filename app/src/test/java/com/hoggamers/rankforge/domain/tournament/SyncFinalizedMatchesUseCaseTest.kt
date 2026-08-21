@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncMapper
+import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncMappingResult
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRepository
@@ -63,6 +65,59 @@ class SyncFinalizedMatchesUseCaseTest {
         assertEquals(before, local.observeMatchesByTournamentId(TOURNAMENT_ID).first())
         assertEquals(9, local.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
         assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun retryReconstructsTenTeamSnapshotWithAuthoritativeSlotsAndTenCloudRows() = runTest {
+        val local = InMemoryTournamentRepository()
+        local.create(
+            Tournament(
+                id = TOURNAMENT_ID,
+                name = "Ten Team Cup",
+                date = LocalDate.of(2026, 7, 24),
+                organizerName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+            ),
+        )
+        local.saveTeamNames(
+            TOURNAMENT_ID,
+            (1..10).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        assertTrue(local.confirmTournament(TOURNAMENT_ID))
+        local.createDraftMatch(
+            Match(
+                id = "ten-team-match",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        local.finalizeDraftMatch(
+            matchId = "ten-team-match",
+            placements = (1..10).map { slot -> MatchPlacement(slot, slot) },
+            kills = (1..10).map { slot -> MatchKill(slot, slot - 1) },
+        )
+
+        val cloud = RecordingCloudRepository(FinalizedMatchCloudSyncResult.Success(2))
+        val result = SyncFinalizedMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(FinalizedMatchCloudSyncResult.Success(2), result)
+        val snapshot = cloud.snapshot!!
+        assertEquals(12, snapshot.teamSlots.size)
+        assertEquals(
+            (1..10).toList(),
+            snapshot.teamSlots.filter { it.teamName.isNotBlank() }.map { it.slotNumber },
+        )
+        val mapped = FinalizedMatchCloudSyncMapper.map(snapshot) as FinalizedMatchCloudSyncMappingResult.Success
+        assertEquals(10, mapped.payloads.matchResults.size)
     }
 
     @Test

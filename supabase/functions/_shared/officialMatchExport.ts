@@ -1,4 +1,5 @@
 import { EdgeFunctionError } from "./errors.ts";
+import { MAX_MATCH_EXPORT_ROWS } from "./matchExport.ts";
 import type { MatchExportRequest } from "./matchExport.ts";
 import type {
   OfficialMatch,
@@ -18,6 +19,10 @@ export interface OfficialMatchExportData {
 
 function mismatch(): never {
   throw new EdgeFunctionError("MATCH_EXPORT_DATA_MISMATCH");
+}
+
+function statusOf(result: OfficialMatchResult): "PARTICIPATED" | "NO_SHOW" {
+  return result.participation_status ?? "PARTICIPATED";
 }
 
 function parseTimestamp(value: string): number {
@@ -96,8 +101,7 @@ export function validateOfficialMatchExport(
       teamSlot.slot_number > 12 ||
       teamSlotsById.has(teamSlot.id) ||
       teamSlotsByNumber.has(teamSlot.slot_number) ||
-      typeof teamSlot.team_name !== "string" ||
-      teamSlot.team_name.length === 0
+      typeof teamSlot.team_name !== "string"
     ) {
       mismatch();
     }
@@ -106,39 +110,65 @@ export function validateOfficialMatchExport(
     teamSlotsByNumber.set(teamSlot.slot_number, teamSlot);
   }
 
-  if (data.matchResults.length !== 12) {
+  const participantCount = data.matchResults.length;
+
+  if (participantCount < 1 || participantCount > MAX_MATCH_EXPORT_ROWS) {
+    mismatch();
+  }
+
+  if (request.rows.length !== participantCount) {
     mismatch();
   }
 
   const resultsBySlotNumber = new Map<number, OfficialMatchResult>();
   const officialPlacements = new Set<number>();
   const resultTeamSlotIds = new Set<string>();
+  const participatedResults = data.matchResults.filter((result) =>
+    (result.participation_status ?? "PARTICIPATED") === "PARTICIPATED"
+  );
+
+  if (participatedResults.length < 1) {
+    mismatch();
+  }
 
   for (const result of data.matchResults) {
     const teamSlot = teamSlotsById.get(result.team_slot_id);
+    const participatedIndex = participatedResults.indexOf(result);
+    const expectedPlacement = participatedIndex + 1;
+    const status = result.participation_status ?? "PARTICIPATED";
 
     if (
       result.match_id !== request.match_id ||
       result.review_status !== "confirmed" ||
-      result.placement === null ||
-      result.placement < 1 ||
-      result.placement > 12 ||
       result.kills < 0 ||
+      (status === "PARTICIPATED"
+        ? result.placement !== expectedPlacement
+        : status === "NO_SHOW"
+        ? result.placement !== null || result.kills !== 0
+        : true) ||
       teamSlot === undefined ||
-      officialPlacements.has(result.placement) ||
-      resultTeamSlotIds.has(result.team_slot_id)
+      typeof teamSlot.team_name !== "string" ||
+      (result.placement !== null && officialPlacements.has(result.placement)) ||
+      resultTeamSlotIds.has(result.team_slot_id) ||
+      (status !== "PARTICIPATED" && status !== "NO_SHOW")
     ) {
       mismatch();
     }
 
-    officialPlacements.add(result.placement);
+    if (result.placement !== null) {
+      officialPlacements.add(result.placement);
+    }
     resultTeamSlotIds.add(result.team_slot_id);
     resultsBySlotNumber.set(teamSlot.slot_number, result);
   }
 
   if (
-    officialPlacements.size !== 12 ||
-    resultsBySlotNumber.size !== 12
+    officialPlacements.size !== participatedResults.length ||
+    resultsBySlotNumber.size !== participantCount ||
+    !Array.from(
+      { length: participatedResults.length },
+      (_unused, index) => index + 1,
+    ).every((placement) => officialPlacements.has(placement))
   ) {
     mismatch();
   }
@@ -162,7 +192,10 @@ export function validateOfficialMatchExport(
     if (
       teamSlot === undefined ||
       result === undefined ||
+      typeof teamSlot.team_name !== "string" ||
+      teamSlot.team_name.length === 0 ||
       teamSlot.team_name !== row.team_name ||
+      statusOf(result) !== (row.participation_status ?? "PARTICIPATED") ||
       result.placement !== row.placement ||
       result.kills !== row.kills
     ) {

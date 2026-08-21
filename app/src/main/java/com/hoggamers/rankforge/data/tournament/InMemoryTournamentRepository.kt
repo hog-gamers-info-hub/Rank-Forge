@@ -12,6 +12,8 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -31,6 +33,10 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionFailure
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
+import com.hoggamers.rankforge.domain.tournament.isValidCorrectionSnapshot
+import com.hoggamers.rankforge.domain.tournament.correctedMatchPlacements
+import com.hoggamers.rankforge.domain.tournament.correctedMatchKills
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 
@@ -58,7 +64,51 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         }
         cloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
         baseCloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
+}
+
+private fun buildLegacyParticipantResults(
+    registeredTeamSlots: Set<Int>,
+    placements: List<MatchPlacement>,
+    kills: List<MatchKill>,
+): List<MatchParticipantResult> {
+    val placementsBySlot = placements.associateBy { it.teamSlotNumber }
+    val killsBySlot = kills.associateBy { it.teamSlotNumber }
+    return registeredTeamSlots.sorted().map { teamSlotNumber ->
+        val placement = placementsBySlot[teamSlotNumber]
+        val kill = killsBySlot[teamSlotNumber]
+        if (placement != null && kill != null) {
+            MatchParticipantResult(
+                teamSlotNumber,
+                MatchParticipationStatus.PARTICIPATED,
+                placement.position,
+                kill.kills,
+            )
+        } else {
+            MatchParticipantResult(
+                teamSlotNumber,
+                MatchParticipationStatus.NO_SHOW,
+                null,
+                0,
+            )
+        }
     }
+}
+
+private fun List<MatchParticipantResult>.isValidSnapshotFor(
+    registeredTeamSlots: Set<Int>,
+    positionedTeamSlots: Set<Int>,
+): Boolean {
+    val resultsBySlot = associateBy { it.teamSlotNumber }
+    val participated = filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+    val noShows = filter { it.participationStatus == MatchParticipationStatus.NO_SHOW }
+    return size == registeredTeamSlots.size &&
+        resultsBySlot.size == size &&
+        resultsBySlot.keys == registeredTeamSlots &&
+        participated.map { it.teamSlotNumber }.toSet() == positionedTeamSlots &&
+        noShows.map { it.teamSlotNumber }.toSet() == registeredTeamSlots - positionedTeamSlots &&
+        participated.mapNotNull { it.placement }.toSet() == (1..positionedTeamSlots.size).toSet() &&
+        participated.mapNotNull { it.placement }.distinct().size == participated.size
+}
 
     override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState =
         cloudRevisions.value[tournamentId]?.let { revision ->
@@ -217,9 +267,6 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         val participation = slotsByTournamentId.value[match.tournamentId]
             .orEmpty()
             .analyzeTeamSlotParticipation()
-        if (participation.hasGap) {
-            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_TEAM_SLOTS)
-        }
         if (participation.activeCount == 0) {
             return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.NO_PARTICIPATING_TEAMS)
         }
@@ -309,6 +356,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
     ): FinalizeMatchRepositoryResult {
         val match = matchesByTournamentId.value.values
             .flatten()
@@ -317,15 +365,30 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         if (match.status != MatchStatus.DRAFT) {
             return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_DRAFT)
         }
-        if (
-            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
-            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
-            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
-            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
-            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
-            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
-            placements.map { it.position }.distinct().size != placements.size
-        ) {
+        val participation = slotsByTournamentId.value[match.tournamentId]
+            .orEmpty()
+            .analyzeTeamSlotParticipation()
+        val expectedTeamSlots = participation.activeSlotNumbers.toSet()
+        val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
+        val expectedPlacements = 1..placements.size
+        val finalizedParticipantResults = participantResults
+            ?: buildLegacyParticipantResults(expectedTeamSlots, placements, kills)
+        val hasValidParticipantAwareResult =
+            participation.isReadyForMatchCreation &&
+                placements.isNotEmpty() &&
+                placements.all {
+                    it.teamSlotNumber in expectedTeamSlots && it.position in expectedPlacements
+                } &&
+                kills.all {
+                    it.teamSlotNumber in positionedTeamSlots && it.kills >= 0
+                } &&
+                kills.map { it.teamSlotNumber }.toSet() == positionedTeamSlots &&
+                placements.map { it.position }.toSet() == expectedPlacements.toSet() &&
+                placements.map { it.teamSlotNumber }.distinct().size == placements.size &&
+                kills.map { it.teamSlotNumber }.distinct().size == kills.size &&
+                placements.map { it.position }.distinct().size == placements.size &&
+                finalizedParticipantResults.isValidSnapshotFor(expectedTeamSlots, positionedTeamSlots)
+        if (!hasValidParticipantAwareResult) {
             return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
         }
 
@@ -333,6 +396,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             status = MatchStatus.FINALIZED,
             placements = placements.toList(),
             kills = kills.toList(),
+            participantResults = finalizedParticipantResults.sortedBy { it.teamSlotNumber },
         )
         matchesByTournamentId.update { current ->
             current.mapValues { (_, matches) ->
@@ -347,6 +411,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
         evidence: PreservedMatchOcrEvidence,
     ): FinalizeMatchRepositoryResult {
         val match = matchesByTournamentId.value.values
@@ -362,7 +427,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
         }
 
-        val result = finalizeDraftMatch(matchId, placements, kills)
+        val result = finalizeDraftMatch(matchId, placements, kills, participantResults)
         if (result is FinalizeMatchRepositoryResult.Finalized && existingEvidence == null) {
             preservedOcrEvidenceByMatch.update { current -> current + (matchId to evidence) }
         }
@@ -382,6 +447,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         matchId: String,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
     ): SubmitMatchCorrectionRepositoryResult {
         val match = matchesByTournamentId.value.values
             .flatten()
@@ -390,26 +456,27 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
         if (match.status != MatchStatus.FINALIZED) {
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
         }
-        if (
-            placements.size != TeamSlot.MAX_SLOT_NUMBER ||
-            kills.size != TeamSlot.MAX_SLOT_NUMBER ||
-            placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.position !in TeamSlot.SLOT_NUMBERS } ||
-            kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS || it.kills < 0 } ||
-            placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
-            kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
-            placements.map { it.position }.distinct().size != placements.size
-        ) {
+            val previousParticipantResults = match.finalizedParticipantResultsOrNull()
+            val correctedParticipantResults = participantResults ?: placements.map { placement ->
+                val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
+                    ?: return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+                MatchParticipantResult(placement.teamSlotNumber, MatchParticipationStatus.PARTICIPATED, placement.position, kill.kills)
+            }
+            if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
         }
 
         val correctedMatch = match.copy(
-            placements = placements.toList(),
-            kills = kills.toList(),
+            placements = correctedParticipantResults.mapNotNull { it.placement?.let { p -> MatchPlacement(it.teamSlotNumber, p) } },
+            kills = correctedMatchKills(correctedParticipantResults),
+            participantResults = correctedParticipantResults.sortedBy { it.teamSlotNumber },
             correctionHistory = match.correctionHistory + MatchCorrectionRecord(
                 previousPlacements = match.placements.toList(),
                 previousKills = match.kills.toList(),
-                correctedPlacements = placements.toList(),
-                correctedKills = kills.toList(),
+                correctedPlacements = correctedMatchPlacements(correctedParticipantResults),
+                correctedKills = correctedMatchKills(correctedParticipantResults),
+                previousParticipantResults = previousParticipantResults.orEmpty(),
+                correctedParticipantResults = correctedParticipantResults,
             ),
         )
         matchesByTournamentId.update { current ->

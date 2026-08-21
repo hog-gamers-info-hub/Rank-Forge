@@ -405,6 +405,7 @@ fun MatchReviewRoute(
         onOcrPlacementChanged = resolvedOcrReviewViewModel::onPlacementChanged,
         onOcrKillsChanged = resolvedOcrReviewViewModel::onKillsChanged,
         onOcrAssignedTeamSlotChanged = resolvedOcrReviewViewModel::onAssignedTeamSlotChanged,
+        onExcludeOcrRow = resolvedOcrReviewViewModel::onExcludeRow,
         onOcrResetRowCorrection = resolvedOcrReviewViewModel::onResetRowCorrection,
         onOcrResetAllCorrections = resolvedOcrReviewViewModel::onResetAllCorrections,
         onOcrFinalize = resolvedOcrReviewViewModel::onFinalizeOcrCorrection,
@@ -445,6 +446,7 @@ fun MatchReviewScreen(
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onExcludeOcrRow: (rowIndex: Int) -> Unit = {},
     onOcrResetRowCorrection: (rowIndex: Int) -> Unit = {},
     onOcrResetAllCorrections: () -> Unit = {},
     onOcrFinalize: () -> Unit = {},
@@ -489,6 +491,7 @@ fun MatchReviewScreen(
             onOcrPlacementChanged = onOcrPlacementChanged,
             onOcrKillsChanged = onOcrKillsChanged,
             onOcrAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+            onExcludeOcrRow = onExcludeOcrRow,
             onOcrResetRowCorrection = onOcrResetRowCorrection,
             onOcrResetAllCorrections = onOcrResetAllCorrections,
             onOcrFinalize = onOcrFinalize,
@@ -530,6 +533,7 @@ private fun MatchReviewContent(
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onOcrAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeOcrRow: (rowIndex: Int) -> Unit,
     onOcrResetRowCorrection: (rowIndex: Int) -> Unit,
     onOcrResetAllCorrections: () -> Unit,
     onOcrFinalize: () -> Unit,
@@ -707,6 +711,7 @@ private fun MatchReviewContent(
                 onPlacementChanged = onOcrPlacementChanged,
                 onKillsChanged = onOcrKillsChanged,
                 onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                onExcludeOcrRow = onExcludeOcrRow,
                 onResetRowCorrection = onOcrResetRowCorrection,
                 onResetAllCorrections = onOcrResetAllCorrections,
                 onFinalizeOcrCorrection = onOcrFinalize,
@@ -1349,6 +1354,7 @@ private fun MatchReviewResultOcrDetailsContent(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeOcrRow: (rowIndex: Int) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     onResetAllCorrections: () -> Unit,
     onFinalizeOcrCorrection: () -> Unit,
@@ -1393,6 +1399,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 onPlacementChanged = onPlacementChanged,
                 onKillsChanged = onKillsChanged,
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                onExcludeOcrRow = onExcludeOcrRow,
                 onResetRowCorrection = onResetRowCorrection,
                 onResetAllCorrections = onResetAllCorrections,
                 onFinalizeOcrCorrection = onFinalizeOcrCorrection,
@@ -1452,6 +1459,7 @@ private fun MatchReviewResultRowsPagerContent(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeOcrRow: (rowIndex: Int) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     onResetAllCorrections: () -> Unit,
     onFinalizeOcrCorrection: () -> Unit,
@@ -1463,7 +1471,9 @@ private fun MatchReviewResultRowsPagerContent(
         .orEmpty()
         .associateBy { it.position }
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
-    val rows = uiState.rows
+    val rows = uiState.rows.filter { row ->
+        correctionRowsByIndex[row.rowIndex]?.isExcluded != true
+    }
     val pagerState = rememberPagerState(pageCount = { rows.size })
     val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
 
@@ -1514,6 +1524,7 @@ private fun MatchReviewResultRowsPagerContent(
                             onPlacementChanged = onPlacementChanged,
                             onKillsChanged = onKillsChanged,
                             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                            onExcludeRow = onExcludeOcrRow,
                             onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
                             availableTeamSlotOptions = if (uiState.finalization.isFinalized) {

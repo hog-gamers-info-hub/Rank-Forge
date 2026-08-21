@@ -39,11 +39,15 @@ function assertEquals(
   }
 }
 
-function validPayload(): MutablePayload {
+function validPayload(
+  rowCount = 12,
+  exportedMatchCount = 3,
+  matchesPlayed = exportedMatchCount,
+): MutablePayload {
   return {
     operation: "export_standings",
     tournament_id: TOURNAMENT_ID,
-    rows: Array.from({ length: 12 }, (_, index) => {
+    rows: Array.from({ length: rowCount }, (_, index) => {
       const rank = index + 1;
       const totalPositionPoints = 40 - index;
       const totalKills = 24 - index;
@@ -53,7 +57,7 @@ function validPayload(): MutablePayload {
         export_type: "tournament_standings",
         tournament_id: TOURNAMENT_ID,
         tournament_name: "Summer Championship",
-        exported_match_count: 3,
+        exported_match_count: exportedMatchCount,
         standings_rank: rank,
         team_slot: rank,
         team_name: `Team ${rank}`,
@@ -61,7 +65,7 @@ function validPayload(): MutablePayload {
         player_2_name: `Player ${rank}B`,
         player_3_name: `Player ${rank}C`,
         player_4_name: `Player ${rank}D`,
-        matches_played: 3,
+        matches_played: matchesPlayed,
         total_position_points: totalPositionPoints,
         total_kills: totalKills,
         total_kill_points: totalKills,
@@ -161,9 +165,19 @@ Deno.test("invalid tournament UUID is rejected", () => {
   });
 });
 
-Deno.test("row counts other than twelve are rejected", () => {
+Deno.test("one through twelve row counts are accepted", () => {
+  assertEquals(parseStandingsExportRequest(validPayload(10)).rows.length, 10);
+
   assertInvalid((payload) => {
-    payload.rows.pop();
+    payload.rows = [];
+  });
+
+  assertInvalid((payload) => {
+    payload.rows = Array.from({ length: 13 }, (_, index) => ({
+      ...payload.rows[index % 12],
+      standings_rank: index + 1,
+      team_slot: index + 1,
+    }));
   });
 });
 
@@ -181,7 +195,7 @@ Deno.test("row keys and field types are strict", () => {
   });
 });
 
-Deno.test("standings ranks must match array order one through twelve", () => {
+Deno.test("standings ranks must match array order one through row count", () => {
   assertInvalid((payload) => {
     payload.rows[0].standings_rank = 2;
   });
@@ -209,7 +223,7 @@ Deno.test("team slots must be unique and within one through twelve", () => {
 
 Deno.test("schema constants and tournament IDs must remain exact", () => {
   assertInvalid((payload) => {
-    payload.rows[0].export_schema_version = "phase_10_v2";
+    payload.rows[0].export_schema_version = "phase_10_v3";
   });
 
   assertInvalid((payload) => {
@@ -249,9 +263,18 @@ Deno.test("exported match count must be between one and ten", () => {
   });
 });
 
-Deno.test("matches played must equal exported match count", () => {
+Deno.test("matches played may be partial but stays within exported matches", () => {
+  const partial = validPayload(10, 3, 1);
+  partial.rows[0].first_place_count = 1;
+  const request = parseStandingsExportRequest(partial);
+  assertEquals(request.rows[0].matches_played, 1);
+
   assertInvalid((payload) => {
-    payload.rows[0].matches_played = 2;
+    payload.rows[0].matches_played = 0;
+  });
+
+  assertInvalid((payload) => {
+    payload.rows[0].matches_played = 4;
   });
 });
 

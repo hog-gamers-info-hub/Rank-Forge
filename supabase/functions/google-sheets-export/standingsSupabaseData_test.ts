@@ -219,7 +219,7 @@ Deno.test(
     assertEquals(calls[0].url.pathname, "/rest/v1/match_results");
     assertEquals(
       calls[0].url.searchParams.get("select"),
-      "id,match_id,team_slot_id,placement,kills,review_status",
+      "id,match_id,team_slot_id,participation_status,placement,kills,review_status",
     );
     assertEquals(
       calls[0].url.searchParams.get("match_id"),

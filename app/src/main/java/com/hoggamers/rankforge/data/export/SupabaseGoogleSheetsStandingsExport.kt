@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -130,6 +131,21 @@ class SupabaseGoogleSheetsStandingsExportRemoteDataSource @Inject constructor(
         tournamentId: String,
         rows: List<TournamentStandingsExportRow>,
     ): GoogleSheetsStandingsExportExecutionResult {
+        val exportedMatchCount = rows.firstOrNull()?.exportedMatchCount
+        if (
+            rows.size !in 1..MAX_ROW_COUNT ||
+            exportedMatchCount == null ||
+            exportedMatchCount !in 1..MAX_MATCH_COUNT ||
+            rows.any {
+                it.exportedMatchCount != exportedMatchCount ||
+                    it.matchesPlayed !in 0..exportedMatchCount
+            }
+        ) {
+            return GoogleSheetsStandingsExportExecutionResult.Failure(
+                AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
+            )
+        }
+
         if (!config.isConfigured) {
             return GoogleSheetsStandingsExportExecutionResult.Failure(
                 AndroidGoogleSheetsExportFailureReason.SERVER_CONFIGURATION,
@@ -155,7 +171,10 @@ class SupabaseGoogleSheetsStandingsExportRemoteDataSource @Inject constructor(
                     body = buildStandingsRequestBody(tournamentId, rows),
                 ),
             )
-            response.toExecutionResult()
+            response.toExecutionResult(
+                expectedRows = rows.size,
+                expectedExportedMatchCount = exportedMatchCount,
+            )
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: SocketTimeoutException) {
@@ -207,12 +226,19 @@ class SupabaseGoogleSheetsStandingsExportRemoteDataSource @Inject constructor(
         put("total_kills", totalKills)
         put("total_kill_points", totalKillPoints)
         put("total_points", totalPoints)
-        put("best_placement", bestPlacement)
+        if (bestPlacement == null) {
+            put("best_placement", JsonNull)
+        } else {
+            put("best_placement", bestPlacement)
+        }
         put("first_place_count", firstPlaceCount)
         put("tie_break_status", tieBreakStatus)
     }
 
-    private fun GoogleSheetsHttpResponse.toExecutionResult(): GoogleSheetsStandingsExportExecutionResult {
+    private fun GoogleSheetsHttpResponse.toExecutionResult(
+        expectedRows: Int,
+        expectedExportedMatchCount: Int,
+    ): GoogleSheetsStandingsExportExecutionResult {
         val response = runCatching {
             Json.parseToJsonElement(body).jsonObject
         }.getOrNull()
@@ -223,8 +249,8 @@ class SupabaseGoogleSheetsStandingsExportRemoteDataSource @Inject constructor(
             return if (
                 response?.get("ok")?.jsonPrimitive?.contentOrNull == "true" &&
                 response["operation"]?.jsonPrimitive?.contentOrNull == "export_standings" &&
-                rowsWritten == REQUIRED_ROW_COUNT &&
-                exportedMatchCount != null && exportedMatchCount > 0
+                rowsWritten == expectedRows &&
+                exportedMatchCount == expectedExportedMatchCount
             ) {
                 GoogleSheetsStandingsExportExecutionResult.Success(
                     exportedMatchCount = exportedMatchCount,
@@ -262,6 +288,7 @@ class SupabaseGoogleSheetsStandingsExportRemoteDataSource @Inject constructor(
         GoogleSheetsStandingsExportExecutionResult.Failure(reason)
 
     private companion object {
-        const val REQUIRED_ROW_COUNT = 12
+        const val MAX_ROW_COUNT = 12
+        const val MAX_MATCH_COUNT = 10
     }
 }
