@@ -80,15 +80,6 @@ class TeamEntryViewModel @Inject constructor(
             slot.slotNumber to slot.teamName.trim()
         }
         val participation = teamNamesBySlotNumber.analyzeTeamSlotParticipation()
-        if (participation.hasGap) {
-            _uiState.update {
-                it.copy(
-                    hasTeamNameGap = true,
-                    hasSaveError = false,
-                )
-            }
-            return
-        }
         persistTeamNames(
             tournamentId = tournamentId,
             teamNamesBySlotNumber = teamNamesBySlotNumber,

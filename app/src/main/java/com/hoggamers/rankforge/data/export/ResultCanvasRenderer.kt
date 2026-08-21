@@ -137,7 +137,7 @@ class ResultCanvasRenderer {
             val centerY = top + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
                 rowIndex * ResultLayoutSpec.RESULT_ROW_HEIGHT +
                 ResultLayoutSpec.RESULT_ROW_HEIGHT / 2f
-            drawCenteredText(canvas, row.rank.toString(), centerX(boundaries, 0), centerY, bodyPaint)
+            drawCenteredText(canvas, row.rank?.toString().orEmpty(), centerX(boundaries, 0), centerY, bodyPaint)
             drawTeamName(canvas, row.teamName, boundaries[1], centerY)
             drawCenteredText(canvas, row.win.toString(), centerX(boundaries, 2), centerY, bodyPaint)
             drawCenteredText(canvas, row.totalKills.toString(), centerX(boundaries, 3), centerY, bodyPaint)

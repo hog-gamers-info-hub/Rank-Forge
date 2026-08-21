@@ -30,6 +30,7 @@ interface Call {
 }
 
 interface ExportFetchOverrides {
+  participantCount?: number;
   tournamentName?: string;
   finalized?: boolean;
   includeDraft?: boolean;
@@ -120,11 +121,11 @@ function teamSlotId(slot: number): string {
   return `team-slot-${slot}`;
 }
 
-function validPayload(): Record<string, unknown> {
+function validPayload(participantCount = 12): Record<string, unknown> {
   return {
     operation: "export_standings",
     tournament_id: TOURNAMENT_ID,
-    rows: Array.from({ length: 12 }, (_, index) => {
+    rows: Array.from({ length: participantCount }, (_, index) => {
       const slot = index + 1;
       const totalPositionPoints = POSITION_POINTS[index];
 
@@ -154,9 +155,9 @@ function validPayload(): Record<string, unknown> {
   };
 }
 
-function expectedSheetValues(): unknown[][] {
+function expectedSheetValues(participantCount = 12): unknown[][] {
   return toStandingsGoogleSheetValues(
-    validPayload() as unknown as StandingsExportRequest,
+    validPayload(participantCount) as unknown as StandingsExportRequest,
   );
 }
 
@@ -192,9 +193,9 @@ function matchesResponse(
   return responseJson(matches);
 }
 
-function matchResultsResponse(): Response {
+function matchResultsResponse(participantCount = 12): Response {
   return responseJson(
-    Array.from({ length: 12 }, (_, index) => {
+    Array.from({ length: participantCount }, (_, index) => {
       const slot = index + 1;
 
       return {
@@ -209,7 +210,10 @@ function matchResultsResponse(): Response {
   );
 }
 
-function teamSlotsResponse(firstTeamName = "Team 1"): Response {
+function teamSlotsResponse(
+  firstTeamName = "Team 1",
+  participantCount = 12,
+): Response {
   return responseJson(
     Array.from({ length: 12 }, (_, index) => {
       const slot = index + 1;
@@ -218,15 +222,22 @@ function teamSlotsResponse(firstTeamName = "Team 1"): Response {
         id: teamSlotId(slot),
         tournament_id: TOURNAMENT_ID,
         slot_number: slot,
-        team_name: slot === 1 ? firstTeamName : `Team ${slot}`,
+        team_name: slot === 1
+          ? firstTeamName
+          : slot <= participantCount
+          ? `Team ${slot}`
+          : "",
       };
     }),
   );
 }
 
-function playersResponse(firstPlayerName = "Player 1A"): Response {
+function playersResponse(
+  firstPlayerName = "Player 1A",
+  participantCount = 12,
+): Response {
   return responseJson(
-    Array.from({ length: 12 }, (_, index) => {
+    Array.from({ length: participantCount }, (_, index) => {
       const slot = index + 1;
 
       return ["A", "B", "C", "D"].map((suffix) => ({
@@ -242,6 +253,7 @@ function playersResponse(firstPlayerName = "Player 1A"): Response {
 
 function claimResponse(
   outcome: ExportFetchOverrides["claimOutcome"] = "claimed",
+  rowsWritten = 12,
 ): Response {
   if (outcome === "replayed") {
     return responseJson([{
@@ -250,7 +262,7 @@ function claimResponse(
       lease_token: null,
       state: "succeeded",
       attempt_count: 1,
-      rows_written: 12,
+      rows_written: rowsWritten,
       exported_match_count: 1,
     }]);
   }
@@ -293,6 +305,8 @@ function claimResponse(
 function successfulExportFetch(
   overrides: ExportFetchOverrides = {},
 ): { fetchImpl: FetchImplementation; calls: Call[] } {
+  const participantCount = overrides.participantCount ?? 12;
+
   return makeFetch((call) => {
     const path = decodeURIComponent(call.url.pathname);
 
@@ -312,19 +326,19 @@ function successfulExportFetch(
     }
 
     if (path === "/rest/v1/match_results") {
-      return matchResultsResponse();
+      return matchResultsResponse(participantCount);
     }
 
     if (path === "/rest/v1/tournament_team_slots") {
-      return teamSlotsResponse(overrides.firstTeamName);
+      return teamSlotsResponse(overrides.firstTeamName, participantCount);
     }
 
     if (path === "/rest/v1/players") {
-      return playersResponse(overrides.firstPlayerName);
+      return playersResponse(overrides.firstPlayerName, participantCount);
     }
 
     if (path === "/rest/v1/rpc/claim_export_operation") {
-      return claimResponse(overrides.claimOutcome);
+      return claimResponse(overrides.claimOutcome, participantCount);
     }
 
     if (path === "/token") {
@@ -365,20 +379,22 @@ function successfulExportFetch(
 
       return responseJson({
         updates: {
-          updatedRows: overrides.updatedRows ?? 12,
+          updatedRows: overrides.updatedRows ?? participantCount,
           updatedRange: overrides.updatedRange ??
-            "'Tournament Standings'!A2:T13",
+            `'Tournament Standings'!A2:T${participantCount + 1}`,
         },
       });
     }
 
     if (
       path ===
-        "/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T13"
+        `/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T${
+          participantCount + 1
+        }`
     ) {
       return responseJson({
         values: overrides.readBackValues ?? overrides.scanValues ??
-          expectedSheetValues(),
+          expectedSheetValues(participantCount),
       });
     }
 
@@ -387,7 +403,9 @@ function successfulExportFetch(
         sheets: [{
           properties: {
             title: "Tournament Standings",
-            gridProperties: { rowCount: overrides.gridRowCount ?? 13 },
+            gridProperties: {
+              rowCount: overrides.gridRowCount ?? participantCount + 1,
+            },
           },
         }],
       });
@@ -510,6 +528,39 @@ Deno.test("export_standings validates official data, claims, marks write, append
     assertEquals(call.headers.get("authorization"), "Bearer caller-token");
     assertEquals(call.headers.get("apikey"), "anon-key");
   }
+});
+
+Deno.test("participant-aware standings export appends and completes ten rows", async () => {
+  const { fetchImpl, calls } = successfulExportFetch({ participantCount: 10 });
+
+  const response = await handleRequest(request(validPayload(10)), {
+    env,
+    fetchImpl,
+    signer: injectedSigner,
+    clock: () => 1_700_000_000,
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(await jsonBody(response), {
+    ok: true,
+    operation: "export_standings",
+    tournament_id: TOURNAMENT_ID,
+    exported_match_count: 1,
+    rows_written: 10,
+  });
+  assert(
+    paths(calls).includes(
+      "/v4/spreadsheets/spreadsheet-id/values/'Tournament Standings'!A2:T11",
+    ),
+  );
+
+  const appendBody = JSON.parse(sheetAppendCalls(calls)[0].body);
+  assertEquals(appendBody.values.length, 10);
+  assertEquals(
+    JSON.parse(rpcCall(calls, "complete_export_operation_success").body)
+      .p_rows_written,
+    10,
+  );
 });
 
 Deno.test("invalid standings payload is rejected before authentication", async () => {

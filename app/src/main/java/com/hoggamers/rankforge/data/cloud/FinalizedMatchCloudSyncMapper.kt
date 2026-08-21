@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncSnapshot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -23,10 +24,11 @@ data class FinalizedMatchResultUploadPayload(
     val id: String,
     @SerialName("match_id") val matchId: String,
     @SerialName("team_slot_id") val teamSlotId: String,
-    val placement: Int,
+    val placement: Int?,
     val kills: Int,
     val source: String,
     @SerialName("review_status") val reviewStatus: String,
+    @SerialName("participation_status") val participationStatus: String = "PARTICIPATED",
 )
 
 data class FinalizedMatchCloudSyncPayloads(
@@ -43,6 +45,14 @@ object FinalizedMatchCloudSyncMapper {
     fun map(snapshot: FinalizedMatchCloudSyncSnapshot): FinalizedMatchCloudSyncMappingResult {
         val tournamentUuid = snapshot.tournament.id.toUuidOrNull()
             ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+        if (
+            snapshot.teamSlots.size != TeamSlot.SLOT_NUMBERS.count() ||
+            snapshot.teamSlots.map { it.slotNumber }.toSet() != TeamSlot.SLOT_NUMBERS.toSet() ||
+            snapshot.teamSlots.map { it.slotNumber }.distinct().size != snapshot.teamSlots.size ||
+            snapshot.teamSlots.any { it.tournamentId != snapshot.tournament.id }
+        ) {
+            return FinalizedMatchCloudSyncMappingResult.Invalid
+        }
         if (snapshot.matches.any { it.tournamentId != snapshot.tournament.id }) {
             return FinalizedMatchCloudSyncMappingResult.Invalid
         }
@@ -55,8 +65,8 @@ object FinalizedMatchCloudSyncMapper {
             return FinalizedMatchCloudSyncMappingResult.Invalid
         }
 
-        val matchPayloadByLocalId = finalizedMatches
-            .sortedBy { it.matchNumber }
+        val orderedFinalizedMatches = finalizedMatches.sortedBy { it.matchNumber }
+        val matchPayloadByLocalId = orderedFinalizedMatches
             .associate { match ->
                 match.id to FinalizedMatchUploadPayload(
                     id = MatchCloudIdentity.matchId(tournamentUuid, match.id),
@@ -67,7 +77,7 @@ object FinalizedMatchCloudSyncMapper {
                     status = "finalized",
                 )
             }
-        val resultPayloads = finalizedMatches.flatMap { match ->
+        val resultPayloads = orderedFinalizedMatches.flatMap { match ->
             match.toFinalizedResultPayloads(
                 tournamentId = tournamentUuid,
                 cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
@@ -77,9 +87,7 @@ object FinalizedMatchCloudSyncMapper {
         return FinalizedMatchCloudSyncMappingResult.Success(
             FinalizedMatchCloudSyncPayloads(
                 matches = matchPayloadByLocalId.values.sortedBy { it.matchNumber },
-                matchResults = resultPayloads.sortedWith(
-                    compareBy(FinalizedMatchResultUploadPayload::matchId, FinalizedMatchResultUploadPayload::teamSlotId),
-                ),
+                matchResults = resultPayloads,
             ),
         )
     }
@@ -88,28 +96,20 @@ object FinalizedMatchCloudSyncMapper {
         tournamentId: UUID,
         cloudMatchId: String,
     ): List<FinalizedMatchResultUploadPayload>? {
-        val placementsBySlot = placements.associateBy { it.teamSlotNumber }
-        val killsBySlot = kills.associateBy { it.teamSlotNumber }
-        if (placementsBySlot.size != TeamSlot.SLOT_NUMBERS.count() ||
-            killsBySlot.size != TeamSlot.SLOT_NUMBERS.count() ||
-            placementsBySlot.keys != TeamSlot.SLOT_NUMBERS.toSet() ||
-            killsBySlot.keys != TeamSlot.SLOT_NUMBERS.toSet() ||
-            placementsBySlot.values.map { it.position }.toSet() != TeamSlot.SLOT_NUMBERS.toSet() ||
-            killsBySlot.values.any { it.kills < 0 }
-        ) {
-            return null
-        }
+        val participantResults = finalizedParticipantResultsOrNull() ?: return null
 
-        return TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+        return participantResults.map { result ->
+            val slotNumber = result.teamSlotNumber
             val teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentId, slotNumber)
             FinalizedMatchResultUploadPayload(
                 id = MatchCloudIdentity.matchResultId(cloudMatchId, teamSlotId),
                 matchId = cloudMatchId,
                 teamSlotId = teamSlotId,
-                placement = placementsBySlot.getValue(slotNumber).position,
-                kills = killsBySlot.getValue(slotNumber).kills,
+                placement = result.placement,
+                kills = result.kills,
                 source = "manual",
                 reviewStatus = "confirmed",
+                participationStatus = result.participationStatus.name,
             )
         }
     }

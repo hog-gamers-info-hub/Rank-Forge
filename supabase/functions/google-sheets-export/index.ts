@@ -410,7 +410,7 @@ async function handleExportMatch(
         operation: "export_match",
         tournament_id: operation.tournament_id,
         match_id: operation.match_id,
-        rows_written: 12,
+        rows_written: operation.rows.length,
       });
     }
 
@@ -461,7 +461,7 @@ async function handleExportMatch(
   );
 
   let appendResult: {
-    rowsWritten: 12;
+    rowsWritten: number;
     updatedRange: string;
   };
 
@@ -713,7 +713,7 @@ async function handleExportStandings(
         operation: "export_standings",
         tournament_id: operation.tournament_id,
         exported_match_count: official.exportedMatchCount,
-        rows_written: 12,
+        rows_written: standingsValues.length,
       });
     }
 
@@ -764,7 +764,7 @@ async function handleExportStandings(
   );
 
   let appendResult: {
-    rowsWritten: 12;
+    rowsWritten: number;
     updatedRange: string;
   };
 

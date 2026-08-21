@@ -5,11 +5,13 @@ import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEn
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 import com.hoggamers.rankforge.domain.tournament.TieBreakStanding
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 
 data class TournamentCsvExportInput(
     val tournament: Tournament,
@@ -83,7 +85,11 @@ class TournamentCsvExporter(
             )
         }
 
-        if (!orderedStandings.hasCompleteTwelveSlotCoverage()) {
+        val expectedStandingSlots = finalizedMatches
+            .flatMap { match -> match.finalizedParticipantResultsOrNull().orEmpty() }
+            .map { result -> result.teamSlotNumber }
+            .toSet()
+        if (!orderedStandings.hasCompleteParticipantCoverage(expectedStandingSlots)) {
             return TournamentStandingsExportRowsResult.Failure(
                 setOf(TournamentCsvExportFailure.STANDINGS_GENERATION_FAILURE),
             )
@@ -95,19 +101,24 @@ class TournamentCsvExporter(
         val rosterPlayersBySlot = input.rosterPlayers.groupBy { player ->
             player.slotNumber
         }
-        val totalKillsBySlot = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
-            finalizedMatches.sumOf { match ->
-                match.kills.single { kill ->
-                    kill.teamSlotNumber == slotNumber
-                }.kills
+        val totalKillsBySlot = orderedStandings.associate { tieBreakStanding ->
+            val slotNumber = tieBreakStanding.standing.teamSlotNumber
+            slotNumber to finalizedMatches.sumOf { match ->
+                match.finalizedParticipantResultsOrNull()
+                    ?.firstOrNull { result -> result.teamSlotNumber == slotNumber }
+                    ?.takeIf { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+                    ?.kills ?: 0
             }
         }
-        val bestPlacementBySlot = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
-            finalizedMatches.minOf { match ->
-                match.placements.single { placement ->
-                    placement.teamSlotNumber == slotNumber
-                }.position
+        val bestPlacementBySlot = orderedStandings.associate { tieBreakStanding ->
+            val slotNumber = tieBreakStanding.standing.teamSlotNumber
+            val placements = finalizedMatches.mapNotNull { match ->
+                match.finalizedParticipantResultsOrNull()
+                    ?.firstOrNull { result -> result.teamSlotNumber == slotNumber }
+                    ?.takeIf { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+                    ?.placement
             }
+            slotNumber to placements.minOrNull()
         }
         val totalPointCounts = orderedStandings
             .groupingBy { tieBreakStanding ->
@@ -185,6 +196,22 @@ class TournamentCsvExporter(
             )
         }
 
+        val referencedParticipantSlots = finalizedMatches
+            .flatMap { match -> match.finalizedParticipantResultsOrNull().orEmpty() }
+            .map { result -> result.teamSlotNumber }
+            .toSet()
+        val structuralTeamSlotsByNumber = teamSlots.associateBy { teamSlot ->
+            teamSlot.slotNumber
+        }
+        referencedParticipantSlots.forEach { slotNumber ->
+            val teamSlot = structuralTeamSlotsByNumber[slotNumber]
+            if (teamSlot == null) {
+                failures += TournamentCsvExportFailure.MISSING_TEAM_SLOT
+            } else if (teamSlot.teamName.isBlank()) {
+                failures += TournamentCsvExportFailure.MISSING_TEAM_IDENTITY
+            }
+        }
+
         return failures
     }
 
@@ -193,7 +220,7 @@ class TournamentCsvExporter(
     ) {
         val slotNumbers = teamSlots.map { teamSlot -> teamSlot.slotNumber }
 
-        if (teamSlots.size != REQUIRED_ROW_COUNT) {
+        if (teamSlots.size != TeamSlot.SLOT_NUMBERS.count()) {
             failures += TournamentCsvExportFailure.MISSING_TEAM_SLOT
         }
 
@@ -209,9 +236,6 @@ class TournamentCsvExporter(
             failures += TournamentCsvExportFailure.MISSING_TEAM_SLOT
         }
 
-        if (teamSlots.any { teamSlot -> teamSlot.teamName.isBlank() }) {
-            failures += TournamentCsvExportFailure.MISSING_TEAM_IDENTITY
-        }
     }
 
     private fun TournamentCsvExportInput.validateRosterPlayers(
@@ -229,38 +253,59 @@ class TournamentCsvExporter(
         match: Match,
         failures: MutableSet<TournamentCsvExportFailure>,
     ) {
-        if (
-            match.placements.size != REQUIRED_ROW_COUNT ||
-            match.kills.size != REQUIRED_ROW_COUNT
-        ) {
+        if (match.participantResults.isEmpty()) {
+            val participantCount = match.placements.size
+            if (participantCount !in 1..TeamSlot.MAX_SLOT_NUMBER ||
+                match.kills.size != participantCount
+            ) {
+                failures += TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT
+            }
+            val expectedPlacements = (1..participantCount).toSet()
+            val placementSlots = match.placements.map { it.teamSlotNumber }
+            val killSlots = match.kills.map { it.teamSlotNumber }
+            val placementValues = match.placements.map { it.position }
+            if (placementSlots.any { it !in TeamSlot.SLOT_NUMBERS } ||
+                killSlots.any { it !in TeamSlot.SLOT_NUMBERS }
+            ) failures += TournamentCsvExportFailure.INVALID_TEAM_SLOT
+            if (placementSlots.duplicates().isNotEmpty() || killSlots.duplicates().isNotEmpty()) {
+                failures += TournamentCsvExportFailure.DUPLICATE_TEAM_SLOT
+            }
+            if (placementValues.any { it !in expectedPlacements }) {
+                failures += TournamentCsvExportFailure.INVALID_PLACEMENT
+            }
+            if (placementValues.duplicates().isNotEmpty()) {
+                failures += TournamentCsvExportFailure.DUPLICATE_PLACEMENT
+            }
+            if (placementValues.toSet() != expectedPlacements) {
+                failures += TournamentCsvExportFailure.MISSING_PLACEMENT
+            }
+            if (killSlots.toSet() != placementSlots.toSet()) {
+                failures += TournamentCsvExportFailure.MISSING_KILL_VALUE
+            }
+            if (match.kills.any { it.kills < 0 }) {
+                failures += TournamentCsvExportFailure.INVALID_KILL_COUNT
+            }
+            return
+        }
+        val participantResults = match.finalizedParticipantResultsOrNull()
+        if (participantResults == null) {
             failures += TournamentCsvExportFailure.INVALID_FINALIZED_MATCH_ROW_COUNT
+            return
         }
-
-        val placementSlots = match.placements.map { placement ->
-            placement.teamSlotNumber
+        val participated = participantResults.filter {
+            it.participationStatus == MatchParticipationStatus.PARTICIPATED
         }
-        val killSlots = match.kills.map { kill ->
-            kill.teamSlotNumber
-        }
-        val placementValues = match.placements.map { placement ->
-            placement.position
-        }
-
-        if (
-            placementSlots.any { slotNumber -> slotNumber !in TeamSlot.SLOT_NUMBERS } ||
-            killSlots.any { slotNumber -> slotNumber !in TeamSlot.SLOT_NUMBERS }
+        val expectedPlacements = (1..participated.size).toSet()
+        val participantSlots = participantResults.map { it.teamSlotNumber }
+        val placementValues = participated.mapNotNull { it.placement }
+        if (participantResults.isEmpty() || participated.isEmpty() ||
+            participantSlots.size > TeamSlot.MAX_SLOT_NUMBER ||
+            participantSlots.duplicates().isNotEmpty() ||
+            participantSlots.any { it !in TeamSlot.SLOT_NUMBERS }
         ) {
             failures += TournamentCsvExportFailure.INVALID_TEAM_SLOT
         }
-
-        if (
-            placementSlots.duplicates().isNotEmpty() ||
-            killSlots.duplicates().isNotEmpty()
-        ) {
-            failures += TournamentCsvExportFailure.DUPLICATE_TEAM_SLOT
-        }
-
-        if (placementValues.any { placement -> placement !in VALID_PLACEMENTS }) {
+        if (placementValues.any { placement -> placement !in expectedPlacements }) {
             failures += TournamentCsvExportFailure.INVALID_PLACEMENT
         }
 
@@ -268,31 +313,29 @@ class TournamentCsvExporter(
             failures += TournamentCsvExportFailure.DUPLICATE_PLACEMENT
         }
 
-        if (placementValues.toSet() != REQUIRED_PLACEMENTS) {
+        if (placementValues.toSet() != expectedPlacements) {
             failures += TournamentCsvExportFailure.MISSING_PLACEMENT
         }
 
-        if (placementSlots.toSet() != REQUIRED_SLOT_NUMBERS) {
-            failures += TournamentCsvExportFailure.MISSING_TEAM_SLOT
-        }
-
-        if (
-            killSlots.toSet() != REQUIRED_SLOT_NUMBERS ||
-            placementSlots.toSet() != killSlots.toSet()
-        ) {
+        if (participantResults.any {
+                it.participationStatus == MatchParticipationStatus.NO_SHOW &&
+                    (it.placement != null || it.kills != 0)
+            }) {
             failures += TournamentCsvExportFailure.MISSING_KILL_VALUE
         }
 
-        if (match.kills.any { kill -> kill.kills < 0 }) {
+        if (participantResults.any { result -> result.kills < 0 }) {
             failures += TournamentCsvExportFailure.INVALID_KILL_COUNT
         }
     }
 
-    private fun List<TieBreakStanding>.hasCompleteTwelveSlotCoverage(): Boolean =
-        size == REQUIRED_ROW_COUNT &&
+    private fun List<TieBreakStanding>.hasCompleteParticipantCoverage(
+        expectedParticipantSlots: Set<Int>,
+    ): Boolean =
+        size == expectedParticipantSlots.size &&
             map { tieBreakStanding ->
                 tieBreakStanding.standing.teamSlotNumber
-            }.toSet() == REQUIRED_SLOT_NUMBERS
+            }.toSet() == expectedParticipantSlots
 
     private fun TieBreakStanding.tieBreakStatus(
         totalPointCount: Int,
@@ -331,16 +374,13 @@ class TournamentCsvExporter(
             .keys
 
     private companion object {
-        const val EXPORT_SCHEMA_VERSION = "phase_10_v1"
+        const val EXPORT_SCHEMA_VERSION = "phase_10_v2"
         const val EXPORT_TYPE = "tournament_standings"
         const val UNIQUE_ORDER = "unique_order"
         const val TIE_BREAK_APPLIED = "tie_break_applied"
         const val UNRESOLVED_TIE = "unresolved_tie"
-        const val REQUIRED_ROW_COUNT = 12
         const val CRLF = "\r\n"
 
-        val VALID_PLACEMENTS = 1..12
-        val REQUIRED_PLACEMENTS = VALID_PLACEMENTS.toSet()
         val REQUIRED_SLOT_NUMBERS = TeamSlot.SLOT_NUMBERS.toSet()
 
         const val TOURNAMENT_CSV_HEADER =

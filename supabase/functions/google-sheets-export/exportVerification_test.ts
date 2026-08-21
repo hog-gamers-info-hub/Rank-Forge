@@ -98,6 +98,10 @@ function expectedRows(): ExportVerificationCell[][] {
   });
 }
 
+function expectedRowsForCount(rowCount: number): ExportVerificationCell[][] {
+  return expectedRows().slice(0, rowCount);
+}
+
 function cloneRows(
   rows: readonly (readonly ExportVerificationCell[])[],
 ): ExportVerificationCell[][] {
@@ -129,6 +133,19 @@ Deno.test("post-append verification reads the exact returned range with exact va
   );
   assertEquals(calls[0].headers.get("authorization"), "Bearer google-token");
   assertEquals(calls[0].body, null);
+});
+
+Deno.test("post-append verification accepts a ten-row block", async () => {
+  const rows = expectedRowsForCount(10);
+  const { fetchImpl } = makeFetch(() => responseJson({ values: rows }));
+
+  await verifyAppendedExportRows(
+    "google-token",
+    "spreadsheet-id",
+    "'Match Results'!A2:T11",
+    rows,
+    { fetchImpl, timeoutMs: 100 },
+  );
 });
 
 Deno.test("post-append verification rejects wrong values, order, row count, and numeric strings", async () => {
@@ -290,6 +307,37 @@ Deno.test("uncertain reconciliation resolves one exact contiguous block without 
   assertEquals(
     decodeURIComponent(calls[1].url.pathname),
     "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:T13",
+  );
+});
+
+Deno.test("uncertain reconciliation resolves a ten-row exact block", async () => {
+  const rows = expectedRowsForCount(10);
+  const { fetchImpl } = makeFetch((call) => {
+    const path = decodeURIComponent(call.url.pathname);
+
+    if (path === "/v4/spreadsheets/spreadsheet-id") {
+      return responseJson({
+        sheets: [{
+          properties: {
+            title: "Match Results",
+            gridProperties: { rowCount: 11 },
+          },
+        }],
+      });
+    }
+
+    return responseJson({ values: rows });
+  });
+
+  assertEquals(
+    await reconcileUncertainExport(
+      "google-token",
+      "spreadsheet-id",
+      { worksheetName: "Match Results", candidateIndexes: [0, 1, 2, 4] },
+      rows,
+      { fetchImpl, timeoutMs: 100 },
+    ),
+    "verified_success",
   );
 });
 

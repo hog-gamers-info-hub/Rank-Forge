@@ -65,7 +65,7 @@ class SupabaseGoogleSheetsStandingsExportTest {
     }
 
     @Test
-    fun successResponseIsAcceptedOnlyForTwelveWrittenRows() = runTest {
+    fun successResponseMustMatchSubmittedRowCount() = runTest {
         val success = dataSource(
             RecordingTransport(successResponse()),
         ).export(TOURNAMENT_ID, rows())
@@ -77,6 +77,64 @@ class SupabaseGoogleSheetsStandingsExportTest {
             ),
             success,
         )
+    }
+
+    @Test
+    fun tenParticipantRowsAreAccepted() = runTest {
+        val success = dataSource(
+            RecordingTransport(successResponse(rowsWritten = 10)),
+        ).export(TOURNAMENT_ID, rows(rowCount = 10))
+
+        assertEquals(
+            GoogleSheetsStandingsExportExecutionResult.Success(
+                exportedMatchCount = 3,
+                rowsWritten = 10,
+            ),
+            success,
+        )
+    }
+
+    @Test
+    fun mismatchedServerMetadataIsRejected() = runTest {
+        val rows = rows(rowCount = 10)
+        val wrongRows = dataSource(
+            RecordingTransport(successResponse(rowsWritten = 12)),
+        ).export(TOURNAMENT_ID, rows)
+        val wrongMatchCount = dataSource(
+            RecordingTransport(successResponse(exportedMatchCount = 2, rowsWritten = 10)),
+        ).export(TOURNAMENT_ID, rows)
+
+        assertEquals(
+            GoogleSheetsStandingsExportExecutionResult.Failure(
+                AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
+            ),
+            wrongRows,
+        )
+        assertEquals(
+            GoogleSheetsStandingsExportExecutionResult.Failure(
+                AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
+            ),
+            wrongMatchCount,
+        )
+    }
+
+    @Test
+    fun invalidParticipantRowCountsDoNotContactFunction() = runTest {
+        val transport = RecordingTransport(successResponse())
+
+        assertEquals(
+            GoogleSheetsStandingsExportExecutionResult.Failure(
+                AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
+            ),
+            dataSource(transport).export(TOURNAMENT_ID, rows(rowCount = 0)),
+        )
+        assertEquals(
+            GoogleSheetsStandingsExportExecutionResult.Failure(
+                AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
+            ),
+            dataSource(transport).export(TOURNAMENT_ID, rows(rowCount = 13)),
+        )
+        assertTrue(transport.requests.isEmpty())
     }
 
     @Test
@@ -146,13 +204,17 @@ class SupabaseGoogleSheetsStandingsExportTest {
         transport = transport,
     )
 
-    private fun rows(): List<TournamentStandingsExportRow> = (1..12).map { rank ->
+    private fun rows(
+        rowCount: Int = 12,
+        exportedMatchCount: Int = 3,
+        matchesPlayed: Int = exportedMatchCount,
+    ): List<TournamentStandingsExportRow> = (1..rowCount).map { rank ->
         TournamentStandingsExportRow(
             exportSchemaVersion = "phase_10_v1",
             exportType = "tournament_standings",
             tournamentId = TOURNAMENT_ID,
             tournamentName = "Synthetic Cup",
-            exportedMatchCount = 3,
+            exportedMatchCount = exportedMatchCount,
             standingsRank = rank,
             teamSlot = rank,
             teamName = "Team $rank",
@@ -160,7 +222,7 @@ class SupabaseGoogleSheetsStandingsExportTest {
             player2Name = "Player $rank.2",
             player3Name = "Player $rank.3",
             player4Name = "Player $rank.4",
-            matchesPlayed = 3,
+            matchesPlayed = matchesPlayed,
             totalPositionPoints = 10,
             totalKills = 2,
             totalKillPoints = 2,
@@ -171,10 +233,16 @@ class SupabaseGoogleSheetsStandingsExportTest {
         )
     }
 
-    private fun successResponse() = GoogleSheetsHttpResponse(200, successBody())
+    private fun successResponse(
+        exportedMatchCount: Int = 3,
+        rowsWritten: Int = 12,
+    ) = GoogleSheetsHttpResponse(200, successBody(exportedMatchCount, rowsWritten))
 
-    private fun successBody() =
-        """{"ok":true,"operation":"export_standings","tournament_id":"$TOURNAMENT_ID","exported_match_count":3,"rows_written":12}"""
+    private fun successBody(
+        exportedMatchCount: Int = 3,
+        rowsWritten: Int = 12,
+    ) =
+        """{"ok":true,"operation":"export_standings","tournament_id":"$TOURNAMENT_ID","exported_match_count":$exportedMatchCount,"rows_written":$rowsWritten}"""
 
     private fun errorResponse(code: String) = GoogleSheetsHttpResponse(
         statusCode = 409,

@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.sync.RevisionConflict
 
 data class FinalizedMatchCloudSyncSnapshot(
     val tournament: Tournament,
+    val teamSlots: List<TeamSlot>,
     val matches: List<Match>,
     val expectedCloudRevision: Int? = null,
 )

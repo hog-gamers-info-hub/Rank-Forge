@@ -5,7 +5,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchRepositoryResult
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
@@ -253,6 +259,88 @@ class InMemoryTournamentRepositoryTest {
             players = listOf(RosterPlayer.create("stable-id", 1, "Player")),
         )
         assertEquals(TournamentStatus.DRAFT, repository.observeById("stable-id").first()?.status)
+    }
+
+    @Test
+    fun tenTeamFinalizationUsesActiveParticipantSlots() = runTest {
+        val repository = createFinalizationRepository(activeTeamCount = 10)
+
+        val result = repository.finalizeDraftMatch(
+            matchId = "match-id",
+            placements = (1..10).map { slotNumber ->
+                MatchPlacement(teamSlotNumber = slotNumber, position = slotNumber)
+            },
+            kills = (1..10).map { slotNumber ->
+                MatchKill(teamSlotNumber = slotNumber, kills = slotNumber - 1)
+            },
+        )
+
+        val finalized = result as FinalizeMatchRepositoryResult.Finalized
+        assertEquals(10, finalized.match.placements.size)
+        assertEquals(10, finalized.match.kills.size)
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.teamSlotNumber })
+    }
+
+    @Test
+    fun finalizationRejectsInactiveParticipantSlot() = runTest {
+        val repository = createFinalizationRepository(activeTeamCount = 10)
+
+        val result = repository.finalizeDraftMatch(
+            matchId = "match-id",
+            placements = (1..10).map { position ->
+                MatchPlacement(
+                    teamSlotNumber = if (position == 10) 11 else position,
+                    position = position,
+                )
+            },
+            kills = (1..10).map { slotNumber ->
+                MatchKill(
+                    teamSlotNumber = if (slotNumber == 10) 11 else slotNumber,
+                    kills = slotNumber - 1,
+                )
+            },
+        )
+
+        assertTrue(result is FinalizeMatchRepositoryResult.Rejected)
+    }
+
+    @Test
+    fun twelveTeamFinalizationRemainsValid() = runTest {
+        val repository = createFinalizationRepository(activeTeamCount = 12)
+
+        val result = repository.finalizeDraftMatch(
+            matchId = "match-id",
+            placements = (1..12).map { slotNumber ->
+                MatchPlacement(teamSlotNumber = slotNumber, position = slotNumber)
+            },
+            kills = (1..12).map { slotNumber ->
+                MatchKill(teamSlotNumber = slotNumber, kills = slotNumber - 1)
+            },
+        )
+
+        assertTrue(result is FinalizeMatchRepositoryResult.Finalized)
+    }
+
+    private suspend fun createFinalizationRepository(activeTeamCount: Int): InMemoryTournamentRepository {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "finalization-tournament"))
+        repository.saveTeamNames(
+            tournamentId = "finalization-tournament",
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber <= activeTeamCount) "Team $slotNumber" else ""
+            },
+        )
+        repository.createDraftMatch(
+            Match(
+                id = "match-id",
+                tournamentId = "finalization-tournament",
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        return repository
     }
 
     private fun tournament(id: String) = Tournament(

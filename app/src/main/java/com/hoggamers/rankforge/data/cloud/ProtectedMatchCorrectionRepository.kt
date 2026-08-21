@@ -3,10 +3,11 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionRequest
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionResult
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,30 +60,44 @@ class SupabaseProtectedMatchCorrectionAction @Inject constructor(
     }
 }
 
-private fun ProtectedMatchCorrectionRequest.toParameters(): ProtectedMatchCorrectionParameters? {
+internal fun ProtectedMatchCorrectionRequest.toParameters(): ProtectedMatchCorrectionParameters? {
     val tournamentId = runCatching { UUID.fromString(tournament.id) }.getOrNull() ?: return null
+    val previous = match.finalizedParticipantResultsOrNull() ?: return null
+    if (match.tournamentId != tournament.id) return null
     val cloudMatchId = MatchCloudIdentity.matchId(tournamentId, match.id)
-    val placementBySlot = placements.associateBy { it.teamSlotNumber }
-    val killsBySlot = kills.associateBy { it.teamSlotNumber }
-    if (placementBySlot.keys != TeamSlot.SLOT_NUMBERS.toSet() ||
-        killsBySlot.keys != TeamSlot.SLOT_NUMBERS.toSet() ||
-        placementBySlot.values.map(MatchPlacement::position).toSet() != TeamSlot.SLOT_NUMBERS.toSet() ||
-        killsBySlot.values.any { it.kills < 0 }
-    ) return null
+    val corrected = if (participantResults.isNotEmpty()) {
+        participantResults
+    } else {
+        val correctedResults = placements.mapNotNull { placement ->
+            val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
+                ?: return@mapNotNull null
+            com.hoggamers.rankforge.domain.tournament.MatchParticipantResult(
+                placement.teamSlotNumber,
+                MatchParticipationStatus.PARTICIPATED,
+                placement.position,
+                kill.kills,
+            )
+        }
+        if (correctedResults.size != placements.size) return null
+        correctedResults
+    }
+    if (!com.hoggamers.rankforge.domain.tournament.isValidCorrectionSnapshot(previous, corrected)) return null
     return ProtectedMatchCorrectionParameters(
         tournamentId = tournament.id,
         matchId = cloudMatchId,
         expectedRevision = expectedRevision,
-        matchResults = TeamSlot.SLOT_NUMBERS.map { slot ->
+        matchResults = corrected.sortedBy { it.teamSlotNumber }.map { result ->
+            val slot = result.teamSlotNumber
             val teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentId, slot)
             FinalizedMatchResultUploadPayload(
                 id = MatchCloudIdentity.matchResultId(cloudMatchId, teamSlotId),
                 matchId = cloudMatchId,
                 teamSlotId = teamSlotId,
-                placement = placementBySlot.getValue(slot).position,
-                kills = killsBySlot.getValue(slot).kills,
+                placement = result.placement,
+                kills = result.kills,
                 source = "manual",
                 reviewStatus = "confirmed",
+                participationStatus = result.participationStatus.name,
             )
         },
     )

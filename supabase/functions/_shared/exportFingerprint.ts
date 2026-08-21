@@ -28,7 +28,11 @@ function canonicalMatchFingerprintInput(
     request.match_id,
     MATCH_EXPORT_COLUMNS,
     request.rows.map((row) =>
-      MATCH_EXPORT_COLUMNS.map((column) => row[column])
+      MATCH_EXPORT_COLUMNS.map((column) =>
+        column === "participation_status"
+          ? row.participation_status ?? "PARTICIPATED"
+          : row[column] ?? null
+      )
     ),
   ];
 }
@@ -43,7 +47,7 @@ function canonicalStandingsFingerprintInput(
     null,
     STANDINGS_EXPORT_COLUMNS,
     request.rows.map((row) =>
-      STANDINGS_EXPORT_COLUMNS.map((column) => row[column])
+      STANDINGS_EXPORT_COLUMNS.map((column) => row[column] ?? null)
     ),
   ];
 }

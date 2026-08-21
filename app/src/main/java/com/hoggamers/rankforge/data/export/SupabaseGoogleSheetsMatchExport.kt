@@ -9,6 +9,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -78,7 +79,7 @@ class SupabaseGoogleSheetsMatchExportRemoteDataSource @Inject constructor(
                     body = buildMatchRequestBody(tournamentId, matchId, rows),
                 ),
             )
-            response.toExecutionResult(tournamentId, matchId)
+            response.toExecutionResult(tournamentId, matchId, rows.size)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: SocketTimeoutException) {
@@ -115,7 +116,12 @@ class SupabaseGoogleSheetsMatchExportRemoteDataSource @Inject constructor(
         put("match_label", matchLabel)
         put("match_finalized_at", matchFinalizedAt)
         put("row_number", rowNumber)
-        put("placement", placement)
+        if (placement == null) {
+            put("placement", JsonNull)
+        } else {
+            put("placement", placement)
+        }
+        put("participation_status", participationStatus)
         put("team_slot", teamSlot)
         put("team_name", teamName)
         put("player_1_name", player1Name)
@@ -132,6 +138,7 @@ class SupabaseGoogleSheetsMatchExportRemoteDataSource @Inject constructor(
     private fun GoogleSheetsHttpResponse.toExecutionResult(
         tournamentId: String,
         matchId: String,
+        expectedRows: Int,
     ): GoogleSheetsMatchExportExecutionResult {
         val response = runCatching {
             Json.parseToJsonElement(body).jsonObject
@@ -144,7 +151,7 @@ class SupabaseGoogleSheetsMatchExportRemoteDataSource @Inject constructor(
                     response["operation"]?.jsonPrimitive?.contentOrNull == "export_match" &&
                     response["tournament_id"]?.jsonPrimitive?.contentOrNull == tournamentId &&
                     response["match_id"]?.jsonPrimitive?.contentOrNull == matchId &&
-                    rowsWritten == REQUIRED_ROW_COUNT
+                    rowsWritten == expectedRows
             ) {
                 GoogleSheetsMatchExportExecutionResult.Success(rowsWritten)
             } else {
@@ -177,7 +184,4 @@ class SupabaseGoogleSheetsMatchExportRemoteDataSource @Inject constructor(
     ): GoogleSheetsMatchExportExecutionResult.Failure =
         GoogleSheetsMatchExportExecutionResult.Failure(reason)
 
-    private companion object {
-        const val REQUIRED_ROW_COUNT = 12
-    }
 }

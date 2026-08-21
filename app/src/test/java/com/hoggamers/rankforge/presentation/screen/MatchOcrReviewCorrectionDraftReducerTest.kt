@@ -19,6 +19,59 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun initialCorrectionDraftIncludesAllRowsAsIncluded() {
+        val draft = initialDraft()
+
+        assertEquals(12, draft.rows.size)
+        assertEquals(0, draft.excludedCount)
+        assertEquals(12, draft.includedRows.size)
+        assertTrue(draft.rows.all { !it.isExcluded })
+    }
+
+    @Test
+    fun excludingOneRowPreservesStructuralRowsAndMarksDraftDirty() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 10)
+
+        assertEquals(12, draft.rows.size)
+        assertEquals((0..11).toList(), draft.rows.map { it.rowIndex })
+        assertTrue(draft.rows[10].isExcluded)
+        assertTrue(draft.rows.filterIndexed { index, _ -> index != 10 }.all { !it.isExcluded })
+        assertEquals(11, draft.includedRows.size)
+        assertEquals(1, draft.excludedCount)
+        assertTrue(draft.isDirty)
+    }
+
+    @Test
+    fun excludedRowDoesNotContributeNormalBlockersOrWarnings() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "")
+            .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 0, "-1") }
+            .let { MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(it, 0, "13") }
+        val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(changed, 0)
+
+        assertTrue(draft.rows[0].validation.blockers.isEmpty())
+        assertTrue(draft.rows[0].validation.warnings.isEmpty())
+        assertEquals(0, draft.blockerCount)
+    }
+
+    @Test
+    fun excludingOneSideOfDuplicatePlacementRemovesDuplicateBlockerFromIncludedRow() {
+        val duplicate = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 1, "1")
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(duplicate, 1)
+
+        assertFalse(excluded.rows[0].validation.blockers.contains(MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT))
+        assertFalse(excluded.rows[1].validation.blockers.contains(MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT))
+    }
+
+    @Test
+    fun excludingOneSideOfDuplicateTeamSlotRemovesDuplicateBlockerFromIncludedRow() {
+        val duplicate = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initialDraft(), 1, "1")
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(duplicate, 1)
+
+        assertFalse(excluded.rows[0].validation.blockers.contains(MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT))
+        assertFalse(excluded.rows[1].validation.blockers.contains(MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT))
+    }
+
+    @Test
     fun placementCorrectionUpdatesOnlySelectedRow() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "12")
 
@@ -160,13 +213,30 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun resetRowRestoresExcludedStateAndNormalValidation() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 3, "")
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(changed, 3)
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(excluded, 3)
+
+        assertFalse(reset.rows[3].isExcluded)
+        assertEquals("4", reset.rows[3].placementDraftValue)
+        assertEquals("3", reset.rows[3].killsDraftValue)
+        assertEquals("4", reset.rows[3].assignedTeamSlotDraftValue)
+        assertTrue(reset.rows[3].validation.blockers.isEmpty())
+        assertFalse(reset.isDirty)
+    }
+
+    @Test
     fun resetAllRestoresAllRows() {
         val changedPlacement = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "12")
         val changedKills = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(changedPlacement, 3, "10")
         val changedTeamSlot = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(changedKills, 4, "11")
-        val reset = MatchOcrReviewCorrectionDraftReducer.onResetAllCorrections(changedTeamSlot)
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(changedTeamSlot, 7)
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetAllCorrections(excluded)
 
         assertFalse(reset.isDirty)
+        assertEquals(0, reset.excludedCount)
+        assertTrue(reset.rows.all { !it.isExcluded })
         assertEquals((1..12).map { it.toString() }, reset.rows.map { it.placementDraftValue })
         assertEquals((0..11).map { it.toString() }, reset.rows.map { it.killsDraftValue })
         assertEquals((1..12).map { it.toString() }, reset.rows.map { it.assignedTeamSlotDraftValue })
@@ -219,6 +289,17 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun repeatedValidationRemainsDeterministicWithExcludedRows() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "")
+        val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(changed, 0)
+
+        assertEquals(
+            MatchOcrReviewCorrectionDraftReducer.validate(draft),
+            MatchOcrReviewCorrectionDraftReducer.validate(MatchOcrReviewCorrectionDraftReducer.validate(draft)),
+        )
+    }
+
+    @Test
     fun originalEvidenceValuesRemainPreservedAfterDraftChanges() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initialDraft(), 0, "12")
         val row = draft.rows[0]
@@ -227,6 +308,15 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         assertEquals("0", row.originalKillsValue)
         assertEquals("1", row.originalAssignedTeamSlotValue)
         assertEquals("12", row.assignedTeamSlotDraftValue)
+    }
+
+    @Test
+    fun originalEvidenceValuesRemainPreservedAfterExclusion() {
+        val row = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 0).rows[0]
+
+        assertEquals("1", row.originalPlacementValue)
+        assertEquals("0", row.originalKillsValue)
+        assertEquals("1", row.originalAssignedTeamSlotValue)
     }
 
     @Test

@@ -73,6 +73,22 @@ class SupabaseGoogleSheetsMatchExportTest {
     }
 
     @Test
+    fun tenRowMatchAcceptsTenRowSuccessResponse() = runTest {
+        val tenRows = rows(10)
+        val transport = RecordingTransport(successResponse(10))
+        assertEquals(
+            GoogleSheetsMatchExportExecutionResult.Success(10),
+            dataSource(transport)
+                .export(TOURNAMENT_ID, MATCH_ID, tenRows),
+        )
+        assertEquals(
+            10,
+            Json.parseToJsonElement(transport.requests.single().body)
+                .jsonObject.getValue("rows").jsonArray.size,
+        )
+    }
+
+    @Test
     fun missingSessionAndConfigurationDoNotContactFunction() = runTest {
         val missingSessionTransport = RecordingTransport(successResponse())
         assertEquals(
@@ -171,7 +187,7 @@ class SupabaseGoogleSheetsMatchExportTest {
         transport = transport,
     )
 
-    private fun rows(): List<MatchExportRow> = (1..12).map { position ->
+    private fun rows(rowCount: Int = 12): List<MatchExportRow> = (1..rowCount).map { position ->
         MatchExportRow(
             exportSchemaVersion = "phase_10_v1",
             exportType = "match_result",
@@ -196,9 +212,9 @@ class SupabaseGoogleSheetsMatchExportTest {
         )
     }
 
-    private fun successResponse() = GoogleSheetsHttpResponse(
+    private fun successResponse(rowsWritten: Int = 12) = GoogleSheetsHttpResponse(
         statusCode = 200,
-        body = """{"ok":true,"operation":"export_match","tournament_id":"$TOURNAMENT_ID","match_id":"$MATCH_ID","rows_written":12}""",
+        body = """{"ok":true,"operation":"export_match","tournament_id":"$TOURNAMENT_ID","match_id":"$MATCH_ID","rows_written":$rowsWritten}""",
     )
 
     private class RecordingTransport(
@@ -232,6 +248,7 @@ class SupabaseGoogleSheetsMatchExportTest {
             "match_finalized_at",
             "row_number",
             "placement",
+            "participation_status",
             "team_slot",
             "team_name",
             "player_1_name",

@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.data.local.MatchCorrectionEntity
 import com.hoggamers.rankforge.data.local.MatchDraftValueEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.MatchKillEntity
+import com.hoggamers.rankforge.data.local.MatchParticipantResultEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
@@ -12,6 +13,8 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -91,6 +94,7 @@ internal fun MatchEntity.toDomain(
     placements: List<MatchPlacement> = emptyList(),
     kills: List<MatchKill> = emptyList(),
     correctionHistory: List<MatchCorrectionRecord> = emptyList(),
+    participantResults: List<MatchParticipantResult> = emptyList(),
 ): Match = Match(
     id = id,
     tournamentId = tournamentId,
@@ -101,6 +105,21 @@ internal fun MatchEntity.toDomain(
     placements = placements,
     kills = kills,
     correctionHistory = correctionHistory,
+    participantResults = participantResults.ifEmpty {
+        if (MatchStatus.valueOf(status) == MatchStatus.FINALIZED) {
+            val killsBySlot = kills.associateBy { it.teamSlotNumber }
+            placements.map { placement ->
+                MatchParticipantResult(
+                    teamSlotNumber = placement.teamSlotNumber,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = placement.position,
+                    kills = killsBySlot.getValue(placement.teamSlotNumber).kills,
+                )
+            }
+        } else {
+            emptyList()
+        }
+    },
 )
 
 internal fun MatchPlacement.toEntity(matchId: String): MatchPlacementEntity = MatchPlacementEntity(
@@ -122,6 +141,22 @@ internal fun MatchKill.toEntity(matchId: String): MatchKillEntity = MatchKillEnt
 
 internal fun MatchKillEntity.toDomain(): MatchKill = MatchKill(
     teamSlotNumber = teamSlotNumber,
+    kills = kills,
+)
+
+internal fun MatchParticipantResult.toEntity(matchId: String): MatchParticipantResultEntity =
+    MatchParticipantResultEntity(
+        matchId = matchId,
+        teamSlotNumber = teamSlotNumber,
+        participationStatus = participationStatus.name,
+        placement = placement,
+        kills = kills,
+    )
+
+internal fun MatchParticipantResultEntity.toDomain(): MatchParticipantResult = MatchParticipantResult(
+    teamSlotNumber = teamSlotNumber,
+    participationStatus = MatchParticipationStatus.valueOf(participationStatus),
+    placement = placement,
     kills = kills,
 )
 
@@ -147,18 +182,44 @@ internal fun MatchCorrectionRecord.toEntity(
 ): MatchCorrectionEntity = MatchCorrectionEntity(
     matchId = matchId,
     correctionIndex = correctionIndex,
-    previousPlacements = json.encodeToString(previousPlacements.map { it.toStored() }),
+    previousPlacements = if (previousParticipantResults.isEmpty()) {
+        json.encodeToString(previousPlacements.map { it.toStored() })
+    } else {
+        json.encodeToString(
+            StoredCorrectionSnapshot(
+                placements = previousPlacements.map { it.toStored() },
+                participantResults = previousParticipantResults.map { it.toStored() },
+            )
+        )
+    },
     previousKills = json.encodeToString(previousKills.map { it.toStored() }),
-    correctedPlacements = json.encodeToString(correctedPlacements.map { it.toStored() }),
+    correctedPlacements = if (correctedParticipantResults.isEmpty()) {
+        json.encodeToString(correctedPlacements.map { it.toStored() })
+    } else {
+        json.encodeToString(
+            StoredCorrectionSnapshot(
+                placements = correctedPlacements.map { it.toStored() },
+                participantResults = correctedParticipantResults.map { it.toStored() },
+            )
+        )
+    },
     correctedKills = json.encodeToString(correctedKills.map { it.toStored() }),
 )
 
-internal fun MatchCorrectionEntity.toDomain(json: Json): MatchCorrectionRecord = MatchCorrectionRecord(
-    previousPlacements = json.decodeFromString<List<StoredPlacement>>(previousPlacements).map { it.toDomain() },
+internal fun MatchCorrectionEntity.toDomain(json: Json): MatchCorrectionRecord {
+    val previousSnapshot = json.decodeCorrectionSnapshotOrNull(previousPlacements)
+    val correctedSnapshot = json.decodeCorrectionSnapshotOrNull(correctedPlacements)
+    return MatchCorrectionRecord(
+    previousPlacements = previousSnapshot?.placements?.map { it.toDomain() }
+        ?: json.decodeFromString<List<StoredPlacement>>(previousPlacements).map { it.toDomain() },
     previousKills = json.decodeFromString<List<StoredKill>>(previousKills).map { it.toDomain() },
-    correctedPlacements = json.decodeFromString<List<StoredPlacement>>(correctedPlacements).map { it.toDomain() },
+    correctedPlacements = correctedSnapshot?.placements?.map { it.toDomain() }
+        ?: json.decodeFromString<List<StoredPlacement>>(correctedPlacements).map { it.toDomain() },
     correctedKills = json.decodeFromString<List<StoredKill>>(correctedKills).map { it.toDomain() },
-)
+    previousParticipantResults = previousSnapshot?.participantResults?.map { it.toDomain() }.orEmpty(),
+    correctedParticipantResults = correctedSnapshot?.participantResults?.map { it.toDomain() }.orEmpty(),
+    )
+}
 
 @Serializable
 private data class StoredPlacement(val teamSlotNumber: Int, val position: Int)
@@ -166,10 +227,41 @@ private data class StoredPlacement(val teamSlotNumber: Int, val position: Int)
 @Serializable
 private data class StoredKill(val teamSlotNumber: Int, val kills: Int)
 
+@Serializable
+private data class StoredCorrectionSnapshot(
+    val placements: List<StoredPlacement>,
+    val participantResults: List<StoredParticipantResult>,
+)
+
+@Serializable
+private data class StoredParticipantResult(
+    val teamSlotNumber: Int,
+    val participationStatus: String,
+    val placement: Int?,
+    val kills: Int,
+)
+
 private fun MatchPlacement.toStored(): StoredPlacement = StoredPlacement(teamSlotNumber, position)
 
 private fun MatchKill.toStored(): StoredKill = StoredKill(teamSlotNumber, kills)
 
+private fun MatchParticipantResult.toStored(): StoredParticipantResult = StoredParticipantResult(
+    teamSlotNumber = teamSlotNumber,
+    participationStatus = participationStatus.name,
+    placement = placement,
+    kills = kills,
+)
+
 private fun StoredPlacement.toDomain(): MatchPlacement = MatchPlacement(teamSlotNumber, position)
 
 private fun StoredKill.toDomain(): MatchKill = MatchKill(teamSlotNumber, kills)
+
+private fun StoredParticipantResult.toDomain(): MatchParticipantResult = MatchParticipantResult(
+    teamSlotNumber = teamSlotNumber,
+    participationStatus = MatchParticipationStatus.valueOf(participationStatus),
+    placement = placement,
+    kills = kills,
+)
+
+private fun Json.decodeCorrectionSnapshotOrNull(raw: String): StoredCorrectionSnapshot? =
+    runCatching { decodeFromString<StoredCorrectionSnapshot>(raw) }.getOrNull()

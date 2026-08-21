@@ -29,6 +29,7 @@ interface Call {
 }
 
 interface ExportFetchOverrides {
+  participantCount?: number;
   tournamentName?: string;
   matchStatus?: string;
   header?: unknown;
@@ -116,12 +117,12 @@ function teamSlotId(slot: number): string {
   return `team-slot-${slot}`;
 }
 
-function validPayload(): Record<string, unknown> {
+function validPayload(participantCount = 12): Record<string, unknown> {
   return {
     operation: "export_match",
     tournament_id: TOURNAMENT_ID,
     match_id: MATCH_ID,
-    rows: Array.from({ length: 12 }, (_, index) => {
+    rows: Array.from({ length: participantCount }, (_, index) => {
       const placement = index + 1;
       const kills = index;
 
@@ -151,8 +152,10 @@ function validPayload(): Record<string, unknown> {
   };
 }
 
-function expectedSheetValues(): unknown[][] {
-  return toGoogleSheetValues(validPayload() as unknown as MatchExportRequest);
+function expectedSheetValues(participantCount = 12): unknown[][] {
+  return toGoogleSheetValues(
+    validPayload(participantCount) as unknown as MatchExportRequest,
+  );
 }
 
 function tournamentResponse(name = "Championship"): Response {
@@ -169,9 +172,9 @@ function matchResponse(status = "finalized"): Response {
   }]);
 }
 
-function matchResultsResponse(): Response {
+function matchResultsResponse(participantCount = 12): Response {
   return responseJson(
-    Array.from({ length: 12 }, (_, index) => {
+    Array.from({ length: participantCount }, (_, index) => {
       const slot = index + 1;
 
       return {
@@ -186,7 +189,7 @@ function matchResultsResponse(): Response {
   );
 }
 
-function teamSlotsResponse(): Response {
+function teamSlotsResponse(participantCount = 12): Response {
   return responseJson(
     Array.from({ length: 12 }, (_, index) => {
       const slot = index + 1;
@@ -195,15 +198,15 @@ function teamSlotsResponse(): Response {
         id: teamSlotId(slot),
         tournament_id: TOURNAMENT_ID,
         slot_number: slot,
-        team_name: `Team ${slot}`,
+        team_name: slot <= participantCount ? `Team ${slot}` : "",
       };
     }),
   );
 }
 
-function playersResponse(): Response {
+function playersResponse(participantCount = 12): Response {
   return responseJson(
-    Array.from({ length: 12 }, (_, index) => {
+    Array.from({ length: participantCount }, (_, index) => {
       const slot = index + 1;
 
       return ["A", "B", "C", "D"].map((suffix) => ({
@@ -217,6 +220,7 @@ function playersResponse(): Response {
 
 function claimResponse(
   outcome: ExportFetchOverrides["claimOutcome"] = "claimed",
+  rowsWritten = 12,
 ): Response {
   if (outcome === "replayed") {
     return responseJson([{
@@ -225,7 +229,7 @@ function claimResponse(
       lease_token: null,
       state: "succeeded",
       attempt_count: 1,
-      rows_written: 12,
+      rows_written: rowsWritten,
       exported_match_count: null,
     }]);
   }
@@ -268,6 +272,8 @@ function claimResponse(
 function successfulExportFetch(
   overrides: ExportFetchOverrides = {},
 ): { fetchImpl: FetchImplementation; calls: Call[] } {
+  const participantCount = overrides.participantCount ?? 12;
+
   return makeFetch((call) => {
     const path = decodeURIComponent(call.url.pathname);
 
@@ -284,19 +290,19 @@ function successfulExportFetch(
     }
 
     if (path === "/rest/v1/match_results") {
-      return matchResultsResponse();
+      return matchResultsResponse(participantCount);
     }
 
     if (path === "/rest/v1/tournament_team_slots") {
-      return teamSlotsResponse();
+      return teamSlotsResponse(participantCount);
     }
 
     if (path === "/rest/v1/players") {
-      return playersResponse();
+      return playersResponse(participantCount);
     }
 
     if (path === "/rest/v1/rpc/claim_export_operation") {
-      return claimResponse(overrides.claimOutcome);
+      return claimResponse(overrides.claimOutcome, participantCount);
     }
 
     if (path === "/token") {
@@ -308,7 +314,7 @@ function successfulExportFetch(
 
     if (
       path ===
-        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:T1"
+        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:U1"
     ) {
       return responseJson({
         values: overrides.header ?? [[...MATCH_EXPORT_COLUMNS]],
@@ -326,7 +332,7 @@ function successfulExportFetch(
 
     if (
       path ===
-        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:T:append"
+        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:U:append"
     ) {
       if (overrides.appendStatus !== undefined) {
         return responseJson(
@@ -337,19 +343,22 @@ function successfulExportFetch(
 
       return responseJson({
         updates: {
-          updatedRows: overrides.updatedRows ?? 12,
-          updatedRange: overrides.updatedRange ?? "'Match Results'!A2:T13",
+          updatedRows: overrides.updatedRows ?? participantCount,
+          updatedRange: overrides.updatedRange ??
+            `'Match Results'!A2:U${participantCount + 1}`,
         },
       });
     }
 
     if (
       path ===
-        "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:T13"
+        `/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:U${
+          participantCount + 1
+        }`
     ) {
       return responseJson({
         values: overrides.readBackValues ?? overrides.scanValues ??
-          expectedSheetValues(),
+          expectedSheetValues(participantCount),
       });
     }
 
@@ -358,7 +367,9 @@ function successfulExportFetch(
         sheets: [{
           properties: {
             title: "Match Results",
-            gridProperties: { rowCount: overrides.gridRowCount ?? 13 },
+            gridProperties: {
+              rowCount: overrides.gridRowCount ?? participantCount + 1,
+            },
           },
         }],
       });
@@ -397,7 +408,7 @@ function sheetAppendCalls(calls: readonly Call[]): Call[] {
   return calls.filter((call) =>
     call.url.hostname === "sheets.googleapis.com" &&
     call.method === "POST" &&
-    decodeURIComponent(call.url.pathname).endsWith("!A:T:append")
+    decodeURIComponent(call.url.pathname).endsWith("!A:U:append")
   );
 }
 
@@ -443,10 +454,10 @@ Deno.test("export_match validates official data, claims, marks write, appends on
     "/rest/v1/players",
     "/rest/v1/rpc/claim_export_operation",
     "/token",
-    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:T1",
+    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:U1",
     "/rest/v1/rpc/mark_export_operation_write_started",
-    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:T:append",
-    "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:T13",
+    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:U:append",
+    "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:U13",
     "/rest/v1/rpc/complete_export_operation_success",
   ]);
 
@@ -454,7 +465,7 @@ Deno.test("export_match validates official data, claims, marks write, appends on
   assert(
     paths(calls).indexOf("/rest/v1/rpc/mark_export_operation_write_started") <
       paths(calls).indexOf(
-        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:T:append",
+        "/v4/spreadsheets/spreadsheet-id/values/Match Results!A:U:append",
       ),
   );
 
@@ -482,6 +493,41 @@ Deno.test("export_match validates official data, claims, marks write, appends on
     appendBody.values.every(
       (row: unknown[]) => row.length === MATCH_EXPORT_COLUMNS.length,
     ),
+  );
+});
+
+Deno.test("export_match completes a verified ten-participant match with ten rows", async () => {
+  const { fetchImpl, calls } = successfulExportFetch({ participantCount: 10 });
+
+  const response = await handleRequest(request(validPayload(10)), {
+    env,
+    fetchImpl,
+    signer: injectedSigner,
+    clock: () => 1_700_000_000,
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(await jsonBody(response), {
+    ok: true,
+    operation: "export_match",
+    tournament_id: TOURNAMENT_ID,
+    match_id: MATCH_ID,
+    rows_written: 10,
+  });
+  assert(
+    paths(calls).includes(
+      "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:U11",
+    ),
+  );
+  assertEquals(sheetAppendCalls(calls).length, 1);
+  assertEquals(
+    JSON.parse(sheetAppendCalls(calls)[0].body).values.length,
+    10,
+  );
+  assertEquals(
+    JSON.parse(rpcCall(calls, "complete_export_operation_success").body)
+      .p_rows_written,
+    10,
   );
 });
 
@@ -636,9 +682,9 @@ Deno.test("uncertain identical export reconciles exact block without append", as
     "/rest/v1/players",
     "/rest/v1/rpc/claim_export_operation",
     "/token",
-    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:T1",
+    "/v4/spreadsheets/spreadsheet-id/values/Match Results!A1:U1",
     "/v4/spreadsheets/spreadsheet-id",
-    "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:T13",
+    "/v4/spreadsheets/spreadsheet-id/values/'Match Results'!A2:U13",
     "/rest/v1/rpc/resolve_export_operation_verified_success",
   ]);
   assertEquals(sheetAppendCalls(calls).length, 0);

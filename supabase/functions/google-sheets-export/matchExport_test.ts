@@ -52,12 +52,12 @@ function assertEquals(
   }
 }
 
-function validPayload(): MutablePayload {
+function validPayload(rowCount = 12): MutablePayload {
   return {
     operation: "export_match",
     tournament_id: TOURNAMENT_ID,
     match_id: MATCH_ID,
-    rows: Array.from({ length: 12 }, (_, index) => {
+    rows: Array.from({ length: rowCount }, (_, index) => {
       const placement = index + 1;
       const kills = index;
 
@@ -71,6 +71,7 @@ function validPayload(): MutablePayload {
         match_finalized_at: "",
         row_number: placement,
         placement,
+        participation_status: "PARTICIPATED",
         team_slot: placement,
         team_name: `Team ${placement}`,
         player_1_name: `Player ${placement}A`,
@@ -123,13 +124,31 @@ Deno.test("valid match export payload preserves exact values", () => {
   assertEquals(request.rows[0].player_1_name, "निशांत");
 });
 
-Deno.test("Google values use exact 20-column order", () => {
+Deno.test("valid ten-row match export payload is accepted", () => {
+  const request = parseMatchExportRequest(validPayload(10));
+
+  assertEquals(request.rows.length, 10);
+  assertEquals(request.rows.map((row) => row.placement), [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+  ]);
+});
+
+Deno.test("Google values use exact 21-column order", () => {
   const request = parseMatchExportRequest(validPayload());
   const values = toGoogleSheetValues(request);
 
   assertEquals(values.length, 12);
-  assertEquals(values[0].length, 20);
-  assertEquals(MATCH_EXPORT_COLUMNS.length, 20);
+  assertEquals(values[0].length, 21);
+  assertEquals(MATCH_EXPORT_COLUMNS.length, 21);
   assertEquals(values[0], [
     "phase_10_v1",
     "match_result",
@@ -140,6 +159,7 @@ Deno.test("Google values use exact 20-column order", () => {
     "",
     1,
     1,
+    "PARTICIPATED",
     1,
     "Team 1",
     "Player 1A",
@@ -152,6 +172,31 @@ Deno.test("Google values use exact 20-column order", () => {
     12,
     "original_finalized",
   ]);
+});
+
+Deno.test("NO_SHOW rows preserve blank placement and zero scores", () => {
+  const payload = validPayload(3);
+  const noShow = payload.rows[1];
+  noShow.placement = null;
+  noShow.participation_status = "NO_SHOW";
+  noShow.kills = 0;
+  noShow.placement_points = 0;
+  noShow.kill_points = 0;
+  noShow.total_points = 0;
+
+  const last = payload.rows[2];
+  last.placement = 2;
+  last.placement_points = 9;
+  last.kills = 2;
+  last.kill_points = 2;
+  last.total_points = 11;
+
+  const request = parseMatchExportRequest(payload);
+  const values = toGoogleSheetValues(request);
+
+  assertEquals(values[1][8], null);
+  assertEquals(values[1][9], "NO_SHOW");
+  assertEquals(values[1].slice(16, 20), [0, 0, 0, 0]);
 });
 
 Deno.test("unknown top-level fields are rejected", () => {
@@ -172,10 +217,29 @@ Deno.test("invalid UUID values are rejected", () => {
   });
 });
 
-Deno.test("row counts other than twelve are rejected", () => {
+Deno.test("zero and more-than-twelve row counts are rejected", () => {
   assertInvalid((payload) => {
-    payload.rows.pop();
+    payload.rows = [];
   });
+
+  assertInvalid((payload) => {
+    payload.rows = Array.from({ length: 13 }, () => payload.rows[0]);
+  });
+});
+
+Deno.test("ten-row payloads require complete placement coverage", () => {
+  const payload = validPayload(10);
+  payload.rows[9].placement = 11;
+
+  try {
+    parseMatchExportRequest(payload);
+  } catch (error) {
+    assert(error instanceof EdgeFunctionError);
+    assertEquals(error.code, "INVALID_MATCH_EXPORT_PAYLOAD");
+    return;
+  }
+
+  throw new Error("Expected INVALID_MATCH_EXPORT_PAYLOAD");
 });
 
 Deno.test("unknown row fields are rejected", () => {
@@ -208,7 +272,7 @@ Deno.test("row order and row numbers must match placement order", () => {
 
 Deno.test("schema and request identifiers must remain consistent", () => {
   assertInvalid((payload) => {
-    payload.rows[0].export_schema_version = "phase_10_v2";
+    payload.rows[0].export_schema_version = "phase_10_v3";
   });
 
   assertInvalid((payload) => {

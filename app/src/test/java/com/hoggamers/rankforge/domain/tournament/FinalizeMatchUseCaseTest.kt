@@ -30,6 +30,24 @@ class FinalizeMatchUseCaseTest {
     }
 
     @Test
+    fun tenTeamDraftFinalizesAgainstActiveTeamSlots() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+
+        val result = useCase(
+            FinalizeMatchInput(
+                matchId = "match-id",
+                rows = validRows(activeTeamCount = 10),
+            ),
+        )
+
+        val finalized = result as FinalizeMatchResult.Finalized
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.teamSlotNumber })
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.position })
+        assertEquals(10, finalized.match.kills.size)
+    }
+
+    @Test
     fun invalidDraftCannotFinalize() = runTest {
         val repository = createRepository()
         val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
@@ -85,7 +103,9 @@ class FinalizeMatchUseCaseTest {
         assertEquals(MatchStatus.DRAFT, delegate.observeMatchById("match-id").first()!!.status)
     }
 
-    private suspend fun createRepository(): InMemoryTournamentRepository {
+    private suspend fun createRepository(
+        activeTeamCount: Int = 12,
+    ): InMemoryTournamentRepository {
         val repository = InMemoryTournamentRepository()
         repository.create(
             Tournament(
@@ -96,6 +116,12 @@ class FinalizeMatchUseCaseTest {
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),
+        )
+        repository.saveTeamNames(
+            tournamentId = "tournament-id",
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber <= activeTeamCount) "Team $slotNumber" else ""
+            },
         )
         repository.createDraftMatch(
             Match(
@@ -110,7 +136,7 @@ class FinalizeMatchUseCaseTest {
         return repository
     }
 
-    private fun validRows() = (1..12).map { slotNumber ->
+    private fun validRows(activeTeamCount: Int = 12) = (1..activeTeamCount).map { slotNumber ->
         MatchResultRowInput(
             teamSlotNumber = slotNumber,
             placement = slotNumber.toString(),
@@ -154,6 +180,7 @@ class FinalizeMatchUseCaseTest {
             matchId: String,
             placements: List<MatchPlacement>,
             kills: List<MatchKill>,
+            participantResults: List<MatchParticipantResult>?,
         ): FinalizeMatchRepositoryResult = FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
     }
 }

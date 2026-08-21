@@ -5,6 +5,7 @@ import {
   UpstreamTimeoutError,
 } from "./http.ts";
 import {
+  MAX_STANDINGS_EXPORT_ROWS,
   STANDINGS_EXPORT_COLUMNS,
   type StandingsExportCell,
 } from "./standingsExport.ts";
@@ -21,7 +22,7 @@ export interface GoogleStandingsExportOptions {
 }
 
 export interface GoogleStandingsAppendResult {
-  rowsWritten: 12;
+  rowsWritten: number;
   updatedRange: string;
 }
 
@@ -127,17 +128,21 @@ export async function verifyTournamentStandingsHeader(
 function hasValidDimensions(
   values: readonly (readonly StandingsExportCell[])[],
 ): boolean {
-  return values.length === 12 &&
+  return values.length >= 1 && values.length <= MAX_STANDINGS_EXPORT_ROWS &&
     values.every((row) =>
       row.length === STANDINGS_EXPORT_COLUMNS.length &&
       row.every((cell) =>
+        cell === null ||
         typeof cell === "string" ||
         (typeof cell === "number" && Number.isInteger(cell))
       )
     );
 }
 
-function isValidUpdatedRange(updatedRange: unknown): updatedRange is string {
+function isValidUpdatedRange(
+  updatedRange: unknown,
+  expectedRows: number,
+): updatedRange is string {
   if (typeof updatedRange !== "string") {
     return false;
   }
@@ -153,7 +158,7 @@ function isValidUpdatedRange(updatedRange: unknown): updatedRange is string {
   const startRow = Number(match[1]);
   const endRow = Number(match[2]);
 
-  return startRow >= 2 && endRow === startRow + 11;
+  return startRow >= 2 && endRow === startRow + expectedRows - 1;
 }
 
 export async function appendTournamentStandings(
@@ -220,10 +225,11 @@ export async function appendTournamentStandings(
         payload as { updates: Record<string, unknown> }
       ).updates) ||
       (payload as { updates: { updatedRows?: unknown } }).updates
-          .updatedRows !== 12 ||
+          .updatedRows !== values.length ||
       !isValidUpdatedRange(
         (payload as { updates: { updatedRange?: unknown } }).updates
           .updatedRange,
+        values.length,
       )
     ) {
       throw new EdgeFunctionError(
@@ -232,7 +238,7 @@ export async function appendTournamentStandings(
     }
 
     return {
-      rowsWritten: 12,
+      rowsWritten: values.length,
       updatedRange: (payload as { updates: { updatedRange: string } }).updates
         .updatedRange,
     };

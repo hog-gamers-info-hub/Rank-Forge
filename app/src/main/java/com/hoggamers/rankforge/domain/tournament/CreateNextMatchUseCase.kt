@@ -28,9 +28,6 @@ class CreateNextMatchUseCase(
             .observeSlotsByTournamentId(tournamentId)
             .first()
             .analyzeTeamSlotParticipation()
-        if (participation.hasGap) {
-            return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_TEAM_SLOTS)
-        }
         if (participation.activeCount == 0) {
             return CreateNextMatchResult.Rejected(CreateNextMatchFailure.NO_PARTICIPATING_TEAMS)
         }

@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(14, cursor.getInt(0))
+                assertEquals(15, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -744,6 +744,81 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion14CreatesParticipantSnapshotWithoutGuessingNoShows() {
+        createVersion13Database().use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, creation_order) " +
+                    "VALUES ('tournament-participants', 'Participant Cup', '2026-08-18', 'Organizer', '123', 'CONFIRMED', 1)",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-finalized', 'tournament-participants', 1, '2026-08-18', 'Bermuda', 'FINALIZED')",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-draft', 'tournament-participants', 2, '2026-08-18', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO match_placements (match_id, team_slot_number, position) VALUES " +
+                    "('match-finalized', 1, 1), ('match-finalized', 2, 2)",
+            )
+            database.execSQL(
+                "INSERT INTO match_kills (match_id, team_slot_number, kills) VALUES " +
+                    "('match-finalized', 1, 5), ('match-finalized', 2, 0)",
+            )
+            database.execSQL(
+                "INSERT INTO match_draft_values (match_id, team_slot_number, placement_input, kills_input) " +
+                    "VALUES ('match-draft', 1, '1', '0')",
+            )
+        }
+
+        migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            14,
+            true,
+            RankForgeDatabase.MIGRATION_13_14,
+        ).close()
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            15,
+            true,
+            RankForgeDatabase.MIGRATION_14_15,
+        )
+
+        assertTrue(migrated.hasTable("match_participant_results"))
+        assertTrue(migrated.hasIndex("index_match_participant_results_match_id"))
+        assertTrue(migrated.hasIndex("index_match_participant_results_match_id_placement"))
+        migrated.query(
+            "SELECT participation_status, placement, kills FROM match_participant_results " +
+                "WHERE match_id = 'match-finalized' ORDER BY team_slot_number",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("PARTICIPATED", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+            assertEquals(5, cursor.getInt(2))
+            assertTrue(cursor.moveToNext())
+            assertEquals("PARTICIPATED", cursor.getString(0))
+            assertEquals(2, cursor.getInt(1))
+            assertEquals(0, cursor.getInt(2))
+            assertTrue(!cursor.moveToNext())
+        }
+        migrated.query(
+            "SELECT COUNT(*) FROM match_participant_results WHERE match_id = 'match-draft'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query(
+            "SELECT placement_input FROM match_draft_values WHERE match_id = 'match-draft'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("1", cursor.getString(0))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun ocrEvidenceSnapshotTransactionPersistsOriginalAndCorrectedRowsSeparately() = runBlocking {
         val database = createInMemoryDatabase()
 
@@ -865,6 +940,10 @@ class RankForgeDatabaseMigrationTest {
         try {
             val repository = RoomTournamentRepository(database)
             repository.create(domainTournament())
+            repository.saveTeamNames(
+                "tournament-ocr",
+                TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "Team $slotNumber" },
+            )
             repository.createDraftMatch(domainMatch())
 
             val result = repository.finalizeDraftMatchWithOcrEvidence(
@@ -903,6 +982,10 @@ class RankForgeDatabaseMigrationTest {
         try {
             val repository = RoomTournamentRepository(database)
             repository.create(domainTournament())
+            repository.saveTeamNames(
+                "tournament-ocr",
+                TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "Team $slotNumber" },
+            )
             repository.createDraftMatch(domainMatch())
             database.matchOcrEvidenceDao().insertSnapshot(
                 matchEvidence = matchOcrEvidence(),

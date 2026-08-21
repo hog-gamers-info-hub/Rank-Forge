@@ -18,7 +18,7 @@ data class TournamentStandingsExportRow(
     val totalKills: Int,
     val totalKillPoints: Int,
     val totalPoints: Int,
-    val bestPlacement: Int,
+    val bestPlacement: Int?,
     val firstPlaceCount: Int,
     val tieBreakStatus: String,
 ) {
@@ -40,7 +40,7 @@ data class TournamentStandingsExportRow(
         totalKills.toString(),
         totalKillPoints.toString(),
         totalPoints.toString(),
-        bestPlacement.toString(),
+        bestPlacement?.toString().orEmpty(),
         firstPlaceCount.toString(),
         tieBreakStatus,
     )

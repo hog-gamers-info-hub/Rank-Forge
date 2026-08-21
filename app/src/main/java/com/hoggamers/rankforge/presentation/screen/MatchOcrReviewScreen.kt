@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -93,6 +94,7 @@ object MatchOcrReviewTestTags {
     fun rowDirty(rowIndex: Int): String = "${row(rowIndex)}_dirty"
     fun rowBlocker(rowIndex: Int): String = "${row(rowIndex)}_blocker"
     fun rowWarning(rowIndex: Int): String = "${row(rowIndex)}_warning_label"
+    fun deleteRow(rowIndex: Int): String = "${row(rowIndex)}_delete"
     fun resetRow(rowIndex: Int): String = "${row(rowIndex)}_reset"
     fun resultLobbyVote(rowIndex: Int): String = "${RESULT_LOBBY_VOTE}_row_$rowIndex"
     fun resultLobbyWinningVote(rowIndex: Int): String = "${resultLobbyVote(rowIndex)}_winning_vote"
@@ -122,6 +124,7 @@ fun MatchOcrReviewRoute(
         onPlacementChanged = viewModel::onPlacementChanged,
         onKillsChanged = viewModel::onKillsChanged,
         onAssignedTeamSlotChanged = viewModel::onAssignedTeamSlotChanged,
+        onExcludeRow = viewModel::onExcludeRow,
         onResetRowCorrection = viewModel::onResetRowCorrection,
         onResetAllCorrections = viewModel::onResetAllCorrections,
         onFinalizeOcrCorrection = viewModel::onFinalizeOcrCorrection,
@@ -137,6 +140,7 @@ fun MatchOcrReviewScreen(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit = {},
     onResetAllCorrections: () -> Unit = {},
     onFinalizeOcrCorrection: () -> Unit = {},
@@ -153,6 +157,7 @@ fun MatchOcrReviewScreen(
             onPlacementChanged = onPlacementChanged,
             onKillsChanged = onKillsChanged,
             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+            onExcludeRow = onExcludeRow,
             onResetRowCorrection = onResetRowCorrection,
             onResetAllCorrections = onResetAllCorrections,
             onFinalizeOcrCorrection = onFinalizeOcrCorrection,
@@ -253,6 +258,7 @@ private fun MatchOcrReviewReadyState(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeRow: ((rowIndex: Int) -> Unit)?,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     onResetAllCorrections: () -> Unit,
     onFinalizeOcrCorrection: () -> Unit,
@@ -291,6 +297,7 @@ private fun MatchOcrReviewReadyState(
                 onPlacementChanged = onPlacementChanged,
                 onKillsChanged = onKillsChanged,
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                onExcludeRow = onExcludeRow,
                 onResetRowCorrection = onResetRowCorrection,
                 onResetAllCorrections = onResetAllCorrections,
                 onFinalizeOcrCorrection = onFinalizeOcrCorrection,
@@ -369,6 +376,7 @@ internal fun MatchOcrReviewResultContent(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit = {},
     onResetAllCorrections: () -> Unit = {},
     onFinalizeOcrCorrection: () -> Unit = {},
@@ -393,7 +401,7 @@ internal fun MatchOcrReviewResultContent(
         )
     }
     if (teamSlotAssistant != null &&
-        teamSlotAssistant.unresolvedRowIndexes.isNotEmpty() &&
+        teamSlotAssistant.remainingTeamSlots.isNotEmpty() &&
         !uiState.finalization.isFinalized
     ) {
         MatchOcrReviewRemainingTeamSlotsSection(teamSlotAssistant)
@@ -404,27 +412,31 @@ internal fun MatchOcrReviewResultContent(
             .testTag(MatchOcrReviewTestTags.ROW_LIST),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
     ) {
-        uiState.rows.forEach { row ->
-            MatchOcrReviewRow(
-                row = row,
-                previewRow = previewRowsByPosition[row.rowIndex + 1],
-                teamNamesBySlot = uiState.teamNamesBySlot,
-                correctionDraft = correctionRowsByIndex[row.rowIndex],
-                onPlacementChanged = onPlacementChanged,
-                onKillsChanged = onKillsChanged,
-                onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
-                onResetRowCorrection = onResetRowCorrection,
-                correctionEnabled = !uiState.finalization.isFinalized,
-                availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
-                    emptyList()
-                } else {
-                    teamSlotAssistant
-                        ?.availableOptionsByRow
-                        ?.get(row.rowIndex)
-                        .orEmpty()
-                },
-            )
-        }
+        uiState.rows
+            .filter { row -> correctionRowsByIndex[row.rowIndex]?.isExcluded != true }
+            .forEach { row ->
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = previewRowsByPosition[row.rowIndex + 1],
+                    teamNamesBySlot = uiState.teamNamesBySlot,
+                    correctionDraft = correctionRowsByIndex[row.rowIndex],
+                    onPlacementChanged = onPlacementChanged,
+                    onKillsChanged = onKillsChanged,
+                    onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                    onExcludeRow = onExcludeRow,
+                    onResetRowCorrection = onResetRowCorrection,
+                    compactResetAction = true,
+                    correctionEnabled = !uiState.finalization.isFinalized,
+                    availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
+                        emptyList()
+                    } else {
+                        teamSlotAssistant
+                            ?.availableOptionsByRow
+                            ?.get(row.rowIndex)
+                            .orEmpty()
+                    },
+                )
+            }
     }
     if (uiState.finalization.showWarningConfirmation) {
         MatchOcrReviewFinalizeWarningDialog(
@@ -526,6 +538,9 @@ internal fun MatchOcrReviewCompactRow(
     previewRow: MatchResultOcrPreviewRowUiState,
     reviewRow: MatchOcrReviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
+    onCompactDelete: (() -> Unit)? = null,
+    compactDeleteEnabled: Boolean = true,
+    compactDeleteTestTag: String? = null,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -554,6 +569,9 @@ internal fun MatchOcrReviewCompactRow(
         MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, placement),
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(previewRow.position),
+            onCompactDelete = onCompactDelete,
+            compactDeleteEnabled = compactDeleteEnabled,
+            compactDeleteTestTag = compactDeleteTestTag,
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -596,6 +614,23 @@ private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPrevie
             )
         },
     )
+
+private fun MatchResultOcrPreviewRowUiState.allPlayersAreNotDetected(): Boolean =
+    (1..4).all { slot ->
+        slots
+            .firstOrNull { it.slot == slot }
+            ?.playerText
+            ?.trim()
+            .isNullOrBlank()
+    }
+
+private fun MatchOcrReviewRowUiState.allDisplayedPlayersAreNotDetected(
+    previewRow: MatchResultOcrPreviewRowUiState?,
+): Boolean = if (isSyntheticManualPlaceholder()) {
+    true
+} else {
+    (previewRow ?: toCompactPreviewRow()).allPlayersAreNotDetected()
+}
 
 @Composable
 private fun CompactPlayerRow(
@@ -770,6 +805,7 @@ internal fun MatchOcrReviewRow(
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
     showWarningDetails: Boolean = true,
@@ -784,6 +820,15 @@ internal fun MatchOcrReviewRow(
         null
     }
     val compactResetTestTag = compactResetCallback?.let { MatchOcrReviewTestTags.resetRow(row.rowIndex) }
+    val excludeRowCallback = onExcludeRow
+    val compactDeleteCallback: (() -> Unit)? = if (
+        excludeRowCallback != null && row.allDisplayedPlayersAreNotDetected(previewRow)
+    ) {
+        { excludeRowCallback(row.rowIndex) }
+    } else {
+        null
+    }
+    val compactDeleteTestTag = compactDeleteCallback?.let { MatchOcrReviewTestTags.deleteRow(row.rowIndex) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -795,12 +840,18 @@ internal fun MatchOcrReviewRow(
                 previewRow = previewRow,
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                onCompactDelete = compactDeleteCallback,
+                compactDeleteEnabled = correctionEnabled,
+                compactDeleteTestTag = compactDeleteTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
             )
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
                 row = row,
+                onCompactDelete = compactDeleteCallback,
+                compactDeleteEnabled = correctionEnabled,
+                compactDeleteTestTag = compactDeleteTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -809,6 +860,9 @@ internal fun MatchOcrReviewRow(
                 previewRow = row.toCompactPreviewRow(),
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                onCompactDelete = compactDeleteCallback,
+                compactDeleteEnabled = correctionEnabled,
+                compactDeleteTestTag = compactDeleteTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -886,6 +940,9 @@ private fun MatchOcrReviewRowUiState.isSyntheticManualPlaceholder(): Boolean =
 @Composable
 private fun MatchOcrReviewMissingPreviewRow(
     row: MatchOcrReviewRowUiState,
+    onCompactDelete: (() -> Unit)? = null,
+    compactDeleteEnabled: Boolean = true,
+    compactDeleteTestTag: String? = null,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -901,6 +958,9 @@ private fun MatchOcrReviewMissingPreviewRow(
         MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, position),
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1),
+            onCompactDelete = onCompactDelete,
+            compactDeleteEnabled = compactDeleteEnabled,
+            compactDeleteTestTag = compactDeleteTestTag,
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -937,6 +997,9 @@ private fun MatchOcrReviewMissingPreviewRow(
 private fun MatchOcrReviewPositionHeader(
     text: String,
     placementTestTag: String,
+    onCompactDelete: (() -> Unit)?,
+    compactDeleteEnabled: Boolean,
+    compactDeleteTestTag: String?,
     onCompactReset: (() -> Unit)?,
     compactResetEnabled: Boolean,
     compactResetTestTag: String?,
@@ -952,6 +1015,18 @@ private fun MatchOcrReviewPositionHeader(
                 .weight(1f)
                 .testTag(placementTestTag),
         )
+        if (onCompactDelete != null && compactDeleteTestTag != null) {
+            IconButton(
+                onClick = onCompactDelete,
+                enabled = compactDeleteEnabled,
+                modifier = Modifier.testTag(compactDeleteTestTag),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.match_ocr_review_exclude_row_action),
+                )
+            }
+        }
         if (onCompactReset != null && compactResetTestTag != null) {
             IconButton(
                 onClick = onCompactReset,

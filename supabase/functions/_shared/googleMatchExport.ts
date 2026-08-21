@@ -7,8 +7,8 @@ import {
 import { MATCH_EXPORT_COLUMNS, type MatchExportCell } from "./matchExport.ts";
 
 export const MATCH_RESULTS_WORKSHEET = "Match Results";
-export const MATCH_RESULTS_HEADER_RANGE = "Match Results!A1:T1";
-export const MATCH_RESULTS_APPEND_RANGE = "Match Results!A:T";
+export const MATCH_RESULTS_HEADER_RANGE = "Match Results!A1:U1";
+export const MATCH_RESULTS_APPEND_RANGE = "Match Results!A:U";
 export const GOOGLE_HEADER_TIMEOUT_MS = 10_000;
 export const GOOGLE_APPEND_TIMEOUT_MS = 10_000;
 
@@ -18,7 +18,7 @@ export interface GoogleMatchExportOptions {
 }
 
 export interface GoogleMatchAppendResult {
-  rowsWritten: 12;
+  rowsWritten: number;
   updatedRange: string;
 }
 
@@ -120,23 +120,27 @@ export async function verifyMatchResultsHeader(
 function hasValidDimensions(
   values: readonly (readonly MatchExportCell[])[],
 ): boolean {
-  return values.length === 12 &&
+  return values.length >= 1 && values.length <= 12 &&
     values.every((row) =>
       row.length === MATCH_EXPORT_COLUMNS.length &&
       row.every((cell) =>
+        cell === null ||
         typeof cell === "string" ||
         (typeof cell === "number" && Number.isInteger(cell))
       )
     );
 }
 
-function isValidUpdatedRange(updatedRange: unknown): updatedRange is string {
+function isValidUpdatedRange(
+  updatedRange: unknown,
+  expectedRows: number,
+): updatedRange is string {
   if (typeof updatedRange !== "string") {
     return false;
   }
 
   const match = updatedRange.match(
-    /^'Match Results'!A([1-9][0-9]*):T([1-9][0-9]*)$/,
+    /^'Match Results'!A([1-9][0-9]*):U([1-9][0-9]*)$/,
   );
 
   if (!match) {
@@ -146,7 +150,7 @@ function isValidUpdatedRange(updatedRange: unknown): updatedRange is string {
   const startRow = Number(match[1]);
   const endRow = Number(match[2]);
 
-  return startRow >= 2 && endRow === startRow + 11;
+  return startRow >= 2 && endRow === startRow + expectedRows - 1;
 }
 
 export async function appendMatchResults(
@@ -211,10 +215,11 @@ export async function appendMatchResults(
         payload as { updates: Record<string, unknown> }
       ).updates) ||
       (payload as { updates: { updatedRows?: unknown } }).updates
-          .updatedRows !== 12 ||
+          .updatedRows !== values.length ||
       !isValidUpdatedRange(
         (payload as { updates: { updatedRange?: unknown } }).updates
           .updatedRange,
+        values.length,
       )
     ) {
       throw new EdgeFunctionError(
@@ -223,7 +228,7 @@ export async function appendMatchResults(
     }
 
     return {
-      rowsWritten: 12,
+      rowsWritten: values.length,
       updatedRange: (payload as { updates: { updatedRange: string } }).updates
         .updatedRange,
     };

@@ -441,8 +441,12 @@ select is((
     from pg_policies
     where schemaname = 'storage'
         and tablename = 'objects'
-        and policyname like 'ocr_screenshots_%_owner'
-), 3::bigint, 'storage has insert, select, and update owner policies');
+        and policyname in (
+            'ocr_screenshots_insert_owner',
+            'ocr_screenshots_select_owner',
+            'ocr_screenshots_update_owner'
+        )
+), 3::bigint, 'match-result storage owner policies exist');
 
 set local role authenticated;
 set local request.jwt.claim.sub = '81000000-0000-0000-0000-000000000001';

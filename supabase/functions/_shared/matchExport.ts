@@ -10,6 +10,7 @@ export const MATCH_EXPORT_COLUMNS = [
   "match_finalized_at",
   "row_number",
   "placement",
+  "participation_status",
   "team_slot",
   "team_name",
   "player_1_name",
@@ -22,6 +23,10 @@ export const MATCH_EXPORT_COLUMNS = [
   "total_points",
   "correction_status",
 ] as const;
+
+const LEGACY_MATCH_EXPORT_COLUMNS = MATCH_EXPORT_COLUMNS.filter((column) =>
+  column !== "participation_status"
+);
 
 const MATCH_EXPORT_REQUEST_KEYS = [
   "operation",
@@ -50,6 +55,13 @@ const APPROVED_CORRECTION_STATUSES = new Set([
   "corrected_finalized",
 ]);
 
+const APPROVED_EXPORT_SCHEMA_VERSIONS = new Set([
+  "phase_10_v1",
+  "phase_10_v2",
+]);
+
+export const MAX_MATCH_EXPORT_ROWS = 12;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,7 +74,8 @@ export interface MatchExportRow {
   match_label: string;
   match_finalized_at: string;
   row_number: number;
-  placement: number;
+  placement: number | null;
+  participation_status?: "PARTICIPATED" | "NO_SHOW";
   team_slot: number;
   team_name: string;
   player_1_name: string;
@@ -83,7 +96,7 @@ export interface MatchExportRequest {
   rows: MatchExportRow[];
 }
 
-export type MatchExportCell = string | number;
+export type MatchExportCell = string | number | null;
 
 function invalidPayload(): never {
   throw new EdgeFunctionError("INVALID_MATCH_EXPORT_PAYLOAD");
@@ -123,6 +136,23 @@ function readInteger(
   key: string,
 ): number {
   const value = record[key];
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    invalidPayload();
+  }
+
+  return value;
+}
+
+function readNullableInteger(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+
+  if (value === null) {
+    return null;
+  }
 
   if (typeof value !== "number" || !Number.isInteger(value)) {
     invalidPayload();
@@ -176,7 +206,11 @@ export function isValidMatchFinalizedAt(value: string): boolean {
 }
 
 function parseMatchExportRow(value: unknown): MatchExportRow {
-  if (!isRecord(value) || !hasExactKeys(value, MATCH_EXPORT_COLUMNS)) {
+  if (
+    !isRecord(value) ||
+    (!hasExactKeys(value, MATCH_EXPORT_COLUMNS) &&
+      !hasExactKeys(value, LEGACY_MATCH_EXPORT_COLUMNS))
+  ) {
     invalidPayload();
   }
 
@@ -189,7 +223,10 @@ function parseMatchExportRow(value: unknown): MatchExportRow {
     match_label: readString(value, "match_label"),
     match_finalized_at: readString(value, "match_finalized_at"),
     row_number: readInteger(value, "row_number"),
-    placement: readInteger(value, "placement"),
+    placement: readNullableInteger(value, "placement"),
+    participation_status: value.participation_status === "NO_SHOW"
+      ? "NO_SHOW"
+      : "PARTICIPATED",
     team_slot: readInteger(value, "team_slot"),
     team_name: readString(value, "team_name"),
     player_1_name: readString(value, "player_1_name"),
@@ -207,7 +244,7 @@ function parseMatchExportRow(value: unknown): MatchExportRow {
 function validateMatchExportRows(
   request: MatchExportRequest,
 ): void {
-  if (request.rows.length !== 12) {
+  if (request.rows.length < 1 || request.rows.length > MAX_MATCH_EXPORT_ROWS) {
     invalidPayload();
   }
 
@@ -215,28 +252,48 @@ function validateMatchExportRows(
   const tournamentName = firstRow.tournament_name;
   const matchLabel = firstRow.match_label;
   const teamSlots = new Set<number>();
+  const participatedRows = request.rows.filter((row) =>
+    (row.participation_status ?? "PARTICIPATED") === "PARTICIPATED"
+  );
+
+  if (participatedRows.length < 1) {
+    invalidPayload();
+  }
 
   request.rows.forEach((row, index) => {
+    const status = row.participation_status ?? "PARTICIPATED";
     const expectedPosition = index + 1;
-    const expectedPlacementPoints = PLACEMENT_POINTS.get(row.placement);
+    const participatedIndex = participatedRows.indexOf(row);
+    const expectedPlacement = participatedIndex + 1;
+    const expectedPlacementPoints = status === "NO_SHOW"
+      ? 0
+      : PLACEMENT_POINTS.get(row.placement ?? -1);
 
     if (
-      row.export_schema_version !== "phase_10_v1" ||
+      !APPROVED_EXPORT_SCHEMA_VERSIONS.has(row.export_schema_version) ||
       row.export_type !== "match_result" ||
       row.tournament_id !== request.tournament_id ||
       row.match_id !== request.match_id ||
       row.tournament_name !== tournamentName ||
       row.match_label !== matchLabel ||
       row.row_number !== expectedPosition ||
-      row.placement !== expectedPosition ||
+      (status === "PARTICIPATED"
+        ? row.placement !== expectedPlacement
+        : row.placement !== null) ||
       row.team_slot < 1 ||
       row.team_slot > 12 ||
       teamSlots.has(row.team_slot) ||
       expectedPlacementPoints === undefined ||
       row.placement_points !== expectedPlacementPoints ||
       row.kills < 0 ||
-      row.kill_points !== row.kills ||
-      row.total_points !== row.placement_points + row.kill_points ||
+      (status === "NO_SHOW" && row.kills !== 0) ||
+      (status === "NO_SHOW" && row.kill_points !== 0) ||
+      (status === "NO_SHOW" && row.total_points !== 0) ||
+      (status === "PARTICIPATED" &&
+        row.kill_points !== row.kills) ||
+      (status === "PARTICIPATED" &&
+        row.total_points !== row.placement_points + row.kill_points) ||
+      !["PARTICIPATED", "NO_SHOW"].includes(status) ||
       !APPROVED_CORRECTION_STATUSES.has(row.correction_status) ||
       !isValidMatchFinalizedAt(row.match_finalized_at)
     ) {
@@ -272,7 +329,8 @@ export function parseMatchExportRequest(
     !isValidUuid(value.tournament_id) ||
     !isValidUuid(value.match_id) ||
     !Array.isArray(value.rows) ||
-    value.rows.length !== 12
+    value.rows.length < 1 ||
+    value.rows.length > MAX_MATCH_EXPORT_ROWS
   ) {
     invalidPayload();
   }
@@ -293,6 +351,10 @@ export function toGoogleSheetValues(
   request: MatchExportRequest,
 ): MatchExportCell[][] {
   return request.rows.map((row) =>
-    MATCH_EXPORT_COLUMNS.map((column) => row[column])
+    MATCH_EXPORT_COLUMNS.map((column) =>
+      column === "participation_status"
+        ? row.participation_status ?? "PARTICIPATED"
+        : row[column] ?? null
+    )
   );
 }

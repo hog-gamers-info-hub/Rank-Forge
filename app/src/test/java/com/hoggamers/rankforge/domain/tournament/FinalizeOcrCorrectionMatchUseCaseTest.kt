@@ -160,7 +160,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
     }
 
     @Test
-    fun unavailableTeamSlotBlocksFinalization() = runTest {
+    fun participantCountMismatchBlocksFinalization() = runTest {
         val repository = RejectingFinalizeRepository(
             availableTeamSlots = TeamSlot.SLOT_NUMBERS.toList().dropLast(1).toSet(),
         )
@@ -168,7 +168,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
 
         val result = useCase(validInput())
 
-        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.TEAM_SLOT_UNAVAILABLE)
+        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
         assertEquals(0, repository.finalizeCallCount)
     }
 
@@ -234,6 +234,239 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
         assertEquals((1..12).toList(), finalized.match.placements.map { it.position })
         assertEquals((1..12).toList(), finalized.match.kills.map { it.teamSlotNumber })
         assertEquals((0..11).toList(), finalized.match.kills.map { it.kills })
+    }
+
+    @Test
+    fun tenTeamCorrectionRowsFinalizeWithStructuralExclusions() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val useCase = createUseCase(repository)
+
+        val result = useCase(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 10,
+                    excludedRowIndexes = setOf(10, 11),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        assertEquals(MatchStatus.FINALIZED, finalized.match.status)
+        assertEquals(10, finalized.match.placements.size)
+        assertEquals(10, finalized.match.kills.size)
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.teamSlotNumber })
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.position })
+        assertEquals(12, evidence.rows.size)
+        assertEquals((0..11).toList(), evidence.rows.map { it.rowIndex })
+        assertEquals(10, evidence.correctionSnapshots.size)
+        assertEquals((0..9).toList(), evidence.correctionSnapshots.map { it.rowIndex })
+    }
+
+    @Test
+    fun sparseTenTeamCorrectionRowsUseExactActiveTeamSlots() = runTest {
+        val activeSlotNumbers = listOf(1, 2, 3, 4, 5, 6, 8, 9, 11, 12)
+        val repository = createRepository(activeTeamSlotNumbers = activeSlotNumbers.toSet())
+
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = activeSlotNumbers.size,
+                    activeSlotNumbers = activeSlotNumbers,
+                    excludedRowIndexes = setOf(6, 9),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        assertEquals(activeSlotNumbers, finalized.match.placements.map { it.teamSlotNumber })
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.position })
+        assertEquals(activeSlotNumbers, finalized.match.kills.map { it.teamSlotNumber })
+        assertEquals(activeSlotNumbers, finalized.match.participantResults.map { it.teamSlotNumber })
+        assertTrue(finalized.match.participantResults.all {
+            it.participationStatus == MatchParticipationStatus.PARTICIPATED
+        })
+    }
+
+    @Test
+    fun twelveRegisteredTenPositionedRowsDeriveNoShowsFromRegisteredMinusPositioned() = runTest {
+        val positionedSlots = listOf(8, 9, 11, 3, 6, 2, 4, 12, 5, 1)
+        val registeredSlots = positionedSlots + listOf(7, 10)
+        val repository = createRepository(activeTeamSlotNumbers = registeredSlots.toSet())
+
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = registeredSlots.size,
+                    activeSlotNumbers = registeredSlots,
+                    excludedRowIndexes = setOf(10, 11),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        assertEquals(12, finalized.match.participantResults.size)
+        assertEquals(10, finalized.match.participantResults.count {
+            it.participationStatus == MatchParticipationStatus.PARTICIPATED
+        })
+        assertEquals(listOf(7, 10), finalized.match.participantResults.filter {
+            it.participationStatus == MatchParticipationStatus.NO_SHOW
+        }.map { it.teamSlotNumber })
+        assertEquals((1..10).toList(), finalized.match.placements.map { it.position })
+    }
+
+    @Test
+    fun sparseTenTeamEightPositionedRowsDeriveTwoNoShows() = runTest {
+        val positionedSlots = listOf(8, 9, 11, 3, 6, 2, 4, 12)
+        val registeredSlots = positionedSlots + listOf(1, 5)
+        val repository = createRepository(activeTeamSlotNumbers = registeredSlots.toSet())
+
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = registeredSlots.size,
+                    activeSlotNumbers = registeredSlots,
+                    excludedRowIndexes = setOf(8, 9, 10, 11),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        assertEquals(10, finalized.match.participantResults.size)
+        assertEquals(8, finalized.match.participantResults.count {
+            it.participationStatus == MatchParticipationStatus.PARTICIPATED
+        })
+        assertEquals(listOf(1, 5), finalized.match.participantResults.filter {
+            it.participationStatus == MatchParticipationStatus.NO_SHOW
+        }.map { it.teamSlotNumber })
+        assertEquals((1..8).toList(), finalized.match.placements.map { it.position })
+    }
+
+    @Test
+    fun zeroPositionedRowsAreRejected() = runTest {
+        val repository = createRepository(activeTeamCount = 12)
+
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 12,
+                    excludedRowIndexes = (0 until TeamSlot.MAX_SLOT_NUMBER).toSet(),
+                ),
+            ),
+        )
+
+        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
+    }
+
+    @Test
+    fun excludedInvalidValuesAreIgnoredAndExcludedWarningsDoNotRequireConfirmation() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val useCase = createUseCase(repository)
+        val rows = participantCorrectionRows(
+            activeTeamCount = 10,
+            excludedRowIndexes = setOf(10, 11),
+        ).map { row ->
+            if (row.isExcluded) {
+                row.copy(
+                    correctedPlacement = "not-a-placement",
+                    correctedKills = "-999",
+                    correctedTeamSlotNumber = "99",
+                    warnings = setOf(FinalizeOcrCorrectionMatchWarning.KILLS_CHANGED_FROM_OCR),
+                )
+            } else {
+                row
+            }
+        }
+
+        val result = useCase(validInput(correctionRows = rows))
+
+        assertTrue(result is FinalizeOcrCorrectionMatchResult.Finalized)
+    }
+
+    @Test
+    fun tenTeamFinalizationBlocksWhenOnlyOneRowIsExcluded() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 10,
+                    excludedRowIndexes = setOf(11),
+                ),
+            ),
+        )
+
+        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
+    }
+
+    @Test
+    fun tenTeamFinalizationAllowsRegisteredNoShowRows() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 10,
+                    excludedRowIndexes = setOf(9, 10, 11),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        assertEquals(10, finalized.match.participantResults.size)
+        assertEquals(1, finalized.match.participantResults.count {
+            it.participationStatus == MatchParticipationStatus.NO_SHOW
+        })
+    }
+
+    @Test
+    fun tenTeamFinalizationBlocksWhenIncludedTeamSlotsDoNotMatchParticipants() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 10,
+                    excludedRowIndexes = setOf(4, 11),
+                ).map { row ->
+                    if (row.rowIndex == 5) {
+                        row.copy(correctedTeamSlotNumber = "11")
+                    } else {
+                        row
+                    }
+                },
+            ),
+        )
+
+        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
+    }
+
+    @Test
+    fun tenTeamFinalizationBlocksWhenIncludedPlacementsAreNotOneThroughTen() = runTest {
+        val repository = createRepository(activeTeamCount = 10)
+        val rows = participantCorrectionRows(10, setOf(10, 11)).map { row ->
+            if (row.rowIndex == 4) row.copy(correctedPlacement = "6") else row
+        }
+
+        val result = createUseCase(repository)(validInput(correctionRows = rows))
+
+        assertBlocked(result, FinalizeOcrCorrectionMatchFailure.DUPLICATE_PLACEMENT)
+    }
+
+    @Test
+    fun twelveTeamFinalizationAllowsOneRegisteredNoShowRow() = runTest {
+        val repository = createRepository(activeTeamCount = 12)
+        val result = createUseCase(repository)(
+            validInput(
+                correctionRows = participantCorrectionRows(
+                    activeTeamCount = 12,
+                    excludedRowIndexes = setOf(11),
+                ),
+            ),
+        )
+
+        val finalized = result as FinalizeOcrCorrectionMatchResult.Finalized
+        assertEquals(12, finalized.match.participantResults.size)
+        assertEquals(1, finalized.match.participantResults.count {
+            it.participationStatus == MatchParticipationStatus.NO_SHOW
+        })
     }
 
     @Test
@@ -373,9 +606,18 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
 
     private suspend fun createRepository(
         matchStatus: MatchStatus = MatchStatus.DRAFT,
+        activeTeamCount: Int = 12,
+        activeTeamSlotNumbers: Set<Int>? = null,
     ): InMemoryTournamentRepository {
         val repository = InMemoryTournamentRepository()
         repository.create(testTournament())
+        val activeSlots = activeTeamSlotNumbers ?: (1..activeTeamCount).toSet()
+        repository.saveTeamNames(
+            tournamentId = TOURNAMENT_ID,
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber in activeSlots) "Team $slotNumber" else ""
+            },
+        )
         repository.createDraftMatch(testMatch(status = matchStatus))
         return repository
     }
@@ -400,6 +642,24 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
                 correctedPlacement = (index + 1).toString(),
                 correctedKills = index.toString(),
                 correctedTeamSlotNumber = (index + 1).toString(),
+            )
+        }
+
+    private fun participantCorrectionRows(
+        activeTeamCount: Int,
+        excludedRowIndexes: Set<Int>,
+        activeSlotNumbers: List<Int> = (1..activeTeamCount).toList(),
+    ): List<FinalizeOcrCorrectionRowInput> =
+        (0 until TeamSlot.MAX_SLOT_NUMBER).map { index ->
+            val isExcluded = index in excludedRowIndexes
+            val participantIndex = (0 until index).count { it !in excludedRowIndexes }
+            val teamSlotNumber = activeSlotNumbers.getOrNull(participantIndex) ?: (index + 1)
+            FinalizeOcrCorrectionRowInput(
+                rowIndex = index,
+                correctedPlacement = if (isExcluded) "" else (participantIndex + 1).toString(),
+                correctedKills = if (isExcluded) "" else participantIndex.toString(),
+                correctedTeamSlotNumber = if (isExcluded) "" else teamSlotNumber.toString(),
+                isExcluded = isExcluded,
             )
         }
 
@@ -450,10 +710,11 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
         override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
             flowOf(
                 availableTeamSlots.map { slotNumber ->
-                    TeamSlot.create(
-                        tournamentId = tournamentId,
-                        slotNumber = slotNumber,
-                    )
+                TeamSlot.create(
+                    tournamentId = tournamentId,
+                    slotNumber = slotNumber,
+                    teamName = "Team $slotNumber",
+                )
                 },
             )
 
@@ -482,6 +743,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
             matchId: String,
             placements: List<MatchPlacement>,
             kills: List<MatchKill>,
+            participantResults: List<MatchParticipantResult>?,
         ): FinalizeMatchRepositoryResult {
             finalizeCallCount += 1
             return FinalizeMatchRepositoryResult.Rejected(finalizeFailure)
@@ -491,6 +753,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
             matchId: String,
             placements: List<MatchPlacement>,
             kills: List<MatchKill>,
+            participantResults: List<MatchParticipantResult>?,
             evidence: PreservedMatchOcrEvidence,
         ): FinalizeMatchRepositoryResult =
             finalizeDraftMatch(matchId, placements, kills)

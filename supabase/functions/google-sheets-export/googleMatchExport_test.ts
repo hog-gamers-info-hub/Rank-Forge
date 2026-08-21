@@ -82,9 +82,9 @@ function makeFetch(
   return { fetchImpl, calls };
 }
 
-function values(): MatchExportCell[][] {
+function values(rowCount = 12): MatchExportCell[][] {
   return Array.from(
-    { length: 12 },
+    { length: rowCount },
     (_, rowIndex) =>
       MATCH_EXPORT_COLUMNS.map((column, columnIndex) =>
         columnIndex < 7 ? `${column}-${rowIndex + 1}` : rowIndex + columnIndex
@@ -219,7 +219,7 @@ Deno.test("append sends exactly one RAW twelve-row request", async () => {
   const matchValues = values();
   const { fetchImpl, calls } = makeFetch(() =>
     responseJson({
-      updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:T13" },
+      updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:U13" },
     })
   );
 
@@ -232,7 +232,7 @@ Deno.test("append sends exactly one RAW twelve-row request", async () => {
 
   assertEquals(appendResult, {
     rowsWritten: 12,
-    updatedRange: "'Match Results'!A2:T13",
+    updatedRange: "'Match Results'!A2:U13",
   });
   assertEquals(calls.length, 1);
   assertEquals(calls[0].method, "POST");
@@ -261,7 +261,27 @@ Deno.test("append sends exactly one RAW twelve-row request", async () => {
   assertEquals(body.majorDimension, "ROWS");
   assertEquals(body.values, matchValues);
   assertEquals(body.values.length, 12);
-  assert(body.values.every((row: unknown[]) => row.length === 20));
+  assert(body.values.every((row: unknown[]) => row.length === 21));
+});
+
+Deno.test("append accepts ten rows and validates dynamic response dimensions", async () => {
+  const matchValues = values(10);
+  const { fetchImpl, calls } = makeFetch(() =>
+    responseJson({
+      updates: { updatedRows: 10, updatedRange: "'Match Results'!A2:U11" },
+    })
+  );
+
+  assertEquals(
+    await appendMatchResults(
+      "google-token",
+      "spreadsheet-id",
+      matchValues,
+      { fetchImpl, timeoutMs: 100 },
+    ),
+    { rowsWritten: 10, updatedRange: "'Match Results'!A2:U11" },
+  );
+  assertEquals(JSON.parse(calls[0].body ?? "null").values.length, 10);
 });
 
 Deno.test("invalid append dimensions fail before network access", async () => {
@@ -274,7 +294,7 @@ Deno.test("invalid append dimensions fail before network access", async () => {
       appendMatchResults(
         "google-token",
         "spreadsheet-id",
-        values().slice(0, 11),
+        [],
         { fetchImpl, timeoutMs: 100 },
       ),
     "GOOGLE_MATCH_EXPORT_FAILURE",
@@ -286,13 +306,13 @@ Deno.test("invalid append dimensions fail before network access", async () => {
 
 Deno.test("append requires exactly twelve updated rows and a valid returned range", async () => {
   const invalidResponses = [
-    { updates: { updatedRows: 11, updatedRange: "'Match Results'!A2:T13" } },
+    { updates: { updatedRows: 11, updatedRange: "'Match Results'!A2:U13" } },
     { updates: { updatedRows: 12 } },
-    { updates: { updatedRows: 12, updatedRange: "Match Results!A2:T13" } },
-    { updates: { updatedRows: 12, updatedRange: "'Other'!A2:T13" } },
-    { updates: { updatedRows: 12, updatedRange: "'Match Results'!B2:T13" } },
-    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A1:T12" } },
-    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:T12" } },
+    { updates: { updatedRows: 12, updatedRange: "Match Results!A2:U13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Other'!A2:U13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!B2:U13" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A1:U12" } },
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:U12" } },
   ];
 
   for (const payload of invalidResponses) {
@@ -304,6 +324,29 @@ Deno.test("append requires exactly twelve updated rows and a valid returned rang
           "google-token",
           "spreadsheet-id",
           values(),
+          { fetchImpl, timeoutMs: 100 },
+        ),
+      "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID",
+      502,
+    );
+  }
+});
+
+Deno.test("ten-row append rejects twelve-row response metadata", async () => {
+  const invalidResponses = [
+    { updates: { updatedRows: 12, updatedRange: "'Match Results'!A2:U11" } },
+    { updates: { updatedRows: 10, updatedRange: "'Match Results'!A2:U13" } },
+  ];
+
+  for (const payload of invalidResponses) {
+    const { fetchImpl } = makeFetch(() => responseJson(payload));
+
+    await assertRejects(
+      () =>
+        appendMatchResults(
+          "google-token",
+          "spreadsheet-id",
+          values(10),
           { fetchImpl, timeoutMs: 100 },
         ),
       "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID",

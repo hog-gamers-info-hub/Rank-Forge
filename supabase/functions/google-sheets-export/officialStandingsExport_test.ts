@@ -82,7 +82,18 @@ function resultId(matchNumber: number, slot: number): string {
   return `40000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
-function validScenario(finalizedMatchCount = 1): Scenario {
+function validScenario(
+  finalizedMatchCountOrParticipantCounts: number | readonly number[] = 1,
+): Scenario {
+  const participantCounts = typeof finalizedMatchCountOrParticipantCounts ===
+      "number"
+    ? Array.from(
+      { length: finalizedMatchCountOrParticipantCounts },
+      () => 12,
+    )
+    : [...finalizedMatchCountOrParticipantCounts];
+  const finalizedMatchCount = participantCounts.length;
+
   const tournament: OfficialTournament = {
     id: TOURNAMENT_ID,
     name: "Summer Championship",
@@ -97,21 +108,23 @@ function validScenario(finalizedMatchCount = 1): Scenario {
         id: teamSlotId(slot),
         tournament_id: TOURNAMENT_ID,
         slot_number: slot,
-        team_name: `Team ${slot}`,
+        team_name: participantCounts.some((count) => slot <= count)
+          ? `Team ${slot}`
+          : "",
       };
     },
   );
 
   const players: OfficialPlayer[] = teamSlots.flatMap((teamSlot) =>
-    Array.from({ length: 4 }, (_, index) => ({
-      id: `${teamSlot.id}-player-${index + 1}`,
-      team_slot_id: teamSlot.id,
-      display_name: `Player ${teamSlot.slot_number}${
-        String.fromCharCode(
-          65 + index,
-        )
-      }`,
-    }))
+    (teamSlot.team_name ?? "").length === 0
+      ? []
+      : Array.from({ length: 4 }, (_, index) => ({
+        id: `${teamSlot.id}-player-${index + 1}`,
+        team_slot_id: teamSlot.id,
+        display_name: `Player ${teamSlot.slot_number}${
+          String.fromCharCode(65 + index)
+        }`,
+      }))
   );
 
   const matches: OfficialMatch[] = Array.from(
@@ -133,8 +146,8 @@ function validScenario(finalizedMatchCount = 1): Scenario {
     },
   );
 
-  const matchResults: OfficialMatchResult[] = matches.flatMap((match) =>
-    teamSlots.map((teamSlot) => ({
+  const matchResults: OfficialMatchResult[] = matches.flatMap((match, index) =>
+    teamSlots.slice(0, participantCounts[index]).map((teamSlot) => ({
       id: resultId(match.match_number, teamSlot.slot_number),
       match_id: match.id,
       team_slot_id: teamSlot.id,
@@ -144,9 +157,37 @@ function validScenario(finalizedMatchCount = 1): Scenario {
     }))
   );
 
-  const rows = teamSlots.map((teamSlot, index) => {
-    const slot = teamSlot.slot_number;
-    const totalPositionPoints = POSITION_POINTS[index] * finalizedMatchCount;
+  const totals = new Map<number, OfficialStandingTotals>();
+  for (const result of matchResults) {
+    const teamSlot = teamSlots.find((slot) => slot.id === result.team_slot_id)!;
+    const placement = result.placement!;
+    const current = totals.get(teamSlot.slot_number) ?? {
+      teamSlot: teamSlot.slot_number,
+      matchesPlayed: 0,
+      totalPositionPoints: 0,
+      totalKills: 0,
+      totalKillPoints: 0,
+      totalPoints: 0,
+      bestPlacement: 13,
+      firstPlaceCount: 0,
+      latestMatchPlacement: 13,
+    };
+    const points = POSITION_POINTS[placement - 1];
+    current.matchesPlayed += 1;
+    current.totalPositionPoints += points;
+    current.totalPoints += points;
+    current.bestPlacement = Math.min(current.bestPlacement!, placement);
+    current.firstPlaceCount += placement === 1 ? 1 : 0;
+    current.latestMatchPlacement = placement;
+    totals.set(teamSlot.slot_number, current);
+  }
+
+  const ranked = rankOfficialStandings([...totals.values()]);
+  const rows = ranked.map((standing) => {
+    const teamSlot = teamSlots[standing.teamSlot - 1];
+    const playerNames = players
+      .filter((player) => player.team_slot_id === teamSlot.id)
+      .map((player) => player.display_name);
 
     return {
       export_schema_version: "phase_10_v1",
@@ -154,21 +195,21 @@ function validScenario(finalizedMatchCount = 1): Scenario {
       tournament_id: TOURNAMENT_ID,
       tournament_name: tournament.name,
       exported_match_count: finalizedMatchCount,
-      standings_rank: slot,
-      team_slot: slot,
+      standings_rank: standing.standingsRank,
+      team_slot: standing.teamSlot,
       team_name: teamSlot.team_name,
-      player_1_name: `Player ${slot}A`,
-      player_2_name: `Player ${slot}B`,
-      player_3_name: `Player ${slot}C`,
-      player_4_name: `Player ${slot}D`,
-      matches_played: finalizedMatchCount,
-      total_position_points: totalPositionPoints,
-      total_kills: 0,
-      total_kill_points: 0,
-      total_points: totalPositionPoints,
-      best_placement: slot,
-      first_place_count: slot === 1 ? finalizedMatchCount : 0,
-      tie_break_status: slot >= 11 ? "tie_break_applied" : "unique_order",
+      player_1_name: playerNames[0] ?? "",
+      player_2_name: playerNames[1] ?? "",
+      player_3_name: playerNames[2] ?? "",
+      player_4_name: playerNames[3] ?? "",
+      matches_played: standing.matchesPlayed,
+      total_position_points: standing.totalPositionPoints,
+      total_kills: standing.totalKills,
+      total_kill_points: standing.totalKillPoints,
+      total_points: standing.totalPoints,
+      best_placement: standing.bestPlacement,
+      first_place_count: standing.firstPlaceCount,
+      tie_break_status: standing.tieBreakStatus,
     };
   });
 
@@ -298,7 +339,7 @@ Deno.test("tournament identity and official name must match", () => {
   assertMismatch(() => validate(wrongName));
 });
 
-Deno.test("official team slots must be exactly twelve valid named slots", () => {
+Deno.test("official team slots remain twelve structural slots", () => {
   const missing = validScenario();
   missing.teamSlots.pop();
 
@@ -313,6 +354,107 @@ Deno.test("official team slots must be exactly twelve valid named slots", () => 
   blankName.teamSlots[0].team_name = "";
 
   assertMismatch(() => validate(blankName));
+});
+
+Deno.test("ten-participant standings allow inactive blank slots", () => {
+  const scenario = validScenario([10]);
+  const result = validate(scenario);
+
+  assertEquals(result.exportedMatchCount, 1);
+  assertEquals(result.rankedStandings.length, 10);
+  assertEquals(scenario.teamSlots[10].team_name, "");
+  assertEquals(scenario.teamSlots[11].team_name, "");
+});
+
+Deno.test("mixed participation aggregates only played matches", () => {
+  const scenario = validScenario([10, 12]);
+  const result = validate(scenario);
+
+  assertEquals(result.rankedStandings.length, 12);
+  assertEquals(
+    result.rankedStandings.find((row) => row.teamSlot === 1)?.matchesPlayed,
+    2,
+  );
+  assertEquals(
+    result.rankedStandings.find((row) => row.teamSlot === 11)?.matchesPlayed,
+    1,
+  );
+  assertEquals(
+    result.rankedStandings.find((row) => row.teamSlot === 12)?.matchesPlayed,
+    1,
+  );
+});
+
+Deno.test("explicit NO_SHOW results remain visible with zero played matches", () => {
+  const scenario = validScenario(1);
+  const noShowResult = scenario.matchResults.find((result) =>
+    result.team_slot_id === teamSlotId(12)
+  )!;
+  noShowResult.participation_status = "NO_SHOW";
+  noShowResult.placement = null;
+  noShowResult.kills = 0;
+
+  scenario.request.rows = scenario.request.rows.map((row) =>
+    row.team_slot === 12
+      ? {
+        ...row,
+        matches_played: 0,
+        total_position_points: 0,
+        total_kills: 0,
+        total_kill_points: 0,
+        total_points: 0,
+        best_placement: null,
+        first_place_count: 0,
+      }
+      : row
+  );
+
+  const result = validate(scenario);
+  const noShowStanding = result.rankedStandings.find((row) =>
+    row.teamSlot === 12
+  );
+  assert(noShowStanding !== undefined);
+  assertEquals(noShowStanding.matchesPlayed, 0);
+  assertEquals(noShowStanding.totalPoints, 0);
+  assertEquals(noShowStanding.bestPlacement, null);
+  assertEquals(noShowStanding.latestMatchPlacement, null);
+});
+
+Deno.test("latest placement is the latest participated match", () => {
+  const scenario = validScenario([12, 10]);
+  const result = validate(scenario);
+
+  assertEquals(
+    result.rankedStandings.find((row) => row.teamSlot === 11)
+      ?.latestMatchPlacement,
+    11,
+  );
+  assertEquals(
+    result.rankedStandings.find((row) => row.teamSlot === 11)?.matchesPlayed,
+    1,
+  );
+});
+
+Deno.test("referenced blank slots and malformed participant ranges are rejected", () => {
+  const blankReferenced = validScenario([10]);
+  blankReferenced.teamSlots[0].team_name = "";
+  assertMismatch(() => validate(blankReferenced));
+
+  const malformedSlot = validScenario([10]);
+  malformedSlot.matchResults[9].team_slot_id = teamSlotId(11);
+  assertMismatch(() => validate(malformedSlot));
+
+  const malformedPlacement = validScenario([10]);
+  malformedPlacement.matchResults[9].placement = 11;
+  assertMismatch(() => validate(malformedPlacement));
+});
+
+Deno.test("inactive slots may retain names in the structural roster", () => {
+  const scenario = validScenario([10]);
+  scenario.teamSlots[10].team_name = "Current Team 11";
+  scenario.teamSlots[11].team_name = "Current Team 12";
+
+  assertEquals(validate(scenario).rankedStandings.length, 10);
 });
 
 Deno.test("every finalized match requires exactly twelve results", () => {

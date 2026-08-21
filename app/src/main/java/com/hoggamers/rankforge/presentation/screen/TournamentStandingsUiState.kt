@@ -14,7 +14,7 @@ data class TournamentStandingRowUiState(
     val totalPositionPoints: Int,
     val totalKillPoints: Int,
     val firstPlaceFinishes: Int,
-    val latestMatchPlacement: Int,
+    val latestMatchPlacement: Int?,
     val matchesIncluded: Int,
     val isCompleteTie: Boolean,
 )

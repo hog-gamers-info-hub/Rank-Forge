@@ -61,7 +61,10 @@ class MatchLobbyScreenshotIntakeViewModelTest {
                 status = TournamentStatus.CONFIRMED,
             ),
         )
-        tournamentRepository.saveTeamNames(tournamentId, mapOf(1 to "Team 1"))
+        tournamentRepository.saveTeamNames(
+            tournamentId,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
         tournamentRepository.createDraftMatch(
             Match(
                 id = matchId,

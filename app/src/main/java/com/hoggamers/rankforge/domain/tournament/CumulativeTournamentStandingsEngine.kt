@@ -6,15 +6,18 @@ data class CumulativeTournamentStanding(
     val totalKillPoints: Int,
     val totalPoints: Int,
     val firstPlaceFinishes: Int,
-    val latestMatchPlacement: Int,
+    val latestMatchPlacement: Int?,
     val matchesIncluded: Int,
-)
+) {
+    val matchesPlayed: Int
+        get() = matchesIncluded
+}
 
 /**
  * Calculates finalized-match standings in stable team-slot order.
  *
- * Team slots are inferred from confirmed result rows because this calculation accepts matches,
- * not a separate tournament roster.
+ * Team slots are inferred from the persisted finalized participant snapshots because this
+ * calculation accepts matches, not a separate tournament roster.
  */
 class CumulativeTournamentStandingsEngine(
     private val positionPointsEngine: PositionPointsEngine = PositionPointsEngine(),
@@ -35,26 +38,31 @@ class CumulativeTournamentStandingsEngine(
 
         val totalsByTeamSlot = mutableMapOf<Int, MutableStandingTotals>()
         finalizedMatches.forEach { match ->
-            val killsByTeamSlot = match.kills.associateBy { it.teamSlotNumber }
-            match.placements.forEach { placement ->
-                val confirmedKills = requireNotNull(killsByTeamSlot[placement.teamSlotNumber]) {
-                    "A finalized placement must have a confirmed kill value."
-                }.kills
-
-                val positionPoints = positionPointsEngine(placement.position)
-                val killPoints = killPointsEngine(confirmedKills)
-                val matchTotal = matchTotalEngine(placement.position, confirmedKills)
-
-                val totals = totalsByTeamSlot.getOrPut(placement.teamSlotNumber) {
+            val participantResults = match.finalizedParticipantResultsOrNull()
+                ?: run {
+                    match.placements.forEach { placement ->
+                        requireNotNull(match.kills.firstOrNull {
+                            it.teamSlotNumber == placement.teamSlotNumber
+                        }) {
+                            "A finalized placement must have a confirmed kill value."
+                        }
+                    }
+                    error("A finalized match must have a valid participant snapshot.")
+                }
+            participantResults.forEach { result ->
+                val totals = totalsByTeamSlot.getOrPut(result.teamSlotNumber) {
                     MutableStandingTotals()
                 }
-
-                totals.totalPositionPoints += positionPoints
-                totals.totalKillPoints += killPoints
-                totals.totalPoints += matchTotal
-                if (placement.position == 1) totals.firstPlaceFinishes++
-                totals.latestMatchPlacement = placement.position
-                totals.matchesIncluded++
+                if (result.participationStatus == MatchParticipationStatus.PARTICIPATED) {
+                    val placement = requireNotNull(result.placement)
+                    totals.totalPositionPoints += positionPointsEngine(placement)
+                    totals.totalKillPoints += killPointsEngine(result.kills)
+                    totals.totalPoints += matchTotalEngine(placement, result.kills)
+                    if (placement == 1) totals.firstPlaceFinishes++
+                    totals.latestMatchPlacement = placement
+                    totals.bestPlacement = minOf(totals.bestPlacement ?: placement, placement)
+                    totals.matchesIncluded++
+                }
             }
         }
 
@@ -67,7 +75,7 @@ class CumulativeTournamentStandingsEngine(
                     totalKillPoints = totals.totalKillPoints,
                     totalPoints = totals.totalPoints,
                     firstPlaceFinishes = totals.firstPlaceFinishes,
-                    latestMatchPlacement = checkNotNull(totals.latestMatchPlacement),
+                    latestMatchPlacement = totals.latestMatchPlacement,
                     matchesIncluded = totals.matchesIncluded,
                 )
             }
@@ -79,6 +87,7 @@ class CumulativeTournamentStandingsEngine(
         var totalPoints: Int = 0
         var firstPlaceFinishes: Int = 0
         var latestMatchPlacement: Int? = null
+        var bestPlacement: Int? = null
         var matchesIncluded: Int = 0
     }
 }

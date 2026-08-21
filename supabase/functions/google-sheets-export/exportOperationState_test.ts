@@ -202,6 +202,31 @@ Deno.test("successful match replay parses persisted replay metadata", async () =
   assertEquals(result.exportedMatchCount, null);
 });
 
+Deno.test("successful ten-row match replay preserves dynamic row metadata", async () => {
+  const { fetchImpl } = makeFetch(() =>
+    responseJson([
+      claimRow({
+        outcome: "replayed",
+        lease_token: null,
+        state: "succeeded",
+        rows_written: 10,
+      }),
+    ])
+  );
+
+  const result = await claimExportOperation(
+    {
+      operationType: "export_match",
+      tournamentId: TOURNAMENT_ID,
+      matchId: MATCH_ID,
+      payloadFingerprint: FINGERPRINT,
+    },
+    context(fetchImpl),
+  );
+
+  assertEquals(result.rowsWritten, 10);
+});
+
 Deno.test("successful standings replay requires exported match count", async () => {
   const { fetchImpl } = makeFetch(() =>
     responseJson([
@@ -393,6 +418,20 @@ Deno.test("success transition sends rows and optional standings count", async ()
     p_rows_written: 12,
     p_exported_match_count: 4,
   });
+});
+
+Deno.test("success transition accepts ten match rows", async () => {
+  const { fetchImpl, calls } = makeFetch(() => responseJson("succeeded"));
+
+  await completeExportOperationSuccess(
+    OPERATION_ID,
+    LEASE_TOKEN,
+    10,
+    null,
+    context(fetchImpl),
+  );
+
+  assertEquals(JSON.parse(JSON.stringify(calls[0].body)).p_rows_written, 10);
 });
 
 Deno.test("retryable-failure transition sends only safe failure code metadata", async () => {

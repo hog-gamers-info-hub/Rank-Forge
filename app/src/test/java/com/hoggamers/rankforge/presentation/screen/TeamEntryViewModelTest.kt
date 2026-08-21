@@ -217,7 +217,7 @@ class TeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.hasTeamNameGap)
+        assertFalse(viewModel.uiState.value.hasTeamNameGap)
 
         viewModel.onTeamNameChanged(2, "Bravo")
         viewModel.onTeamNameChanged(3, "")

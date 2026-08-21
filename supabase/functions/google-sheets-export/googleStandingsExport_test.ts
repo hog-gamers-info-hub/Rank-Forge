@@ -84,9 +84,9 @@ function makeFetch(
   return { fetchImpl, calls };
 }
 
-function values(): StandingsExportCell[][] {
+function values(rowCount = 12): StandingsExportCell[][] {
   return Array.from(
-    { length: 12 },
+    { length: rowCount },
     (_, rowIndex) =>
       STANDINGS_EXPORT_COLUMNS.map((column, columnIndex) =>
         columnIndex < 4 ? `${column}-${rowIndex + 1}` : rowIndex + columnIndex
@@ -289,10 +289,39 @@ Deno.test(
 );
 
 Deno.test(
+  "standings append supports a ten-row participant-aware request and range",
+  async () => {
+    const standingsValues = values(10);
+    const { fetchImpl, calls } = makeFetch(() =>
+      responseJson({
+        updates: {
+          updatedRows: 10,
+          updatedRange: "'Tournament Standings'!A2:T11",
+        },
+      })
+    );
+
+    const appendResult = await appendTournamentStandings(
+      "google-token",
+      "spreadsheet-id",
+      standingsValues,
+      { fetchImpl, timeoutMs: 100 },
+    );
+
+    assertEquals(appendResult, {
+      rowsWritten: 10,
+      updatedRange: "'Tournament Standings'!A2:T11",
+    });
+    assertEquals(JSON.parse(calls[0].body ?? "null").values.length, 10);
+  },
+);
+
+Deno.test(
   "invalid standings append dimensions fail before network access",
   async () => {
     const invalidValues: StandingsExportCell[][][] = [
-      values().slice(0, 11),
+      [],
+      values(13),
       values().map((row, index) => index === 0 ? row.slice(0, 19) : row),
       values().map((row, index) =>
         index === 0 ? [...row.slice(0, 19), 1.5] : row
@@ -322,7 +351,7 @@ Deno.test(
 );
 
 Deno.test(
-  "standings append requires exactly twelve updated rows and a valid returned range",
+  "standings append requires expected updated rows and a valid returned range",
   async () => {
     const invalidResponses = [
       {

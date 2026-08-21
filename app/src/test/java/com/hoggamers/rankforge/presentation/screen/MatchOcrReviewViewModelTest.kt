@@ -648,6 +648,105 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun onExcludeRowUpdatesOnlySelectedCorrectionRowAndPreservesReviewIdentity() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = viewModelWith(repository, readyState())
+
+        viewModel.onExcludeRow(10)
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val draft = ready.correctionDraft!!
+        assertEquals(TOURNAMENT_ID, ready.tournamentId)
+        assertEquals(MATCH_ID, ready.matchId)
+        assertEquals(12, ready.rows.size)
+        assertEquals((0 until TeamSlot.MAX_SLOT_NUMBER).toList(), ready.rows.map { it.rowIndex })
+        assertTrue(draft.rows[10].isExcluded)
+        assertTrue(draft.rows.filterIndexed { index, _ -> index != 10 }.all { !it.isExcluded })
+        assertTrue(draft.isDirty)
+        assertEquals(1, draft.excludedCount)
+        assertEquals(11, draft.includedRows.size)
+    }
+
+    @Test
+    fun onExcludeRowDoesNotFinalizePersistOrCloudSync() = runTest(dispatcher) {
+        val repository = createRepository()
+        val beforeMatch = repository.observeMatchById(MATCH_ID).first()
+        val finalizedSync = RecordingFinalizedMatchCloudSync()
+        val viewModel = viewModelWith(
+            repository = repository,
+            initialUiState = readyState().copy(
+                finalization = MatchOcrReviewFinalizationUiState(
+                    showWarningConfirmation = true,
+                    error = MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED,
+                ),
+            ),
+            finalizedMatchCloudSync = finalizedSync,
+        )
+
+        viewModel.onExcludeRow(2)
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertFalse(ready.finalization.isFinalized)
+        assertFalse(ready.finalization.showWarningConfirmation)
+        assertEquals(null, ready.finalization.error)
+        assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
+        assertTrue(finalizedSync.tournamentIds.isEmpty())
+    }
+
+    @Test
+    fun onExcludeRowAfterFinalizationDoesNotMutateCorrectionDraft() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialDraft = correctionDraft()
+        val viewModel = viewModelWith(
+            repository = repository,
+            initialUiState = readyState(correctionDraft = initialDraft).copy(
+                finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+            ),
+        )
+
+        viewModel.onExcludeRow(5)
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(initialDraft, ready.correctionDraft)
+        assertFalse(ready.correctionDraft!!.rows.any { it.isExcluded })
+    }
+
+    @Test
+    fun resetRowAfterExclusionRestoresTheRowAndCorrectionDraftState() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = viewModelWith(repository, readyState())
+
+        viewModel.onExcludeRow(3)
+        viewModel.onResetRowCorrection(3)
+
+        val draft = (viewModel.uiState.value as MatchOcrReviewUiState.Ready).correctionDraft!!
+        assertFalse(draft.rows[3].isExcluded)
+        assertEquals("4", draft.rows[3].placementDraftValue)
+        assertEquals("3", draft.rows[3].killsDraftValue)
+        assertEquals("4", draft.rows[3].assignedTeamSlotDraftValue)
+        assertEquals(0, draft.excludedCount)
+        assertEquals(12, draft.includedRows.size)
+        assertFalse(draft.isDirty)
+    }
+
+    @Test
+    fun resetAllAfterExclusionRestoresEveryCorrectionRow() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = viewModelWith(repository, readyState())
+
+        viewModel.onExcludeRow(1)
+        viewModel.onExcludeRow(9)
+        viewModel.onResetAllCorrections()
+
+        val draft = (viewModel.uiState.value as MatchOcrReviewUiState.Ready).correctionDraft!!
+        assertTrue(draft.rows.all { !it.isExcluded })
+        assertEquals(0, draft.excludedCount)
+        assertEquals(12, draft.includedRows.size)
+        assertFalse(draft.isDirty)
+    }
+
+    @Test
     fun finalizeUnavailableWhenNoCorrectionDraftExists() = runTest(dispatcher) {
         val repository = createRepository()
         val viewModel = viewModelWith(repository, readyState(correctionDraft = null))
@@ -775,6 +874,31 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun excludedRowsRemainStructuralInputsWhileFinalizationUsesActiveParticipants() = runTest(dispatcher) {
+        val repository = createRepository(activeTeamCount = 10)
+        val excludedDraft = correctionDraft { draft ->
+            val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 10)
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(excluded, 11)
+        }
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = excludedDraft),
+        )
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(10, repository.observeMatchById(MATCH_ID).first()!!.placements.size)
+        assertEquals(12, evidence.rows.size)
+        assertEquals(10, evidence.correctionSnapshots.size)
+        assertEquals((0..11).toList(), evidence.rows.map { it.rowIndex })
+        assertEquals((0..9).toList(), evidence.correctionSnapshots.map { it.rowIndex })
+    }
+
+    @Test
     fun ocrLocalFinalizationDoesNotWaitForCloudSync() = runTest(dispatcher) {
         val repository = createRepository()
         val finalizedSync = RecordingFinalizedMatchCloudSync().also {
@@ -894,6 +1018,7 @@ class MatchOcrReviewViewModelTest {
         assertTrue(publicMethodNames.contains("onPlacementChanged"))
         assertTrue(publicMethodNames.contains("onKillsChanged"))
         assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
+        assertTrue(publicMethodNames.contains("onExcludeRow"))
         assertTrue(publicMethodNames.contains("onResetRowCorrection"))
         assertTrue(publicMethodNames.contains("onResetAllCorrections"))
         assertTrue(publicMethodNames.contains("onFinalizeOcrCorrection"))
@@ -944,7 +1069,9 @@ class MatchOcrReviewViewModelTest {
             finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         )
 
-    private suspend fun createRepository(): InMemoryTournamentRepository {
+    private suspend fun createRepository(
+        activeTeamCount: Int = 12,
+    ): InMemoryTournamentRepository {
         val repository = InMemoryTournamentRepository()
         repository.create(
             Tournament(
@@ -958,7 +1085,9 @@ class MatchOcrReviewViewModelTest {
         )
         repository.saveTeamNames(
             tournamentId = TOURNAMENT_ID,
-            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "Team $slotNumber" },
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber <= activeTeamCount) "Team $slotNumber" else ""
+            },
         )
         repository.createDraftMatch(
             Match(

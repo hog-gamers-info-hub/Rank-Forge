@@ -52,11 +52,6 @@ class CreateMatchUseCase(
             .observeSlotsByTournamentId(input.tournamentId)
             .first()
             .analyzeTeamSlotParticipation()
-        if (participation.hasGap) {
-            return CreateMatchResult.Invalid(
-                mapOf(MatchField.TOURNAMENT to MatchValidationError.INVALID_TEAM_SLOTS),
-            )
-        }
         if (participation.activeCount == 0) {
             return CreateMatchResult.Invalid(
                 mapOf(MatchField.TOURNAMENT to MatchValidationError.NO_PARTICIPATING_TEAMS),

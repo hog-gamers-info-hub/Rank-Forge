@@ -14,6 +14,8 @@ data class Match(
     val placements: List<MatchPlacement> = emptyList(),
     val kills: List<MatchKill> = emptyList(),
     val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
+    /** Complete finalized participant identity/status snapshot; empty for legacy or draft matches. */
+    val participantResults: List<MatchParticipantResult> = emptyList(),
 )
 
 data class MatchPlacement(
@@ -31,6 +33,8 @@ data class MatchCorrectionRecord(
     val previousKills: List<MatchKill>,
     val correctedPlacements: List<MatchPlacement>,
     val correctedKills: List<MatchKill>,
+    val previousParticipantResults: List<MatchParticipantResult> = emptyList(),
+    val correctedParticipantResults: List<MatchParticipantResult> = emptyList(),
 )
 
 enum class MatchStatus {

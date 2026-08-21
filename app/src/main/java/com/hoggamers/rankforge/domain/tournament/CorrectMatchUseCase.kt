@@ -67,19 +67,39 @@ class SubmitMatchCorrectionUseCase(
             )
         }
 
-        val validation = validateMatchResult(input.rows)
+        val participantSnapshot = match.finalizedParticipantResultsOrNull()
+            ?: return SubmitMatchCorrectionResult.Invalid(
+                validation = validateMatchResult(match),
+                globalError = MatchCorrectionGlobalError.INVALID_DATA,
+            )
+        val validation = validateMatchResult.validateParticipantResults(
+            rows = input.rows,
+            expectedTeamSlots = participantSnapshot.map { it.teamSlotNumber },
+        )
         if (!validation.isValid) return SubmitMatchCorrectionResult.Invalid(validation)
 
-        val placements = input.rows.map { row ->
-            MatchPlacement(
+        val participantResults = input.rows.map { row ->
+            val placement = row.placement?.trim()?.takeIf { it.isNotBlank() }?.toInt()
+            val kills = row.kills?.trim()?.takeIf { it.isNotBlank() }?.toInt() ?: 0
+            MatchParticipantResult(
                 teamSlotNumber = row.teamSlotNumber,
-                position = row.placement!!.trim().toInt(),
+                participationStatus = row.participationStatus,
+                placement = placement,
+                kills = kills,
             )
         }
-        val kills = input.rows.map { row ->
+        val placements = participantResults.mapNotNull { result ->
+            result.placement?.let { position ->
+                MatchPlacement(
+                    teamSlotNumber = result.teamSlotNumber,
+                    position = position,
+                )
+            }
+        }
+        val kills = participantResults.map { result ->
             MatchKill(
-                teamSlotNumber = row.teamSlotNumber,
-                kills = row.kills!!.trim().toInt(),
+                teamSlotNumber = result.teamSlotNumber,
+                kills = result.kills,
             )
         }
         val tournament = repository.observeById(match.tournamentId).first()
@@ -93,6 +113,7 @@ class SubmitMatchCorrectionUseCase(
                 placements = placements,
                 kills = kills,
                 expectedRevision = expectedRevision,
+                participantResults = participantResults,
             ),
         )
         val cloudRevision = when (protectedResult) {
@@ -117,6 +138,7 @@ class SubmitMatchCorrectionUseCase(
                 matchId = input.matchId,
                 placements = placements,
                 kills = kills,
+                participantResults = participantResults,
             )
         ) {
             is SubmitMatchCorrectionRepositoryResult.Submitted -> {

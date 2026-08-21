@@ -103,12 +103,6 @@ class TournamentDetailsViewModel @Inject constructor(
             val slots = observeTournamentSlots(tournament.id).first()
             val participation = slots.analyzeTeamSlotParticipation()
             when {
-                participation.hasGap -> _uiState.update {
-                    it.copy(
-                        pendingTeamCountConfirmation = null,
-                        calculatePointsMessage = CalculatePointsMessage.INVALID_TEAM_SLOTS,
-                    )
-                }
                 participation.activeCount == 0 -> _uiState.update {
                     it.copy(
                         pendingTeamCountConfirmation = TeamCountConfirmationUiState(0, TeamSlot.MAX_SLOT_NUMBER),
