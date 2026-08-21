@@ -19,6 +19,7 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
     private val cloudUploadRepository: TournamentCloudUploadRepository,
     private val cloudRestorationRepository: TournamentCloudRestorationRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : TournamentRosterCloudReplacementAction, TournamentRosterCloudReplacementRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -41,6 +42,9 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         val ownerId = (authState as? AuthState.SignedIn)?.user?.id
             ?.takeIf { it.isNotBlank() }
             ?: return TournamentRosterCloudReplacementResult.AuthenticationRequired
+        if (deletionIntentRepository.isBlocking(tournamentId)) {
+            return TournamentRosterCloudReplacementResult.ValidationFailure
+        }
 
         val snapshot = try {
             val tournament = tournamentRepository.observeById(tournamentId).first()

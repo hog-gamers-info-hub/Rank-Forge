@@ -30,11 +30,13 @@ import com.hoggamers.rankforge.data.local.RoomMatchResultScreenshotAssetReposito
 import com.hoggamers.rankforge.data.local.RoomMatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
+import com.hoggamers.rankforge.data.local.DeletionIntentDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.RoomMatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
+import com.hoggamers.rankforge.data.tournament.RoomDeletionIntentRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyOcrCacheCodec
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
@@ -57,6 +59,8 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
@@ -77,6 +81,18 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindTournamentRepository(
         repository: RoomTournamentRepository,
     ): TournamentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocalDeletionRepository(
+        repository: RoomTournamentRepository,
+    ): LocalDeletionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDeletionIntentRepository(
+        repository: RoomDeletionIntentRepository,
+    ): DeletionIntentRepository
 
     @Binds
     @Singleton
@@ -153,11 +169,16 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_12_13,
         RankForgeDatabase.MIGRATION_13_14,
         RankForgeDatabase.MIGRATION_14_15,
+        RankForgeDatabase.MIGRATION_15_16,
     ).build()
 
     @Provides
     @Singleton
     fun provideSyncQueueDao(database: RankForgeDatabase): SyncQueueDao = database.syncQueueDao()
+
+    @Provides
+    @Singleton
+    fun provideDeletionIntentDao(database: RankForgeDatabase): DeletionIntentDao = database.deletionIntentDao()
 
     @Provides
     @Singleton

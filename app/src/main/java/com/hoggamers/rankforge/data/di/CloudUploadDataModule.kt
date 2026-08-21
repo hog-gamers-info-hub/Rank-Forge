@@ -52,6 +52,10 @@ import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
 import com.hoggamers.rankforge.domain.tournament.ResolveDraftConflictUseCase
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRepository
+import com.hoggamers.rankforge.data.cloud.CloudStorageObjectDeleter
+import com.hoggamers.rankforge.data.cloud.SupabaseCloudStorageObjectDeleter
+import com.hoggamers.rankforge.data.cloud.SupabaseCloudDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.CloudDeletionRepository
 import com.hoggamers.rankforge.data.cloud.TournamentRosterCloudReplacementRemoteDataSource
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementAction
@@ -65,6 +69,18 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class CloudUploadDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindCloudStorageObjectDeleter(
+        deleter: SupabaseCloudStorageObjectDeleter,
+    ): CloudStorageObjectDeleter
+
+    @Binds
+    @Singleton
+    abstract fun bindCloudDeletionRepository(
+        repository: SupabaseCloudDeletionRepository,
+    ): CloudDeletionRepository
+
     @Binds
     @Singleton
     abstract fun bindMatchScreenshotRestorationAction(

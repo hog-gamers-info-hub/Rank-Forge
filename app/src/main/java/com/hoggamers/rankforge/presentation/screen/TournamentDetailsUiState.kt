@@ -25,6 +25,22 @@ enum class CalculatePointsMessage {
     MATCH_CREATION_FAILED,
 }
 
+enum class TournamentDetailsNavigation {
+    TOURNAMENT_LIST,
+}
+
+enum class TournamentDeletionUiError {
+    TARGET_NOT_FOUND,
+    AUTHENTICATION_REQUIRED,
+    AUTHORIZATION_FAILURE,
+    VALIDATION_FAILURE,
+    STORAGE_FAILURE,
+    REMOTE_FAILURE,
+    LOCAL_CLEANUP_FAILURE,
+    PREPARATION_FAILURE,
+    UNKNOWN,
+}
+
 data class MatchReviewRequest(
     val tournamentId: String,
     val matchId: String,
@@ -39,6 +55,9 @@ data class TournamentDetailsUiState(
     val calculatePointsMessage: CalculatePointsMessage? = null,
     val matchReviewRequest: MatchReviewRequest? = null,
     val isCreatingMatch: Boolean = false,
+    val navigation: TournamentDetailsNavigation? = null,
+    val isDeleting: Boolean = false,
+    val deletionError: TournamentDeletionUiError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null

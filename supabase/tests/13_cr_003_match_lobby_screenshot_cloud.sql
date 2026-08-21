@@ -124,7 +124,7 @@ select is((
     where schemaname = 'storage'
         and tablename = 'objects'
         and policyname like 'ocr_screenshots_lobby_%_owner'
-), 3::bigint, 'Lobby Storage has insert, select, and update owner policies');
+), 4::bigint, 'Lobby Storage has insert, select, update, and delete owner policies');
 
 insert into storage.objects (id, bucket_id, name, owner_id, metadata)
 values

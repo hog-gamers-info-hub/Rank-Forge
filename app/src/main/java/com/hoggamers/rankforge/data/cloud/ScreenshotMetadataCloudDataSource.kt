@@ -18,12 +18,18 @@ enum class ScreenshotMetadataCloudFailure {
     MISSING_AUTH_SESSION,
     NETWORK,
     AUTHORIZATION,
+    READ_FAILED,
     WRITE_FAILED,
 }
 
 sealed interface ScreenshotMetadataCloudResult {
     data object Success : ScreenshotMetadataCloudResult
     data class Failed(val failure: ScreenshotMetadataCloudFailure) : ScreenshotMetadataCloudResult
+}
+
+sealed interface ScreenshotMetadataCloudReadResult {
+    data class Success(val assets: List<ScreenshotMetadataCloudPayload>) : ScreenshotMetadataCloudReadResult
+    data class Failed(val failure: ScreenshotMetadataCloudFailure) : ScreenshotMetadataCloudReadResult
 }
 
 @Serializable
@@ -53,6 +59,11 @@ interface ScreenshotMetadataCloudDataSource {
     suspend fun upsert(payload: ScreenshotMetadataCloudPayload): ScreenshotMetadataCloudResult
 
     suspend fun deleteByMatchId(matchId: String): ScreenshotMetadataCloudResult
+
+    suspend fun readByTournamentAndMatchIds(
+        tournamentId: String,
+        matchIds: Set<String>,
+    ): ScreenshotMetadataCloudReadResult = ScreenshotMetadataCloudReadResult.Success(emptyList())
 }
 
 @Singleton
@@ -108,6 +119,34 @@ class SupabaseScreenshotMetadataCloudDataSource @Inject constructor(
                 ScreenshotMetadataCloudResult.Failed(throwable.toScreenshotMetadataCloudFailure())
             }
         }
+
+    override suspend fun readByTournamentAndMatchIds(
+        tournamentId: String,
+        matchIds: Set<String>,
+    ): ScreenshotMetadataCloudReadResult = withContext(Dispatchers.IO) {
+        if (!config.isConfigured) {
+            return@withContext ScreenshotMetadataCloudReadResult.Failed(
+                ScreenshotMetadataCloudFailure.READ_FAILED,
+            )
+        }
+        if (clientProvider.client.auth.currentSessionOrNull() == null) {
+            return@withContext ScreenshotMetadataCloudReadResult.Failed(
+                ScreenshotMetadataCloudFailure.MISSING_AUTH_SESSION,
+            )
+        }
+        try {
+            ScreenshotMetadataCloudReadResult.Success(
+                clientProvider.client.from(TABLE_NAME).select {
+                    filter { eq("tournament_id", tournamentId) }
+                }.decodeList<ScreenshotMetadataCloudPayload>()
+                    .filter { it.matchId in matchIds },
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            ScreenshotMetadataCloudReadResult.Failed(throwable.toScreenshotMetadataCloudFailure())
+        }
+    }
 
     private companion object {
         const val TABLE_NAME = "match_screenshot_metadata"

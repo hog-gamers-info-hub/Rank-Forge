@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(15, cursor.getInt(0))
+                assertEquals(16, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -115,6 +115,53 @@ class RankForgeDatabaseMigrationTest {
         } finally {
             database.close()
         }
+    }
+
+    @Test
+    fun migrationFromVersion15AddsDeletionIntentsWithoutDroppingExistingData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 15).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status) " +
+                    "VALUES ('tournament-intent', 'Intent Cup', '2026-08-21', 'Organizer', '123', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-intent', 'tournament-intent', 4, '2026-08-21', 'Alpine', 'DRAFT')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            16,
+            true,
+            RankForgeDatabase.MIGRATION_15_16,
+        )
+
+        migrated.query("SELECT id, match_number FROM matches WHERE id = 'match-intent'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("match-intent", cursor.getString(0))
+            assertEquals(4, cursor.getInt(1))
+        }
+        assertTrue(migrated.hasTable("deletion_intents"))
+        migrated.query("PRAGMA table_info(deletion_intents)").use { cursor ->
+            val columns = buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            assertEquals(
+                setOf(
+                    "target_type",
+                    "target_id",
+                    "tournament_id",
+                    "owner_user_id",
+                    "phase",
+                    "updated_at_epoch_millis",
+                ),
+                columns,
+            )
+        }
+        assertTrue(migrated.hasIndex("index_deletion_intents_tournament_id"))
+        assertTrue(migrated.hasIndex("index_deletion_intents_phase"))
+        migrated.close()
     }
 
     @Test

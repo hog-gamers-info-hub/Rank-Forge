@@ -17,6 +17,7 @@ class RestoreTournamentUseCase @Inject constructor(
     private val localRepository: TournamentRestorationLocalRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
     private val matchCloudRestorationAction: MatchCloudRestorationAction,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : TournamentCloudRestorationAction, TournamentCloudRestorationRetryAction {
     override suspend fun loadAvailable(): TournamentCloudRestorationResult {
         if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
@@ -34,6 +35,9 @@ class RestoreTournamentUseCase @Inject constructor(
         tournamentId: String,
     ): TournamentCloudRestorationResult {
         if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
+        if (deletionIntentRepository.isBlocking(tournamentId)) {
+            return TournamentCloudRestorationResult.ValidationFailure
+        }
         return when (val result = cloudRepository.readOwnedTournament(tournamentId)) {
             is TournamentCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is TournamentCloudRestorationRemoteResult.Success -> {

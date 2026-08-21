@@ -63,6 +63,9 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeMatchResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.CloudDeletionFailureCategory
+import com.hoggamers.rankforge.domain.tournament.DeleteMatchResult
+import com.hoggamers.rankforge.domain.tournament.DeleteMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -91,6 +94,23 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+
+private fun DeleteMatchResult.toUiError(): MatchDeletionUiError = when (this) {
+    DeleteMatchResult.TargetNotFound -> MatchDeletionUiError.TARGET_NOT_FOUND
+    DeleteMatchResult.AuthenticationRequired -> MatchDeletionUiError.AUTHENTICATION_REQUIRED
+    DeleteMatchResult.PendingSyncPreparationFailed -> MatchDeletionUiError.PREPARATION_FAILURE
+    DeleteMatchResult.RemoteDeletedLocalCleanupFailed -> MatchDeletionUiError.LOCAL_CLEANUP_FAILURE
+    is DeleteMatchResult.StorageDeletionFailed -> category.toUiError(MatchDeletionUiError.STORAGE_FAILURE)
+    is DeleteMatchResult.RemoteDeletionFailed -> category.toUiError(MatchDeletionUiError.REMOTE_FAILURE)
+    DeleteMatchResult.Success -> error("Successful deletion has no UI error")
+}
+
+private fun CloudDeletionFailureCategory.toUiError(default: MatchDeletionUiError): MatchDeletionUiError = when (this) {
+    CloudDeletionFailureCategory.AUTHENTICATION -> MatchDeletionUiError.AUTHENTICATION_REQUIRED
+    CloudDeletionFailureCategory.AUTHORIZATION -> MatchDeletionUiError.AUTHORIZATION_FAILURE
+    CloudDeletionFailureCategory.VALIDATION -> MatchDeletionUiError.VALIDATION_FAILURE
+    else -> default
+}
 
 @HiltViewModel
 class MatchReviewViewModel @Inject constructor(
@@ -132,6 +152,7 @@ class MatchReviewViewModel @Inject constructor(
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         },
+    private val deleteMatchUseCase: DeleteMatchUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -281,6 +302,8 @@ class MatchReviewViewModel @Inject constructor(
                 _uiState.update { current ->
                     state.copy(
                         navigation = current.navigation,
+                        isDeleting = current.isDeleting,
+                        deletionError = current.deletionError,
                         isFinalizing = current.isFinalizing,
                         finalizationError = current.finalizationError,
                         csvExportResult = current.csvExportResult,
@@ -354,8 +377,59 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     fun onBackToDetails() {
-        if (_uiState.value.isAvailable) {
+        if (_uiState.value.isAvailable && !_uiState.value.isDeleting) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.DETAILS) }
+        }
+    }
+
+    fun deleteMatch() {
+        val current = _uiState.value
+        val matchId = current.matchId
+        if (current.isDeleting || !current.isAvailable || matchId.isNullOrBlank()) return
+        _uiState.update {
+            it.copy(
+                isDeleting = true,
+                deletionError = null,
+            )
+        }
+        viewModelScope.launch {
+            val useCase = deleteMatchUseCase ?: run {
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = MatchDeletionUiError.UNKNOWN,
+                    )
+                }
+                return@launch
+            }
+            val result = try {
+                useCase(matchId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = MatchDeletionUiError.UNKNOWN,
+                    )
+                }
+                return@launch
+            }
+            when (result) {
+                DeleteMatchResult.Success -> _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = null,
+                        navigation = MatchReviewNavigation.DETAILS,
+                    )
+                }
+                else -> _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deletionError = result.toUiError(),
+                    )
+                }
+            }
         }
     }
 
