@@ -136,7 +136,7 @@ private fun PointIqCreateTournamentCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(108.dp)
+            .height(92.dp)
             .shadow(
                 elevation = 10.dp,
                 shape = shape,
@@ -182,11 +182,14 @@ private fun PointIqCreateTournamentCard(
                     maxLines = 1,
                     softWrap = false,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = stringResource(R.string.pointiq_home_create_subtitle),
                     color = Color.White.copy(alpha = 0.9f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
 
