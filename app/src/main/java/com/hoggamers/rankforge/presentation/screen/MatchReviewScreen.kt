@@ -891,7 +891,7 @@ private fun MatchReviewContent(
                             R.string.match_ocr_review_title
                         },
                     ),
-                    fontSize = if (!showLegacyManualReviewContent) 14.sp else TextUnit.Unspecified,
+                    fontSize = 14.sp,
                     fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
@@ -1038,7 +1038,7 @@ private fun MatchReviewContent(
         ) {
             Text(
                 text = stringResource(R.string.match_review_delete_action),
-                fontSize = if (!showLegacyManualReviewContent) 14.sp else TextUnit.Unspecified,
+                fontSize = 14.sp,
                 fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
             )
         }
@@ -1776,7 +1776,7 @@ private fun MatchReviewResultRowsPagerContent(
                             onKillsChanged = onKillsChanged,
                             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                             onExcludeRow = onExcludeOcrRow,
-                            onResetRowCorrection = onOcrResetRowCorrection,
+                            onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
                             availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
                                 emptyList()
