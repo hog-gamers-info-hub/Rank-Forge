@@ -202,7 +202,11 @@ fun MatchLobbyScreenshotIntakeScreen(
                         Text(
                             text = stringResource(R.string.match_review_lobby_screenshots_title),
                             style = MaterialTheme.typography.titleMedium,
-                            color = PointIqMatchReviewNavy,
+                            color = if (selectedSlots.isEmpty()) {
+                                PointIqMatchReviewNavy
+                            } else {
+                                Color.Unspecified
+                            },
                         )
                         LobbyTemplateToggle(
                             uiState = uiState,
