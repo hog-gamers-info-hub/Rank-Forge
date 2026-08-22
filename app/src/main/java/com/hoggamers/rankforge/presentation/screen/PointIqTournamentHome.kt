@@ -110,7 +110,7 @@ internal fun PointIqTournamentHomeContent(
                     items = uiState.tournaments.takeLast(3),
                     key = { tournament -> tournament.id },
                 ) { tournament ->
-                    PointIqRecentTournamentCard(
+                    PointIqTournamentSummaryCard(
                         tournament = tournament,
                         onClick = { onOpenTournamentDetails(tournament.id) },
                     )
@@ -235,7 +235,7 @@ private fun PointIqRecentHeader(
 }
 
 @Composable
-private fun PointIqRecentTournamentCard(
+internal fun PointIqTournamentSummaryCard(
     tournament: TournamentListItemUiState,
     onClick: () -> Unit,
 ) {
