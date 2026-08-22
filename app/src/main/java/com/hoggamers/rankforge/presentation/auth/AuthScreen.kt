@@ -1,7 +1,11 @@
 package com.hoggamers.rankforge.presentation.auth
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -10,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.background
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -23,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,13 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
@@ -523,6 +533,8 @@ private fun SignedInAuthContent(
     val pointIqBlue = Color(0xFF176AF7)
     val pointIqBody = Color(0xFF607393)
     val pointIqAccountContainer = Color(0xFFF7FAFF)
+    val pointIqProfileBackground = Color(0xFFF0F6FF)
+    val pointIqProfileBorder = Color(0xFFBBD5FF)
     val pointIqDanger = Color(0xFFD92D3A)
 
     Row(
@@ -566,7 +578,7 @@ private fun SignedInAuthContent(
     )
 
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
@@ -574,35 +586,32 @@ private fun SignedInAuthContent(
                 shape = RoundedCornerShape(RankForgeSpacing.Medium),
             )
             .padding(RankForgeSpacing.Medium),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.pointiq_signed_in_account_label),
-            style = MaterialTheme.typography.labelLarge,
+        PointIqAccountProfileIcon(
             color = pointIqBlue,
+            backgroundColor = pointIqProfileBackground,
+            borderColor = pointIqProfileBorder,
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        Text(
-            text = uiState.accountEmail?.takeIf { it.isNotBlank() }
-                ?: stringResource(R.string.auth_unknown_account),
-            style = MaterialTheme.typography.titleMedium,
-            color = pointIqNavy,
-            modifier = Modifier.testTag(AUTH_ACCOUNT_EMAIL_TEST_TAG),
-        )
+        Spacer(modifier = Modifier.width(RankForgeSpacing.Medium))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.pointiq_signed_in_account_label),
+                style = MaterialTheme.typography.labelLarge,
+                color = pointIqBlue,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Text(
+                text = uiState.accountEmail?.takeIf { it.isNotBlank() }
+                    ?: stringResource(R.string.auth_unknown_account),
+                style = MaterialTheme.typography.titleMedium,
+                color = pointIqNavy,
+                modifier = Modifier.testTag(AUTH_ACCOUNT_EMAIL_TEST_TAG),
+            )
+        }
     }
 
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
-    Text(
-        text = stringResource(R.string.pointiq_session_title),
-        style = MaterialTheme.typography.titleLarge,
-        color = pointIqNavy,
-    )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
-    Text(
-        text = stringResource(R.string.pointiq_session_description),
-        style = MaterialTheme.typography.bodyMedium,
-        color = pointIqBody,
-    )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
     OutlinedButton(
         onClick = onLogout,
         enabled = !uiState.isSubmitting,
@@ -618,6 +627,40 @@ private fun SignedInAuthContent(
             text = stringResource(R.string.auth_logout_action),
             style = MaterialTheme.typography.labelLarge,
         )
+    }
+}
+
+@Composable
+private fun PointIqAccountProfileIcon(
+    color: Color,
+    backgroundColor: Color,
+    borderColor: Color,
+) {
+    Box(
+        modifier = Modifier
+            .size(76.dp)
+            .background(backgroundColor, CircleShape)
+            .border(1.dp, borderColor, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(46.dp)) {
+            val strokeWidth = 2.8.dp.toPx()
+            drawCircle(
+                color = color,
+                radius = size.minDimension * 0.18f,
+                center = Offset(size.width / 2f, size.height * 0.31f),
+                style = Stroke(width = strokeWidth),
+            )
+            drawArc(
+                color = color,
+                startAngle = 205f,
+                sweepAngle = 130f,
+                useCenter = false,
+                topLeft = Offset(size.width * 0.17f, size.height * 0.48f),
+                size = Size(size.width * 0.66f, size.height * 0.44f),
+                style = Stroke(width = strokeWidth),
+            )
+        }
     }
 }
 
