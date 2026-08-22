@@ -348,66 +348,7 @@ private fun formatPointIqHomeDate(epochMillis: Long): String =
 
 @Composable
 private fun PointIqHomeBackgroundDecoration() {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val strokeWidth = 1.dp.toPx()
-        val targetColor = PointIqHomeBlue.copy(alpha = 0.07f)
-        val upperCenter = Offset(
-            x = size.width + 2.dp.toPx(),
-            y = 102.dp.toPx(),
-        )
-
-        listOf(42.dp, 76.dp, 112.dp).forEach { radius ->
-            drawCircle(
-                color = targetColor,
-                radius = radius.toPx(),
-                center = upperCenter,
-                style = Stroke(width = strokeWidth),
-            )
-        }
-        drawLine(
-            color = targetColor,
-            start = Offset(upperCenter.x - 128.dp.toPx(), upperCenter.y),
-            end = Offset(upperCenter.x + 128.dp.toPx(), upperCenter.y),
-            strokeWidth = strokeWidth,
-        )
-        drawLine(
-            color = targetColor,
-            start = Offset(upperCenter.x, upperCenter.y - 128.dp.toPx()),
-            end = Offset(upperCenter.x, upperCenter.y + 128.dp.toPx()),
-            strokeWidth = strokeWidth,
-        )
-
-        val lowerCenter = Offset(
-            x = -14.dp.toPx(),
-            y = size.height - 24.dp.toPx(),
-        )
-        listOf(34.dp, 66.dp, 96.dp).forEach { radius ->
-            drawCircle(
-                color = targetColor.copy(alpha = 0.7f),
-                radius = radius.toPx(),
-                center = lowerCenter,
-                style = Stroke(width = strokeWidth),
-            )
-        }
-
-        listOf(
-            Offset(size.width * 0.72f, 46.dp.toPx()),
-            Offset(size.width * 0.68f, 214.dp.toPx()),
-            Offset(size.width * 0.86f, size.height * 0.86f),
-            Offset(18.dp.toPx(), size.height * 0.78f),
-        ).forEach { center ->
-            drawCircle(
-                color = PointIqHomeCyan.copy(alpha = 0.12f),
-                radius = 8.dp.toPx(),
-                center = center,
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = 0.92f),
-                radius = 3.dp.toPx(),
-                center = center,
-            )
-        }
-    }
+    // Intentionally empty: background decorations removed.
 }
 
 @Composable
