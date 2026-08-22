@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_signup_subtitle">Sign up to start your journey</string>
+    <string name="pointiq_have_account_prompt">Already have an account?</string>
+</resources>

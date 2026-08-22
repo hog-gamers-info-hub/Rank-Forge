@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_brand_point">Point</string>
+    <string name="pointiq_brand_iq">IQ</string>
+    <string name="pointiq_brand_tagline">Precision tournament scoring</string>
+    <string name="pointiq_login_subtitle">Sign in to continue your journey</string>
+</resources>
