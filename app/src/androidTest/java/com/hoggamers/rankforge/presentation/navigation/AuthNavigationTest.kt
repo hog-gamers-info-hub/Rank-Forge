@@ -25,6 +25,7 @@ import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthMode
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
+import com.hoggamers.rankforge.presentation.auth.PasswordRecoveryStage
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
@@ -102,6 +103,28 @@ class AuthNavigationTest {
 
         composeTestRule.onNodeWithTag("protected_home").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun activePasswordRecoveryWinsOverSignedInProtectedRouting() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(
+                        isSignedIn = true,
+                        accountEmail = "recovery@example.com",
+                        passwordRecoveryStage = PasswordRecoveryStage.VERIFYING_LINK,
+                    ),
+                    authenticatedContent = {
+                        Text("protected_home", Modifier.testTag("protected_home"))
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Verifying reset link…").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }
 
     @Test

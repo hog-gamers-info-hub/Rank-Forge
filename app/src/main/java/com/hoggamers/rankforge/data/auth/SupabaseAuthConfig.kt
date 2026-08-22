@@ -17,6 +17,8 @@ data class SupabaseAuthConfig(
         const val DEFAULT_SUPABASE_PUBLISHABLE_KEY = "replace-with-supabase-publishable-key"
         const val AUTH_CALLBACK_SCHEME = "com.hoggamers.rankforge"
         const val AUTH_CALLBACK_HOST = "auth-callback"
+        const val PASSWORD_RECOVERY_REDIRECT_URL =
+            "$AUTH_CALLBACK_SCHEME://$AUTH_CALLBACK_HOST/password-recovery"
 
         fun fromBuildConfig(): SupabaseAuthConfig = SupabaseAuthConfig(
             supabaseUrl = BuildConfig.SUPABASE_URL,

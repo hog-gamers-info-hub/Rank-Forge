@@ -13,8 +13,10 @@ import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
+import com.hoggamers.rankforge.domain.auth.RequestPasswordResetUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
 import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
+import com.hoggamers.rankforge.domain.auth.UpdateRecoveredPasswordUseCase
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
@@ -507,6 +509,273 @@ class AuthViewModelTest {
         assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
+    @Test
+    fun beginPasswordRecoveryPreservesTypedEmail() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("user@example.com")
+
+        viewModel.beginPasswordRecovery()
+
+        assertEquals(PasswordRecoveryStage.REQUEST_EMAIL, viewModel.uiState.value.passwordRecoveryStage)
+        assertEquals("user@example.com", viewModel.uiState.value.email)
+    }
+
+    @Test
+    fun passwordResetRequestTrimsEmailAndCompletesWithoutAuthenticating() = runTest {
+        repository.passwordResetGate = CompletableDeferred()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("  user@example.com  ")
+        viewModel.beginPasswordRecovery()
+
+        viewModel.requestPasswordReset()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSubmitting)
+        assertEquals(1, repository.passwordResetCalls)
+        assertEquals("user@example.com", repository.requestedPasswordResetEmail)
+
+        repository.passwordResetGate?.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(PasswordRecoveryStage.EMAIL_SENT, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertNull(viewModel.uiState.value.accountEmail)
+    }
+
+    @Test
+    fun passwordResetFailureStopsSubmittingAndKeepsRequestStage() = runTest {
+        repository.passwordResetResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.beginPasswordRecovery()
+
+        viewModel.requestPasswordReset()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSubmitting)
+        assertEquals(PasswordRecoveryStage.REQUEST_EMAIL, viewModel.uiState.value.passwordRecoveryStage)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.NetworkUnavailable),
+            viewModel.uiState.value.errorMessage,
+        )
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun blankPasswordResetRequestDoesNotInvokeUseCase() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.beginPasswordRecovery()
+
+        viewModel.requestPasswordReset()
+
+        assertEquals(0, repository.passwordResetCalls)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.InvalidEmail),
+            viewModel.uiState.value.errorMessage,
+        )
+    }
+
+    @Test
+    fun cancelPasswordRecoveryReturnsToLoginAndPreservesEmail() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onEmailChanged("user@example.com")
+        viewModel.beginPasswordRecovery()
+
+        viewModel.cancelPasswordRecovery()
+
+        assertEquals(PasswordRecoveryStage.NONE, viewModel.uiState.value.passwordRecoveryStage)
+        assertEquals("user@example.com", viewModel.uiState.value.email)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun passwordRecoveryLinkCallbacksUseRecoveryStages() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onPasswordRecoveryLinkReceived()
+        assertEquals(PasswordRecoveryStage.VERIFYING_LINK, viewModel.uiState.value.passwordRecoveryStage)
+
+        viewModel.onPasswordRecoveryLinkVerified()
+        assertEquals(PasswordRecoveryStage.SET_NEW_PASSWORD, viewModel.uiState.value.passwordRecoveryStage)
+
+        viewModel.onPasswordRecoveryLinkReceived()
+        viewModel.onPasswordRecoveryLinkFailed()
+        assertEquals(PasswordRecoveryStage.LINK_ERROR, viewModel.uiState.value.passwordRecoveryStage)
+    }
+
+    @Test
+    fun passwordUpdateIsRejectedOutsideSetNewPasswordStage() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onNewPasswordChanged("password")
+        viewModel.onConfirmNewPasswordChanged("password")
+
+        viewModel.updateRecoveredPassword()
+
+        assertEquals(0, repository.passwordUpdateCalls)
+        assertEquals(PasswordRecoveryStage.NONE, viewModel.uiState.value.passwordRecoveryStage)
+    }
+
+    @Test
+    fun shortPasswordDoesNotCallPasswordUpdateUseCase() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("short")
+        viewModel.onConfirmNewPasswordChanged("short")
+
+        viewModel.updateRecoveredPassword()
+
+        assertEquals(0, repository.passwordUpdateCalls)
+        assertEquals(AuthUiMessage.PasswordTooShort, viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun mismatchedPasswordsDoNotCallPasswordUpdateUseCase() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("password-one")
+        viewModel.onConfirmNewPasswordChanged("password-two")
+
+        viewModel.updateRecoveredPassword()
+
+        assertEquals(0, repository.passwordUpdateCalls)
+        assertEquals(AuthUiMessage.PasswordsDoNotMatch, viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun validMatchingPasswordsCallUpdateUseCaseOnce() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("new-password")
+        viewModel.onConfirmNewPasswordChanged("new-password")
+
+        viewModel.updateRecoveredPassword()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.passwordUpdateCalls)
+        assertEquals("new-password", repository.updatedPassword)
+    }
+
+    @Test
+    fun passwordUpdateFailureRemainsInRecoveryWithoutAuthenticating() = runTest {
+        repository.passwordUpdateResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("new-password")
+        viewModel.onConfirmNewPasswordChanged("new-password")
+
+        viewModel.updateRecoveredPassword()
+        advanceUntilIdle()
+
+        assertEquals(PasswordRecoveryStage.SET_NEW_PASSWORD, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.NetworkUnavailable),
+            viewModel.uiState.value.errorMessage,
+        )
+    }
+
+    @Test
+    fun expiredRecoveryPasswordUpdateRemainsBlockedFromAuthenticatedApp() = runTest {
+        repository.passwordUpdateResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("new-password")
+        viewModel.onConfirmNewPasswordChanged("new-password")
+
+        viewModel.updateRecoveredPassword()
+        advanceUntilIdle()
+
+        assertEquals(PasswordRecoveryStage.SET_NEW_PASSWORD, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.accountEmail)
+        assertEquals(
+            AuthUiMessage.AuthenticationFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            viewModel.uiState.value.errorMessage,
+        )
+    }
+
+    @Test
+    fun successfulPasswordUpdateSignsOutLocallyAndCompletesRecovery() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("new-password")
+        viewModel.onConfirmNewPasswordChanged("new-password")
+
+        viewModel.updateRecoveredPassword()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.passwordUpdateCalls)
+        assertEquals(1, repository.logoutCalls)
+        assertEquals(PasswordRecoveryStage.NONE, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(null, viewModel.uiState.value.accountEmail)
+        assertEquals("", viewModel.uiState.value.newPassword)
+        assertEquals("", viewModel.uiState.value.confirmNewPassword)
+        assertEquals(AuthUiMessage.PasswordUpdated, viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun remoteLogoutWarningStillCompletesRecoveryAfterLocalClear() = runTest {
+        repository.logoutResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.SignedOutLocallyWithRemoteFailure(
+                AuthFailure(AuthFailureCategory.NetworkUnavailable),
+            ),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+        viewModel.onNewPasswordChanged("new-password")
+        viewModel.onConfirmNewPasswordChanged("new-password")
+
+        viewModel.updateRecoveredPassword()
+        advanceUntilIdle()
+
+        assertEquals(PasswordRecoveryStage.NONE, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertEquals(AuthUiMessage.PasswordUpdated, viewModel.uiState.value.statusMessage)
+        assertEquals(AuthUiMessage.LogoutRemoteWarning, viewModel.uiState.value.warningMessage)
+    }
+
+    @Test
+    fun exitingRecoveryLogsOutBeforeReturningToLogin() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        enterSetNewPasswordStage(viewModel)
+
+        viewModel.exitPasswordRecovery()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.logoutCalls)
+        assertEquals(PasswordRecoveryStage.NONE, viewModel.uiState.value.passwordRecoveryStage)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    private fun enterSetNewPasswordStage(viewModel: AuthViewModel) {
+        viewModel.onPasswordRecoveryLinkReceived()
+        viewModel.onPasswordRecoveryLinkVerified()
+    }
+
     private fun createViewModel(): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
@@ -515,6 +784,8 @@ class AuthViewModelTest {
             login = LoginUseCase(repository),
             signInWithGoogleUseCase = SignInWithGoogleUseCase(repository),
             logout = LogoutUseCase(repository),
+            requestPasswordReset = RequestPasswordResetUseCase(repository),
+            updateRecoveredPassword = UpdateRecoveredPasswordUseCase(repository),
             recoverForegroundSyncQueue = foregroundRecovery,
         )
 
@@ -533,6 +804,18 @@ class AuthViewModelTest {
         )
         var googleGate: CompletableDeferred<Unit>? = null
         var googleCalls: Int = 0
+        var passwordResetResult: AuthOperationResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.PasswordResetEmailRequested,
+        )
+        var passwordResetGate: CompletableDeferred<Unit>? = null
+        var passwordResetCalls: Int = 0
+        var requestedPasswordResetEmail: String? = null
+        var passwordUpdateResult: AuthOperationResult = AuthOperationResult.Success(
+            AuthSuccessOutcome.PasswordUpdated,
+        )
+        var passwordUpdateCalls: Int = 0
+        var updatedPassword: String? = null
+        var logoutCalls: Int = 0
         var logoutResult: AuthOperationResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignedOutLocally,
         )
@@ -574,7 +857,21 @@ class AuthViewModelTest {
             return googleResult
         }
 
+        override suspend fun requestPasswordReset(email: String): AuthOperationResult {
+            passwordResetCalls += 1
+            requestedPasswordResetEmail = email
+            passwordResetGate?.await()
+            return passwordResetResult
+        }
+
+        override suspend fun updateRecoveredPassword(newPassword: String): AuthOperationResult {
+            passwordUpdateCalls += 1
+            updatedPassword = newPassword
+            return passwordUpdateResult
+        }
+
         override suspend fun logout(): AuthOperationResult {
+            logoutCalls += 1
             if (logoutResult is AuthOperationResult.Success) {
                 authState.value = AuthState.SignedOut
             }

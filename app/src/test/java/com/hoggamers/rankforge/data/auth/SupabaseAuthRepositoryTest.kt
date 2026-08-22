@@ -47,8 +47,58 @@ class SupabaseAuthRepositoryTest {
         )
     }
 
+    @Test
+    fun passwordResetRequestMapsToEmailRequestedOutcome() = runTest {
+        val repository = SupabaseAuthRepository(FakeAuthRemoteDataSource())
+
+        assertEquals(
+            AuthOperationResult.Success(AuthSuccessOutcome.PasswordResetEmailRequested),
+            repository.requestPasswordReset("user@example.com"),
+        )
+    }
+
+    @Test
+    fun passwordResetRequestNetworkFailureMapsToNetworkUnavailable() = runTest {
+        val repository = SupabaseAuthRepository(
+            FakeAuthRemoteDataSource(passwordResetFailure = IOException("network unavailable")),
+        )
+
+        assertEquals(
+            AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.NetworkUnavailable)),
+            repository.requestPasswordReset("user@example.com"),
+        )
+    }
+
+    @Test
+    fun passwordUpdateMapsToPasswordUpdatedOutcome() = runTest {
+        val repository = SupabaseAuthRepository(FakeAuthRemoteDataSource())
+
+        assertEquals(
+            AuthOperationResult.Success(AuthSuccessOutcome.PasswordUpdated),
+            repository.updateRecoveredPassword("new-password"),
+        )
+    }
+
+    @Test
+    fun passwordUpdateExpiredRecoverySessionMapsToExpiredOrInvalidSession() = runTest {
+        val repository = SupabaseAuthRepository(
+            FakeAuthRemoteDataSource(
+                passwordUpdateFailure = IllegalStateException("Invalid recovery session token"),
+            ),
+        )
+
+        assertEquals(
+            AuthOperationResult.Failure(
+                AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            ),
+            repository.updateRecoveredPassword("new-password"),
+        )
+    }
+
     private class FakeAuthRemoteDataSource(
         private val googleFailure: Throwable? = null,
+        private val passwordResetFailure: Throwable? = null,
+        private val passwordUpdateFailure: Throwable? = null,
     ) : AuthRemoteDataSource {
         override fun observeAuthState(): Flow<AuthState> = emptyFlow()
 
@@ -61,6 +111,14 @@ class SupabaseAuthRepositoryTest {
         ): AuthSuccessOutcome = AuthSuccessOutcome.SignUpAuthenticated
 
         override suspend fun login(email: String, password: String) = Unit
+
+        override suspend fun requestPasswordReset(email: String) {
+            passwordResetFailure?.let { throw it }
+        }
+
+        override suspend fun updateRecoveredPassword(newPassword: String) {
+            passwordUpdateFailure?.let { throw it }
+        }
 
         override suspend fun signInWithGoogle() {
             googleFailure?.let { throw it }

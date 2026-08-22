@@ -17,6 +17,16 @@ interface AuthRepository {
         password: String,
     ): AuthOperationResult
 
+    suspend fun requestPasswordReset(email: String): AuthOperationResult =
+        AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+
+    suspend fun updateRecoveredPassword(newPassword: String): AuthOperationResult =
+        AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+
     suspend fun signInWithGoogle(): AuthOperationResult = AuthOperationResult.Failure(
         AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
     )

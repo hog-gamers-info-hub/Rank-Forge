@@ -14,6 +14,8 @@ internal enum class AuthFailureContext {
     Login,
     GoogleSignIn,
     Logout,
+    PasswordResetRequest,
+    PasswordUpdate,
 }
 
 internal object AuthFailureMapper {
@@ -46,7 +48,9 @@ internal object AuthFailureMapper {
             when (throwable.statusCode) {
                 429 -> return AuthFailure(AuthFailureCategory.RateLimited)
                 401, 403 -> {
-                    return if (context == AuthFailureContext.Restore) {
+                    return if (context == AuthFailureContext.Restore ||
+                        context == AuthFailureContext.PasswordUpdate
+                    ) {
                         AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession)
                     } else {
                         AuthFailure(AuthFailureCategory.InvalidCredentials)
@@ -80,7 +84,11 @@ internal object AuthFailureMapper {
                 AuthFailure(AuthFailureCategory.RateLimited)
             classificationText.contains("expired session") ||
                 classificationText.contains("invalid session") ||
-                classificationText.contains("refresh token") ->
+                classificationText.contains("refresh token") ||
+                (context == AuthFailureContext.PasswordUpdate &&
+                    (classificationText.contains("recovery session") ||
+                        classificationText.contains("expired token") ||
+                        classificationText.contains("invalid token"))) ->
                 AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession)
             else -> AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure)
         }

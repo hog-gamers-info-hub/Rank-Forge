@@ -20,6 +20,10 @@ interface AuthRemoteDataSource {
         password: String,
     )
 
+    suspend fun requestPasswordReset(email: String)
+
+    suspend fun updateRecoveredPassword(newPassword: String)
+
     suspend fun signInWithGoogle()
 
     suspend fun logout(): AuthLogoutResult

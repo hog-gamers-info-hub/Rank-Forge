@@ -117,6 +117,21 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         }
     }
 
+    override suspend fun requestPasswordReset(email: String) {
+        ensureConfigured()
+        client.auth.resetPasswordForEmail(
+            email = email,
+            redirectUrl = SupabaseAuthConfig.PASSWORD_RECOVERY_REDIRECT_URL,
+        )
+    }
+
+    override suspend fun updateRecoveredPassword(newPassword: String) {
+        ensureConfigured()
+        client.auth.updateUser {
+            password = newPassword
+        }
+    }
+
     override suspend fun signInWithGoogle() {
         ensureConfigured()
         client.auth.signInWith(Google)
