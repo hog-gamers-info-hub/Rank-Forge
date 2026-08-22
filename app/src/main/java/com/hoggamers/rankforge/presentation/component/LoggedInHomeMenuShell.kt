@@ -136,21 +136,21 @@ private fun PointIqFullScreenMenu(
             .fillMaxSize()
             .background(pointIqHomeBackgroundBrush())
             .testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 20.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 24.dp, bottom = 20.dp),
+                .padding(top = 18.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = stringResource(R.string.logged_in_home_menu_title),
                 color = PointIqHomeHeaderNavy,
-                fontSize = 24.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.SemiBold,
             )
 
             TextButton(
@@ -160,7 +160,8 @@ private fun PointIqFullScreenMenu(
                 Text(
                     text = stringResource(R.string.back_action),
                     color = PointIqHomeHeaderBlue,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
                     fontWeight = FontWeight.Medium,
                 )
             }
@@ -172,29 +173,21 @@ private fun PointIqFullScreenMenu(
             onClick = onOpenAccount,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         PointIqMenuPrimaryItem(
             text = stringResource(R.string.logged_in_home_all_tournaments),
             testTag = LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG,
             onClick = onOpenAllTournaments,
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_subscription),
             testTag = LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_notifications),
             testTag = LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG,
         )
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_settings),
@@ -212,16 +205,17 @@ private fun PointIqMenuPrimaryItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
+            .height(42.dp)
             .clickable(onClick = onClick)
-            .testTag(testTag),
+            .testTag(testTag)
+            .padding(horizontal = 4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
             color = PointIqHomeHeaderNavy,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
+            fontSize = 15.sp,
+            lineHeight = 19.sp,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -235,18 +229,19 @@ private fun PointIqMenuDisabledItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(42.dp)
             .testTag(testTag)
             .semantics {
                 disabled()
-            },
+            }
+            .padding(horizontal = 4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
             color = PointIqMenuMuted,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
+            fontSize = 15.sp,
+            lineHeight = 19.sp,
             fontWeight = FontWeight.Normal,
         )
     }
