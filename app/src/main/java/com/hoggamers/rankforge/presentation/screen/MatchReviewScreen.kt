@@ -1371,7 +1371,7 @@ private fun MatchOcrScreenshotPreflightDialog(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_TEST_TAG),
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG),
             ) {
                 Text(stringResource(R.string.cancel_action))
             }
@@ -1610,7 +1610,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 }
             }
             is MatchOcrReviewUiState.Error -> Text(
-                text = ocrUiState.message,
+                text = uiState.message,
                 color = MaterialTheme.colorScheme.error,
             )
             is MatchOcrReviewUiState.Ready -> MatchReviewResultRowsPagerContent(
