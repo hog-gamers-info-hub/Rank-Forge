@@ -26,6 +26,19 @@ data class TournamentEntity(
     @ColumnInfo(name = "organizer_contact_number") val organizerContactNumber: String,
     val status: String,
     @ColumnInfo(name = "creation_order", defaultValue = "0") val creationOrder: Long = 0L,
+    @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long? = null,
+)
+
+data class TournamentSummaryProjection(
+    val id: String,
+    val name: String,
+    val date: String,
+    @ColumnInfo(name = "organizer_name") val organizerName: String,
+    @ColumnInfo(name = "organizer_contact_number") val organizerContactNumber: String,
+    val status: String,
+    @ColumnInfo(name = "total_teams") val totalTeams: Int,
+    @ColumnInfo(name = "total_matches") val totalMatches: Int,
+    @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long?,
 )
 
 @Entity(

@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSummariesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -13,17 +14,21 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class TournamentListViewModel @Inject constructor(
-    private val observeTournaments: ObserveTournamentsUseCase,
+    private val observeTournamentSummaries: ObserveTournamentSummariesUseCase,
 ) : ViewModel() {
+    constructor(observeTournaments: ObserveTournamentsUseCase) : this(
+        ObserveTournamentSummariesUseCase(observeTournaments),
+    )
+
     private val _uiState = MutableStateFlow(TournamentListUiState())
     val uiState: StateFlow<TournamentListUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
-            observeTournaments().collect { tournaments ->
+            observeTournamentSummaries().collect { summaries ->
                 _uiState.update {
                     TournamentListUiState(
-                        tournaments = tournaments.map { tournament -> tournament.toListItemUiState() },
+                        tournaments = summaries.map { summary -> summary.toListItemUiState() },
                     )
                 }
             }

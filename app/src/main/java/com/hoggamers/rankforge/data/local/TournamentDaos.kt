@@ -59,11 +59,39 @@ interface TournamentDao {
     @Query("SELECT * FROM tournaments ORDER BY creation_order, id")
     fun observeAll(): Flow<List<TournamentEntity>>
 
+    @Query(
+        """
+        SELECT
+            tournaments.id,
+            tournaments.name,
+            tournaments.date,
+            tournaments.organizer_name,
+            tournaments.organizer_contact_number,
+            tournaments.status,
+            (
+                SELECT COUNT(*) FROM team_slots
+                WHERE team_slots.tournament_id = tournaments.id
+                    AND TRIM(team_slots.team_name) <> ''
+            ) AS total_teams,
+            (
+                SELECT COUNT(*) FROM matches
+                WHERE matches.tournament_id = tournaments.id
+            ) AS total_matches,
+            tournaments.last_updated_epoch_millis
+        FROM tournaments
+        ORDER BY tournaments.creation_order, tournaments.id
+        """,
+    )
+    fun observeSummaries(): Flow<List<TournamentSummaryProjection>>
+
     @Query("SELECT * FROM tournaments WHERE id = :tournamentId")
     fun observeById(tournamentId: String): Flow<TournamentEntity?>
 
     @Upsert
     suspend fun upsert(tournament: TournamentEntity)
+
+    @Query("UPDATE tournaments SET last_updated_epoch_millis = :lastUpdatedEpochMillis WHERE id = :tournamentId")
+    suspend fun updateLastUpdatedEpochMillis(tournamentId: String, lastUpdatedEpochMillis: Long)
 
     @Query("SELECT COALESCE(MAX(creation_order), 0) + 1 FROM tournaments")
     suspend fun nextCreationOrder(): Long

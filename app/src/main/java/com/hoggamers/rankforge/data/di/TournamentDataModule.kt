@@ -45,6 +45,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSummariesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterPlayersUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
@@ -170,6 +171,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_13_14,
         RankForgeDatabase.MIGRATION_14_15,
         RankForgeDatabase.MIGRATION_15_16,
+        RankForgeDatabase.MIGRATION_16_17,
     ).build()
 
     @Provides
@@ -253,6 +255,12 @@ object TournamentDataProvidersModule {
     fun provideObserveTournamentsUseCase(
         repository: TournamentRepository,
     ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideObserveTournamentSummariesUseCase(
+        repository: TournamentRepository,
+    ): ObserveTournamentSummariesUseCase = ObserveTournamentSummariesUseCase(repository)
 
     @Provides
     @Singleton

@@ -16,10 +16,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSummariesUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentListViewModelTest {
@@ -39,7 +40,7 @@ class TournamentListViewModelTest {
 
     @Test
     fun initialEmptyRepositoryRendersEmptyState() = runTest {
-        val viewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        val viewModel = TournamentListViewModel(ObserveTournamentSummariesUseCase(repository))
 
         advanceUntilIdle()
 
@@ -48,13 +49,32 @@ class TournamentListViewModelTest {
 
     @Test
     fun createdTournamentsRenderInCreationOrder() = runTest {
-        val viewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
+        val viewModel = TournamentListViewModel(ObserveTournamentSummariesUseCase(repository))
         repository.create(tournament(id = "older", name = "Older Cup"))
         repository.create(tournament(id = "newer", name = "Newer Cup"))
 
         advanceUntilIdle()
 
         assertEquals(listOf("Older Cup", "Newer Cup"), viewModel.uiState.value.tournaments.map { it.name })
+    }
+
+    @Test
+    fun summaryFieldsReachUiState() = runTest {
+        val viewModel = TournamentListViewModel(ObserveTournamentSummariesUseCase(repository))
+        repository.emitSummary(
+            TournamentSummary(
+                tournament = tournament("summary", "Summary Cup"),
+                totalTeams = 10,
+                totalMatches = 3,
+                lastUpdatedEpochMillis = 42L,
+            ),
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(10, viewModel.uiState.value.tournaments.single().totalTeams)
+        assertEquals(3, viewModel.uiState.value.tournaments.single().totalMatches)
+        assertEquals(42L, viewModel.uiState.value.tournaments.single().lastUpdatedEpochMillis)
     }
 
     private fun tournament(
@@ -71,12 +91,20 @@ class TournamentListViewModelTest {
 
     private class TestTournamentRepository : TournamentRepository {
         private val state = MutableStateFlow<List<Tournament>>(emptyList())
+        private val summaries = MutableStateFlow<List<TournamentSummary>>(emptyList())
 
         override suspend fun create(tournament: Tournament) {
             state.value = state.value + tournament
+            summaries.value = summaries.value + TournamentSummary(tournament, 0, 0, null)
+        }
+
+        fun emitSummary(summary: TournamentSummary) {
+            summaries.value = listOf(summary)
         }
 
         override fun observeAll(): Flow<List<Tournament>> = state
+
+        override fun observeSummaries(): Flow<List<TournamentSummary>> = summaries
 
         override fun observeById(tournamentId: String): Flow<Tournament?> =
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }

@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 interface TournamentRepository {
     /** Missing revision metadata intentionally blocks a cloud write until a safe restore establishes a base. */
@@ -21,6 +22,17 @@ interface TournamentRepository {
     suspend fun create(tournament: Tournament)
 
     fun observeAll(): Flow<List<Tournament>>
+
+    fun observeSummaries(): Flow<List<TournamentSummary>> = observeAll().map { tournaments ->
+        tournaments.map { tournament ->
+            TournamentSummary(
+                tournament = tournament,
+                totalTeams = 0,
+                totalMatches = 0,
+                lastUpdatedEpochMillis = null,
+            )
+        }
+    }
 
     fun observeById(tournamentId: String): Flow<Tournament?>
 
