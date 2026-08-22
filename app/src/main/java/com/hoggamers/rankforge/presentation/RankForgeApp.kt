@@ -23,6 +23,7 @@ import com.hoggamers.rankforge.presentation.auth.AuthScreen
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.auth.PointIqAuthMessages
 import com.hoggamers.rankforge.presentation.auth.PointIqLoginScreen
+import com.hoggamers.rankforge.presentation.auth.PointIqSignUpScreen
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.navigation.RankForgeNavHost
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -118,6 +119,16 @@ fun RankForgeAppContent(
             onSubmit = onAuthSubmit,
             onGoogleSignIn = onAuthGoogleSignIn,
             onBeginPasswordRecovery = onAuthBeginPasswordRecovery,
+            modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
+            messages = { PointIqAuthMessages(authUiState) },
+        )
+        authUiState.mode == AuthMode.SignUp -> PointIqSignUpScreen(
+            uiState = authUiState,
+            onModeSelected = onAuthModeSelected,
+            onEmailChanged = onAuthEmailChanged,
+            onPasswordChanged = onAuthPasswordChanged,
+            onSubmit = onAuthSubmit,
+            onGoogleSignIn = onAuthGoogleSignIn,
             modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
             messages = { PointIqAuthMessages(authUiState) },
         )
