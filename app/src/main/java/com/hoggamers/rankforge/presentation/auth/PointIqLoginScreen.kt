@@ -3,7 +3,6 @@ package com.hoggamers.rankforge.presentation.auth
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
@@ -73,24 +73,22 @@ internal fun PointIqLoginScreen(
     messages: @Composable () -> Unit = {},
 ) {
     PointIqAuthShell(
-        selectedMode = uiState.mode,
-        onModeSelected = onModeSelected,
         title = stringResource(R.string.auth_login_heading),
         subtitle = stringResource(R.string.pointiq_login_subtitle),
         modifier = modifier,
     ) {
         PointIqFieldLabel(text = stringResource(R.string.auth_email_label))
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         PointIqEmailField(
             value = uiState.email,
             onValueChange = onEmailChanged,
             enabled = !uiState.isSubmitting,
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         PointIqFieldLabel(text = stringResource(R.string.auth_password_label))
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         PointIqPasswordField(
             value = uiState.password,
             onValueChange = onPasswordChanged,
@@ -98,9 +96,7 @@ internal fun PointIqLoginScreen(
         )
 
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
             TextButton(
@@ -116,7 +112,7 @@ internal fun PointIqLoginScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         PointIqPrimaryButton(
             text = stringResource(
@@ -127,20 +123,24 @@ internal fun PointIqLoginScreen(
             onClick = onSubmit,
         )
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(modifier = Modifier.height(18.dp))
         PointIqDivider()
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         PointIqGoogleButton(
             enabled = !uiState.isSubmitting && !uiState.isSessionLoading,
             onClick = onGoogleSignIn,
         )
 
+        PointIqSignUpPrompt(
+            onSignUp = { onModeSelected(AuthMode.SignUp) },
+        )
+
         messages()
 
-        Spacer(modifier = Modifier.height(28.dp))
-        PointIqSecurityFooter()
         Spacer(modifier = Modifier.height(12.dp))
+        PointIqSecurityFooter()
+        Spacer(modifier = Modifier.height(4.dp))
     }
 }
 
@@ -243,14 +243,17 @@ private fun PointIqPrimaryButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(17.dp)
+    val shape = RoundedCornerShape(16.dp)
     val gradient = if (enabled) {
-        Brush.horizontalGradient(listOf(LoginCyan, LoginBlue))
+        Brush.horizontalGradient(
+            listOf(LoginNavy, LoginBlue, LoginCyan),
+        )
     } else {
         Brush.horizontalGradient(
             listOf(
-                LoginCyan.copy(alpha = 0.48f),
+                LoginNavy.copy(alpha = 0.48f),
                 LoginBlue.copy(alpha = 0.48f),
+                LoginCyan.copy(alpha = 0.48f),
             ),
         )
     }
@@ -268,9 +271,9 @@ private fun PointIqPrimaryButton(
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .height(54.dp)
             .shadow(
-                elevation = 10.dp,
+                elevation = 9.dp,
                 shape = shape,
                 ambientColor = LoginBlue.copy(alpha = 0.16f),
                 spotColor = LoginBlue.copy(alpha = 0.24f),
@@ -333,7 +336,7 @@ private fun PointIqGoogleButton(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .height(54.dp)
             .testTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG),
     ) {
         Image(
@@ -350,6 +353,30 @@ private fun PointIqGoogleButton(
 }
 
 @Composable
+private fun PointIqSignUpPrompt(
+    onSignUp: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.pointiq_no_account_prompt),
+            color = LoginBody,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        )
+        TextButton(onClick = onSignUp) {
+            Text(
+                text = stringResource(R.string.auth_signup_mode),
+                color = LoginBlue,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PointIqSecurityFooter() {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -357,20 +384,22 @@ private fun PointIqSecurityFooter() {
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(32.dp)
                 .clip(CircleShape)
                 .background(LoginSoftBlue),
             contentAlignment = Alignment.Center,
         ) {
-            PointIqShieldIcon(modifier = Modifier.size(20.dp))
+            PointIqShieldIcon(modifier = Modifier.size(18.dp))
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = stringResource(R.string.pointiq_security_message),
             color = LoginBody,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         val legalText = buildAnnotatedString {
             append(stringResource(R.string.pointiq_terms_prefix))
@@ -387,6 +416,8 @@ private fun PointIqSecurityFooter() {
             text = legalText,
             color = LoginMuted,
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
