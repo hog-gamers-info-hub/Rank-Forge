@@ -16,10 +16,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthViewModel
 import com.hoggamers.rankforge.presentation.auth.AuthMode
 import com.hoggamers.rankforge.presentation.auth.AuthScreen
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
+import com.hoggamers.rankforge.presentation.auth.PointIqAuthMessages
+import com.hoggamers.rankforge.presentation.auth.PointIqLoginScreen
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.navigation.RankForgeNavHost
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -107,6 +110,17 @@ fun RankForgeAppContent(
         )
         authUiState.isSignedIn -> authenticatedContent()
         authUiState.isSessionLoading -> AuthSessionLoadingScreen()
+        authUiState.mode == AuthMode.Login -> PointIqLoginScreen(
+            uiState = authUiState,
+            onModeSelected = onAuthModeSelected,
+            onEmailChanged = onAuthEmailChanged,
+            onPasswordChanged = onAuthPasswordChanged,
+            onSubmit = onAuthSubmit,
+            onGoogleSignIn = onAuthGoogleSignIn,
+            onBeginPasswordRecovery = onAuthBeginPasswordRecovery,
+            modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
+            messages = { PointIqAuthMessages(authUiState) },
+        )
         else -> AuthScreen(
             uiState = authUiState,
             onModeSelected = onAuthModeSelected,
