@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,10 +48,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -74,6 +77,12 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+
+private val PointIqMatchReviewNavy = Color(0xFF071B3E)
+private val PointIqMatchReviewBody = Color(0xFF607393)
+private val PointIqMatchReviewBlue = Color(0xFF176AF7)
+private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
+private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
@@ -599,6 +608,11 @@ private fun MatchReviewContent(
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
+    val isEmptyScreenshotUi = !showLegacyManualReviewContent &&
+        lobbyUiState.slots.none { slot ->
+            slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
+        } &&
+        uiState.resultScreenshots.none { it.hasSelection() }
 
     RankForgeScreenContainer(
         modifier = Modifier
@@ -616,7 +630,16 @@ private fun MatchReviewContent(
                 },
                 uiState.matchNumber ?: 0,
             ),
-            style = MaterialTheme.typography.headlineMedium,
+            style = if (isEmptyScreenshotUi) {
+                MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 28.sp,
+                    lineHeight = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else {
+                MaterialTheme.typography.headlineMedium
+            },
+            color = if (isEmptyScreenshotUi) PointIqMatchReviewNavy else Color.Unspecified,
         )
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -687,6 +710,38 @@ private fun MatchReviewContent(
                 MatchCorrectionHistory(uiState.correctionHistory)
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             }
+        } else if (isEmptyScreenshotUi) {
+            Spacer(modifier = Modifier.height(14.dp))
+            PointIqEmptyMatchReviewSection(
+                modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
+            ) {
+                matchLobbyScreenshotIntake()
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            PointIqEmptyMatchReviewSection(
+                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(R.string.match_review_result_screenshots_title),
+                    color = PointIqMatchReviewNavy,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.pointiq_match_review_result_description),
+                    color = PointIqMatchReviewBody,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
+                ResultScreenshotSelector(
+                    resultScreenshots = uiState.resultScreenshots,
+                    isEditable = uiState.isEditable,
+                    onSelectScreenshot = onSelectResultScreenshot,
+                    onSelectBatch = onSelectResultScreenshotBatch,
+                    onOpenCrop = onOpenResultScreenshotCrop,
+                    onRemoveScreenshot = onRemoveResultScreenshot,
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         } else {
             Box(
                 modifier = Modifier
@@ -706,14 +761,16 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
             )
         }
-        ResultScreenshotSelector(
-            resultScreenshots = uiState.resultScreenshots,
-            isEditable = uiState.isEditable,
-            onSelectScreenshot = onSelectResultScreenshot,
-            onSelectBatch = onSelectResultScreenshotBatch,
-            onOpenCrop = onOpenResultScreenshotCrop,
-            onRemoveScreenshot = onRemoveResultScreenshot,
-        )
+        if (showLegacyManualReviewContent || !isEmptyScreenshotUi) {
+            ResultScreenshotSelector(
+                resultScreenshots = uiState.resultScreenshots,
+                isEditable = uiState.isEditable,
+                onSelectScreenshot = onSelectResultScreenshot,
+                onSelectBatch = onSelectResultScreenshotBatch,
+                onOpenCrop = onOpenResultScreenshotCrop,
+                onRemoveScreenshot = onRemoveResultScreenshot,
+            )
+        }
         if (showOcrPreflight) {
             MatchOcrScreenshotPreflightDialog(
                 items = ocrPreflightItems,
@@ -1070,6 +1127,30 @@ private fun MatchReviewContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun PointIqEmptyMatchReviewSection(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = PointIqMatchReviewCard,
+        border = BorderStroke(1.dp, PointIqMatchReviewBorder),
+        tonalElevation = 0.dp,
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            content()
+        }
     }
 }
 
@@ -1760,6 +1841,14 @@ private fun ResultScreenshotSelector(
             Button(
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
                 enabled = isEditable && !slot.isBusy,
+                colors = if (selectedPages.isEmpty()) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
