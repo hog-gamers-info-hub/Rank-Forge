@@ -83,16 +83,16 @@ internal fun PointIqTournamentHomeContent(
                     Text(
                         text = stringResource(R.string.pointiq_home_title),
                         color = PointIqHomeNavy,
-                        fontSize = 31.sp,
-                        lineHeight = 36.sp,
+                        fontSize = 28.sp,
+                        lineHeight = 32.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.pointiq_home_subtitle),
                         color = PointIqHomeBody,
-                        style = MaterialTheme.typography.bodyLarge,
-                        lineHeight = 24.sp,
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 21.sp,
                     )
                     Spacer(modifier = Modifier.height(26.dp))
                     PointIqCreateTournamentCard(onClick = onCreateTournament)
@@ -176,8 +176,8 @@ private fun PointIqCreateTournamentCard(
                 Text(
                     text = stringResource(R.string.pointiq_home_create_title),
                     color = Color.White,
-                    fontSize = 20.sp,
-                    lineHeight = 24.sp,
+                    fontSize = 18.sp,
+                    lineHeight = 22.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
