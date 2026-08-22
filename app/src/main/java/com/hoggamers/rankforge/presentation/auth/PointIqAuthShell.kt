@@ -105,7 +105,9 @@ private fun PointIqBrandHeader(
     icon: Painter,
 ) {
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
