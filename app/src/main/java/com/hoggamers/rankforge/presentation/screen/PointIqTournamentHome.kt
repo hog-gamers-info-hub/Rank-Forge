@@ -152,22 +152,22 @@ private fun PointIqCreateTournamentCard(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(58.dp)
+                    .size(52.dp)
                     .background(Color.White, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 PointIqPlusIcon(
                     color = PointIqHomeBlue,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
 
-            Spacer(modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -176,9 +176,11 @@ private fun PointIqCreateTournamentCard(
                 Text(
                     text = stringResource(R.string.pointiq_home_create_title),
                     color = Color.White,
-                    fontSize = 18.sp,
-                    lineHeight = 22.sp,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -190,7 +192,7 @@ private fun PointIqCreateTournamentCard(
 
             PointIqChevronIcon(
                 color = Color.White,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(24.dp),
             )
         }
     }
