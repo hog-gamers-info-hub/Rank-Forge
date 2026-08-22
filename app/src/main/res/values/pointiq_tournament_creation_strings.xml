@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_tournament_creation_title">Create Tournament</string>
+    <string name="pointiq_tournament_creation_description">Add basic information to set up your tournament</string>
+    <string name="pointiq_contact_number_label">Contact Number</string>
+    <string name="pointiq_create_tournament_action">Create Tournament</string>
+</resources>
