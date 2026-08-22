@@ -312,10 +312,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
                         ) {
                             Text(
-                                text = stringResource(
-                                    R.string.match_lobby_screenshot_select_index_action,
-                                    nextEmptySlot.index,
-                                ),
+                                text = if (selectedSlots.isEmpty()) {
+                                    stringResource(R.string.pointiq_match_review_upload_lobby_screenshots)
+                                } else {
+                                    stringResource(
+                                        R.string.match_lobby_screenshot_select_index_action,
+                                        nextEmptySlot.index,
+                                    )
+                                },
                             )
                         }
                     }
