@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(16, cursor.getInt(0))
+                assertEquals(17, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -161,6 +161,32 @@ class RankForgeDatabaseMigrationTest {
         }
         assertTrue(migrated.hasIndex("index_deletion_intents_tournament_id"))
         assertTrue(migrated.hasIndex("index_deletion_intents_phase"))
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion16AddsUnknownLastUpdatedWithoutFabricatingHistory() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 16).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, creation_order) " +
+                    "VALUES ('legacy-summary', 'Legacy Cup', '2026-08-22', 'Organizer', '123', 'DRAFT', 1)",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            17,
+            true,
+            RankForgeDatabase.MIGRATION_16_17,
+        )
+
+        migrated.query(
+            "SELECT name, last_updated_epoch_millis FROM tournaments WHERE id = 'legacy-summary'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Legacy Cup", cursor.getString(0))
+            assertNull(cursor.getString(1))
+        }
         migrated.close()
     }
 

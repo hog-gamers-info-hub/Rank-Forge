@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.data.local.TournamentEntity
+import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
@@ -22,11 +23,15 @@ import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import java.time.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-internal fun Tournament.toEntity(creationOrder: Long): TournamentEntity = TournamentEntity(
+internal fun Tournament.toEntity(
+    creationOrder: Long,
+    lastUpdatedEpochMillis: Long? = null,
+): TournamentEntity = TournamentEntity(
     id = id,
     name = name,
     date = date.toString(),
@@ -34,6 +39,7 @@ internal fun Tournament.toEntity(creationOrder: Long): TournamentEntity = Tourna
     organizerContactNumber = organizerContactNumber,
     status = status.name,
     creationOrder = creationOrder,
+    lastUpdatedEpochMillis = lastUpdatedEpochMillis,
 )
 
 internal fun TournamentEntity.toDomain(): Tournament = Tournament(
@@ -43,6 +49,20 @@ internal fun TournamentEntity.toDomain(): Tournament = Tournament(
     organizerName = organizerName,
     organizerContactNumber = organizerContactNumber,
     status = TournamentStatus.valueOf(status),
+)
+
+internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = TournamentSummary(
+    tournament = Tournament(
+        id = id,
+        name = name,
+        date = LocalDate.parse(date),
+        organizerName = organizerName,
+        organizerContactNumber = organizerContactNumber,
+        status = TournamentStatus.valueOf(status),
+    ),
+    totalTeams = totalTeams,
+    totalMatches = totalMatches,
+    lastUpdatedEpochMillis = lastUpdatedEpochMillis,
 )
 
 internal fun TeamSlot.toEntity(): TeamSlotEntity = TeamSlotEntity(

@@ -52,11 +52,13 @@ import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.sync.detectDivergence
 import java.time.LocalDate
+import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -86,6 +88,7 @@ class RoomTournamentRepository @Inject constructor(
     private val database: RankForgeDatabase,
     private val localImagePreserver: LocalImagePreserver,
     private val deletionIntentRepository: DeletionIntentRepository,
+    private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
     LocalDeletionRepository {
     constructor(database: RankForgeDatabase) : this(
@@ -96,6 +99,7 @@ class RoomTournamentRepository @Inject constructor(
             mimeTypeReader = ImageSourceMimeTypeReader { null },
         ),
         deletionIntentRepository = NoOpDeletionIntentRepository,
+        clock = Clock.systemUTC(),
     )
 
     constructor(
@@ -105,6 +109,29 @@ class RoomTournamentRepository @Inject constructor(
         database = database,
         localImagePreserver = localImagePreserver,
         deletionIntentRepository = NoOpDeletionIntentRepository,
+        clock = Clock.systemUTC(),
+    )
+
+    constructor(
+        database: RankForgeDatabase,
+        localImagePreserver: LocalImagePreserver,
+        deletionIntentRepository: DeletionIntentRepository,
+    ) : this(
+        database = database,
+        localImagePreserver = localImagePreserver,
+        deletionIntentRepository = deletionIntentRepository,
+        clock = Clock.systemUTC(),
+    )
+
+    constructor(database: RankForgeDatabase, clock: Clock) : this(
+        database = database,
+        localImagePreserver = LocalImagePreserver(
+            appPrivateRoot = File(System.getProperty("java.io.tmpdir"), "rank-forge-repository-default"),
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { null },
+        ),
+        deletionIntentRepository = NoOpDeletionIntentRepository,
+        clock = clock,
     )
 
     private val state = MutableStateFlow(RepositoryState())
@@ -250,6 +277,13 @@ class RoomTournamentRepository @Inject constructor(
         })
     }
 
+    override fun observeSummaries(): Flow<List<TournamentSummary>> = flow {
+        ready.await()
+        emitAll(database.tournamentDao().observeSummaries().map { summaries ->
+            summaries.map { it.toDomain() }
+        })
+    }
+
     override fun observeById(tournamentId: String): Flow<Tournament?> = flow {
         ready.await()
         emitAll(database.tournamentDao().observeById(tournamentId).map { it?.toDomain() })
@@ -340,6 +374,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.tournamentDao().upsert(
                     tournament.toEntity(
                         creationOrder = database.tournamentDao().nextCreationOrder(),
+                        lastUpdatedEpochMillis = clock.millis(),
                     ),
                 )
                 val normalizedSlots = TeamSlot.fixedSlotsForTournament(tournament.id)
@@ -389,6 +424,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.matchDao().deleteById(matchId)
                 // The queue stores tournamentId only, so purge the full tournament scope.
                 database.syncQueueDao().deleteByTournamentId(match.tournamentId)
+                touchTournament(match.tournamentId)
                 saveLegacyState(next)
             }
             state.value = next
@@ -507,14 +543,14 @@ class RoomTournamentRepository @Inject constructor(
                     ),
             )
             database.withTransaction {
-                val existingCreationOrder = database.tournamentDao()
+                val existingTournament = database.tournamentDao()
                     .observeById(snapshot.tournament.id)
                     .first()
-                    ?.creationOrder
                 database.tournamentDao().upsert(
                     snapshot.tournament.toEntity(
-                        creationOrder = existingCreationOrder
+                        creationOrder = existingTournament?.creationOrder
                             ?: database.tournamentDao().nextCreationOrder(),
+                        lastUpdatedEpochMillis = existingTournament?.lastUpdatedEpochMillis,
                     ),
                 )
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
@@ -636,9 +672,15 @@ class RoomTournamentRepository @Inject constructor(
                 },
                 slots = current.slots + (tournamentId to updatedSlots),
             )
+            val teamNamesChanged = updatedSlots != slots
+            val tournamentStatusChanged = current.tournaments
+                .firstOrNull { it.id == tournamentId }
+                ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
+            if (!teamNamesChanged && !tournamentStatusChanged) return@withLock
             database.withTransaction {
                 database.teamSlotDao().upsertAll(updatedSlots.map { it.toEntity() })
                 persistTournamentStatusChanges(current, next)
+                touchTournament(tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(tournamentId)
             }
@@ -692,10 +734,16 @@ class RoomTournamentRepository @Inject constructor(
                 },
                 rosters = current.rosters + (RosterKey(tournamentId, slotNumber) to players.toList()),
             )
+            val tournamentStatusChanged = current.tournaments
+                .firstOrNull { it.id == tournamentId }
+                ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
             database.withTransaction {
                 database.rosterPlayerDao().deleteByTournamentAndSlot(tournamentId, slotNumber)
                 database.rosterPlayerDao().upsertAll(players.toEntities())
                 persistTournamentStatusChanges(current, next)
+                if (tournamentStatusChanged) {
+                    touchTournament(tournamentId)
+                }
                 saveLegacyState(next)
                 markLocalRevisionChanged(tournamentId)
             }
@@ -732,6 +780,9 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches
                 }
 
+                val existingSlots = database.teamSlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
                 val confirmedTournament = tournamentEntity.toDomain().copy(status = TournamentStatus.CONFIRMED)
                 val replacementSlots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
                     TeamSlot(
@@ -759,6 +810,11 @@ class RoomTournamentRepository @Inject constructor(
                         .filterKeys { it.tournamentId != candidate.tournamentId }
                         .plus(replacementRosters),
                 )
+                val teamNamesChanged = TeamSlot.SLOT_NUMBERS.any { slotNumber ->
+                    existingSlots.firstOrNull { it.slotNumber == slotNumber }?.teamName !=
+                        candidate.teamNamesBySlotNumber.getValue(slotNumber)
+                }
+                val tournamentStatusChanged = tournamentEntity.toDomain().status != TournamentStatus.CONFIRMED
 
                 database.teamSlotDao().upsertAll(replacementSlots.map { it.toEntity() })
                 TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
@@ -771,6 +827,9 @@ class RoomTournamentRepository @Inject constructor(
                     },
                 )
                 persistTournamentStatusChanges(state.value, next)
+                if (teamNamesChanged || tournamentStatusChanged) {
+                    touchTournament(candidate.tournamentId)
+                }
                 saveLegacyState(next)
                 markLocalRevisionChanged(candidate.tournamentId)
                 updatedState = next
@@ -914,6 +973,7 @@ class RoomTournamentRepository @Inject constructor(
                 replaceMatchPlacements(match.id, match.placements)
                 replaceMatchKills(match.id, match.kills)
                 replaceMatchCorrections(match.id, match.correctionHistory)
+                touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(match.tournamentId)
             }
@@ -947,10 +1007,14 @@ class RoomTournamentRepository @Inject constructor(
                 return@withLock SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.DUPLICATE_POSITION)
             }
             val updatedMatch = match.copy(placements = placements.toList())
+            if (updatedMatch.placements == match.placements) {
+                return@withLock SaveMatchPlacementsRepositoryResult.Saved
+            }
             val next = current.replaceMatch(match.id) { updatedMatch }
             database.withTransaction {
                 database.matchDao().upsert(updatedMatch.toEntity())
                 replaceMatchPlacements(matchId, placements)
+                touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(match.tournamentId)
             }
@@ -981,10 +1045,14 @@ class RoomTournamentRepository @Inject constructor(
                 return@withLock SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.DUPLICATE_TEAM_SLOT)
             }
             val updatedMatch = match.copy(kills = kills.toList())
+            if (updatedMatch.kills == match.kills) {
+                return@withLock SaveMatchKillsRepositoryResult.Saved
+            }
             val next = current.replaceMatch(match.id) { updatedMatch }
             database.withTransaction {
                 database.matchDao().upsert(updatedMatch.toEntity())
                 replaceMatchKills(matchId, kills)
+                touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(match.tournamentId)
             }
@@ -1105,6 +1173,7 @@ class RoomTournamentRepository @Inject constructor(
                     replaceMatchKills(matchId, kills)
                     replaceMatchParticipantResults(matchId, finalizedParticipantResults)
                     database.matchDraftValueDao().deleteByMatchId(matchId)
+                    touchTournament(match.tournamentId)
                     saveLegacyState(next)
                     markLocalRevisionChanged(match.tournamentId)
                     evidence?.let { preservedEvidence ->
@@ -1184,6 +1253,7 @@ class RoomTournamentRepository @Inject constructor(
                 replaceMatchParticipantResults(matchId, correctedMatch.participantResults)
                 replaceMatchCorrections(matchId, correctedMatch.correctionHistory)
                 database.matchDraftValueDao().deleteByMatchId(matchId)
+                touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(match.tournamentId)
             }
@@ -1229,6 +1299,7 @@ class RoomTournamentRepository @Inject constructor(
             )
             database.withTransaction {
                 database.matchDraftValueDao().upsert(updated.toEntity(match.id, teamSlotNumber))
+                if (updated != old) touchTournament(tournamentId)
                 saveLegacyState(next)
             }
             state.value = next
@@ -1241,6 +1312,8 @@ class RoomTournamentRepository @Inject constructor(
             val current = state.value
             val match = current.matches[tournamentId].orEmpty().firstOrNull { it.id == matchId } ?: return@withLock
             val clearedMatch = match.copy(placements = emptyList(), kills = emptyList())
+            val hadDraftValues = current.draftValues[DraftKey(tournamentId, matchId)].orEmpty().isNotEmpty()
+            if (clearedMatch == match && !hadDraftValues) return@withLock
             val next = current.copy(
                 matches = current.matches.replaceMatch(tournamentId, matchId) { clearedMatch },
                 draftValues = current.draftValues - DraftKey(tournamentId, matchId),
@@ -1250,6 +1323,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.matchPlacementDao().deleteByMatchId(matchId)
                 database.matchKillDao().deleteByMatchId(matchId)
                 database.matchDraftValueDao().deleteByMatchId(matchId)
+                touchTournament(tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(tournamentId)
             }
@@ -1262,9 +1336,11 @@ class RoomTournamentRepository @Inject constructor(
         writeMutex.withLock {
             val current = state.value
             if (current.matches[tournamentId].orEmpty().none { it.id == matchId }) return@withLock
+            if (current.draftValues[DraftKey(tournamentId, matchId)].orEmpty().isEmpty()) return@withLock
             val next = current.copy(draftValues = current.draftValues - DraftKey(tournamentId, matchId))
             database.withTransaction {
                 database.matchDraftValueDao().deleteByMatchId(matchId)
+                touchTournament(tournamentId)
                 saveLegacyState(next)
             }
             state.value = next
@@ -1283,6 +1359,9 @@ class RoomTournamentRepository @Inject constructor(
             val next = transform(current)
             database.withTransaction {
                 persistTournamentStatusChanges(current, next)
+                current.tournaments.zip(next.tournaments)
+                    .filter { (before, after) -> before.status != after.status }
+                    .forEach { (_, tournament) -> touchTournament(tournament.id) }
                 saveLegacyState(next)
             }
             state.value = next
@@ -1298,12 +1377,17 @@ class RoomTournamentRepository @Inject constructor(
                 current.tournaments.firstOrNull { it.id == nextTournament.id }?.status != nextTournament.status
             }
             .forEach { tournament ->
-                val creationOrder = database.tournamentDao()
+                val existingTournament = database.tournamentDao()
                     .observeById(tournament.id)
                     .first()
-                    ?.creationOrder
+                val creationOrder = existingTournament?.creationOrder
                     ?: database.tournamentDao().nextCreationOrder()
-                database.tournamentDao().upsert(tournament.toEntity(creationOrder))
+                database.tournamentDao().upsert(
+                    tournament.toEntity(
+                        creationOrder = creationOrder,
+                        lastUpdatedEpochMillis = existingTournament?.lastUpdatedEpochMillis,
+                    ),
+                )
             }
     }
 
@@ -1493,6 +1577,10 @@ class RoomTournamentRepository @Inject constructor(
         } else {
             revisions.incrementLocalRevision(tournamentId)
         }
+    }
+
+    private suspend fun touchTournament(tournamentId: String) {
+        database.tournamentDao().updateLastUpdatedEpochMillis(tournamentId, clock.millis())
     }
 
     private fun PreservedMatchOcrEvidence.isValidFor(
