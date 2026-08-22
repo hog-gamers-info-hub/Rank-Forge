@@ -5,14 +5,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -31,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -41,14 +37,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 
@@ -56,9 +48,13 @@ private val LoginNavy = Color(0xFF071B3E)
 private val LoginBody = Color(0xFF40536F)
 private val LoginMuted = Color(0xFF7A8BA4)
 private val LoginBlue = Color(0xFF176AF7)
-private val LoginCyan = Color(0xFF17C9F2)
 private val LoginBorder = Color(0xFFD9E4F2)
-private val LoginSoftBlue = Color(0xFFEAF6FF)
+private val LoginButtonStart = Color(0xFF082A63)
+private val LoginButtonMiddle = Color(0xFF0A4AA6)
+private val LoginButtonEnd = Color(0xFF0C6CD9)
+private val LoginButtonDisabledStart = Color(0xFF18365F)
+private val LoginButtonDisabledMiddle = Color(0xFF1B4F87)
+private val LoginButtonDisabledEnd = Color(0xFF2B6FA5)
 
 @Composable
 internal fun PointIqLoginScreen(
@@ -137,10 +133,6 @@ internal fun PointIqLoginScreen(
         )
 
         messages()
-
-        Spacer(modifier = Modifier.height(12.dp))
-        PointIqSecurityFooter()
-        Spacer(modifier = Modifier.height(4.dp))
     }
 }
 
@@ -246,14 +238,14 @@ private fun PointIqPrimaryButton(
     val shape = RoundedCornerShape(16.dp)
     val gradient = if (enabled) {
         Brush.horizontalGradient(
-            listOf(LoginNavy, LoginBlue, LoginCyan),
+            listOf(LoginButtonStart, LoginButtonMiddle, LoginButtonEnd),
         )
     } else {
         Brush.horizontalGradient(
             listOf(
-                LoginNavy.copy(alpha = 0.48f),
-                LoginBlue.copy(alpha = 0.48f),
-                LoginCyan.copy(alpha = 0.48f),
+                LoginButtonDisabledStart,
+                LoginButtonDisabledMiddle,
+                LoginButtonDisabledEnd,
             ),
         )
     }
@@ -266,7 +258,7 @@ private fun PointIqPrimaryButton(
             containerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
             contentColor = Color.White,
-            disabledContentColor = Color.White.copy(alpha = 0.8f),
+            disabledContentColor = Color.White.copy(alpha = 0.92f),
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier
@@ -377,52 +369,6 @@ private fun PointIqSignUpPrompt(
 }
 
 @Composable
-private fun PointIqSecurityFooter() {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(LoginSoftBlue),
-            contentAlignment = Alignment.Center,
-        ) {
-            PointIqShieldIcon(modifier = Modifier.size(18.dp))
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = stringResource(R.string.pointiq_security_message),
-            color = LoginBody,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-
-        val legalText = buildAnnotatedString {
-            append(stringResource(R.string.pointiq_terms_prefix))
-            withStyle(SpanStyle(color = LoginBlue, fontWeight = FontWeight.Medium)) {
-                append(stringResource(R.string.pointiq_terms_service))
-            }
-            append(stringResource(R.string.pointiq_terms_and))
-            withStyle(SpanStyle(color = LoginBlue, fontWeight = FontWeight.Medium)) {
-                append(stringResource(R.string.pointiq_privacy_policy))
-            }
-            append(".")
-        }
-        Text(
-            text = legalText,
-            color = LoginMuted,
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
 private fun PointIqMailIcon() {
     Canvas(modifier = Modifier.size(22.dp)) {
         val stroke = 1.7.dp.toPx()
@@ -439,8 +385,18 @@ private fun PointIqMailIcon() {
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
             style = Stroke(stroke),
         )
-        drawLine(color, Offset(left + stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
-        drawLine(color, Offset(right - stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
+        drawLine(
+            color,
+            Offset(left + stroke, top + stroke),
+            Offset(size.width / 2f, size.height * 0.52f),
+            stroke,
+        )
+        drawLine(
+            color,
+            Offset(right - stroke, top + stroke),
+            Offset(size.width / 2f, size.height * 0.52f),
+            stroke,
+        )
     }
 }
 
@@ -475,10 +431,30 @@ private fun PointIqEyeIcon(visible: Boolean) {
         val color = LoginMuted
         val eye = Path().apply {
             moveTo(size.width * 0.08f, size.height * 0.5f)
-            quadraticBezierTo(size.width * 0.28f, size.height * 0.18f, size.width * 0.5f, size.height * 0.18f)
-            quadraticBezierTo(size.width * 0.72f, size.height * 0.18f, size.width * 0.92f, size.height * 0.5f)
-            quadraticBezierTo(size.width * 0.72f, size.height * 0.82f, size.width * 0.5f, size.height * 0.82f)
-            quadraticBezierTo(size.width * 0.28f, size.height * 0.82f, size.width * 0.08f, size.height * 0.5f)
+            quadraticBezierTo(
+                size.width * 0.28f,
+                size.height * 0.18f,
+                size.width * 0.5f,
+                size.height * 0.18f,
+            )
+            quadraticBezierTo(
+                size.width * 0.72f,
+                size.height * 0.18f,
+                size.width * 0.92f,
+                size.height * 0.5f,
+            )
+            quadraticBezierTo(
+                size.width * 0.72f,
+                size.height * 0.82f,
+                size.width * 0.5f,
+                size.height * 0.82f,
+            )
+            quadraticBezierTo(
+                size.width * 0.28f,
+                size.height * 0.82f,
+                size.width * 0.08f,
+                size.height * 0.5f,
+            )
             close()
         }
         drawPath(eye, color = color, style = Stroke(stroke))
@@ -517,21 +493,5 @@ private fun PointIqArrowIcon(modifier: Modifier = Modifier) {
             end = Offset(size.width * 0.76f, size.height * 0.5f),
             strokeWidth = stroke,
         )
-    }
-}
-
-@Composable
-private fun PointIqShieldIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val path = Path().apply {
-            moveTo(size.width * 0.5f, size.height * 0.08f)
-            lineTo(size.width * 0.82f, size.height * 0.22f)
-            lineTo(size.width * 0.78f, size.height * 0.58f)
-            quadraticBezierTo(size.width * 0.72f, size.height * 0.82f, size.width * 0.5f, size.height * 0.94f)
-            quadraticBezierTo(size.width * 0.28f, size.height * 0.82f, size.width * 0.22f, size.height * 0.58f)
-            lineTo(size.width * 0.18f, size.height * 0.22f)
-            close()
-        }
-        drawPath(path, color = LoginBlue.copy(alpha = 0.9f), style = Stroke(1.7.dp.toPx()))
     }
 }
