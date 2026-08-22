@@ -65,8 +65,13 @@ import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionR
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -2810,11 +2815,25 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     ): TournamentCreationViewModel {
         val today = LocalDate.of(2026, 7, 24)
         return TournamentCreationViewModel(
-            CreateTournamentUseCase(
+            createTournament = CreateTournamentUseCase(
                 repository = repository,
                 clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             ),
-            uploadAction,
+            clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
+            checkTournamentQuota = CheckTournamentQuotaUseCase(
+                object : TournamentQuotaRepository {
+                    override suspend fun checkQuota(): TournamentQuotaResult =
+                        TournamentQuotaResult.Allowed(0)
+                },
+            ),
+            uploadTournament = uploadAction,
+            localDeletionRepository = object : LocalDeletionRepository {
+                override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult =
+                    LocalDeletionResult.NotFound
+
+                override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult =
+                    LocalDeletionResult.NotFound
+            },
         )
     }
 

@@ -79,6 +79,8 @@ private fun TournamentCloudUploadResult.toUiState(): TournamentCloudUploadUiStat
     TournamentCloudUploadResult.AuthorizationFailure ->
         TournamentCloudUploadUiState.AuthorizationFailure
     TournamentCloudUploadResult.NetworkFailure -> TournamentCloudUploadUiState.NetworkFailure
+    TournamentCloudUploadResult.TournamentLimitReached ->
+        TournamentCloudUploadUiState.ValidationFailure
     is TournamentCloudUploadResult.Conflict -> TournamentCloudUploadUiState.ValidationFailure
     is TournamentCloudUploadResult.PartialFailure ->
         TournamentCloudUploadUiState.PartialFailure(completedStage)

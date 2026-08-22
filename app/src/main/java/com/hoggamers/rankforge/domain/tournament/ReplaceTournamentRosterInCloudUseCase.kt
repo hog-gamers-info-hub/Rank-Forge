@@ -161,6 +161,7 @@ private fun TournamentCloudUploadResult.toRosterResult(): TournamentRosterCloudR
     TournamentCloudUploadResult.AuthorizationFailure ->
         TournamentRosterCloudReplacementResult.AuthorizationFailure
     TournamentCloudUploadResult.NetworkFailure,
+    TournamentCloudUploadResult.TournamentLimitReached,
     is TournamentCloudUploadResult.PartialFailure,
     -> TournamentRosterCloudReplacementResult.NetworkFailure
     is TournamentCloudUploadResult.Conflict ->

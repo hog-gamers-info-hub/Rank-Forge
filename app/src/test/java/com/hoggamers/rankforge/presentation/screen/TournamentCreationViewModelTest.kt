@@ -24,11 +24,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 
@@ -38,6 +43,8 @@ class TournamentCreationViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: TestTournamentRepository
     private lateinit var uploadAction: FakeTournamentCloudUploadAction
+    private lateinit var quotaRepository: FakeTournamentQuotaRepository
+    private lateinit var localDeletionRepository: RecordingLocalDeletionRepository
     private lateinit var viewModel: TournamentCreationViewModel
 
     @Before
@@ -45,6 +52,8 @@ class TournamentCreationViewModelTest {
         Dispatchers.setMain(dispatcher)
         repository = TestTournamentRepository()
         uploadAction = FakeTournamentCloudUploadAction()
+        quotaRepository = FakeTournamentQuotaRepository()
+        localDeletionRepository = RecordingLocalDeletionRepository()
         viewModel = viewModel()
     }
 
@@ -88,6 +97,127 @@ class TournamentCreationViewModelTest {
         assertTrue(repository.records.isEmpty())
         assertNull(viewModel.uiState.value.navigation)
         assertTrue(uploadAction.tournamentIds.isEmpty())
+    }
+
+    @Test
+    fun cloudCountFourAllowsCreation() = runTest {
+        quotaRepository.result = TournamentQuotaResult.Allowed(4)
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
+    }
+
+    @Test
+    fun cloudCountFiveBlocksCreationBeforeLocalWrite() = runTest {
+        quotaRepository.result = TournamentQuotaResult.LimitReached(5)
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(repository.records.isEmpty())
+        assertTrue(uploadAction.tournamentIds.isEmpty())
+        assertEquals(
+            TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
+            viewModel.uiState.value.submissionError,
+        )
+        assertNull(viewModel.uiState.value.navigation)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun cloudCountAboveFiveBlocksCreationBeforeLocalWrite() = runTest {
+        quotaRepository.result = TournamentQuotaResult.LimitReached(7)
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(repository.records.isEmpty())
+        assertEquals(
+            TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
+            viewModel.uiState.value.submissionError,
+        )
+    }
+
+    @Test
+    fun quotaNetworkFailureFailsClosedWithoutLocalCreation() = runTest {
+        quotaRepository.result = TournamentQuotaResult.NetworkFailure
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(repository.records.isEmpty())
+        assertEquals(
+            TournamentCreationSubmissionError.QUOTA_CHECK_FAILED,
+            viewModel.uiState.value.submissionError,
+        )
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun quotaAuthenticationFailureFailsClosedWithoutLocalCreation() = runTest {
+        quotaRepository.result = TournamentQuotaResult.AuthenticationRequired
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(repository.records.isEmpty())
+        assertEquals(
+            TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED,
+            viewModel.uiState.value.submissionError,
+        )
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun uploadRaceLimitRollsBackOnlyNewTournamentAndDoesNotNavigate() = runTest {
+        quotaRepository.result = TournamentQuotaResult.Allowed(4)
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.TournamentLimitReached,
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        val existingTournamentId = "existing-tournament"
+        repository.records += Tournament(
+            id = existingTournamentId,
+            name = "Existing",
+            date = today,
+            organizerName = "Existing organizer",
+            organizerContactNumber = "",
+            status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.DRAFT,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val newTournamentId = uploadAction.tournamentIds.single()
+        assertEquals(listOf(newTournamentId), localDeletionRepository.deletedTournamentIds)
+        assertEquals(existingTournamentId, repository.records.first().id)
+        assertEquals(
+            TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
+            viewModel.uiState.value.submissionError,
+        )
+        assertNull(viewModel.uiState.value.navigation)
+        assertFalse(viewModel.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun changingFormAfterLimitErrorClearsSubmissionError() = runTest {
+        quotaRepository.result = TournamentQuotaResult.LimitReached(5)
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+        viewModel.onTournamentNameChanged("New name")
+
+        assertNull(viewModel.uiState.value.submissionError)
     }
 
     @Test
@@ -277,8 +407,29 @@ class TournamentCreationViewModelTest {
 
     private fun viewModel() = TournamentCreationViewModel(
         createTournament = createUseCase(repository),
+        clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
+        checkTournamentQuota = CheckTournamentQuotaUseCase(quotaRepository),
         uploadTournament = uploadAction,
+        localDeletionRepository = localDeletionRepository,
     )
+
+    private class FakeTournamentQuotaRepository : TournamentQuotaRepository {
+        var result: TournamentQuotaResult = TournamentQuotaResult.Allowed(0)
+
+        override suspend fun checkQuota(): TournamentQuotaResult = result
+    }
+
+    private class RecordingLocalDeletionRepository : LocalDeletionRepository {
+        val deletedTournamentIds = mutableListOf<String>()
+
+        override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult =
+            LocalDeletionResult.NotFound
+
+        override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
+            deletedTournamentIds += tournamentId
+            return LocalDeletionResult.Deleted
+        }
+    }
 
     private class FakeTournamentCloudUploadAction : TournamentCloudUploadAction {
         val tournamentIds = mutableListOf<String>()

@@ -29,6 +29,7 @@ sealed interface TournamentCloudUploadResult {
     data object ValidationFailure : TournamentCloudUploadResult
     data object AuthorizationFailure : TournamentCloudUploadResult
     data object NetworkFailure : TournamentCloudUploadResult
+    data object TournamentLimitReached : TournamentCloudUploadResult
     data class Conflict(val conflict: RevisionConflict) : TournamentCloudUploadResult
     data class PartialFailure(
         val completedStage: TournamentCloudUploadStage,

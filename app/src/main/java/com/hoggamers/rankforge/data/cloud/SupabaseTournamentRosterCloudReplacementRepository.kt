@@ -39,6 +39,8 @@ private fun TournamentRosterCloudReplacementRemoteResult.toDomainResult(): Tourn
         CloudUploadFailureCategory.AUTHENTICATION -> TournamentRosterCloudReplacementResult.AuthenticationRequired
         CloudUploadFailureCategory.AUTHORIZATION -> TournamentRosterCloudReplacementResult.AuthorizationFailure
         CloudUploadFailureCategory.NETWORK -> TournamentRosterCloudReplacementResult.NetworkFailure
+        CloudUploadFailureCategory.TOURNAMENT_LIMIT_REACHED ->
+            TournamentRosterCloudReplacementResult.ValidationFailure
         CloudUploadFailureCategory.VALIDATION -> TournamentRosterCloudReplacementResult.ValidationFailure
         CloudUploadFailureCategory.CONFLICT -> TournamentRosterCloudReplacementResult.Conflict(
             RevisionConflict.MissingRevision,

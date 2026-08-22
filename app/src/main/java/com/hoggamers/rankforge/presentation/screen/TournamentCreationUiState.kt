@@ -6,6 +6,9 @@ import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 
 enum class TournamentCreationSubmissionError {
     UNKNOWN,
+    TOURNAMENT_LIMIT_REACHED,
+    QUOTA_CHECK_FAILED,
+    AUTHENTICATION_REQUIRED,
 }
 
 sealed interface TournamentCreationNavigation {

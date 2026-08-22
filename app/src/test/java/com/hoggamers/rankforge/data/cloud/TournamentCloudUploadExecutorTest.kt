@@ -38,6 +38,20 @@ class TournamentCloudUploadExecutorTest {
         assertTrue("players" !in calls)
     }
 
+    @Test
+    fun mapsStableTournamentLimitDatabaseError() = runBlocking {
+        val executor = TournamentCloudUploadExecutor(
+            upsertTournament = { error("TOURNAMENT_LIMIT_REACHED") },
+            upsertTeamSlots = {},
+            upsertPlayers = {},
+        )
+
+        val result = executor.execute(payloads()) as CloudUploadExecutionResult.Failure
+
+        assertEquals(CloudUploadFailureCategory.TOURNAMENT_LIMIT_REACHED, result.category)
+        assertEquals(null, result.completedStage)
+    }
+
     private fun payloads() = TournamentCloudUploadPayloads(
         tournament = TournamentUploadPayload(
             id = "11111111-1111-1111-1111-111111111111",

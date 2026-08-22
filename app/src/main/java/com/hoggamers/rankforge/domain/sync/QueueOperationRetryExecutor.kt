@@ -46,6 +46,10 @@ private fun TournamentCloudUploadResult.toRetryOutcome(): SyncQueueRetryOutcome 
     is TournamentCloudUploadResult.Success -> retryOutcome(SyncQueueStatus.COMPLETED)
     TournamentCloudUploadResult.AuthenticationRequired -> retryOutcome(SyncQueueStatus.BLOCKED_AUTHENTICATION)
     TournamentCloudUploadResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
+    TournamentCloudUploadResult.TournamentLimitReached -> SyncQueueRetryOutcome.Failure(
+        SyncQueueStatus.FAILED_VALIDATION,
+        "TOURNAMENT_LIMIT_REACHED",
+    )
     TournamentCloudUploadResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     TournamentCloudUploadResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
     is TournamentCloudUploadResult.Conflict -> SyncQueueRetryOutcome.Failure(SyncQueueStatus.FAILED_CONFLICT, conflict.queueFailureCategory())
