@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_home_title">Tournament Control</string>
+    <string name="pointiq_home_subtitle">Create, manage and score your tournaments.</string>
+    <string name="pointiq_home_create_title">Create New Tournament</string>
+    <string name="pointiq_home_create_subtitle">Set up teams and start scoring</string>
+    <string name="pointiq_home_recent_title">Recent Tournaments</string>
+    <string name="pointiq_home_view_all">View all</string>
+    <string name="pointiq_home_team_count_one">%1$d team</string>
+    <string name="pointiq_home_team_count_many">%1$d teams</string>
+    <string name="pointiq_home_match_count_one">%1$d match</string>
+    <string name="pointiq_home_match_count_many">%1$d matches</string>
+    <string name="pointiq_home_summary_line">%1$s  •  %2$s</string>
+    <string name="pointiq_home_last_updated">Last updated %1$s</string>
+    <string name="pointiq_home_last_updated_unknown">—</string>
+</resources>
