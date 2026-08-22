@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_match_review_lobby_description">Select all the screenshots of the lobby after all players have joined. Crop tightly to the lobby area and exclude any extra text, overlays, or unrelated content.</string>
+    <string name="pointiq_match_review_result_description">Select all the screenshots showing the final match results. Crop tightly to the results area and exclude any extra text, overlays, or unrelated content.</string>
+    <string name="pointiq_match_review_upload_lobby_screenshots">Upload Lobby Screenshots</string>
+    <string name="pointiq_match_review_upload_result_screenshots">Upload Result Screenshots</string>
+</resources>

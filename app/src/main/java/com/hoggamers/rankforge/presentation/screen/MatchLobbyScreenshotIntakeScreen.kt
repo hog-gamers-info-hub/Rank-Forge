@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +44,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -57,6 +59,10 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+
+private val PointIqMatchReviewNavy = Color(0xFF071B3E)
+private val PointIqMatchReviewBody = Color(0xFF607393)
+private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG = "match_lobby_screenshot_intake_screen"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX = "match_lobby_screenshot_select_"
@@ -184,20 +190,38 @@ fun MatchLobbyScreenshotIntakeScreen(
             }
 
             if (compactActions && !showTitle) {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = stringResource(R.string.match_review_lobby_screenshots_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    LobbyTemplateToggle(
-                        uiState = uiState,
-                        onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
-                        onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.match_review_lobby_screenshots_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (selectedSlots.isEmpty()) {
+                                PointIqMatchReviewNavy
+                            } else {
+                                Color.Unspecified
+                            },
+                        )
+                        LobbyTemplateToggle(
+                            uiState = uiState,
+                            onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
+                            onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                        )
+                    }
+                    if (selectedSlots.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.pointiq_match_review_lobby_description),
+                            color = PointIqMatchReviewBody,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
                 }
             }
 
@@ -271,6 +295,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                             enabled = uiState.isAvailable &&
                                 !uiState.isFinalized &&
                                 !nextEmptySlot.isBusy,
+                            colors = if (selectedSlots.isEmpty()) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = PointIqMatchReviewBlue,
+                                    contentColor = Color.White,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            },
                             contentPadding = PaddingValues(
                                 horizontal = RankForgeSpacing.Small,
                                 vertical = RankForgeSpacing.ExtraSmall,
@@ -280,10 +312,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
                         ) {
                             Text(
-                                text = stringResource(
-                                    R.string.match_lobby_screenshot_select_index_action,
-                                    nextEmptySlot.index,
-                                ),
+                                text = if (selectedSlots.isEmpty()) {
+                                    stringResource(R.string.pointiq_match_review_upload_lobby_screenshots)
+                                } else {
+                                    stringResource(
+                                        R.string.match_lobby_screenshot_select_index_action,
+                                        nextEmptySlot.index,
+                                    )
+                                },
                             )
                         }
                     }
