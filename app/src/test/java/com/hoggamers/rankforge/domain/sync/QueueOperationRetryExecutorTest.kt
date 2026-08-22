@@ -82,6 +82,22 @@ class QueueOperationRetryExecutorTest {
         )
     }
 
+    @Test fun tournamentLimitRetryIsPermanentlyClassifiedAsValidation() = runTest {
+        val outcome = executor(
+            tournamentUpload = TournamentCloudUploadRetryAction {
+                TournamentCloudUploadResult.TournamentLimitReached
+            },
+        ).execute(entry(SyncQueueOperationType.TOURNAMENT_UPLOAD))
+
+        assertEquals(
+            SyncQueueRetryOutcome.Failure(
+                SyncQueueStatus.FAILED_VALIDATION,
+                "TOURNAMENT_LIMIT_REACHED",
+            ),
+            outcome,
+        )
+    }
+
     @Test fun coordinatorWithExecutorUpdatesOnlyTheExistingEntryOnSuccess() = runTest {
         val queuedEntry = entry(SyncQueueOperationType.TOURNAMENT_UPLOAD)
         val repository = RecordingQueueRepository(listOf(queuedEntry))

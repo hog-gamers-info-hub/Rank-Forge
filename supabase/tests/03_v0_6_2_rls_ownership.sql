@@ -103,14 +103,20 @@ select is((
         )
 )::text, '{correct_finalized_match_snapshot,finalize_match_snapshot,write_match_snapshot,write_tournament_snapshot}'::text, 'approved revision-safe RPCs exist');
 select is((
-    select count(*)
+    select coalesce(
+        array_agg(
+            (class_row.relname || ':' || trigger_row.tgname)::text
+            order by class_row.relname, trigger_row.tgname
+        ),
+        array[]::text[]
+    )::text
     from pg_trigger trigger_row
     join pg_class class_row on class_row.oid = trigger_row.tgrelid
     join pg_namespace namespace_row on namespace_row.oid = class_row.relnamespace
     where namespace_row.nspname = 'public'
         and class_row.relname in ('tournaments', 'tournament_team_slots', 'players', 'matches', 'match_results')
         and not trigger_row.tgisinternal
-), 0::bigint, 'core tables have no user-defined triggers');
+), '{tournaments:tournaments_owner_limit_before_insert}'::text, 'core tables have exactly the approved tournament-owner-limit trigger');
 select is((
     select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row

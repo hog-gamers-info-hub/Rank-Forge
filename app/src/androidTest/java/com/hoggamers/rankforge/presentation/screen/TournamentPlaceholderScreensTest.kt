@@ -214,6 +214,31 @@ class TournamentCreationScreenTest {
     }
 
     @Test
+    fun tournamentLimitStateDisplaysSpecificCreationMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentCreationScreen(
+                    uiState = TournamentCreationUiState(
+                        submissionError = TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
+                    ),
+                    onTournamentNameChanged = {},
+                    onTournamentDateChanged = {},
+                    onOrganizerNameChanged = {},
+                    onOrganizerContactNumberChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                    onKeepEditing = {},
+                    onDiscardChanges = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_creation_limit_reached_error),
+        ).assertIsDisplayed()
+    }
+
+    @Test
     fun dirtyBackShowsDialogAndDiscardInvokesExitCallback() {
         var state by mutableStateOf(TournamentCreationUiState(tournamentName = "Draft"))
         var discardCount by mutableStateOf(0)

@@ -87,6 +87,21 @@ class UploadTournamentUseCaseTest {
     }
 
     @Test
+    fun tournamentLimitFailureIsNotQueuedForRetry() = runTest {
+        val queueRepository = RecordingTestQueueRepository()
+        val result = UploadTournamentUseCase(
+            localRepository(),
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            RecordingCloudRepository(TournamentCloudUploadResult.TournamentLimitReached),
+            queueRepository.recorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudUploadResult.TournamentLimitReached, result.primaryResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
+        assertTrue(queueRepository.entries.isEmpty())
+    }
+
+    @Test
     fun queuePersistenceFailurePreservesCloudFailure() = runTest {
         val result = UploadTournamentUseCase(
             localRepository(),

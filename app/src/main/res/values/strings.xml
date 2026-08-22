@@ -90,6 +90,9 @@
     <string name="past_date_error">Choose today or a future date.</string>
     <string name="unsupported_status_error">This tournament status is not supported.</string>
     <string name="tournament_creation_error">Tournament could not be created. Try again.</string>
+    <string name="tournament_creation_limit_reached_error">Tournament limit reached. You can create up to 5 tournaments per account. Delete an existing tournament to create another.</string>
+    <string name="tournament_creation_quota_check_error">Could not verify your tournament limit. Check your connection and try again.</string>
+    <string name="tournament_creation_authentication_required_error">Sign in to create a tournament.</string>
     <string name="discard_tournament_changes_title">Discard changes?</string>
     <string name="discard_tournament_changes_message">Your tournament details have not been created.</string>
     <string name="keep_editing_action">Keep Editing</string>

@@ -15,6 +15,7 @@ enum class CloudUploadFailureCategory {
     AUTHENTICATION,
     AUTHORIZATION,
     NETWORK,
+    TOURNAMENT_LIMIT_REACHED,
     VALIDATION,
     CONFLICT,
     UNKNOWN,
@@ -68,6 +69,7 @@ internal fun Throwable.toCloudUploadFailureCategory(): CloudUploadFailureCategor
         .joinToString(" ") { it.message.orEmpty() }
         .lowercase()
     return when {
+        "tournament_limit_reached" in description -> CloudUploadFailureCategory.TOURNAMENT_LIMIT_REACHED
         "42501" in description ||
             "row-level security" in description ||
             "permission denied" in description ||

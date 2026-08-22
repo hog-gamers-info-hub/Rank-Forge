@@ -199,7 +199,18 @@ fun TournamentCreationScreen(
 
         if (uiState.submissionError != null) {
             Text(
-                text = stringResource(R.string.tournament_creation_error),
+                text = stringResource(
+                    when (uiState.submissionError) {
+                        TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED ->
+                            R.string.tournament_creation_limit_reached_error
+                        TournamentCreationSubmissionError.QUOTA_CHECK_FAILED ->
+                            R.string.tournament_creation_quota_check_error
+                        TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED ->
+                            R.string.tournament_creation_authentication_required_error
+                        TournamentCreationSubmissionError.UNKNOWN ->
+                            R.string.tournament_creation_error
+                    },
+                ),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )

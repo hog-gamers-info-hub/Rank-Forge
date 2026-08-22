@@ -2,11 +2,17 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.time.Clock
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentInput
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentResult
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
+import com.hoggamers.rankforge.domain.tournament.validateCreateTournamentInput
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -19,7 +25,10 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class TournamentCreationViewModel @Inject constructor(
     private val createTournament: CreateTournamentUseCase,
+    private val clock: Clock,
+    private val checkTournamentQuota: CheckTournamentQuotaUseCase,
     private val uploadTournament: TournamentCloudUploadAction,
+    private val localDeletionRepository: LocalDeletionRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentCreationUiState())
     val uiState: StateFlow<TournamentCreationUiState> = _uiState.asStateFlow()
@@ -68,40 +77,48 @@ class TournamentCreationViewModel @Inject constructor(
         if (_uiState.value.isSubmitting || _uiState.value.navigation != null) return
 
         val currentState = _uiState.value
+        val input = CreateTournamentInput(
+            name = currentState.tournamentName,
+            date = currentState.tournamentDate,
+            organizerName = currentState.organizerName,
+            organizerContactNumber = currentState.organizerContactNumber,
+        )
+        val validationErrors = validateCreateTournamentInput(input, clock)
+        if (validationErrors.isNotEmpty()) {
+            _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    validationErrors = validationErrors,
+                    submissionError = null,
+                )
+            }
+            return
+        }
+
         _uiState.update { it.copy(isSubmitting = true, submissionError = null) }
         viewModelScope.launch {
             try {
-                when (
-                    val result = createTournament(
-                        CreateTournamentInput(
-                            name = currentState.tournamentName,
-                            date = currentState.tournamentDate,
-                            organizerName = currentState.organizerName,
-                            organizerContactNumber = currentState.organizerContactNumber,
-                        ),
-                    )
-                ) {
-                    is CreateTournamentResult.Invalid -> _uiState.update {
+                when (checkTournamentQuota()) {
+                    is TournamentQuotaResult.Allowed -> createAndUpload(input)
+                    is TournamentQuotaResult.LimitReached -> _uiState.update {
                         it.copy(
                             isSubmitting = false,
-                            validationErrors = result.errors,
+                            submissionError = TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
                         )
                     }
-
-                    is CreateTournamentResult.Created -> {
-                        try {
-                            uploadTournament(result.tournament.id)
-                        } catch (cancellation: CancellationException) {
-                            throw cancellation
-                        } catch (_: Throwable) {
-                            // Local creation remains successful when the immediate cloud attempt throws.
-                        }
-                        _uiState.update {
-                            it.copy(
-                                isSubmitting = false,
-                                navigation = TournamentCreationNavigation.Created(result.tournament.id),
-                            )
-                        }
+                    TournamentQuotaResult.AuthenticationRequired -> _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED,
+                        )
+                    }
+                    TournamentQuotaResult.NetworkFailure,
+                    TournamentQuotaResult.UnknownFailure,
+                    -> _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = TournamentCreationSubmissionError.QUOTA_CHECK_FAILED,
+                        )
                     }
                 }
             } catch (cancellation: CancellationException) {
@@ -112,6 +129,49 @@ class TournamentCreationViewModel @Inject constructor(
                         isSubmitting = false,
                         submissionError = TournamentCreationSubmissionError.UNKNOWN,
                     )
+                }
+            }
+        }
+    }
+
+    private suspend fun createAndUpload(input: CreateTournamentInput) {
+        when (val result = createTournament(input)) {
+            is CreateTournamentResult.Invalid -> _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    validationErrors = result.errors,
+                )
+            }
+
+            is CreateTournamentResult.Created -> {
+                val uploadResult = try {
+                    uploadTournament(result.tournament.id)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    null
+                }
+                if (uploadResult?.primaryResult == TournamentCloudUploadResult.TournamentLimitReached) {
+                    try {
+                        localDeletionRepository.deleteTournamentLocally(result.tournament.id)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Throwable) {
+                        // The limit result remains authoritative even if local cleanup reports a failure.
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            navigation = TournamentCreationNavigation.Created(result.tournament.id),
+                        )
+                    }
                 }
             }
         }

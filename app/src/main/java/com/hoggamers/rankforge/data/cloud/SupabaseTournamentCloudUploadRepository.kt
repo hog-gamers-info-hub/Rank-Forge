@@ -48,6 +48,8 @@ private fun CloudUploadExecutionResult.toDomainResult(): TournamentCloudUploadRe
                     TournamentCloudUploadResult.AuthorizationFailure
                 CloudUploadFailureCategory.NETWORK ->
                     TournamentCloudUploadResult.NetworkFailure
+                CloudUploadFailureCategory.TOURNAMENT_LIMIT_REACHED ->
+                    TournamentCloudUploadResult.TournamentLimitReached
                 CloudUploadFailureCategory.VALIDATION,
                 CloudUploadFailureCategory.UNKNOWN,
                 -> TournamentCloudUploadResult.ValidationFailure

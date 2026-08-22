@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.domain.tournament
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
@@ -21,10 +22,16 @@ class UploadTournamentUseCase @Inject constructor(
 ) : TournamentCloudUploadAction, TournamentCloudUploadRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<TournamentCloudUploadResult> = record(
-        result = executeForRetry(tournamentId),
-        tournamentId = tournamentId,
-    )
+    ): QueueAwareActionResult<TournamentCloudUploadResult> {
+        val result = executeForRetry(tournamentId)
+        if (result == TournamentCloudUploadResult.TournamentLimitReached) {
+            return QueueAwareActionResult(
+                primaryResult = result,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
+        return record(result = result, tournamentId = tournamentId)
+    }
 
     override suspend fun executeForRetry(
         tournamentId: String,
@@ -86,6 +93,7 @@ private fun TournamentCloudUploadResult.queueStatus() = when (this) {
     is TournamentCloudUploadResult.Success -> SyncQueueStatus.COMPLETED
     TournamentCloudUploadResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION
     TournamentCloudUploadResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK
+    TournamentCloudUploadResult.TournamentLimitReached -> SyncQueueStatus.FAILED_VALIDATION
     TournamentCloudUploadResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION
     TournamentCloudUploadResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION
     is TournamentCloudUploadResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT
@@ -93,4 +101,7 @@ private fun TournamentCloudUploadResult.queueStatus() = when (this) {
 }
 
 private fun TournamentCloudUploadResult.queueFailureCategory(): String? =
-    (this as? TournamentCloudUploadResult.Conflict)?.conflict?.queueFailureCategory()
+    when (this) {
+        TournamentCloudUploadResult.TournamentLimitReached -> "TOURNAMENT_LIMIT_REACHED"
+        else -> (this as? TournamentCloudUploadResult.Conflict)?.conflict?.queueFailureCategory()
+    }

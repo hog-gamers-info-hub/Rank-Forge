@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotMetadataCloudDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepository
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentQuotaRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRemoteDataSource
@@ -29,6 +30,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepo
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
@@ -139,6 +141,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentCloudUploadRepository(
         repository: SupabaseTournamentCloudUploadRepository,
     ): TournamentCloudUploadRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentQuotaRepository(
+        repository: SupabaseTournamentQuotaRepository,
+    ): TournamentQuotaRepository
 
     @Binds
     @Singleton
