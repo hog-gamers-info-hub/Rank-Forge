@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -761,12 +760,6 @@ private fun MatchReviewContent(
                     text = stringResource(R.string.match_review_result_screenshots_title),
                     color = PointIqMatchReviewNavy,
                     style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.pointiq_match_review_result_description),
-                    color = PointIqMatchReviewBody,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
                 )
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
@@ -1968,9 +1961,7 @@ private fun ResultScreenshotPage(
     ) {
         previewImageUri?.let { imageUri ->
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
+                modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
                 LocalScreenshotPreview(
@@ -1982,7 +1973,7 @@ private fun ResultScreenshotPage(
                     ),
                     sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
                     sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth(),
                     testTag = if (screenshotNumber == 1) {
                         MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
                     } else {
