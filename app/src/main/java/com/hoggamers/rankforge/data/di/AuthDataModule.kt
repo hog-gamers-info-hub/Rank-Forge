@@ -11,8 +11,10 @@ import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
 import com.hoggamers.rankforge.domain.auth.RestoreSessionUseCase
+import com.hoggamers.rankforge.domain.auth.RequestPasswordResetUseCase
 import com.hoggamers.rankforge.domain.auth.SignUpUseCase
 import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
+import com.hoggamers.rankforge.domain.auth.UpdateRecoveredPasswordUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -72,6 +74,18 @@ object AuthDataProvidersModule {
     fun provideLoginUseCase(
         repository: AuthRepository,
     ): LoginUseCase = LoginUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideRequestPasswordResetUseCase(
+        repository: AuthRepository,
+    ): RequestPasswordResetUseCase = RequestPasswordResetUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideUpdateRecoveredPasswordUseCase(
+        repository: AuthRepository,
+    ): UpdateRecoveredPasswordUseCase = UpdateRecoveredPasswordUseCase(repository)
 
     @Provides
     @Singleton

@@ -11,13 +11,23 @@ object AuthUiStateReducer {
         result: AuthRestorationResult,
     ): AuthUiState =
         when (result) {
-            is AuthRestorationResult.Restored -> currentState.copy(
-                accountEmail = result.user.email,
-                isSessionLoading = false,
-                isSignedIn = true,
-                warningMessage = null,
-                errorMessage = null,
-            )
+            is AuthRestorationResult.Restored -> if (currentState.isPasswordRecoveryActive) {
+                currentState.copy(
+                    accountEmail = null,
+                    isSessionLoading = false,
+                    isSignedIn = false,
+                    warningMessage = null,
+                    errorMessage = null,
+                )
+            } else {
+                currentState.copy(
+                    accountEmail = result.user.email,
+                    isSessionLoading = false,
+                    isSignedIn = true,
+                    warningMessage = null,
+                    errorMessage = null,
+                )
+            }
             AuthRestorationResult.NoSavedSession -> signedOut(currentState)
             is AuthRestorationResult.ExpiredOrInvalid -> currentState.copy(
                 accountEmail = null,
@@ -58,13 +68,23 @@ object AuthUiStateReducer {
                 errorMessage = null,
             )
             AuthState.SignedOut -> signedOut(currentState)
-            is AuthState.SignedIn -> currentState.copy(
-                accountEmail = authState.user.email,
-                isSessionLoading = false,
-                isSignedIn = true,
-                warningMessage = null,
-                errorMessage = null,
-            )
+            is AuthState.SignedIn -> if (currentState.isPasswordRecoveryActive) {
+                currentState.copy(
+                    accountEmail = null,
+                    isSessionLoading = false,
+                    isSignedIn = false,
+                    warningMessage = null,
+                    errorMessage = null,
+                )
+            } else {
+                currentState.copy(
+                    accountEmail = authState.user.email,
+                    isSessionLoading = false,
+                    isSignedIn = true,
+                    warningMessage = null,
+                    errorMessage = null,
+                )
+            }
             is AuthState.RestorationWarning -> currentState.copy(
                 accountEmail = null,
                 isSessionLoading = false,
@@ -92,6 +112,70 @@ object AuthUiStateReducer {
         currentState.copy(
             isSubmitting = true,
             statusMessage = null,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun beginPasswordRecoveryRequest(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            passwordRecoveryStage = PasswordRecoveryStage.REQUEST_EMAIL,
+            newPassword = "",
+            confirmNewPassword = "",
+            isSessionLoading = false,
+            isSubmitting = false,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun cancelPasswordRecovery(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            passwordRecoveryStage = PasswordRecoveryStage.NONE,
+            newPassword = "",
+            confirmNewPassword = "",
+            isSessionLoading = false,
+            isSubmitting = false,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun completePasswordRecovery(
+        currentState: AuthUiState,
+        warningMessage: AuthUiMessage? = null,
+    ): AuthUiState = currentState.copy(
+        passwordRecoveryStage = PasswordRecoveryStage.NONE,
+        newPassword = "",
+        confirmNewPassword = "",
+        isSubmitting = false,
+        isSignedIn = false,
+        accountEmail = null,
+        statusMessage = AuthUiMessage.PasswordUpdated,
+        warningMessage = warningMessage,
+        errorMessage = null,
+    )
+
+    fun beginPasswordRecoveryLinkVerification(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            passwordRecoveryStage = PasswordRecoveryStage.VERIFYING_LINK,
+            isSessionLoading = false,
+            isSubmitting = false,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun completePasswordRecoveryLinkVerification(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            passwordRecoveryStage = PasswordRecoveryStage.SET_NEW_PASSWORD,
+            isSessionLoading = false,
+            isSubmitting = false,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun failPasswordRecoveryLinkVerification(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            passwordRecoveryStage = PasswordRecoveryStage.LINK_ERROR,
+            isSessionLoading = false,
+            isSubmitting = false,
             warningMessage = null,
             errorMessage = null,
         )
@@ -141,6 +225,20 @@ object AuthUiStateReducer {
                 accountEmail = null,
                 isSignedIn = false,
                 statusMessage = AuthUiMessage.SignUpConfirmationRequired,
+                warningMessage = null,
+                errorMessage = null,
+            )
+            AuthSuccessOutcome.PasswordResetEmailRequested -> currentState.copy(
+                passwordRecoveryStage = PasswordRecoveryStage.EMAIL_SENT,
+                accountEmail = null,
+                isSubmitting = false,
+                isSignedIn = false,
+                statusMessage = null,
+                warningMessage = null,
+                errorMessage = null,
+            )
+            AuthSuccessOutcome.PasswordUpdated -> currentState.copy(
+                isSubmitting = false,
                 warningMessage = null,
                 errorMessage = null,
             )

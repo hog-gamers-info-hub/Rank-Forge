@@ -8,6 +8,50 @@ import org.junit.Test
 
 class AuthFailureMapperTest {
     @Test
+    fun mapsPasswordResetInvalidEmailToInvalidEmail() {
+        assertEquals(
+            AuthFailureCategory.InvalidEmail,
+            AuthFailureMapper.map(
+                IllegalStateException("Invalid email"),
+                AuthFailureContext.PasswordResetRequest,
+            ).category,
+        )
+    }
+
+    @Test
+    fun mapsPasswordResetRateLimitToRateLimited() {
+        assertEquals(
+            AuthFailureCategory.RateLimited,
+            AuthFailureMapper.map(
+                IllegalStateException("Rate limit exceeded"),
+                AuthFailureContext.PasswordResetRequest,
+            ).category,
+        )
+    }
+
+    @Test
+    fun mapsPasswordUpdateWeakPasswordToWeakPassword() {
+        assertEquals(
+            AuthFailureCategory.WeakPassword,
+            AuthFailureMapper.map(
+                IllegalStateException("Password is too weak"),
+                AuthFailureContext.PasswordUpdate,
+            ).category,
+        )
+    }
+
+    @Test
+    fun mapsPasswordUpdateInvalidRecoverySessionToExpiredOrInvalidSession() {
+        assertEquals(
+            AuthFailureCategory.ExpiredOrInvalidSession,
+            AuthFailureMapper.map(
+                IllegalStateException("Invalid recovery session token"),
+                AuthFailureContext.PasswordUpdate,
+            ).category,
+        )
+    }
+
+    @Test
     fun mapsEveryApprovedFailureCategoryToStableDomainCategory() {
         val cases = listOf(
             IllegalStateException("Invalid login credentials") to AuthFailureCategory.InvalidCredentials,

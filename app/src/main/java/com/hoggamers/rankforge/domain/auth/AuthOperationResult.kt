@@ -10,6 +10,8 @@ sealed interface AuthSuccessOutcome {
     data object ExternalAuthenticationLaunched : AuthSuccessOutcome
     data object SignUpAuthenticated : AuthSuccessOutcome
     data object EmailConfirmationRequired : AuthSuccessOutcome
+    data object PasswordResetEmailRequested : AuthSuccessOutcome
+    data object PasswordUpdated : AuthSuccessOutcome
     data object SignedOutLocally : AuthSuccessOutcome
     data class SignedOutLocallyWithRemoteFailure(val failure: AuthFailure) : AuthSuccessOutcome
 }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -56,6 +57,15 @@ const val AUTH_SIGNUP_HEADING_TEST_TAG = "auth_signup_heading"
 const val AUTH_ACCOUNT_HOME_ACTION_TEST_TAG = "auth_account_home_action"
 const val AUTH_ACCOUNT_BACK_ACTION_TEST_TAG = "auth_account_back_action"
 const val AUTH_ACCOUNT_EMAIL_TEST_TAG = "auth_account_email"
+const val AUTH_FORGOT_PASSWORD_ACTION_TEST_TAG = "auth_forgot_password_action"
+const val AUTH_PASSWORD_RESET_SUBMIT_ACTION_TEST_TAG = "auth_password_reset_submit_action"
+const val AUTH_PASSWORD_RECOVERY_BACK_ACTION_TEST_TAG = "auth_password_recovery_back_action"
+const val AUTH_NEW_PASSWORD_FIELD_TEST_TAG = "auth_new_password_field"
+const val AUTH_CONFIRM_NEW_PASSWORD_FIELD_TEST_TAG = "auth_confirm_new_password_field"
+const val AUTH_NEW_PASSWORD_VISIBILITY_TEST_TAG = "auth_new_password_visibility"
+const val AUTH_CONFIRM_NEW_PASSWORD_VISIBILITY_TEST_TAG = "auth_confirm_new_password_visibility"
+const val AUTH_UPDATE_PASSWORD_ACTION_TEST_TAG = "auth_update_password_action"
+const val AUTH_PASSWORD_VALIDATION_ERROR_TEST_TAG = "auth_password_validation_error"
 
 @Composable
 fun AuthScreen(
@@ -68,6 +78,13 @@ fun AuthScreen(
     onGoogleSignIn: () -> Unit = {},
     onSignedInHome: () -> Unit = {},
     onSignedInBack: () -> Unit = {},
+    onBeginPasswordRecovery: () -> Unit = {},
+    onCancelPasswordRecovery: () -> Unit = {},
+    onRequestPasswordReset: () -> Unit = {},
+    onNewPasswordChanged: (String) -> Unit = {},
+    onConfirmNewPasswordChanged: (String) -> Unit = {},
+    onUpdateRecoveredPassword: () -> Unit = {},
+    onExitPasswordRecovery: () -> Unit = {},
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -91,6 +108,32 @@ fun AuthScreen(
                 onHome = onSignedInHome,
                 onBack = onSignedInBack,
             )
+        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.REQUEST_EMAIL) {
+            PasswordRecoveryRequestContent(
+                uiState = uiState,
+                onEmailChanged = onEmailChanged,
+                onRequestPasswordReset = onRequestPasswordReset,
+                onCancelPasswordRecovery = onCancelPasswordRecovery,
+            )
+        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.EMAIL_SENT) {
+            PasswordRecoveryEmailSentContent(
+                uiState = uiState,
+                onCancelPasswordRecovery = onCancelPasswordRecovery,
+            )
+        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.VERIFYING_LINK) {
+            PasswordRecoveryVerifyingContent()
+        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.LINK_ERROR) {
+            PasswordRecoveryLinkErrorContent(
+                onExitPasswordRecovery = onExitPasswordRecovery,
+            )
+        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.SET_NEW_PASSWORD) {
+            PasswordRecoverySetNewPasswordContent(
+                uiState = uiState,
+                onNewPasswordChanged = onNewPasswordChanged,
+                onConfirmNewPasswordChanged = onConfirmNewPasswordChanged,
+                onUpdateRecoveredPassword = onUpdateRecoveredPassword,
+                onExitPasswordRecovery = onExitPasswordRecovery,
+            )
         } else if (uiState.mode == AuthMode.SignUp) {
             SignUpAuthContent(
                 uiState = uiState,
@@ -108,6 +151,7 @@ fun AuthScreen(
                 onPasswordChanged = onPasswordChanged,
                 onSubmit = onSubmit,
                 onGoogleSignIn = onGoogleSignIn,
+                onBeginPasswordRecovery = onBeginPasswordRecovery,
             )
         }
     }
@@ -121,6 +165,7 @@ private fun LoginAuthContent(
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    onBeginPasswordRecovery: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.auth_brand_name),
@@ -174,6 +219,16 @@ private fun LoginAuthContent(
         modifier = Modifier.fillMaxWidth().testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
     )
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    TextButton(
+        onClick = onBeginPasswordRecovery,
+        enabled = !uiState.isSubmitting,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_FORGOT_PASSWORD_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_forgot_password_action))
+    }
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
     Button(
         onClick = onSubmit,
         enabled = uiState.canSubmit,
@@ -210,6 +265,249 @@ private fun LoginAuthContent(
         Text(text = stringResource(R.string.auth_google_continue_action))
     }
 
+    AuthMessages(uiState = uiState)
+}
+
+@Composable
+private fun PasswordRecoveryRequestContent(
+    uiState: AuthUiState,
+    onEmailChanged: (String) -> Unit,
+    onRequestPasswordReset: () -> Unit,
+    onCancelPasswordRecovery: () -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_forgot_password_heading),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+    Text(text = stringResource(R.string.auth_forgot_password_explanation))
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    OutlinedTextField(
+        value = uiState.email,
+        onValueChange = onEmailChanged,
+        label = { Text(text = stringResource(R.string.auth_email_label)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_EMAIL_FIELD_TEST_TAG),
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Button(
+        onClick = onRequestPasswordReset,
+        enabled = uiState.canRequestPasswordReset,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_PASSWORD_RESET_SUBMIT_ACTION_TEST_TAG),
+    ) {
+        Text(
+            text = stringResource(
+                if (uiState.isSubmitting) R.string.auth_submitting_action
+                else R.string.auth_send_reset_link_action,
+            ),
+        )
+    }
+    TextButton(
+        onClick = onCancelPasswordRecovery,
+        enabled = !uiState.isSubmitting,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_PASSWORD_RECOVERY_BACK_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_back_to_log_in_action))
+    }
+    AuthMessages(uiState = uiState)
+}
+
+@Composable
+private fun PasswordRecoveryEmailSentContent(
+    uiState: AuthUiState,
+    onCancelPasswordRecovery: () -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_check_email_heading),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+    Text(text = stringResource(R.string.auth_password_reset_email_sent_message))
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    TextButton(
+        onClick = onCancelPasswordRecovery,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_PASSWORD_RECOVERY_BACK_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_back_to_log_in_action))
+    }
+    AuthMessages(uiState = uiState)
+}
+
+@Composable
+private fun PasswordRecoveryVerifyingContent() {
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_verifying_password_reset_link),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    CircularProgressIndicator()
+}
+
+@Composable
+private fun PasswordRecoveryLinkErrorContent(
+    onExitPasswordRecovery: () -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_password_reset_link_error),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    TextButton(
+        onClick = onExitPasswordRecovery,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_PASSWORD_RECOVERY_BACK_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_back_to_log_in_action))
+    }
+}
+
+@Composable
+private fun PasswordRecoverySetNewPasswordContent(
+    uiState: AuthUiState,
+    onNewPasswordChanged: (String) -> Unit,
+    onConfirmNewPasswordChanged: (String) -> Unit,
+    onUpdateRecoveredPassword: () -> Unit,
+    onExitPasswordRecovery: () -> Unit,
+) {
+    var newPasswordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+
+    Text(
+        text = stringResource(R.string.auth_brand_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Text(
+        text = stringResource(R.string.auth_set_new_password_heading),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    OutlinedTextField(
+        value = uiState.newPassword,
+        onValueChange = onNewPasswordChanged,
+        label = { Text(text = stringResource(R.string.auth_new_password_label)) },
+        singleLine = true,
+        visualTransformation = if (newPasswordVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = {
+            TextButton(
+                onClick = { newPasswordVisible = !newPasswordVisible },
+                enabled = !uiState.isSubmitting,
+                modifier = Modifier.testTag(AUTH_NEW_PASSWORD_VISIBILITY_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (newPasswordVisible) R.string.auth_hide_password else R.string.auth_show_password,
+                    ),
+                )
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_NEW_PASSWORD_FIELD_TEST_TAG),
+    )
+    if (uiState.newPassword.isNotEmpty() && uiState.newPassword.length < MIN_AUTH_PASSWORD_LENGTH) {
+        Text(
+            text = stringResource(R.string.auth_password_too_short_error),
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag(AUTH_PASSWORD_VALIDATION_ERROR_TEST_TAG),
+        )
+    }
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+    OutlinedTextField(
+        value = uiState.confirmNewPassword,
+        onValueChange = onConfirmNewPasswordChanged,
+        label = { Text(text = stringResource(R.string.auth_confirm_new_password_label)) },
+        singleLine = true,
+        visualTransformation = if (confirmPasswordVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = {
+            TextButton(
+                onClick = { confirmPasswordVisible = !confirmPasswordVisible },
+                enabled = !uiState.isSubmitting,
+                modifier = Modifier.testTag(AUTH_CONFIRM_NEW_PASSWORD_VISIBILITY_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (confirmPasswordVisible) R.string.auth_hide_password else R.string.auth_show_password,
+                    ),
+                )
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        modifier = Modifier.fillMaxWidth().testTag(AUTH_CONFIRM_NEW_PASSWORD_FIELD_TEST_TAG),
+    )
+    if (uiState.confirmNewPassword.isNotEmpty() &&
+        uiState.newPassword != uiState.confirmNewPassword
+    ) {
+        Text(
+            text = stringResource(R.string.auth_passwords_do_not_match_error),
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag(AUTH_PASSWORD_VALIDATION_ERROR_TEST_TAG),
+        )
+    }
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Button(
+        onClick = onUpdateRecoveredPassword,
+        enabled = uiState.canUpdateRecoveredPassword,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_UPDATE_PASSWORD_ACTION_TEST_TAG),
+    ) {
+        Text(
+            text = stringResource(
+                if (uiState.isSubmitting) R.string.auth_submitting_action
+                else R.string.auth_update_password_action,
+            ),
+        )
+    }
+    TextButton(
+        onClick = onExitPasswordRecovery,
+        enabled = !uiState.isSubmitting,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_PASSWORD_RECOVERY_BACK_ACTION_TEST_TAG),
+    ) {
+        Text(text = stringResource(R.string.auth_back_to_log_in_action))
+    }
     AuthMessages(uiState = uiState)
 }
 
@@ -491,6 +789,9 @@ private fun AuthUiMessage.asText(): String =
         )
         AuthUiMessage.SignedOut -> stringResource(R.string.auth_signed_out_message)
         AuthUiMessage.LogoutRemoteWarning -> stringResource(R.string.auth_logout_remote_warning)
+        AuthUiMessage.PasswordsDoNotMatch -> stringResource(R.string.auth_passwords_do_not_match_error)
+        AuthUiMessage.PasswordTooShort -> stringResource(R.string.auth_password_too_short_error)
+        AuthUiMessage.PasswordUpdated -> stringResource(R.string.auth_password_updated_message)
         is AuthUiMessage.AuthenticationFailure -> this.asFailureText()
         is AuthUiMessage.RestorationWarning -> this.asRestorationWarningText()
     }

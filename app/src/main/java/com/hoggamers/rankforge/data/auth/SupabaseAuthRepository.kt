@@ -47,6 +47,22 @@ class SupabaseAuthRepository @Inject constructor(
         remoteDataSource.login(email, password)
     }
 
+    override suspend fun requestPasswordReset(email: String): AuthOperationResult =
+        runAuthOperation(
+            context = AuthFailureContext.PasswordResetRequest,
+            successOutcome = AuthSuccessOutcome.PasswordResetEmailRequested,
+        ) {
+            remoteDataSource.requestPasswordReset(email)
+        }
+
+    override suspend fun updateRecoveredPassword(newPassword: String): AuthOperationResult =
+        runAuthOperation(
+            context = AuthFailureContext.PasswordUpdate,
+            successOutcome = AuthSuccessOutcome.PasswordUpdated,
+        ) {
+            remoteDataSource.updateRecoveredPassword(newPassword)
+        }
+
     override suspend fun signInWithGoogle(): AuthOperationResult = runAuthOperation(
         context = AuthFailureContext.GoogleSignIn,
         successOutcome = AuthSuccessOutcome.ExternalAuthenticationLaunched,
