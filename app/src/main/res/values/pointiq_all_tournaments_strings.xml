@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_all_tournaments_description">Manage tournaments stored on this device and restore cloud tournaments.</string>
+    <string name="pointiq_local_tournaments_title">On this device</string>
+    <string name="pointiq_local_tournaments_description">Open and manage tournaments saved locally.</string>
+    <string name="pointiq_cloud_tournaments_description">Load tournaments available to restore from your account.</string>
+</resources>
