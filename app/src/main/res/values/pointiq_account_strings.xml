@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_account_description">Manage your account and session details.</string>
+    <string name="pointiq_signed_in_account_label">Signed-in account</string>
+    <string name="pointiq_session_title">Session</string>
+    <string name="pointiq_session_description">Manage your active session.</string>
+</resources>
