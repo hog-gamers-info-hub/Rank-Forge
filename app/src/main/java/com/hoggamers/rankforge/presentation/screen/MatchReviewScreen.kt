@@ -855,7 +855,15 @@ private fun MatchReviewContent(
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
             ) {
-                Text(stringResource(R.string.match_ocr_review_title))
+                Text(
+                    stringResource(
+                        if (isEmptyScreenshotUi) {
+                            R.string.calculate_points_action
+                        } else {
+                            R.string.match_ocr_review_title
+                        },
+                    ),
+                )
             }
         }
         if (showLegacyManualReviewContent && uiState.isEditable) {
@@ -995,22 +1003,44 @@ private fun MatchReviewContent(
         ) {
             Text(stringResource(R.string.match_review_delete_action))
         }
-        TextButton(
-            onClick = onBackToDetails,
-            enabled = !uiState.isDeleting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
-        ) {
-            Text(
-                stringResource(
-                    if (showLegacyManualReviewContent) {
-                        R.string.back_to_match_details_action
-                    } else {
-                        R.string.match_review_simplified_back_action
-                    },
+        if (isEmptyScreenshotUi) {
+            OutlinedButton(
+                onClick = onBackToDetails,
+                enabled = !uiState.isDeleting,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = PointIqMatchReviewBlue,
                 ),
-            )
+                border = BorderStroke(1.dp, PointIqMatchReviewBorder),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(R.string.match_review_simplified_back_action),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        } else {
+            TextButton(
+                onClick = onBackToDetails,
+                enabled = !uiState.isDeleting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    stringResource(
+                        if (showLegacyManualReviewContent) {
+                            R.string.back_to_match_details_action
+                        } else {
+                            R.string.match_review_simplified_back_action
+                        },
+                    ),
+                )
+            }
         }
     }
 
@@ -1341,7 +1371,7 @@ private fun MatchOcrScreenshotPreflightDialog(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG),
+                modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_TEST_TAG),
             ) {
                 Text(stringResource(R.string.cancel_action))
             }
@@ -1580,7 +1610,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 }
             }
             is MatchOcrReviewUiState.Error -> Text(
-                text = uiState.message,
+                text = ocrUiState.message,
                 color = MaterialTheme.colorScheme.error,
             )
             is MatchOcrReviewUiState.Ready -> MatchReviewResultRowsPagerContent(
@@ -1854,10 +1884,14 @@ private fun ResultScreenshotSelector(
                     .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
             ) {
                 Text(
-                    stringResource(
-                        R.string.match_review_result_screenshot_select_action,
-                        screenshotNumber,
-                    ),
+                    text = if (selectedPages.isEmpty()) {
+                        stringResource(R.string.pointiq_match_review_upload_result_screenshots)
+                    } else {
+                        stringResource(
+                            R.string.match_review_result_screenshot_select_action,
+                            screenshotNumber,
+                        )
+                    },
                 )
             }
         }
