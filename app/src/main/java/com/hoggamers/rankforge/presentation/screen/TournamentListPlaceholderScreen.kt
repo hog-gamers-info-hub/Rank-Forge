@@ -1,33 +1,35 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.LoggedInHomeMenuShell
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 
-private val listDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+private val PointIqListNavy = Color(0xFF071B3E)
+private val PointIqListBlue = Color(0xFF176AF7)
+private val PointIqListBody = Color(0xFF607393)
+private val PointIqListContainer = Color(0xFFF7FAFF)
 
 const val TOURNAMENT_LIST_SCREEN_TEST_TAG = "tournament_list_screen"
 const val TOURNAMENT_LIST_EMPTY_TEST_TAG = "tournament_list_empty"
@@ -119,6 +121,9 @@ internal fun TournamentCloudRestorationSection(
     onRestoreCloudTournament: (String) -> Unit,
 ) {
     Card(
+        shape = RoundedCornerShape(RankForgeSpacing.Medium),
+        colors = CardDefaults.cardColors(containerColor = PointIqListContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG),
@@ -132,11 +137,14 @@ internal fun TournamentCloudRestorationSection(
             Text(
                 text = stringResource(R.string.restore_tournament_action),
                 style = MaterialTheme.typography.titleMedium,
+                color = PointIqListNavy,
             )
             Button(
                 onClick = onLoadCloudTournaments,
                 enabled = uiState !is TournamentCloudRestorationUiState.Loading &&
                     uiState !is TournamentCloudRestorationUiState.Restoring,
+                colors = ButtonDefaults.buttonColors(containerColor = PointIqListBlue),
+                shape = RoundedCornerShape(RankForgeSpacing.Medium),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG),
@@ -154,11 +162,16 @@ internal fun TournamentCloudRestorationSection(
             }
             Text(
                 text = uiState.restoreStatusText(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = PointIqListBody,
                 modifier = Modifier.testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message"),
             )
             if (uiState is TournamentCloudRestorationUiState.Available) {
                 if (uiState.tournaments.isEmpty()) {
-                    Text(text = stringResource(R.string.restore_tournament_empty))
+                    Text(
+                        text = stringResource(R.string.restore_tournament_empty),
+                        color = PointIqListBody,
+                    )
                 } else {
                     uiState.tournaments.forEach { tournament ->
                         CloudTournamentRestoreItem(
@@ -179,6 +192,8 @@ private fun CloudTournamentRestoreItem(
 ) {
     OutlinedButton(
         onClick = onRestore,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = PointIqListBlue),
+        shape = RoundedCornerShape(RankForgeSpacing.Medium),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX + tournament.id),
@@ -219,37 +234,8 @@ internal fun TournamentListItemCard(
     tournament: TournamentListItemUiState,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournament.id)
-            .clickable(onClick = onClick),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(RankForgeSpacing.Medium),
-            verticalArrangement = Arrangement.Top,
-        ) {
-            Text(
-                text = tournament.name,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            Text(text = stringResource(R.string.tournament_date_value, tournament.date.format(listDateFormatter)))
-            Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
-            Text(
-                text = stringResource(
-                    R.string.tournament_status_value,
-                    stringResource(
-                        if (tournament.status == com.hoggamers.rankforge.domain.tournament.TournamentStatus.CONFIRMED) {
-                            R.string.tournament_status_confirmed
-                        } else {
-                            R.string.tournament_status_draft
-                        },
-                    ),
-                ),
-            )
-        }
-    }
+    PointIqTournamentSummaryCard(
+        tournament = tournament,
+        onClick = onClick,
+    )
 }
