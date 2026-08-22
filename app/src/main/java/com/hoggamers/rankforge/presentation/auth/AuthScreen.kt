@@ -36,7 +36,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.TextButton
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
@@ -520,52 +519,105 @@ private fun SignedInAuthContent(
 ) {
     BackHandler(onBack = onBack)
 
+    val pointIqNavy = Color(0xFF071B3E)
+    val pointIqBlue = Color(0xFF176AF7)
+    val pointIqBody = Color(0xFF607393)
+    val pointIqAccountContainer = Color(0xFFF7FAFF)
+    val pointIqDanger = Color(0xFFD92D3A)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextButton(
             onClick = onHome,
-            modifier = Modifier
-                .weight(1f)
-                .testTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG),
+            modifier = Modifier.testTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG),
         ) {
-            Text(text = stringResource(R.string.auth_home_action))
+            Text(
+                text = stringResource(R.string.auth_home_action),
+                color = pointIqBlue,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
-        Text(
-            text = stringResource(R.string.auth_title),
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.weight(1f),
-        )
+        Spacer(modifier = Modifier.weight(1f))
         TextButton(
             onClick = onBack,
-            modifier = Modifier
-                .weight(1f)
-                .testTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG),
+            modifier = Modifier.testTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG),
         ) {
-            Text(text = stringResource(R.string.back_action))
+            Text(
+                text = stringResource(R.string.back_action),
+                color = pointIqBlue,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
+
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+    Text(
+        text = stringResource(R.string.auth_account_section_title),
+        style = MaterialTheme.typography.headlineMedium,
+        color = pointIqNavy,
+    )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
+    Text(
+        text = stringResource(R.string.pointiq_account_description),
+        style = MaterialTheme.typography.bodyMedium,
+        color = pointIqBody,
+    )
+
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = pointIqAccountContainer,
+                shape = RoundedCornerShape(RankForgeSpacing.Medium),
+            )
+            .padding(RankForgeSpacing.Medium),
+    ) {
+        Text(
+            text = stringResource(R.string.pointiq_signed_in_account_label),
+            style = MaterialTheme.typography.labelLarge,
+            color = pointIqBlue,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        Text(
+            text = uiState.accountEmail?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.auth_unknown_account),
+            style = MaterialTheme.typography.titleMedium,
+            color = pointIqNavy,
+            modifier = Modifier.testTag(AUTH_ACCOUNT_EMAIL_TEST_TAG),
+        )
+    }
+
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
     Text(
-        text = stringResource(R.string.auth_email_label),
-        style = MaterialTheme.typography.titleMedium,
+        text = stringResource(R.string.pointiq_session_title),
+        style = MaterialTheme.typography.titleLarge,
+        color = pointIqNavy,
     )
+    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
     Text(
-        text = uiState.accountEmail?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.auth_unknown_account),
-        modifier = Modifier.testTag(AUTH_ACCOUNT_EMAIL_TEST_TAG),
+        text = stringResource(R.string.pointiq_session_description),
+        style = MaterialTheme.typography.bodyMedium,
+        color = pointIqBody,
     )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
     OutlinedButton(
         onClick = onLogout,
         enabled = !uiState.isSubmitting,
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = pointIqDanger,
+        ),
+        shape = RoundedCornerShape(RankForgeSpacing.Medium),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(AUTH_LOGOUT_ACTION_TEST_TAG),
     ) {
-        Text(text = stringResource(R.string.auth_logout_action))
+        Text(
+            text = stringResource(R.string.auth_logout_action),
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 
