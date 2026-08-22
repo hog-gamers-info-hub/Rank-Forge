@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -248,7 +248,7 @@ private fun PointIqModeTab(
 
 @Composable
 private fun PointIqBackgroundDecoration() {
-    Canvas(modifier = Modifier.matchParentSize()) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
         val center = Offset(
             x = size.width - 6.dp.toPx(),
             y = 112.dp.toPx(),
