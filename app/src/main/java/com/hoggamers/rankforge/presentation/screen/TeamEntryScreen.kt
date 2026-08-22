@@ -56,6 +56,7 @@ const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
 const val TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX = "team_entry_roster_button_"
 const val TEAM_ENTRY_TEAM_NAME_GAP_TEST_TAG = "team_entry_team_name_gap"
 private const val SHOW_TEAM_ENTRY_VALIDATION_ISSUES = false
+private const val SHOW_TEAM_ENTRY_ROSTER_ACTIONS = false
 private const val SHOW_TEAM_ENTRY_OVERVIEW = false
 
 @Composable
@@ -177,7 +178,7 @@ private fun TeamEntryContent(
             fontSize = 14.sp,
             lineHeight = 20.sp,
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(22.dp))
 
         if (SHOW_TEAM_ENTRY_VALIDATION_ISSUES) {
             RosterValidationIssues(issues = validationIssues)
@@ -202,7 +203,7 @@ private fun TeamEntryContent(
                     modifier = Modifier.padding(14.dp),
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
         }
 
         slots.forEach { slot ->
@@ -218,22 +219,22 @@ private fun TeamEntryContent(
                             Modifier
                         },
                     ),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = PointIqTeamsCard,
                 border = BorderStroke(1.dp, PointIqTeamsBorder),
                 shadowElevation = 1.dp,
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.team_slot_label, slot.slotNumber),
                         color = PointIqTeamsNavy,
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = slot.teamName,
                         onValueChange = { teamName ->
@@ -258,34 +259,39 @@ private fun TeamEntryContent(
                             focusedContainerColor = Color.White,
                             unfocusedContainerColor = Color.White,
                         ),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(13.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
                         singleLine = true,
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = { onEditRoster(slot.slotNumber) },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = PointIqTeamsBlue,
-                        ),
-                        border = BorderStroke(1.dp, PointIqTeamsBorder),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp)
-                            .testTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.enter_players_name_action),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+
+                    if (SHOW_TEAM_ENTRY_ROSTER_ACTIONS) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { onEditRoster(slot.slotNumber) },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = PointIqTeamsBlue,
+                            ),
+                            border = BorderStroke(1.dp, PointIqTeamsBorder),
+                            shape = RoundedCornerShape(13.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .testTag(
+                                    TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber,
+                                ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.enter_players_name_action),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
         if (SHOW_TEAM_ENTRY_OVERVIEW) {
@@ -304,6 +310,7 @@ private fun TeamEntryContent(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
+        Spacer(modifier = Modifier.height(4.dp))
         Button(
             onClick = onSave,
             enabled = !isSaving,
