@@ -104,49 +104,53 @@ internal fun PointIqAuthShell(
 private fun PointIqBrandHeader(
     icon: Painter,
 ) {
-    Row(
+    Box(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.foundation.Image(
-            painter = icon,
-            contentDescription = null,
-            modifier = Modifier.size(44.dp),
-        )
-
-        Column(
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val brandText = buildAnnotatedString {
-                withStyle(
-                    SpanStyle(
-                        color = PointIqNavy,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                ) {
-                    append(stringResource(R.string.pointiq_brand_point))
-                }
-                withStyle(
-                    SpanStyle(
-                        color = PointIqBlue,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                ) {
-                    append(stringResource(R.string.pointiq_brand_iq))
-                }
-            }
+            androidx.compose.foundation.Image(
+                painter = icon,
+                contentDescription = null,
+                modifier = Modifier.size(44.dp),
+            )
 
-            Text(
-                text = brandText,
-                fontSize = 24.sp,
-                lineHeight = 27.sp,
-            )
-            Text(
-                text = stringResource(R.string.pointiq_brand_tagline),
-                style = MaterialTheme.typography.bodySmall,
-                color = PointIqMuted,
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                val brandText = buildAnnotatedString {
+                    withStyle(
+                        SpanStyle(
+                            color = PointIqNavy,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    ) {
+                        append(stringResource(R.string.pointiq_brand_point))
+                    }
+                    withStyle(
+                        SpanStyle(
+                            color = PointIqBlue,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    ) {
+                        append(stringResource(R.string.pointiq_brand_iq))
+                    }
+                }
+
+                Text(
+                    text = brandText,
+                    fontSize = 24.sp,
+                    lineHeight = 27.sp,
+                )
+                Text(
+                    text = stringResource(R.string.pointiq_brand_tagline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PointIqMuted,
+                )
+            }
         }
     }
 }
