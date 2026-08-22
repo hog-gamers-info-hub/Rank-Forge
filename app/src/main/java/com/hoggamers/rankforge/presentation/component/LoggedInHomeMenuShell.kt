@@ -3,7 +3,6 @@ package com.hoggamers.rankforge.presentation.component
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,9 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -51,8 +48,6 @@ private val PointIqHomeHeaderNavy = Color(0xFF071B3E)
 private val PointIqHomeHeaderBlue = Color(0xFF176AF7)
 private val PointIqHomeBackgroundTop = Color(0xFFFDFEFF)
 private val PointIqHomeBackgroundBottom = Color(0xFFF3FAFF)
-private val PointIqMenuCard = Color(0xFFF9FBFF)
-private val PointIqMenuCardBorder = Color(0xFFE5EDF9)
 private val PointIqMenuMuted = Color(0xFFA3AFC4)
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
@@ -146,15 +141,15 @@ private fun PointIqFullScreenMenu(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 26.dp, bottom = 30.dp),
+                .padding(top = 24.dp, bottom = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = stringResource(R.string.logged_in_home_menu_title),
                 color = PointIqHomeHeaderNavy,
-                fontSize = 30.sp,
-                lineHeight = 34.sp,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
                 fontWeight = FontWeight.Bold,
             )
 
@@ -165,7 +160,7 @@ private fun PointIqFullScreenMenu(
                 Text(
                     text = stringResource(R.string.back_action),
                     color = PointIqHomeHeaderBlue,
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                 )
             }
@@ -177,7 +172,7 @@ private fun PointIqFullScreenMenu(
             onClick = onOpenAccount,
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         PointIqMenuPrimaryItem(
             text = stringResource(R.string.logged_in_home_all_tournaments),
@@ -185,21 +180,21 @@ private fun PointIqFullScreenMenu(
             onClick = onOpenAllTournaments,
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_subscription),
             testTag = LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG,
         )
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_notifications),
             testTag = LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG,
         )
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         PointIqMenuDisabledItem(
             text = stringResource(R.string.logged_in_home_settings),
@@ -214,32 +209,20 @@ private fun PointIqMenuPrimaryItem(
     testTag: String,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(18.dp)
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp)
-            .shadow(
-                elevation = 4.dp,
-                shape = shape,
-                ambientColor = PointIqHomeHeaderBlue.copy(alpha = 0.06f),
-                spotColor = PointIqHomeHeaderBlue.copy(alpha = 0.08f),
-            )
-            .clip(shape)
-            .background(PointIqMenuCard)
-            .border(1.dp, PointIqMenuCardBorder, shape)
+            .height(46.dp)
             .clickable(onClick = onClick)
-            .testTag(testTag)
-            .padding(horizontal = 20.dp),
+            .testTag(testTag),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
             color = PointIqHomeHeaderNavy,
-            fontSize = 18.sp,
-            lineHeight = 22.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -252,20 +235,18 @@ private fun PointIqMenuDisabledItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(44.dp)
             .testTag(testTag)
-            .alpha(0.9f)
             .semantics {
                 disabled()
-            }
-            .padding(horizontal = 16.dp),
+            },
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
             color = PointIqMenuMuted,
-            fontSize = 17.sp,
-            lineHeight = 21.sp,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
             fontWeight = FontWeight.Normal,
         )
     }
