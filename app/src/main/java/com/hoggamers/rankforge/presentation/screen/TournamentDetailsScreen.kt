@@ -1,14 +1,19 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -17,6 +22,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,11 +32,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.format.DateTimeFormatter
@@ -44,6 +56,16 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
 private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+
+private val PointIqDetailsNavy = Color(0xFF071B3E)
+private val PointIqDetailsBody = Color(0xFF607393)
+private val PointIqDetailsBlue = Color(0xFF176AF7)
+private val PointIqDetailsBorder = Color(0xFFD6E3F4)
+private val PointIqDetailsCard = Color(0xFFFFFFFF)
+private val PointIqDetailsBackgroundTop = Color(0xFFFDFEFF)
+private val PointIqDetailsBackgroundBottom = Color(0xFFF4FAFF)
+private val PointIqDetailsDanger = Color(0xFFD92D3A)
+private val PointIqDetailsDangerContainer = Color(0xFFFFF5F5)
 
 const val TOURNAMENT_DETAILS_SCREEN_TEST_TAG = "tournament_details_screen"
 const val TOURNAMENT_DETAILS_NOT_FOUND_TEST_TAG = "tournament_details_not_found"
@@ -278,25 +300,75 @@ private fun TournamentDetailsContent(
     deletionError: TournamentDeletionUiError?,
 ) {
     var showDeleteConfirmation by remember(tournament.id) { mutableStateOf(false) }
-    RankForgeScreenContainer(
+
+    Column(
         modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        PointIqDetailsBackgroundTop,
+                        PointIqDetailsBackgroundBottom,
+                    ),
+                ),
+            )
             .testTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+            .verticalScroll(rememberScrollState())
+            .padding(
+                start = 24.dp,
+                top = 28.dp,
+                end = 24.dp,
+                bottom = 32.dp,
+            ),
+        horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
         Text(
             text = stringResource(R.string.tournament_details_title),
-            style = MaterialTheme.typography.headlineMedium,
+            color = PointIqDetailsNavy,
+            fontSize = 28.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.Bold,
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        Spacer(modifier = Modifier.height(7.dp))
         Text(
-            text = tournament.name,
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.pointiq_tournament_details_subtitle),
+            color = PointIqDetailsBody,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        Text(text = stringResource(R.string.tournament_date_value, tournament.date.format(detailsDateFormatter)))
+        Spacer(modifier = Modifier.height(22.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            color = PointIqDetailsCard,
+            border = BorderStroke(1.dp, PointIqDetailsBorder),
+            shadowElevation = 1.dp,
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = tournament.name,
+                    color = PointIqDetailsNavy,
+                    fontSize = 21.sp,
+                    lineHeight = 27.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(7.dp))
+                Text(
+                    text = stringResource(
+                        R.string.tournament_date_value,
+                        tournament.date.format(detailsDateFormatter),
+                    ),
+                    color = PointIqDetailsBody,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+        }
+
         if (showLegacyControls) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             Text(text = stringResource(R.string.organizer_name_value, tournament.organizerName))
             Text(text = stringResource(R.string.organizer_contact_number_value, tournament.organizerContactNumber))
             Text(
@@ -359,11 +431,12 @@ private fun TournamentDetailsContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
         }
 
+        Spacer(modifier = Modifier.height(14.dp))
         TeamSlotList(
             slots = tournament.slots,
             onEnterTeams = { if (!isDeleting) onEnterTeams(tournament.id) },
         )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        Spacer(modifier = Modifier.height(14.dp))
         SimplifiedMatchList(
             tournament = tournament,
             onCalculatePointsRequested = onCalculatePointsRequested,
@@ -381,48 +454,84 @@ private fun TournamentDetailsContent(
                 onUseDefaults = onUseDefaults,
             )
         }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        Button(
+
+        Spacer(modifier = Modifier.height(14.dp))
+        OutlinedButton(
             onClick = { onOpenStandings(tournament.id) },
             enabled = !isDeleting,
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = PointIqDetailsBlue,
+            ),
+            border = BorderStroke(1.dp, PointIqDetailsBorder),
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .height(50.dp)
                 .testTag(OPEN_STANDINGS_ACTION_TEST_TAG),
         ) {
-            Text(text = stringResource(R.string.open_standings_action))
+            Text(
+                text = stringResource(R.string.open_standings_action),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
+
         if (deletionError != null) {
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = stringResource(deletionError.toMessageRes()),
                 color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 modifier = Modifier.testTag(TOURNAMENT_DELETE_ERROR_TEST_TAG),
             )
         }
         if (isDeleting) {
+            Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(TOURNAMENT_DELETE_PROGRESS_TEST_TAG),
-                horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircularProgressIndicator(modifier = Modifier.height(RankForgeSpacing.Medium))
-                Text(stringResource(R.string.tournament_delete_in_progress))
+                CircularProgressIndicator(
+                    modifier = Modifier.height(20.dp),
+                    color = PointIqDetailsBlue,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = stringResource(R.string.tournament_delete_in_progress),
+                    color = PointIqDetailsBody,
+                    fontSize = 13.sp,
+                )
             }
         }
-        Button(
+
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
             onClick = { showDeleteConfirmation = true },
             enabled = !isDeleting && !showDeleteConfirmation,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = MaterialTheme.colorScheme.onError,
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = PointIqDetailsDangerContainer,
+                contentColor = PointIqDetailsDanger,
+                disabledContainerColor = PointIqDetailsDangerContainer.copy(alpha = 0.55f),
+                disabledContentColor = PointIqDetailsDanger.copy(alpha = 0.45f),
             ),
+            border = BorderStroke(1.dp, PointIqDetailsDanger.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .height(50.dp)
                 .testTag(TOURNAMENT_DELETE_ACTION_TEST_TAG),
         ) {
-            Text(stringResource(R.string.tournament_delete_action))
+            Text(
+                text = stringResource(R.string.tournament_delete_action),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
+
         if (showDeleteConfirmation && !isDeleting) {
             AlertDialog(
                 modifier = Modifier.testTag(TOURNAMENT_DELETE_DIALOG_TEST_TAG),
@@ -894,34 +1003,72 @@ private fun TeamSlotList(
     onEnterTeams: () -> Unit,
 ) {
     val activeSlots = slots.takeWhile { it.teamName.trim().isNotBlank() }
-    Column(
-        modifier = Modifier.testTag(TOURNAMENT_SLOT_LIST_TEST_TAG),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_SLOT_LIST_TEST_TAG),
+        shape = RoundedCornerShape(18.dp),
+        color = PointIqDetailsCard,
+        border = BorderStroke(1.dp, PointIqDetailsBorder),
+        shadowElevation = 1.dp,
     ) {
-        Text(
-            text = stringResource(R.string.tournament_details_slot_list_title),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        if (activeSlots.isEmpty()) {
-            Text(text = stringResource(R.string.tournament_details_no_teams_saved))
-        } else {
-            activeSlots.forEach { slot ->
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.tournament_details_slot_list_title),
+                color = PointIqDetailsNavy,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (activeSlots.isEmpty()) {
                 Text(
-                    text = stringResource(
-                        R.string.tournament_details_slot_row,
-                        slot.slotNumber,
-                        slot.teamName,
-                    ),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.testTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slot.slotNumber),
+                    text = stringResource(R.string.tournament_details_no_teams_saved),
+                    color = PointIqDetailsBody,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            } else {
+                activeSlots.forEachIndexed { index, slot ->
+                    Text(
+                        text = stringResource(
+                            R.string.tournament_details_slot_row,
+                            slot.slotNumber,
+                            slot.teamName,
+                        ),
+                        color = PointIqDetailsNavy,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 7.dp)
+                            .testTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + slot.slotNumber),
+                    )
+                    if (index < activeSlots.lastIndex) {
+                        HorizontalDivider(color = PointIqDetailsBorder.copy(alpha = 0.75f))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Button(
+                onClick = onEnterTeams,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PointIqDetailsBlue,
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.enter_teams_action),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-        Button(
-            onClick = onEnterTeams,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(text = stringResource(R.string.enter_teams_action))
         }
     }
 }
@@ -963,81 +1110,126 @@ private fun SimplifiedMatchList(
     isCreatingMatch: Boolean,
     onOpenMatchReview: (String, String) -> Unit,
 ) {
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        shape = RoundedCornerShape(18.dp),
+        color = PointIqDetailsCard,
+        border = BorderStroke(1.dp, PointIqDetailsBorder),
+        shadowElevation = 1.dp,
     ) {
-        Text(
-            text = stringResource(R.string.tournament_details_matches_title),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        if (tournament.matches.isEmpty()) {
-            Text(text = stringResource(R.string.tournament_details_no_matches_message))
-        } else {
-            tournament.matches.forEachIndexed { index, match ->
-                Row(
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.tournament_details_matches_title),
+                color = PointIqDetailsNavy,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (tournament.matches.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.tournament_details_no_matches_message),
+                    color = PointIqDetailsBody,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            } else {
+                tournament.matches.forEachIndexed { index, match ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenMatchReview(tournament.id, match.id) }
+                            .padding(vertical = 9.dp)
+                            .testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.tournament_details_match_row,
+                                match.matchNumber,
+                                stringResource(
+                                    if (match.status == MatchStatus.DRAFT) {
+                                        R.string.tournament_details_match_in_progress
+                                    } else {
+                                        R.string.tournament_details_match_completed
+                                    },
+                                ),
+                            ),
+                            color = PointIqDetailsNavy,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = ">",
+                            color = PointIqDetailsBlue,
+                            fontSize = 20.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.testTag(
+                                MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + match.matchNumber,
+                            ),
+                        )
+                    }
+                    if (index < tournament.matches.lastIndex) {
+                        HorizontalDivider(color = PointIqDetailsBorder.copy(alpha = 0.75f))
+                    }
+                }
+            }
+
+            if (calculatePointsMessage != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(
+                        when (calculatePointsMessage) {
+                            CalculatePointsMessage.NO_TEAMS_SAVED ->
+                                R.string.enter_and_save_teams_before_calculating_message
+                            CalculatePointsMessage.INVALID_TEAM_SLOTS ->
+                                R.string.team_entry_gap_message
+                            CalculatePointsMessage.VALIDATION_FAILED ->
+                                R.string.calculate_points_validation_error
+                            CalculatePointsMessage.MATCH_CREATION_FAILED ->
+                                R.string.match_creation_error
+                        },
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            if (tournament.matches.size < com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
+                Button(
+                    onClick = { onCalculatePointsRequested(tournament.id) },
+                    enabled = !isCreatingMatch,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PointIqDetailsBlue,
+                        disabledContainerColor = PointIqDetailsBlue.copy(alpha = 0.45f),
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenMatchReview(tournament.id, match.id) }
-                        .testTag(MATCH_ITEM_TEST_TAG_PREFIX + match.matchNumber),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .height(48.dp)
+                        .testTag(CREATE_MATCH_ACTION_TEST_TAG),
                 ) {
                     Text(
-                        text = stringResource(
-                            R.string.tournament_details_match_row,
-                            match.matchNumber,
-                            stringResource(
-                                if (match.status == MatchStatus.DRAFT) {
-                                    R.string.tournament_details_match_in_progress
-                                } else {
-                                    R.string.tournament_details_match_completed
-                                },
-                            ),
-                        ),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = ">",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.testTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + match.matchNumber),
+                        text = stringResource(R.string.create_match_action),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
-                if (index < tournament.matches.lastIndex) {
-                    HorizontalDivider()
-                }
+            } else {
+                Text(
+                    text = stringResource(R.string.match_limit_reached_message),
+                    color = PointIqDetailsBody,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
             }
-        }
-        if (calculatePointsMessage != null) {
-            Text(
-                text = stringResource(
-                    when (calculatePointsMessage) {
-                        CalculatePointsMessage.NO_TEAMS_SAVED ->
-                            R.string.enter_and_save_teams_before_calculating_message
-                        CalculatePointsMessage.INVALID_TEAM_SLOTS ->
-                            R.string.team_entry_gap_message
-                        CalculatePointsMessage.VALIDATION_FAILED ->
-                            R.string.calculate_points_validation_error
-                        CalculatePointsMessage.MATCH_CREATION_FAILED ->
-                            R.string.match_creation_error
-                    },
-                ),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        if (tournament.matches.size < com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
-            Button(
-                onClick = { onCalculatePointsRequested(tournament.id) },
-                enabled = !isCreatingMatch,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(CREATE_MATCH_ACTION_TEST_TAG),
-            ) {
-                Text(text = stringResource(R.string.calculate_points_action))
-            }
-        } else {
-            Text(text = stringResource(R.string.match_limit_reached_message))
         }
     }
 }
