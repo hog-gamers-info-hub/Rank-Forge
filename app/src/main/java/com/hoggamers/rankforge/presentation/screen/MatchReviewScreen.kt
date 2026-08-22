@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -630,7 +629,7 @@ private fun MatchReviewContent(
                 },
                 uiState.matchNumber ?: 0,
             ),
-            style = if (isEmptyScreenshotUi) {
+            style = if (!showLegacyManualReviewContent) {
                 MaterialTheme.typography.headlineMedium.copy(
                     fontSize = 28.sp,
                     lineHeight = 32.sp,
@@ -639,7 +638,7 @@ private fun MatchReviewContent(
             } else {
                 MaterialTheme.typography.headlineMedium
             },
-            color = if (isEmptyScreenshotUi) PointIqMatchReviewNavy else Color.Unspecified,
+            color = if (!showLegacyManualReviewContent) PointIqMatchReviewNavy else Color.Unspecified,
         )
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -743,25 +742,37 @@ private fun MatchReviewContent(
             }
             Spacer(modifier = Modifier.height(12.dp))
         } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 1.dp)
-                    .testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
+            Spacer(modifier = Modifier.height(14.dp))
+            PointIqEmptyMatchReviewSection(
+                modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
             ) {
                 matchLobbyScreenshotIntake()
             }
             if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
+                Spacer(modifier = Modifier.height(12.dp))
                 MatchReviewLobbyPlayerDetailsContent(ocrUiState)
             }
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-            Text(
-                text = stringResource(R.string.match_review_result_screenshots_title),
-                style = MaterialTheme.typography.titleMedium,
+            Spacer(modifier = Modifier.height(14.dp))
+            PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
-            )
+            ) {
+                Text(
+                    text = stringResource(R.string.match_review_result_screenshots_title),
+                    color = PointIqMatchReviewNavy,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                ResultScreenshotSelector(
+                    resultScreenshots = uiState.resultScreenshots,
+                    isEditable = uiState.isEditable,
+                    onSelectScreenshot = onSelectResultScreenshot,
+                    onSelectBatch = onSelectResultScreenshotBatch,
+                    onOpenCrop = onOpenResultScreenshotCrop,
+                    onRemoveScreenshot = onRemoveResultScreenshot,
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-        if (showLegacyManualReviewContent || !isEmptyScreenshotUi) {
+        if (showLegacyManualReviewContent) {
             ResultScreenshotSelector(
                 resultScreenshots = uiState.resultScreenshots,
                 isEditable = uiState.isEditable,
@@ -851,18 +862,30 @@ private fun MatchReviewContent(
                     }
                 },
                 enabled = uiState.isEditable,
+                colors = if (!showLegacyManualReviewContent) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
+                shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
                     .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
             ) {
                 Text(
                     stringResource(
-                        if (isEmptyScreenshotUi) {
+                        if (!showLegacyManualReviewContent) {
                             R.string.calculate_points_action
                         } else {
                             R.string.match_ocr_review_title
                         },
                     ),
+                    fontSize = 14.sp,
+                    fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
         }
@@ -990,6 +1013,9 @@ private fun MatchReviewContent(
                 Text(stringResource(R.string.match_review_deleting_action))
             }
         }
+        if (!showLegacyManualReviewContent) {
+            Spacer(modifier = Modifier.height(10.dp))
+        }
         Button(
             onClick = { showDeleteConfirmation = true },
             enabled = !uiState.isDeleting,
@@ -997,13 +1023,20 @@ private fun MatchReviewContent(
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,
             ),
+            shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
                 .testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
         ) {
-            Text(stringResource(R.string.match_review_delete_action))
+            Text(
+                text = stringResource(R.string.match_review_delete_action),
+                fontSize = 14.sp,
+                fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
+            )
         }
-        if (isEmptyScreenshotUi) {
+        if (!showLegacyManualReviewContent) {
+            Spacer(modifier = Modifier.height(10.dp))
             OutlinedButton(
                 onClick = onBackToDetails,
                 enabled = !uiState.isDeleting,
@@ -1031,15 +1064,7 @@ private fun MatchReviewContent(
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
             ) {
-                Text(
-                    stringResource(
-                        if (showLegacyManualReviewContent) {
-                            R.string.back_to_match_details_action
-                        } else {
-                            R.string.match_review_simplified_back_action
-                        },
-                    ),
-                )
+                Text(stringResource(R.string.back_to_match_details_action))
             }
         }
     }
@@ -1936,9 +1961,7 @@ private fun ResultScreenshotPage(
     ) {
         previewImageUri?.let { imageUri ->
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
+                modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
                 LocalScreenshotPreview(
@@ -1950,7 +1973,7 @@ private fun ResultScreenshotPage(
                     ),
                     sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
                     sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth(),
                     testTag = if (screenshotNumber == 1) {
                         MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
                     } else {
@@ -1973,7 +1996,12 @@ private fun ResultScreenshotPage(
             Text(text = stringResource(R.string.match_review_screenshot_validating))
         }
         if (slot.isSelectedScreenshotValidated) {
-            Text(text = stringResource(R.string.match_review_screenshot_selected_and_validated))
+            Text(
+                text = stringResource(R.string.match_review_screenshot_selected_and_validated),
+                color = PointIqMatchReviewBody,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
         }
         if (slot.hasLinkedAsset && !slot.hasConfirmedCrop) {
             Text(text = stringResource(R.string.match_review_result_screenshot_crop_required))
