@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pointiq_email_placeholder">Enter your email</string>
+    <string name="pointiq_password_placeholder">Enter your password</string>
+    <string name="pointiq_security_message">Your data is secure with us.</string>
+    <string name="pointiq_terms_prefix">By continuing, you agree to our </string>
+    <string name="pointiq_terms_service">Terms of Service</string>
+    <string name="pointiq_terms_and"> and </string>
+    <string name="pointiq_privacy_policy">Privacy Policy</string>
+</resources>
