@@ -107,7 +107,7 @@ private fun PointIqBrandHeader(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp),
+            .padding(vertical = 30.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
