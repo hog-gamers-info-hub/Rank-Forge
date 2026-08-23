@@ -64,15 +64,20 @@ class SaveLobbyTemplateUseCase @Inject constructor(
         } catch (_: Throwable) {
             return SaveLobbyTemplateResult.Failed
         }
-        val assets = (1..3).map { index ->
-            assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, index))
+        val assets = (1..3).mapNotNull { index ->
+            assetRepository.getByIdentity(
+                MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, index),
+            )?.let { asset -> index to asset }
         }
-        val prepared = assets.mapIndexed { offset, asset ->
-            asset?.let { prepareAsset(tournamentId, sourceMatchId, offset + 1, it) }
+        if (assets.isEmpty()) return SaveLobbyTemplateResult.NotReady
+        val prepared = assets.map { (index, asset) ->
+            prepareAsset(tournamentId, sourceMatchId, index, asset)
         }
         if (prepared.any { it == null }) return SaveLobbyTemplateResult.NotReady
         val validAssets = prepared.filterNotNull()
-        if (validAssets.map { it.asset.sha256 }.toSet().size != 3) return SaveLobbyTemplateResult.NotReady
+        if (validAssets.map { it.asset.sha256 }.toSet().size != validAssets.size) {
+            return SaveLobbyTemplateResult.NotReady
+        }
 
         val generation = UUID.randomUUID().toString()
         val now = clock.millis()
@@ -265,9 +270,11 @@ internal fun isCompleteLobbyTemplate(
     templates: List<TournamentLobbyTemplateAssetEntity>,
     localImagePreserver: LocalImagePreserver,
 ): Boolean {
-    if (templates.map { it.lobbyScreenshotIndex } != listOf(1, 2, 3)) return false
+    if (templates.isEmpty() || templates.size > 3) return false
+    val indices = templates.map { it.lobbyScreenshotIndex }
+    if (indices.any { it !in 1..3 } || indices.toSet().size != indices.size) return false
     if (templates.any { it.tournamentId != tournamentId || it.ownerUserId.isBlank() || it.sha256.isBlank() }) return false
-    if (templates.map { it.sha256 }.toSet().size != 3) return false
+    if (templates.map { it.sha256 }.toSet().size != templates.size) return false
     return templates.all { template ->
         val file = localImagePreserver.resolveRelativePath(template.localRelativePath)
         val crop = OcrNormalizedCropRect(

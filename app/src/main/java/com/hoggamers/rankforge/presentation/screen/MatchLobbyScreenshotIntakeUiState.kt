@@ -96,19 +96,25 @@ data class MatchLobbyScreenshotIntakeUiState(
     fun slot(index: Int): MatchLobbyScreenshotSlotUiState? = slots.firstOrNull { it.index == index }
 
     val canSaveLobbyForNextMatches: Boolean
-        get() = isAvailable &&
-            status == MatchStatus.DRAFT &&
-            !isLobbyTemplateMutationInProgress &&
-            !isLobbySavedForNextMatches &&
-            slots.size == 3 &&
-            slots.all { slot ->
-                slot.index in 1..3 &&
-                    slot.hasLinkedAsset &&
-                    !slot.isLocalFileMissing &&
-                    !slot.selectedScreenshotUri.isNullOrBlank() &&
-                    slot.hasConfirmedCrop &&
-                !slot.isBusy
+        get() {
+            val selectedSlots = slots.filter { slot ->
+                slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
             }
+            return isAvailable &&
+                status == MatchStatus.DRAFT &&
+                !isLobbyTemplateMutationInProgress &&
+                !isLobbySavedForNextMatches &&
+                slots.size == 3 &&
+                slots.all { it.index in 1..3 } &&
+                slots.none { it.isBusy } &&
+                selectedSlots.isNotEmpty() &&
+                selectedSlots.all { slot ->
+                    slot.hasLinkedAsset &&
+                        !slot.isLocalFileMissing &&
+                        !slot.selectedScreenshotUri.isNullOrBlank() &&
+                        slot.hasConfirmedCrop
+                }
+        }
 
     val canUnsaveLobbyForNextMatches: Boolean
         get() = isAvailable &&
