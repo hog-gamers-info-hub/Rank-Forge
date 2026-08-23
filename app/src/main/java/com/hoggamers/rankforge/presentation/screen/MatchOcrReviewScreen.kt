@@ -5,13 +5,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,23 +23,28 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -1096,6 +1105,56 @@ private fun MatchOcrReviewMissingPreviewPlayerCell(
 }
 
 @Composable
+private fun CompactOcrNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean,
+    label: @Composable () -> Unit,
+    keyboardOptions: KeyboardOptions,
+    isError: Boolean,
+    modifier: Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val colors = OutlinedTextFieldDefaults.colors()
+    val textColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val cursorColor = if (isError) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.height(50.dp),
+        enabled = enabled,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor),
+        keyboardOptions = keyboardOptions,
+        interactionSource = interactionSource,
+        cursorBrush = SolidColor(cursorColor),
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = enabled,
+                singleLine = true,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interactionSource,
+                isError = isError,
+                label = label,
+                colors = colors,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            )
+        },
+    )
+}
+
+@Composable
 private fun MatchOcrReviewCorrectionFields(
     correctionDraft: MatchOcrReviewRowCorrectionDraft,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
@@ -1110,7 +1169,7 @@ private fun MatchOcrReviewCorrectionFields(
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
 ) {
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(
+        CompactOcrNumberField(
             value = correctionDraft.placementDraftValue,
             onValueChange = { onPlacementChanged(correctionDraft.rowIndex, it) },
             enabled = correctionEnabled,
@@ -1135,7 +1194,7 @@ private fun MatchOcrReviewCorrectionFields(
         )
     }
     val killsField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(
+        CompactOcrNumberField(
             value = correctionDraft.killsDraftValue,
             onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
             enabled = correctionEnabled,
@@ -1160,7 +1219,7 @@ private fun MatchOcrReviewCorrectionFields(
         )
     }
     val teamSlotField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(
+        CompactOcrNumberField(
             value = correctionDraft.assignedTeamSlotDraftValue,
             onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
             enabled = correctionEnabled,
@@ -1185,6 +1244,7 @@ private fun MatchOcrReviewCorrectionFields(
         )
     }
     if (compactFieldRow) {
+        Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
@@ -1363,8 +1423,16 @@ internal fun MatchOcrReviewFinalizeAction(
         enabled = correctionDraft.blockerCount == 0 &&
             !finalization.isFinalizing &&
             !finalization.isFinalized,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF176AF7),
+            contentColor = Color.White,
+            disabledContainerColor = Color(0xFFB8C7DC),
+            disabledContentColor = Color.White.copy(alpha = 0.85f),
+        ),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .height(48.dp)
             .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
     ) {
         Text(
@@ -1375,6 +1443,7 @@ internal fun MatchOcrReviewFinalizeAction(
                     R.string.match_ocr_review_finalize_action
                 },
             ),
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
