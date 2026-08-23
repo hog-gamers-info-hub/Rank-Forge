@@ -136,6 +136,11 @@ class RosterReviewViewModel @Inject constructor(
                                 it.copy(isConfirming = false, isAvailable = false)
                             }
                         }
+                        ConfirmTournamentRosterResult.AuthenticationRequired -> {
+                            _uiState.update {
+                                it.copy(isConfirming = false, hasConfirmError = true)
+                            }
+                        }
                     }
                 }
                 .onFailure {

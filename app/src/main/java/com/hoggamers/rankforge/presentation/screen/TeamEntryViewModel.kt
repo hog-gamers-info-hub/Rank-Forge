@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
@@ -116,10 +117,17 @@ class TeamEntryViewModel @Inject constructor(
                     return@launch
                 }
 
-                saveTeamSlotNames(
+                when (saveTeamSlotNames(
                     tournamentId = tournamentId,
                     teamNamesBySlotNumber = teamNamesBySlotNumber,
-                )
+                )) {
+                    SaveTeamSlotNamesResult.AuthenticationRequired,
+                    SaveTeamSlotNamesResult.TournamentNotFound -> {
+                        _uiState.update { it.copy(isSaving = false, hasSaveError = true) }
+                        return@launch
+                    }
+                    SaveTeamSlotNamesResult.Saved -> Unit
+                }
                 _uiState.update { current ->
                     current.copy(
                         validationIssues = validation.toUiState(),

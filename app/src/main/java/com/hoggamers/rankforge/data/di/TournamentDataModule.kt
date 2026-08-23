@@ -285,7 +285,8 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideSaveTeamSlotNamesUseCase(
         repository: TournamentRepository,
-    ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -305,15 +306,17 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideSaveRosterUseCase(
         repository: TournamentRepository,
-    ): SaveRosterUseCase = SaveRosterUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveRosterUseCase = SaveRosterUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideReplaceConfirmedTournamentRosterUseCase(
         repository: TournamentRepository,
         rosterValidator: RosterValidator,
+        authRepository: AuthRepository,
     ): ReplaceConfirmedTournamentRosterUseCase =
-        ReplaceConfirmedTournamentRosterUseCase(repository, rosterValidator)
+        ReplaceConfirmedTournamentRosterUseCase(repository, rosterValidator, authRepository)
 
     @Provides
     @Singleton
@@ -322,16 +325,26 @@ object TournamentDataProvidersModule {
     @Provides
     @Singleton
     fun provideValidateTournamentRosterUseCase(
-        repository: TournamentRepository,
+        observeTournamentSlots: ObserveTournamentSlotsUseCase,
+        observeRosterPlayers: ObserveRosterPlayersUseCase,
         validator: RosterValidator,
-    ): ValidateTournamentRosterUseCase = ValidateTournamentRosterUseCase(repository, validator)
+    ): ValidateTournamentRosterUseCase = ValidateTournamentRosterUseCase(
+        observeTournamentSlots,
+        observeRosterPlayers,
+        validator,
+    )
 
     @Provides
     @Singleton
     fun provideConfirmTournamentRosterUseCase(
         repository: TournamentRepository,
         validateTournamentRoster: ValidateTournamentRosterUseCase,
-    ): ConfirmTournamentRosterUseCase = ConfirmTournamentRosterUseCase(repository, validateTournamentRoster)
+        authRepository: AuthRepository,
+    ): ConfirmTournamentRosterUseCase = ConfirmTournamentRosterUseCase(
+        repository,
+        validateTournamentRoster,
+        authRepository,
+    )
 
     @Provides
     @Singleton

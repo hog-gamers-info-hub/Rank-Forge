@@ -863,6 +863,7 @@ class RosterOcrReviewViewModelTest {
             replacementThrowable?.let { throw it }
             return when (replacementResult) {
                 ReplaceConfirmedTournamentRosterResult.Replaced -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.Replaced
+                ReplaceConfirmedTournamentRosterResult.AuthenticationRequired -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
                 ReplaceConfirmedTournamentRosterResult.TournamentNotFound -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
                 ReplaceConfirmedTournamentRosterResult.InvalidCandidate -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate
                 ReplaceConfirmedTournamentRosterResult.BlockedByExistingMatches -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches

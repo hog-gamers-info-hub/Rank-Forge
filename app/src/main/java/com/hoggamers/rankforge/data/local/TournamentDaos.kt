@@ -123,6 +123,11 @@ interface TournamentDao {
     @Query("SELECT * FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId")
     fun observeByIdAndOwner(tournamentId: String, ownerUserId: String): Flow<TournamentEntity?>
 
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId)",
+    )
+    suspend fun existsByIdAndOwner(tournamentId: String, ownerUserId: String): Boolean
+
     @Upsert
     suspend fun upsert(tournament: TournamentEntity)
 

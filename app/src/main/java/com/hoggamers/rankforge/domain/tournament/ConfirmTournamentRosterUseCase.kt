@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.flow.first
 
 sealed interface ConfirmTournamentRosterResult {
@@ -16,14 +18,25 @@ sealed interface ConfirmTournamentRosterResult {
     ) : ConfirmTournamentRosterResult
 
     data object NotFound : ConfirmTournamentRosterResult
+
+    data object AuthenticationRequired : ConfirmTournamentRosterResult
 }
 
 class ConfirmTournamentRosterUseCase(
     private val repository: TournamentRepository,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(
+        repository: TournamentRepository,
+        validateTournamentRoster: ValidateTournamentRosterUseCase,
+    ) : this(repository, validateTournamentRoster, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(tournamentId: String): ConfirmTournamentRosterResult {
-        val tournament = repository.observeById(tournamentId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)?.user?.id
+            ?.takeIf { it.isNotBlank() }
+            ?: return ConfirmTournamentRosterResult.AuthenticationRequired
+        val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first()
             ?: return ConfirmTournamentRosterResult.NotFound
         val validation = validateTournamentRoster(tournamentId)
         if (validation.issues.isNotEmpty()) {
@@ -32,10 +45,13 @@ class ConfirmTournamentRosterUseCase(
         if (tournament.status == TournamentStatus.CONFIRMED) {
             return ConfirmTournamentRosterResult.AlreadyConfirmed(validation)
         }
-        return if (repository.confirmTournament(tournamentId)) {
-            ConfirmTournamentRosterResult.Confirmed(validation)
-        } else {
-            ConfirmTournamentRosterResult.AlreadyConfirmed(validation)
+        return when (repository.confirmTournamentByOwner(tournamentId, ownerUserId)) {
+            OwnerScopedTournamentConfirmationResult.Confirmed ->
+                ConfirmTournamentRosterResult.Confirmed(validation)
+            OwnerScopedTournamentConfirmationResult.AlreadyConfirmed ->
+                ConfirmTournamentRosterResult.AlreadyConfirmed(validation)
+            OwnerScopedTournamentConfirmationResult.TournamentNotFound ->
+                ConfirmTournamentRosterResult.NotFound
         }
     }
 }

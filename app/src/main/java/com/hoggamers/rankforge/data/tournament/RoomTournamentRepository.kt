@@ -25,6 +25,8 @@ import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrRowEvidence
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsFailure
@@ -687,45 +689,73 @@ class RoomTournamentRepository @Inject constructor(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
     ) {
+        saveTeamNamesInternal(tournamentId, teamNamesBySlotNumber, ownerUserId = null)
+    }
+
+    override suspend fun saveTeamNamesByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+    ): OwnerScopedTournamentMutationResult =
+        saveTeamNamesInternal(tournamentId, teamNamesBySlotNumber, ownerUserId)
+
+    private suspend fun saveTeamNamesInternal(
+        tournamentId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+        ownerUserId: String?,
+    ): OwnerScopedTournamentMutationResult {
         teamNamesBySlotNumber.keys.forEach { require(it in TeamSlot.SLOT_NUMBERS) }
         awaitState()
-        writeMutex.withLock {
-            val current = state.value
-            if (current.tournaments.none { it.id == tournamentId }) return@withLock
-            val normalizedSlots = database.teamSlotDao()
-                .observeByTournamentId(tournamentId)
-                .first()
-                .map { it.toDomain() }
-            val legacySlots = current.slots[tournamentId].orEmpty()
-            val slots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
-                normalizedSlots.firstOrNull { it.slotNumber == slotNumber }
-                    ?: legacySlots.firstOrNull { it.slotNumber == slotNumber }
-                    ?: TeamSlot.create(tournamentId, slotNumber)
-            }
-            val updatedSlots = slots.map { slot ->
-                slot.copy(teamName = teamNamesBySlotNumber[slot.slotNumber] ?: slot.teamName)
-            }
-            val next = current.copy(
-                tournaments = current.tournaments.map { tournament ->
-                    if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
-                        tournament.copy(status = TournamentStatus.DRAFT)
-                    } else tournament
-                },
-                slots = current.slots + (tournamentId to updatedSlots),
-            )
-            val teamNamesChanged = updatedSlots != slots
-            val tournamentStatusChanged = current.tournaments
-                .firstOrNull { it.id == tournamentId }
-                ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
-            if (!teamNamesChanged && !tournamentStatusChanged) return@withLock
-            database.withTransaction {
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val current = state.value
+                if (current.tournaments.none { it.id == tournamentId }) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val normalizedSlots = database.teamSlotDao()
+                    .observeByTournamentId(tournamentId)
+                    .first()
+                    .map { it.toDomain() }
+                val legacySlots = current.slots[tournamentId].orEmpty()
+                val slots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                    normalizedSlots.firstOrNull { it.slotNumber == slotNumber }
+                        ?: legacySlots.firstOrNull { it.slotNumber == slotNumber }
+                        ?: TeamSlot.create(tournamentId, slotNumber)
+                }
+                val updatedSlots = slots.map { slot ->
+                    slot.copy(teamName = teamNamesBySlotNumber[slot.slotNumber] ?: slot.teamName)
+                }
+                val next = current.copy(
+                    tournaments = current.tournaments.map { tournament ->
+                        if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
+                            tournament.copy(status = TournamentStatus.DRAFT)
+                        } else tournament
+                    },
+                    slots = current.slots + (tournamentId to updatedSlots),
+                )
+                val teamNamesChanged = updatedSlots != slots
+                val tournamentStatusChanged = current.tournaments
+                    .firstOrNull { it.id == tournamentId }
+                    ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
+                if (!teamNamesChanged && !tournamentStatusChanged) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.Saved
+                }
                 database.teamSlotDao().upsertAll(updatedSlots.map { it.toEntity() })
                 persistTournamentStatusChanges(current, next)
                 touchTournament(tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(tournamentId)
+                updatedState = next
+                OwnerScopedTournamentMutationResult.Saved
             }
-            state.value = next
+            if (result is OwnerScopedTournamentMutationResult.Saved && updatedState != null) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
         }
     }
 
@@ -788,25 +818,48 @@ class RoomTournamentRepository @Inject constructor(
         slotNumber: Int,
         players: List<RosterPlayer>,
     ) {
+        saveRosterInternal(tournamentId, slotNumber, players, ownerUserId = null)
+    }
+
+    override suspend fun saveRosterByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        slotNumber: Int,
+        players: List<RosterPlayer>,
+    ): OwnerScopedTournamentMutationResult =
+        saveRosterInternal(tournamentId, slotNumber, players, ownerUserId)
+
+    private suspend fun saveRosterInternal(
+        tournamentId: String,
+        slotNumber: Int,
+        players: List<RosterPlayer>,
+        ownerUserId: String?,
+    ): OwnerScopedTournamentMutationResult {
         require(slotNumber in TeamSlot.SLOT_NUMBERS)
         require(players.size <= RosterPlayer.MAX_PLAYERS)
         require(players.all { it.tournamentId == tournamentId && it.slotNumber == slotNumber })
         awaitState()
-        writeMutex.withLock {
-            val current = state.value
-            if (current.tournaments.none { it.id == tournamentId }) return@withLock
-            val next = current.copy(
-                tournaments = current.tournaments.map { tournament ->
-                    if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
-                        tournament.copy(status = TournamentStatus.DRAFT)
-                    } else tournament
-                },
-                rosters = current.rosters + (RosterKey(tournamentId, slotNumber) to players.toList()),
-            )
-            val tournamentStatusChanged = current.tournaments
-                .firstOrNull { it.id == tournamentId }
-                ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
-            database.withTransaction {
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val current = state.value
+                if (current.tournaments.none { it.id == tournamentId }) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val next = current.copy(
+                    tournaments = current.tournaments.map { tournament ->
+                        if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
+                            tournament.copy(status = TournamentStatus.DRAFT)
+                        } else tournament
+                    },
+                    rosters = current.rosters + (RosterKey(tournamentId, slotNumber) to players.toList()),
+                )
+                val tournamentStatusChanged = current.tournaments
+                    .firstOrNull { it.id == tournamentId }
+                    ?.status != next.tournaments.firstOrNull { it.id == tournamentId }?.status
                 database.rosterPlayerDao().deleteByTournamentAndSlot(tournamentId, slotNumber)
                 database.rosterPlayerDao().upsertAll(players.toEntities())
                 persistTournamentStatusChanges(current, next)
@@ -815,13 +868,30 @@ class RoomTournamentRepository @Inject constructor(
                 }
                 saveLegacyState(next)
                 markLocalRevisionChanged(tournamentId)
+                updatedState = next
+                OwnerScopedTournamentMutationResult.Saved
             }
-            state.value = next
+            if (result is OwnerScopedTournamentMutationResult.Saved) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
         }
     }
 
     override suspend fun replaceConfirmedTournamentRoster(
         candidate: ConfirmedRosterReplacementCandidate,
+    ): ReplaceConfirmedTournamentRosterRepositoryResult =
+        replaceConfirmedTournamentRosterInternal(candidate, ownerUserId = null)
+
+    override suspend fun replaceConfirmedTournamentRosterByOwner(
+        candidate: ConfirmedRosterReplacementCandidate,
+        ownerUserId: String,
+    ): ReplaceConfirmedTournamentRosterRepositoryResult =
+        replaceConfirmedTournamentRosterInternal(candidate, ownerUserId)
+
+    private suspend fun replaceConfirmedTournamentRosterInternal(
+        candidate: ConfirmedRosterReplacementCandidate,
+        ownerUserId: String?,
     ): ReplaceConfirmedTournamentRosterRepositoryResult {
         val expectedSlots = TeamSlot.SLOT_NUMBERS.toSet()
         if (
@@ -841,6 +911,9 @@ class RoomTournamentRepository @Inject constructor(
         return writeMutex.withLock {
             var updatedState: RepositoryState? = null
             val result = database.withTransaction {
+                if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(candidate.tournamentId, ownerUserId)) {
+                    return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
+                }
                 val tournamentEntity = database.tournamentDao()
                     .observeById(candidate.tournamentId)
                     .first()
@@ -923,6 +996,41 @@ class RoomTournamentRepository @Inject constructor(
             })
         }
         return confirmed
+    }
+
+    override suspend fun confirmTournamentByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): OwnerScopedTournamentConfirmationResult {
+        awaitState()
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentConfirmationResult.TournamentNotFound
+                }
+                val current = state.value
+                val tournament = current.tournaments.firstOrNull { it.id == tournamentId }
+                    ?: return@withTransaction OwnerScopedTournamentConfirmationResult.TournamentNotFound
+                if (tournament.status != TournamentStatus.DRAFT) {
+                    return@withTransaction OwnerScopedTournamentConfirmationResult.AlreadyConfirmed
+                }
+                val next = current.copy(
+                    tournaments = current.tournaments.map {
+                        if (it.id == tournamentId) it.copy(status = TournamentStatus.CONFIRMED) else it
+                    },
+                )
+                persistTournamentStatusChanges(current, next)
+                touchTournament(tournamentId)
+                saveLegacyState(next)
+                updatedState = next
+                OwnerScopedTournamentConfirmationResult.Confirmed
+            }
+            if (result is OwnerScopedTournamentConfirmationResult.Confirmed) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
+        }
     }
 
     override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> = flow {

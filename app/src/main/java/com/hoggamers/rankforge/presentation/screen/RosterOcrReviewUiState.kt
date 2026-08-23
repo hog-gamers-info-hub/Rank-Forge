@@ -85,6 +85,7 @@ sealed interface RosterOcrLocalReplacementState {
 
 enum class RosterOcrReviewLocalReplacementError {
     DRAFT_BLOCKED,
+    AUTHENTICATION_REQUIRED,
     TOURNAMENT_NOT_FOUND,
     INVALID_CANDIDATE,
     BLOCKED_BY_EXISTING_MATCHES,

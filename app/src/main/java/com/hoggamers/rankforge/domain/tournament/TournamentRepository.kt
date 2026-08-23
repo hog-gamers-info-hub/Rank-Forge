@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
@@ -70,6 +71,19 @@ interface TournamentRepository {
         teamNamesBySlotNumber: Map<Int, String>,
     )
 
+    suspend fun saveTeamNamesByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        teamNamesBySlotNumber: Map<Int, String>,
+    ): OwnerScopedTournamentMutationResult = if (
+        observeByIdAndOwner(tournamentId, ownerUserId).first() == null
+    ) {
+        OwnerScopedTournamentMutationResult.TournamentNotFound
+    } else {
+        saveTeamNames(tournamentId, teamNamesBySlotNumber)
+        OwnerScopedTournamentMutationResult.Saved
+    }
+
     fun observeRosterByTournamentAndSlot(
         tournamentId: String,
         slotNumber: Int,
@@ -106,12 +120,50 @@ interface TournamentRepository {
         players: List<RosterPlayer>,
     )
 
+    suspend fun saveRosterByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        slotNumber: Int,
+        players: List<RosterPlayer>,
+    ): OwnerScopedTournamentMutationResult = if (
+        observeByIdAndOwner(tournamentId, ownerUserId).first() == null
+    ) {
+        OwnerScopedTournamentMutationResult.TournamentNotFound
+    } else {
+        saveRoster(tournamentId, slotNumber, players)
+        OwnerScopedTournamentMutationResult.Saved
+    }
+
     suspend fun replaceConfirmedTournamentRoster(
         candidate: ConfirmedRosterReplacementCandidate,
     ): ReplaceConfirmedTournamentRosterRepositoryResult =
         error("Confirmed roster replacement is not supported by this repository.")
 
+    suspend fun replaceConfirmedTournamentRosterByOwner(
+        candidate: ConfirmedRosterReplacementCandidate,
+        ownerUserId: String,
+    ): ReplaceConfirmedTournamentRosterRepositoryResult = if (
+        observeByIdAndOwner(candidate.tournamentId, ownerUserId).first() == null
+    ) {
+        ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
+    } else {
+        replaceConfirmedTournamentRoster(candidate)
+    }
+
     suspend fun confirmTournament(tournamentId: String): Boolean
+
+    suspend fun confirmTournamentByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): OwnerScopedTournamentConfirmationResult = if (
+        observeByIdAndOwner(tournamentId, ownerUserId).first() == null
+    ) {
+        OwnerScopedTournamentConfirmationResult.TournamentNotFound
+    } else if (confirmTournament(tournamentId)) {
+        OwnerScopedTournamentConfirmationResult.Confirmed
+    } else {
+        OwnerScopedTournamentConfirmationResult.AlreadyConfirmed
+    }
 
     fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
         kotlinx.coroutines.flow.flowOf(emptyList())
@@ -214,4 +266,18 @@ interface TournamentRepository {
         tournamentId: String,
         matchId: String,
     ) = Unit
+}
+
+sealed interface OwnerScopedTournamentMutationResult {
+    data object Saved : OwnerScopedTournamentMutationResult
+
+    data object TournamentNotFound : OwnerScopedTournamentMutationResult
+}
+
+sealed interface OwnerScopedTournamentConfirmationResult {
+    data object Confirmed : OwnerScopedTournamentConfirmationResult
+
+    data object AlreadyConfirmed : OwnerScopedTournamentConfirmationResult
+
+    data object TournamentNotFound : OwnerScopedTournamentConfirmationResult
 }

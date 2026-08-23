@@ -21,6 +21,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterResult
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
@@ -78,6 +80,121 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryTest {
+    @Test
+    fun ownerScopedSetupMutationsOnlyChangeOwnedTournamentAndRejectForeignAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-setup-mutations.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+
+            val rejectedIds = listOf("owner-b", "legacy")
+            val initialSlots = rejectedIds.associateWith { tournamentId ->
+                repository.observeSlotsByTournamentId(tournamentId).first()
+            }
+            val initialStatuses = rejectedIds.associateWith { tournamentId ->
+                repository.observeById(tournamentId).first()!!.status
+            }
+            val initialRevisions = rejectedIds.associateWith { tournamentId ->
+                repository.readLocalRevisionState(tournamentId)
+            }
+            val initialUpdatedAt = rejectedIds.associateWith { tournamentId ->
+                database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis
+            }
+
+            assertEquals(
+                OwnerScopedTournamentMutationResult.Saved,
+                repository.saveTeamNamesByOwner("owner-a", "user-a", mapOf(1 to "Owner A Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveTeamNamesByOwner("owner-b", "user-a", mapOf(1 to "Foreign Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveTeamNamesByOwner("legacy", "user-a", mapOf(1 to "Legacy Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.Saved,
+                repository.saveRosterByOwner(
+                    "owner-a",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("owner-a", 1, "Owner A Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveRosterByOwner(
+                    "owner-b",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("owner-b", 1, "Foreign Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveRosterByOwner(
+                    "legacy",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("legacy", 1, "Legacy Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.TournamentNotFound,
+                repository.confirmTournamentByOwner("owner-b", "user-a"),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.TournamentNotFound,
+                repository.confirmTournamentByOwner("legacy", "user-a"),
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound,
+                repository.replaceConfirmedTournamentRosterByOwner(
+                    replacementCandidate("owner-b", "Foreign"),
+                    "user-a",
+                ),
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound,
+                repository.replaceConfirmedTournamentRosterByOwner(
+                    replacementCandidate("legacy", "Legacy"),
+                    "user-a",
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.Confirmed,
+                repository.confirmTournamentByOwner("owner-a", "user-a"),
+            )
+
+            assertEquals("Owner A Team", repository.observeSlotsByTournamentId("owner-a").first().first().teamName)
+            assertEquals(
+                listOf("Owner A Player"),
+                repository.observeRosterByTournamentAndSlot("owner-a", 1).first().map { it.displayName },
+            )
+            assertEquals(TournamentStatus.CONFIRMED, repository.observeById("owner-a").first()!!.status)
+            rejectedIds.forEach { tournamentId ->
+                assertEquals(initialSlots.getValue(tournamentId), repository.observeSlotsByTournamentId(tournamentId).first())
+                assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot(tournamentId, 1).first())
+                assertEquals(initialStatuses.getValue(tournamentId), repository.observeById(tournamentId).first()!!.status)
+                assertEquals(initialRevisions.getValue(tournamentId), repository.readLocalRevisionState(tournamentId))
+                assertEquals(
+                    initialUpdatedAt.getValue(tournamentId),
+                    database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis,
+                )
+            }
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun twelveTeamSlotsPersistThroughDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -637,6 +637,8 @@ private fun localReplacementErrorMessage(
     when (error) {
         RosterOcrReviewLocalReplacementError.DRAFT_BLOCKED ->
             R.string.roster_ocr_review_local_error_draft_blocked
+        RosterOcrReviewLocalReplacementError.AUTHENTICATION_REQUIRED ->
+            R.string.roster_ocr_review_local_error_tournament_not_found
         RosterOcrReviewLocalReplacementError.TOURNAMENT_NOT_FOUND ->
             R.string.roster_ocr_review_local_error_tournament_not_found
         RosterOcrReviewLocalReplacementError.INVALID_CANDIDATE ->

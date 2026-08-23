@@ -293,6 +293,10 @@ class RosterOcrReviewViewModel @Inject constructor(
                     evidence = reviewing.evidence,
                     draft = reviewing.draft,
                 )
+                ReplaceConfirmedTournamentRosterResult.AuthenticationRequired -> showLocalFailure(
+                    reviewing,
+                    RosterOcrReviewLocalReplacementError.AUTHENTICATION_REQUIRED,
+                )
                 ReplaceConfirmedTournamentRosterResult.TournamentNotFound -> showLocalFailure(
                     reviewing,
                     RosterOcrReviewLocalReplacementError.TOURNAMENT_NOT_FOUND,
