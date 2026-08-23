@@ -304,19 +304,11 @@ fun MatchLobbyScreenshotIntakeScreen(
                             enabled = uiState.isAvailable &&
                                 !uiState.isFinalized &&
                                 !nextEmptySlot.isBusy,
-                            colors = if (selectedSlots.isEmpty()) {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = PointIqMatchReviewBlue,
-                                    contentColor = Color.White,
-                                )
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            },
-                            shape = if (selectedSlots.isEmpty()) {
-                                RoundedCornerShape(18.dp)
-                            } else {
-                                ButtonDefaults.shape
-                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PointIqMatchReviewBlue,
+                                contentColor = Color.White,
+                            ),
+                            shape = RoundedCornerShape(18.dp),
                             contentPadding = PaddingValues(
                                 horizontal = RankForgeSpacing.Small,
                                 vertical = RankForgeSpacing.ExtraSmall,
@@ -326,14 +318,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
                         ) {
                             Text(
-                                text = if (selectedSlots.isEmpty()) {
-                                    stringResource(R.string.pointiq_match_review_upload_lobby_screenshots)
-                                } else {
-                                    stringResource(
-                                        R.string.match_lobby_screenshot_select_index_action,
-                                        nextEmptySlot.index,
-                                    )
-                                },
+                                text = stringResource(R.string.pointiq_match_review_upload_lobby_screenshots),
                             )
                         }
                     }

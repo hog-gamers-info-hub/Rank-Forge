@@ -1918,37 +1918,21 @@ private fun ResultScreenshotSelector(
             }
         }
         nextEmptyRole?.let { role ->
-            val screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2
             val slot = resultScreenshots.slot(role)
             Button(
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
                 enabled = isEditable && !slot.isBusy,
-                colors = if (selectedPages.isEmpty()) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
-                        contentColor = Color.White,
-                    )
-                } else {
-                    ButtonDefaults.buttonColors()
-                },
-                shape = if (selectedPages.isEmpty()) {
-                    RoundedCornerShape(18.dp)
-                } else {
-                    ButtonDefaults.shape
-                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PointIqMatchReviewBlue,
+                    contentColor = Color.White,
+                ),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
             ) {
                 Text(
-                    text = if (selectedPages.isEmpty()) {
-                        stringResource(R.string.pointiq_match_review_upload_result_screenshots)
-                    } else {
-                        stringResource(
-                            R.string.match_review_result_screenshot_select_action,
-                            screenshotNumber,
-                        )
-                    },
+                    text = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
                 )
             }
         }
