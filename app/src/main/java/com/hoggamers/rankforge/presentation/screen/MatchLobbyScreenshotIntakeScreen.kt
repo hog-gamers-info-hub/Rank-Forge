@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -310,6 +311,11 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 )
                             } else {
                                 ButtonDefaults.buttonColors()
+                            },
+                            shape = if (selectedSlots.isEmpty()) {
+                                RoundedCornerShape(18.dp)
+                            } else {
+                                ButtonDefaults.shape
                             },
                             contentPadding = PaddingValues(
                                 horizontal = RankForgeSpacing.Small,
