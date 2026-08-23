@@ -87,6 +87,12 @@ private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
 private val PointIqMatchReviewBackgroundTop = Color(0xFFFDFEFF)
 private val PointIqMatchReviewBackgroundBottom = Color(0xFFF4FAFF)
 
+private enum class MatchReviewScreenshotActionStyle {
+    REPLACE,
+    EDIT,
+    REMOVE,
+}
+
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
 const val MATCH_REVIEW_VALID_STATUS_TEST_TAG = "match_review_valid_status"
@@ -870,6 +876,7 @@ private fun MatchReviewContent(
                     finalization = readyOcrUiState.finalization,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
         if (uiState.isEditable) {
@@ -962,11 +969,22 @@ private fun MatchReviewContent(
                     showResultScopeDialog = true
                 },
                 enabled = uiState.canDownloadResult,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF176AF7),
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFFB8C7DC),
+                    disabledContentColor = Color.White.copy(alpha = 0.85f),
+                ),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
                     .testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
             ) {
-                Text(text = stringResource(R.string.match_review_download_result_action))
+                Text(
+                    text = stringResource(R.string.match_review_download_result_action),
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             when (val downloadState = uiState.resultDownloadUiState) {
                 is ResultDownloadUiState.Generating -> Text(
@@ -2129,7 +2147,7 @@ internal fun MatchReviewScreenshotActionRow(
             enabled = replaceEnabled,
             testTag = replaceTestTag,
             onClick = onReplace,
-            destructive = false,
+            style = MatchReviewScreenshotActionStyle.REPLACE,
             modifier = Modifier.weight(1f),
         )
         MatchReviewScreenshotActionButton(
@@ -2138,7 +2156,7 @@ internal fun MatchReviewScreenshotActionRow(
             enabled = editEnabled,
             testTag = editTestTag,
             onClick = onEdit,
-            destructive = false,
+            style = MatchReviewScreenshotActionStyle.EDIT,
             modifier = Modifier.weight(1f),
         )
         MatchReviewScreenshotActionButton(
@@ -2147,7 +2165,7 @@ internal fun MatchReviewScreenshotActionRow(
             enabled = removeEnabled,
             testTag = removeTestTag,
             onClick = onRemove,
-            destructive = true,
+            style = MatchReviewScreenshotActionStyle.REMOVE,
             modifier = Modifier.weight(1f),
         )
     }
@@ -2160,24 +2178,33 @@ private fun MatchReviewScreenshotActionButton(
     enabled: Boolean,
     testTag: String,
     onClick: () -> Unit,
-    destructive: Boolean,
+    style: MatchReviewScreenshotActionStyle,
     modifier: Modifier,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    val borderColor = if (destructive) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.outline
+    val (backgroundColor, borderColor, textColor) = when (style) {
+        MatchReviewScreenshotActionStyle.REPLACE -> Triple(
+            Color(0xFFF2F7FF),
+            Color(0xFFB7CEF0),
+            PointIqMatchReviewBlue,
+        )
+        MatchReviewScreenshotActionStyle.EDIT -> Triple(
+            Color(0xFFF1FAFD),
+            Color(0xFFB6DFEA),
+            Color(0xFF187C9A),
+        )
+        MatchReviewScreenshotActionStyle.REMOVE -> Triple(
+            Color(0xFFFFF3F3),
+            Color(0xFFF0B8B8),
+            Color(0xFFC53A3A),
+        )
     }
-    val textColor = if (destructive) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val treatmentAlpha = if (enabled) 1f else 0.38f
+    val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = modifier
-            .height(30.dp)
-            .border(1.dp, borderColor, shape)
+            .height(34.dp)
+            .background(backgroundColor.copy(alpha = treatmentAlpha), shape)
+            .border(1.dp, borderColor.copy(alpha = treatmentAlpha), shape)
             .clickable(enabled = enabled, onClick = onClick)
             .testTag(testTag)
             .semantics { this.contentDescription = contentDescription },
@@ -2185,8 +2212,9 @@ private fun MatchReviewScreenshotActionButton(
     ) {
         Text(
             text = label,
-            color = textColor,
+            color = textColor.copy(alpha = treatmentAlpha),
             fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             softWrap = false,
         )

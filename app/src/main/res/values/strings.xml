@@ -402,7 +402,7 @@
     <string name="match_ocr_review_finalization_ready">Corrected rows are ready for finalization review.</string>
     <string name="match_ocr_review_finalization_blocked">Finalization blocked: %1$d blocker(s).</string>
     <string name="match_ocr_review_finalization_warning_count">Warnings requiring confirmation: %1$d.</string>
-    <string name="match_ocr_review_finalize_action">Finalize corrected match</string>
+    <string name="match_ocr_review_finalize_action">Finalize Match</string>
     <string name="match_ocr_review_finalization_in_progress">Finalizing corrected match</string>
     <string name="match_ocr_review_finalize_warning_title">Finalize with warnings?</string>
     <string name="match_ocr_review_finalize_warning_message">This corrected match has %1$d warning row(s). Confirm only after reviewing the OCR evidence and corrections.</string>
