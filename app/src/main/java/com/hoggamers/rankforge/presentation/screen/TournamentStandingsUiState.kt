@@ -10,6 +10,7 @@ data class TournamentStandingsUiState(
 data class TournamentStandingRowUiState(
     val displayOrder: Int,
     val teamSlotNumber: Int,
+    val teamName: String?,
     val totalPoints: Int,
     val totalPositionPoints: Int,
     val totalKillPoints: Int,
@@ -19,12 +20,15 @@ data class TournamentStandingRowUiState(
     val isCompleteTie: Boolean,
 )
 
-fun List<TieBreakStanding>.toTournamentStandingsUiState(): List<TournamentStandingRowUiState> =
+fun List<TieBreakStanding>.toTournamentStandingsUiState(
+    teamNamesBySlotNumber: Map<Int, String> = emptyMap(),
+): List<TournamentStandingRowUiState> =
     mapIndexed { index, tieBreakStanding ->
         val standing = tieBreakStanding.standing
         TournamentStandingRowUiState(
             displayOrder = index + 1,
             teamSlotNumber = standing.teamSlotNumber,
+            teamName = teamNamesBySlotNumber[standing.teamSlotNumber],
             totalPoints = standing.totalPoints,
             totalPositionPoints = standing.totalPositionPoints,
             totalKillPoints = standing.totalKillPoints,

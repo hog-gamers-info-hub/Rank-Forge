@@ -199,6 +199,15 @@ private fun TournamentStandingsInfoBanner() {
 @Composable
 private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
     val rankStyle = standingRankStyle(row.displayOrder)
+    val teamLabel = row.teamName
+        ?.takeIf { it.isNotBlank() }
+        ?.let { teamName ->
+            stringResource(R.string.tournament_standing_team_name_inline, teamName)
+        }
+        ?: stringResource(
+            R.string.tournament_standing_team_slot_inline,
+            row.teamSlotNumber,
+        )
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,10 +231,7 @@ private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
                 ) {
                     StandingRankBadge(row.displayOrder, rankStyle)
                     Text(
-                        text = stringResource(
-                            R.string.tournament_standing_team_slot_inline,
-                            row.teamSlotNumber,
-                        ),
+                        text = teamLabel,
                         color = PointIqStandingsBody,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
