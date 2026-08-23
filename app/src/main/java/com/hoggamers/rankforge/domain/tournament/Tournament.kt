@@ -9,4 +9,5 @@ data class Tournament(
     val organizerName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus,
+    val ownerUserId: String? = null,
 )

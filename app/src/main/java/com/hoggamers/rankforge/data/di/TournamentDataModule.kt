@@ -73,6 +73,7 @@ import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCas
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
+import com.hoggamers.rankforge.domain.auth.AuthRepository
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -248,8 +249,9 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideCreateTournamentUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
         clock: Clock,
-    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, clock)
+    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, authRepository, clock)
 
     @Provides
     @Singleton

@@ -136,6 +136,13 @@ class TournamentCreationViewModel @Inject constructor(
 
     private suspend fun createAndUpload(input: CreateTournamentInput) {
         when (val result = createTournament(input)) {
+            CreateTournamentResult.AuthenticationRequired -> _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    submissionError = TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED,
+                )
+            }
+
             is CreateTournamentResult.Invalid -> _uiState.update {
                 it.copy(
                     isSubmitting = false,

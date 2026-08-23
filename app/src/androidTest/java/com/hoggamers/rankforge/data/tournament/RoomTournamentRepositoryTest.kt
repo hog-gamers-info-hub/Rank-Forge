@@ -85,15 +85,20 @@ class RoomTournamentRepositoryTest {
         context.deleteDatabase(databaseName)
         val databases = mutableListOf<RankForgeDatabase>()
         try {
-            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
-            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT, ownerUserId = "user-a"))
             assertEquals(12, repository.observeSlotsByTournamentId("tournament-1").first().size)
+            assertTrue(database.tournamentDao().observeById("tournament-1").first()!!.ownerUserId == "user-a")
+            assertTrue(database.stateDao().readPayload()!!.contains("\"ownerUserId\":\"user-a\""))
+            database.tournamentDao().deleteById("tournament-1")
             databases.last().close()
 
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
 
             assertEquals(12, reopenedRepository.observeSlotsByTournamentId("tournament-1").first().size)
+            assertEquals("user-a", reopenedRepository.observeById("tournament-1").first()!!.ownerUserId)
             assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("tournament-1").first().size)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -1045,6 +1050,7 @@ class RoomTournamentRepositoryTest {
 
             val backfilledTournament = repository.observeById("legacy-tournament").first { it != null }!!
             assertEquals("Legacy Cup", backfilledTournament.name)
+            assertEquals(null, backfilledTournament.ownerUserId)
             assertEquals(
                 listOf(backfilledTournament),
                 repository.observeAll().first(),
@@ -1065,6 +1071,7 @@ class RoomTournamentRepositoryTest {
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
             assertEquals("Legacy Cup", reopenedRepository.observeById("legacy-tournament").first { it != null }!!.name)
+            assertEquals(null, reopenedRepository.observeById("legacy-tournament").first { it != null }!!.ownerUserId)
             assertEquals(1, reopenedDatabase.tournamentDao().observeAll().first().size)
             assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("legacy-tournament").first().size)
             assertEquals(2, reopenedDatabase.rosterPlayerDao().observeByTournamentAndSlot("legacy-tournament", 1).first().size)
@@ -2209,6 +2216,7 @@ class RoomTournamentRepositoryTest {
         id: String,
         status: TournamentStatus,
         date: LocalDate = LocalDate.of(2026, 7, 24),
+        ownerUserId: String? = null,
     ) = Tournament(
         id = id,
         name = "Summer Cup",
@@ -2216,6 +2224,7 @@ class RoomTournamentRepositoryTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = status,
+        ownerUserId = ownerUserId,
     )
 
     private fun legacyPayload(

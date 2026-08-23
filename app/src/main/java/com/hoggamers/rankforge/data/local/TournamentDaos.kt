@@ -77,7 +77,8 @@ interface TournamentDao {
                 SELECT COUNT(*) FROM matches
                 WHERE matches.tournament_id = tournaments.id
             ) AS total_matches,
-            tournaments.last_updated_epoch_millis
+            tournaments.last_updated_epoch_millis,
+            tournaments.owner_user_id
         FROM tournaments
         ORDER BY tournaments.creation_order, tournaments.id
         """,

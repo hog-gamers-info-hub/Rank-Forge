@@ -43,6 +43,7 @@ data class TournamentSummaryProjection(
     @ColumnInfo(name = "total_teams") val totalTeams: Int,
     @ColumnInfo(name = "total_matches") val totalMatches: Int,
     @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long?,
+    @ColumnInfo(name = "owner_user_id") val ownerUserId: String?,
 )
 
 @Entity(
