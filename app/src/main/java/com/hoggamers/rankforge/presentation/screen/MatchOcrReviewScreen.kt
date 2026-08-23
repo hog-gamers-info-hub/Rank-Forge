@@ -56,6 +56,7 @@ import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
 private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
+private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 object MatchOcrReviewTestTags {
     const val SCREEN = "match_ocr_review_screen"
@@ -1302,7 +1303,7 @@ private fun MatchOcrReviewCorrectionFields(
             }
         }
     }
-    if (correctionDraft.isDirty) {
+    if (SHOW_EXTRA_INFORMATION_STATUS_TEXT && correctionDraft.isDirty) {
         Text(
             text = stringResource(R.string.match_ocr_review_correction_dirty_row),
             modifier = Modifier.testTag(MatchOcrReviewTestTags.rowDirty(correctionDraft.rowIndex)),
@@ -1388,7 +1389,7 @@ private fun MatchOcrReviewFinalizationSummary(
                 )
             }
         }
-        if (finalization.isFinalized) {
+        if (SHOW_EXTRA_INFORMATION_STATUS_TEXT && finalization.isFinalized) {
             Text(
                 text = stringResource(R.string.match_ocr_review_finalization_success),
                 color = MaterialTheme.colorScheme.primary,

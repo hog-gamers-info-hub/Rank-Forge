@@ -790,7 +790,7 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
-    fun dirtyMarkerAndWarningLabelsAreDisplayed() {
+    fun dirtyStateKeepsWarningsWhileHidingDirtyMarker() {
         val dirtyDraft = correctionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
         }
@@ -803,8 +803,8 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.rowDirty(0)).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Draft changed").performScrollTo().assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.rowDirty(0)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Draft changed").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.rowWarning(0)).performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Warning: Kills changed from OCR value.").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Correction draft has unsaved in-memory changes.").performScrollTo().assertIsDisplayed()
@@ -1002,10 +1002,10 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZATION_SUCCESS)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Corrected OCR match finalized.").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZATION_SUCCESS)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Corrected OCR match finalized.")
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertIsNotEnabled()
     }
 

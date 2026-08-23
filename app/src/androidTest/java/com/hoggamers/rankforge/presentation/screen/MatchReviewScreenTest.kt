@@ -713,7 +713,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun cachedOcrAvailabilityIsShownWithoutChangingInlineReviewStructure() {
+    fun readyCachedOcrAvailabilityKeepsReviewStructureWithoutShowingInformationalText() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -728,10 +728,34 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_READY_TEST_TAG)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_READY_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("OCR data ready")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun staleCachedOcrAvailabilityRemainsVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrCacheAvailability = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE,
+                    ocrUiState = inlineOcrState(),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_STALE_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+        composeTestRule.onNodeWithText("OCR data needs refresh")
             .assertIsDisplayed()
     }
 
@@ -2098,6 +2122,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Screenshot selected and validated.")
+            .assertCountEquals(0)
         composeTestRule.runOnIdle { assertEquals(1, photoPickerActionCount) }
     }
 
