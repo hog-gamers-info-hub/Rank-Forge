@@ -23,6 +23,9 @@ interface TournamentRepository {
 
     fun observeAll(): Flow<List<Tournament>>
 
+    fun observeAllByOwner(ownerUserId: String): Flow<List<Tournament>> =
+        observeAll().map { tournaments -> tournaments.filter { it.ownerUserId == ownerUserId } }
+
     fun observeSummaries(): Flow<List<TournamentSummary>> = observeAll().map { tournaments ->
         tournaments.map { tournament ->
             TournamentSummary(
@@ -34,7 +37,19 @@ interface TournamentRepository {
         }
     }
 
+    fun observeSummariesByOwner(ownerUserId: String): Flow<List<TournamentSummary>> =
+        observeSummaries().map { summaries ->
+            summaries.filter { it.tournament.ownerUserId == ownerUserId }
+        }
+
     fun observeById(tournamentId: String): Flow<Tournament?>
+
+    fun observeByIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<Tournament?> = observeById(tournamentId).map { tournament ->
+        tournament?.takeIf { it.ownerUserId == ownerUserId }
+    }
 
     fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
 

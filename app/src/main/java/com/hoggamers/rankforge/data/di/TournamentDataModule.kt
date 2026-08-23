@@ -257,19 +257,22 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideObserveTournamentsUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveTournamentSummariesUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentSummariesUseCase = ObserveTournamentSummariesUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentSummariesUseCase = ObserveTournamentSummariesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideGetTournamentByIdUseCase(
         repository: TournamentRepository,
-    ): GetTournamentByIdUseCase = GetTournamentByIdUseCase(repository)
+        authRepository: AuthRepository,
+    ): GetTournamentByIdUseCase = GetTournamentByIdUseCase(repository, authRepository)
 
     @Provides
     @Singleton

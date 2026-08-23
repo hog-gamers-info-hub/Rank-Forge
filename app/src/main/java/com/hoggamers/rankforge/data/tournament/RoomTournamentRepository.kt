@@ -277,6 +277,13 @@ class RoomTournamentRepository @Inject constructor(
         })
     }
 
+    override fun observeAllByOwner(ownerUserId: String): Flow<List<Tournament>> = flow {
+        ready.await()
+        emitAll(database.tournamentDao().observeAllByOwner(ownerUserId).map { tournaments ->
+            tournaments.map { it.toDomain() }
+        })
+    }
+
     override fun observeSummaries(): Flow<List<TournamentSummary>> = flow {
         ready.await()
         emitAll(database.tournamentDao().observeSummaries().map { summaries ->
@@ -284,9 +291,27 @@ class RoomTournamentRepository @Inject constructor(
         })
     }
 
+    override fun observeSummariesByOwner(ownerUserId: String): Flow<List<TournamentSummary>> = flow {
+        ready.await()
+        emitAll(database.tournamentDao().observeSummariesByOwner(ownerUserId).map { summaries ->
+            summaries.map { it.toDomain() }
+        })
+    }
+
     override fun observeById(tournamentId: String): Flow<Tournament?> = flow {
         ready.await()
         emitAll(database.tournamentDao().observeById(tournamentId).map { it?.toDomain() })
+    }
+
+    override fun observeByIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<Tournament?> = flow {
+        ready.await()
+        emitAll(
+            database.tournamentDao().observeByIdAndOwner(tournamentId, ownerUserId)
+                .map { it?.toDomain() },
+        )
     }
 
     override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState {

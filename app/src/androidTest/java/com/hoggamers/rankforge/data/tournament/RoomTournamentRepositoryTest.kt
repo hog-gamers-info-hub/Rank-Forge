@@ -132,6 +132,43 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun ownerScopedTournamentReadsExcludeOtherOwnersAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-reads.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+
+            assertEquals(
+                listOf("owner-a"),
+                database.tournamentDao().observeAllByOwner("user-a").first().map { it.id },
+            )
+            assertEquals(
+                listOf("owner-a"),
+                repository.observeAllByOwner("user-a").first().map { it.id },
+            )
+            assertEquals(
+                listOf("owner-b"),
+                repository.observeSummariesByOwner("user-b").first().map { it.tournament.id },
+            )
+            assertEquals(
+                "owner-a",
+                repository.observeByIdAndOwner("owner-a", "user-a").first()?.id,
+            )
+            assertEquals(null, repository.observeByIdAndOwner("owner-b", "user-a").first())
+            assertEquals(null, repository.observeByIdAndOwner("legacy", "user-a").first())
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun observingTournamentsPreservesCreationOrderAcrossDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-tournament-order.db"
