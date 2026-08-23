@@ -4,7 +4,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -147,13 +146,6 @@ fun MatchLobbyScreenshotIntakeScreen(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (compactActions && !showTitle) {
-                    Modifier.border(2.dp, Color.Green)
-                } else {
-                    Modifier
-                },
-            )
             .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(
             if (compactActions && !showTitle && uiState.slots.any { it.hasScreenshotSelection() }) {
@@ -203,8 +195,7 @@ fun MatchLobbyScreenshotIntakeScreen(
             if (compactActions && !showTitle) {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, Color.Gray),
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(
@@ -242,8 +233,7 @@ fun MatchLobbyScreenshotIntakeScreen(
             if (!compactSelectors || (compactActions && showTitle)) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, Color.Black),
+                        .fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -286,7 +276,6 @@ fun MatchLobbyScreenshotIntakeScreen(
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(2.dp, Color.Cyan)
                         .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
                 ) { page ->
                     selectedSlots.getOrNull(page)?.let { slot ->
@@ -523,9 +512,7 @@ private fun LobbyScreenshotDetail(
         null
     }
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(2.dp, Color.Yellow),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         if (!compactActions && slot.hasLinkedAsset && !slot.isLocalFileMissing) {
@@ -543,9 +530,7 @@ private fun LobbyScreenshotDetail(
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, Color.Magenta),
+                    modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -558,8 +543,7 @@ private fun LobbyScreenshotDetail(
                         sourceImageWidth = slot.selectedScreenshotWidth,
                         sourceImageHeight = slot.selectedScreenshotHeight,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .border(2.dp, Color(0xFFFF9800)),
+                            .fillMaxWidth(),
                         testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
                     )
                 }

@@ -1199,15 +1199,14 @@ private fun PointIqEmptyMatchReviewSection(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         color = PointIqMatchReviewCard,
-        border = BorderStroke(3.dp, Color.Red),
+        border = BorderStroke(1.dp, PointIqMatchReviewBorder),
         tonalElevation = 0.dp,
         shadowElevation = 2.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(5.dp)
-                .border(2.dp, Color.Blue),
+                .padding(5.dp),
             verticalArrangement = Arrangement.spacedBy(contentSpacing),
         ) {
             content()
@@ -1875,8 +1874,7 @@ private fun ResultScreenshotSelector(
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .border(2.dp, Color.Green),
+            .fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         if (selectedPages.isNotEmpty()) {
@@ -1884,7 +1882,6 @@ private fun ResultScreenshotSelector(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(2.dp, Color.Cyan)
                     .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
             ) { page ->
                 selectedPages.getOrNull(page)?.let { (role, slot) ->
@@ -1959,7 +1956,6 @@ private fun ResultScreenshotPage(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(2.dp, Color.Yellow)
             .testTag(
                 if (screenshotNumber == 1) {
                     MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG
@@ -1976,9 +1972,7 @@ private fun ResultScreenshotPage(
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, Color.Magenta),
+                    modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -1991,8 +1985,7 @@ private fun ResultScreenshotPage(
                         sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
                         sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .border(2.dp, Color(0xFFFF9800)),
+                            .fillMaxWidth(),
                         testTag = if (screenshotNumber == 1) {
                             MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
                         } else {
