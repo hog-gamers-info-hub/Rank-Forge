@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -24,13 +23,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -1973,38 +1970,59 @@ private fun ResultScreenshotPage(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         previewImageUri?.let { imageUri ->
-            Box(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .border(2.dp, Color.Magenta),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
-                LocalScreenshotPreview(
-                    imageUri = imageUri,
-                    crop = slot.confirmedCrop,
-                    contentDescription = stringResource(
-                        R.string.match_review_result_screenshot_preview_description,
-                        screenshotNumber,
-                    ),
-                    sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
-                    sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(2.dp, Color(0xFFFF9800)),
-                    testTag = if (screenshotNumber == 1) {
-                        MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
-                    } else {
-                        MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
-                    },
-                )
+                        .border(2.dp, Color.Magenta),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LocalScreenshotPreview(
+                        imageUri = imageUri,
+                        crop = slot.confirmedCrop,
+                        contentDescription = stringResource(
+                            R.string.match_review_result_screenshot_preview_description,
+                            screenshotNumber,
+                        ),
+                        sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                        sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color(0xFFFF9800)),
+                        testTag = if (screenshotNumber == 1) {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                        } else {
+                            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                        },
+                    )
+                }
                 if (isEditable) {
-                    ResultScreenshotActionOverlay(
-                        role = role,
-                        slot = slot,
-                        onSelectScreenshot = onSelectScreenshot,
-                        onOpenCrop = onOpenCrop,
-                        onRemoveScreenshot = onRemoveScreenshot,
-                        modifier = Modifier.align(Alignment.BottomEnd),
+                    MatchReviewScreenshotActionRow(
+                        replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
+                        editLabel = stringResource(R.string.match_review_screenshot_edit_action),
+                        removeLabel = stringResource(R.string.match_review_result_screenshot_remove_short_action),
+                        replaceContentDescription = stringResource(
+                            R.string.match_review_screenshot_replace_content_description,
+                        ),
+                        editContentDescription = stringResource(
+                            R.string.match_review_screenshot_crop_content_description,
+                        ),
+                        removeContentDescription = stringResource(
+                            R.string.match_review_screenshot_remove_content_description,
+                        ),
+                        replaceEnabled = !slot.isBusy,
+                        editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
+                        removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
+                        replaceTestTag = role.replaceActionTestTag(),
+                        editTestTag = role.cropActionTestTag(),
+                        removeTestTag = role.removeActionTestTag(),
+                        onReplace = { onSelectScreenshot(role) },
+                        onEdit = { onOpenCrop(role) },
+                        onRemove = { onRemoveScreenshot(role) },
                     )
                 }
             }
@@ -2081,43 +2099,93 @@ private fun ResultScreenshotPage(
 }
 
 @Composable
-private fun ResultScreenshotActionOverlay(
-    role: MatchResultScreenshotRole,
-    slot: MatchResultScreenshotSlotUiState,
-    onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
-    onOpenCrop: (MatchResultScreenshotRole) -> Unit,
-    onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
-    modifier: Modifier,
+internal fun MatchReviewScreenshotActionRow(
+    replaceLabel: String,
+    editLabel: String,
+    removeLabel: String,
+    replaceContentDescription: String,
+    editContentDescription: String,
+    removeContentDescription: String,
+    replaceEnabled: Boolean,
+    editEnabled: Boolean,
+    removeEnabled: Boolean,
+    replaceTestTag: String,
+    editTestTag: String,
+    removeTestTag: String,
+    onReplace: () -> Unit,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .then(modifier)
-            .padding(end = 8.dp, bottom = 36.dp),
-        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ResultScreenshotActionIconButton(
-            symbol = "✎",
-            contentDescription = stringResource(R.string.match_review_screenshot_replace_content_description),
-            enabled = !slot.isBusy,
-            onClick = { onSelectScreenshot(role) },
-            testTag = role.replaceActionTestTag(),
-            iconModifier = Modifier.offset(y = (-2).dp),
+        MatchReviewScreenshotActionButton(
+            label = replaceLabel,
+            contentDescription = replaceContentDescription,
+            enabled = replaceEnabled,
+            testTag = replaceTestTag,
+            onClick = onReplace,
+            destructive = false,
+            modifier = Modifier.weight(1f),
         )
-        ResultScreenshotActionIconButton(
-            symbol = "✂",
-            contentDescription = stringResource(R.string.match_review_screenshot_crop_content_description),
-            enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
-            onClick = { onOpenCrop(role) },
-            testTag = role.cropActionTestTag(),
-            iconModifier = Modifier.offset(y = (-2).dp),
+        MatchReviewScreenshotActionButton(
+            label = editLabel,
+            contentDescription = editContentDescription,
+            enabled = editEnabled,
+            testTag = editTestTag,
+            onClick = onEdit,
+            destructive = false,
+            modifier = Modifier.weight(1f),
         )
-        ResultScreenshotActionIconButton(
-            symbol = "×",
-            contentDescription = stringResource(R.string.match_review_screenshot_remove_content_description),
-            enabled = slot.hasLinkedAsset && !slot.isBusy,
-            onClick = { onRemoveScreenshot(role) },
-            testTag = role.removeActionTestTag(),
+        MatchReviewScreenshotActionButton(
+            label = removeLabel,
+            contentDescription = removeContentDescription,
+            enabled = removeEnabled,
+            testTag = removeTestTag,
+            onClick = onRemove,
+            destructive = true,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun MatchReviewScreenshotActionButton(
+    label: String,
+    contentDescription: String,
+    enabled: Boolean,
+    testTag: String,
+    onClick: () -> Unit,
+    destructive: Boolean,
+    modifier: Modifier,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val borderColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.outline
+    }
+    val textColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        modifier = modifier
+            .height(30.dp)
+            .border(1.dp, borderColor, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .testTag(testTag)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 12.sp,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -2142,43 +2210,6 @@ private fun MatchResultScreenshotRole.removeActionTestTag(): String =
     } else {
         MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG
     }
-
-@Composable
-private fun ResultScreenshotActionIconButton(
-    symbol: String,
-    contentDescription: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    testTag: String,
-    iconModifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = Modifier.size(36.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        shape = CircleShape,
-        tonalElevation = RankForgeSpacing.ExtraSmall,
-    ) {
-        IconButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag(testTag)
-                .semantics { this.contentDescription = contentDescription },
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    modifier = iconModifier,
-                    text = symbol,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun ResultScreenshotActionRow(

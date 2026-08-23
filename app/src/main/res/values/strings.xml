@@ -547,6 +547,7 @@
     <string name="match_review_screenshot_replace_content_description">Replace screenshot</string>
     <string name="match_review_screenshot_crop_content_description">Crop screenshot</string>
     <string name="match_review_screenshot_remove_content_description">Remove screenshot</string>
+    <string name="match_review_screenshot_edit_action">Edit</string>
     <string name="match_result_screenshot_crop_title">Crop Result Screenshot %1$d</string>
     <string name="match_result_screenshot_crop_1_guidance">Crop the main complete result rows and avoid the cut-off Team 11 where possible.</string>
     <string name="match_result_screenshot_crop_2_guidance">Crop the continuation containing complete Team 11 and Team 12.</string>
