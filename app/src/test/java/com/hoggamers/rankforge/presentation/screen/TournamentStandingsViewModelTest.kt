@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +45,10 @@ class TournamentStandingsViewModelTest {
     @Test
     fun finalizedMatchesProduceDerivedStandingsAndDraftMatchesAreExcluded() = runTest {
         repository.create(tournament())
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
         repository.createDraftMatch(match("finalized", 1))
         repository.createDraftMatch(match("draft", 2))
         repository.finalizeDraftMatch(
@@ -93,7 +99,61 @@ class TournamentStandingsViewModelTest {
         assertEquals((1..10).toSet(), rows.map { it.teamSlotNumber }.toSet())
         assertTrue(rows.none { it.teamSlotNumber > 10 })
         assertEquals(14, rows.first { it.teamSlotNumber == 2 }.totalPoints)
+        assertEquals("Team 2", rows.first().teamName)
+        assertEquals("Team 1", rows.first { it.teamSlotNumber == 1 }.teamName)
         assertTrue(rows.all { it.matchesIncluded == 1 })
+    }
+
+    @Test
+    fun blankTeamNamesRemainNullInPresentationRows() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.createDraftMatch(match("finalized", 1))
+        repository.finalizeDraftMatch(
+            matchId = "finalized",
+            placements = (1..12).map { slot -> MatchPlacement(slot, slot) },
+            kills = (1..12).map { slot -> MatchKill(slot, 0) },
+        )
+        repository.saveTeamNames("tournament-id", mapOf(2 to "   ", 3 to "\t"))
+
+        val viewModel = standingsViewModel()
+        viewModel.load("tournament-id")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.rows.first { it.teamSlotNumber == 2 }.teamName)
+        assertNull(viewModel.uiState.value.rows.first { it.teamSlotNumber == 3 }.teamName)
+    }
+
+    @Test
+    fun savedTeamNameChangesUpdateWithoutMatchChanges() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.createDraftMatch(match("finalized", 1))
+        repository.finalizeDraftMatch(
+            matchId = "finalized",
+            placements = (1..12).map { slot -> MatchPlacement(slot, slot) },
+            kills = (1..12).map { slot -> MatchKill(slot, 0) },
+        )
+        repository.saveTeamNames("tournament-id", mapOf(2 to ""))
+
+        val viewModel = standingsViewModel()
+        viewModel.load("tournament-id")
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.rows.first { it.teamSlotNumber == 2 }.teamName)
+
+        repository.saveTeamNames("tournament-id", mapOf(2 to "Updated Team"))
+        advanceUntilIdle()
+
+        assertEquals(
+            "Updated Team",
+            viewModel.uiState.value.rows.first { it.teamSlotNumber == 2 }.teamName,
+        )
     }
 
     @Test
@@ -111,6 +171,7 @@ class TournamentStandingsViewModelTest {
 
     private fun standingsViewModel() = TournamentStandingsViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
+        observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         cumulativeStandings = CumulativeTournamentStandingsEngine(),
         tieBreakRules = TieBreakRules(),
     )

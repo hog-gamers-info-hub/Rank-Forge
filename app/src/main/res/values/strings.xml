@@ -203,6 +203,7 @@
     <string name="tournament_standing_position_label">Position</string>
     <string name="tournament_standing_team_slot_label">Team slot</string>
     <string name="tournament_standing_team_slot_inline">Team slot - %1$d</string>
+    <string name="tournament_standing_team_name_inline">Team Name - %1$s</string>
     <string name="tournament_standing_total_points_label">Total points</string>
     <string name="tournament_standing_position_points_label">Position points</string>
     <string name="tournament_standing_kill_points_label">Kill points</string>
