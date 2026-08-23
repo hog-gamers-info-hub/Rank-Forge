@@ -643,26 +643,28 @@ private fun MatchReviewContent(
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        Text(
-            text = stringResource(
-                if (showLegacyManualReviewContent) {
-                    R.string.match_review_title
-                } else {
-                    R.string.match_review_simplified_title
-                },
-                uiState.matchNumber ?: 0,
-            ),
-            style = if (!showLegacyManualReviewContent) {
-                MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 28.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+        val reviewTitle = stringResource(
+            if (showLegacyManualReviewContent) {
+                R.string.match_review_title
             } else {
-                MaterialTheme.typography.headlineMedium
+                R.string.match_review_simplified_title
             },
-            color = if (!showLegacyManualReviewContent) PointIqMatchReviewNavy else Color.Unspecified,
+            uiState.matchNumber ?: 0,
         )
+        if (showLegacyManualReviewContent) {
+            Text(
+                text = reviewTitle,
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        } else {
+            Text(
+                text = reviewTitle,
+                color = PointIqMatchReviewNavy,
+                fontSize = 28.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Text(
