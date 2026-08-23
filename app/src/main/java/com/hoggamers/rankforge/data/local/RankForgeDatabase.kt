@@ -51,7 +51,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -625,6 +625,18 @@ abstract class RankForgeDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `tournaments` ADD COLUMN `last_updated_epoch_millis` INTEGER",
+                )
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tournaments` ADD COLUMN `owner_user_id` TEXT",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournaments_owner_user_id` " +
+                        "ON `tournaments` (`owner_user_id`)",
                 )
             }
         }

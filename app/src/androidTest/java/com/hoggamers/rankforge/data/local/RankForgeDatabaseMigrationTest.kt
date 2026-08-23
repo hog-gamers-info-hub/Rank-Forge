@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(17, cursor.getInt(0))
+                assertEquals(18, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -187,6 +187,51 @@ class RankForgeDatabaseMigrationTest {
             assertEquals("Legacy Cup", cursor.getString(0))
             assertNull(cursor.getString(1))
         }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion17AddsNullableOwnerWithoutAssigningLegacyTournament() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 17).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis) VALUES " +
+                    "('legacy-ownerless', 'Legacy Ownerless Cup', '2026-08-23', 'Organizer', '123', " +
+                    "'CONFIRMED', 42, 1800000000000)",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            18,
+            true,
+            RankForgeDatabase.MIGRATION_17_18,
+        )
+
+        migrated.query(
+            "SELECT id, name, creation_order, last_updated_epoch_millis, owner_user_id " +
+                "FROM tournaments WHERE id = 'legacy-ownerless'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("legacy-ownerless", cursor.getString(0))
+            assertEquals("Legacy Ownerless Cup", cursor.getString(1))
+            assertEquals(42, cursor.getLong(2))
+            assertEquals(1_800_000_000_000L, cursor.getLong(3))
+            assertNull(cursor.getString(4))
+        }
+        migrated.query("PRAGMA table_info(tournaments)").use { cursor ->
+            var ownerUserIdType: String? = null
+            var ownerUserIdNotNull: Int? = null
+            while (cursor.moveToNext()) {
+                if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "owner_user_id") {
+                    ownerUserIdType = cursor.getString(cursor.getColumnIndexOrThrow("type"))
+                    ownerUserIdNotNull = cursor.getInt(cursor.getColumnIndexOrThrow("notnull"))
+                }
+            }
+            assertEquals("TEXT", ownerUserIdType)
+            assertEquals(0, ownerUserIdNotNull)
+        }
+        assertTrue(migrated.hasIndex("index_tournaments_owner_user_id"))
         migrated.close()
     }
 
