@@ -86,6 +86,7 @@ private val PointIqMatchReviewEmptyCardBorder = Color(0xFF9DB5D3)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
 private val PointIqMatchReviewBackgroundTop = Color(0xFFFDFEFF)
 private val PointIqMatchReviewBackgroundBottom = Color(0xFFF4FAFF)
+private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private enum class MatchReviewScreenshotActionStyle {
     REPLACE,
@@ -855,10 +856,12 @@ private fun MatchReviewContent(
             )
         }
         when (ocrCacheAvailability) {
-            MatchOcrCacheAvailability.READY -> Text(
-                text = "OCR data ready",
-                modifier = Modifier.testTag(MATCH_REVIEW_OCR_READY_TEST_TAG),
-            )
+            MatchOcrCacheAvailability.READY -> if (SHOW_EXTRA_INFORMATION_STATUS_TEXT) {
+                Text(
+                    text = "OCR data ready",
+                    modifier = Modifier.testTag(MATCH_REVIEW_OCR_READY_TEST_TAG),
+                )
+            }
             MatchOcrCacheAvailability.STALE_OR_INCOMPLETE -> Text(
                 text = "OCR data needs refresh",
                 color = MaterialTheme.colorScheme.error,
@@ -2051,7 +2054,7 @@ private fun ResultScreenshotPage(
         if (slot.isValidationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_validating))
         }
-        if (slot.isSelectedScreenshotValidated) {
+        if (SHOW_EXTRA_INFORMATION_STATUS_TEXT && slot.isSelectedScreenshotValidated) {
             Text(
                 text = stringResource(R.string.match_review_screenshot_selected_and_validated),
                 color = PointIqMatchReviewBody,
