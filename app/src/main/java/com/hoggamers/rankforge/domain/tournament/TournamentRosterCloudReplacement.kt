@@ -34,4 +34,6 @@ fun interface TournamentRosterCloudReplacementAction {
 
 fun interface TournamentRosterCloudReplacementRetryAction {
     suspend fun executeForRetry(tournamentId: String): TournamentRosterCloudReplacementResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): TournamentRosterCloudReplacementResult =
+        throw SecurityException("Expected queue owner is required.")
 }

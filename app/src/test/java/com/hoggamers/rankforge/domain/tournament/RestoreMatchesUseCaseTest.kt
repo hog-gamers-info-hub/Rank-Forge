@@ -53,11 +53,8 @@ class RestoreMatchesUseCaseTest {
         )(TOURNAMENT_ID)
 
         assertEquals(MatchCloudRestorationResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
-        assertEquals(SyncQueueOperationType.MATCH_RESTORATION, queue.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
-        assertEquals(0, queue.entries.single().attemptCount)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
+        assertTrue(queue.entries.isEmpty())
     }
 
     @Test
@@ -76,6 +73,7 @@ class RestoreMatchesUseCaseTest {
         assertEquals(MatchCloudRestorationResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
 
         val persistenceFailure = RestoreMatchesUseCase(
             auth,

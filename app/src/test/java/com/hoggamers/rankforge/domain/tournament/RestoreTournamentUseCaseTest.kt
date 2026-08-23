@@ -36,13 +36,10 @@ class RestoreTournamentUseCaseTest {
         val result = useCase.restore(TOURNAMENT_ID)
 
         assertEquals(TournamentCloudRestorationResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertFalse(cloud.readCalled)
         assertFalse(local.restoreCalled)
-        assertEquals(SyncQueueOperationType.TOURNAMENT_RESTORATION, queue.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
-        assertEquals(0, queue.entries.single().attemptCount)
+        assertTrue(queue.entries.isEmpty())
     }
 
     @Test
@@ -95,6 +92,7 @@ class RestoreTournamentUseCaseTest {
         assertEquals(TournamentCloudRestorationResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
 
         val persistenceFailureResult = RestoreTournamentUseCase(
             auth,

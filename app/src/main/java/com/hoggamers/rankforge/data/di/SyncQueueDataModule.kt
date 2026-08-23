@@ -17,6 +17,7 @@ import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
+import com.hoggamers.rankforge.domain.auth.AuthRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -42,6 +43,7 @@ object SyncQueueRetryModule {
     @Provides
     @Singleton
     fun provideRetryExecutor(
+        authRepository: AuthRepository,
         uploadTournament: UploadTournamentUseCase,
         restoreTournament: RestoreTournamentUseCase,
         syncDraftMatches: SyncDraftMatchesUseCase,
@@ -49,6 +51,7 @@ object SyncQueueRetryModule {
         restoreMatches: RestoreMatchesUseCase,
         rosterReplacement: ReplaceTournamentRosterInCloudUseCase,
     ): SyncQueueEntryRetryExecutor = QueueOperationRetryExecutor(
+        authRepository = authRepository,
         tournamentUpload = uploadTournament,
         tournamentRestoration = restoreTournament,
         draftMatchSync = syncDraftMatches,
@@ -62,8 +65,10 @@ object SyncQueueRetryModule {
     fun provideForegroundRetryCoordinator(
         queueRepository: PersistentSyncQueueRepository,
         executor: SyncQueueEntryRetryExecutor,
+        authRepository: AuthRepository,
     ): ForegroundSyncQueueRetryCoordinator = ForegroundSyncQueueRetryCoordinator(
         repository = queueRepository,
         executor = executor,
+        authRepository = authRepository,
     )
 }

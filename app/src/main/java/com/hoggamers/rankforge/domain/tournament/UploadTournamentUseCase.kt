@@ -23,41 +23,45 @@ class UploadTournamentUseCase @Inject constructor(
     override suspend operator fun invoke(
         tournamentId: String,
     ): QueueAwareActionResult<TournamentCloudUploadResult> {
-        val result = executeForRetry(tournamentId)
+        val ownerUserId = currentOwnerUserId()
+            ?: return QueueAwareActionResult(TournamentCloudUploadResult.AuthenticationRequired, QueueRecordingResult.NOT_REQUIRED)
+        if (!hasOwnedTournament(tournamentId, ownerUserId)) {
+            return QueueAwareActionResult(TournamentCloudUploadResult.ValidationFailure, QueueRecordingResult.NOT_REQUIRED)
+        }
+        val result = executeForRetry(tournamentId, ownerUserId)
         if (result == TournamentCloudUploadResult.TournamentLimitReached) {
             return QueueAwareActionResult(
                 primaryResult = result,
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         }
-        return record(result = result, tournamentId = tournamentId)
+        return record(result = result, tournamentId = tournamentId, ownerUserId = ownerUserId)
     }
 
     override suspend fun executeForRetry(
         tournamentId: String,
-    ): TournamentCloudUploadResult {
-        val authState = try {
-            authRepository.observeAuthState().first()
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return TournamentCloudUploadResult.AuthenticationRequired
-        }
+    ): TournamentCloudUploadResult = currentOwnerUserId()?.let { ownerUserId ->
+        executeForRetry(tournamentId, ownerUserId)
+    } ?: TournamentCloudUploadResult.AuthenticationRequired
 
-        val ownerId = (authState as? AuthState.SignedIn)?.user?.id
-            ?.takeIf { it.isNotBlank() }
-            ?: return TournamentCloudUploadResult.AuthenticationRequired
+    override suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): TournamentCloudUploadResult {
+        if (currentOwnerUserId() != expectedOwnerUserId) {
+            return TournamentCloudUploadResult.AuthorizationFailure
+        }
         if (deletionIntentRepository.isBlocking(tournamentId)) {
             return TournamentCloudUploadResult.ValidationFailure
         }
 
         val snapshot = try {
-            val tournament = tournamentRepository.observeById(tournamentId).first()
+            val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
                 ?: return TournamentCloudUploadResult.ValidationFailure
             TournamentCloudUploadSnapshot(
                 tournament = tournament,
-                slots = tournamentRepository.observeSlotsByTournamentId(tournamentId).first(),
-                rosters = tournamentRepository.observeRosterByTournamentId(tournamentId).first(),
+                slots = tournamentRepository.observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
+                rosters = tournamentRepository.observeRosterByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite(),
@@ -68,9 +72,10 @@ class UploadTournamentUseCase @Inject constructor(
             return TournamentCloudUploadResult.ValidationFailure
         }
 
-        val result = cloudUploadRepository.upload(snapshot, ownerId)
+        if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudUploadResult.AuthorizationFailure
+        val result = cloudUploadRepository.upload(snapshot, expectedOwnerUserId)
         if (result is TournamentCloudUploadResult.Success) {
-            tournamentRepository.confirmCloudRevision(tournamentId, result.confirmedCloudRevision)
+            tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, result.confirmedCloudRevision)
         }
         return result
     }
@@ -78,15 +83,29 @@ class UploadTournamentUseCase @Inject constructor(
     private suspend fun record(
         result: TournamentCloudUploadResult,
         tournamentId: String,
+        ownerUserId: String,
     ): QueueAwareActionResult<TournamentCloudUploadResult> = QueueAwareActionResult(
         primaryResult = result,
         queueRecordingResult = queueRecorder.record(
+            ownerUserId = ownerUserId,
             operation = SyncQueueOperationType.TOURNAMENT_UPLOAD,
             tournamentId = tournamentId,
             status = result.queueStatus(),
             failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
+
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
+    }
+
+    private suspend fun hasOwnedTournament(tournamentId: String, ownerUserId: String): Boolean =
+        tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() != null
 }
 
 private fun TournamentCloudUploadResult.queueStatus() = when (this) {

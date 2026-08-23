@@ -38,4 +38,6 @@ fun interface DraftMatchCloudSyncAction {
 
 fun interface DraftMatchCloudSyncRetryAction {
     suspend fun executeForRetry(tournamentId: String): DraftMatchCloudSyncResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): DraftMatchCloudSyncResult =
+        throw SecurityException("Expected queue owner is required.")
 }

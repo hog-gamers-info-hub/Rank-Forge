@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.domain.sync
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
+import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
@@ -14,6 +17,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacemen
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 
 class QueueOperationRetryExecutor(
+    private val authRepository: AuthRepository,
     private val tournamentUpload: TournamentCloudUploadRetryAction,
     private val tournamentRestoration: TournamentCloudRestorationRetryAction,
     private val draftMatchSync: DraftMatchCloudSyncRetryAction,
@@ -22,17 +26,24 @@ class QueueOperationRetryExecutor(
     private val rosterReplacement: TournamentRosterCloudReplacementRetryAction,
 ) : SyncQueueEntryRetryExecutor {
     override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
+        val ownerUserId = entry.ownerUserId?.takeIf { it.isNotBlank() }
+            ?: return SyncQueueRetryOutcome.Skipped
+        val currentOwnerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+        if (currentOwnerUserId != ownerUserId) {
+            return SyncQueueRetryOutcome.Skipped
+        }
         val tournamentId = entry.tournamentId ?: return SyncQueueRetryOutcome.Failure(
             status = SyncQueueStatus.FAILED_VALIDATION,
             failureCategory = SyncQueueStatus.FAILED_VALIDATION.name,
         )
         return when (entry.operationType) {
-            SyncQueueOperationType.TOURNAMENT_UPLOAD -> tournamentUpload.executeForRetry(tournamentId).toRetryOutcome()
-            SyncQueueOperationType.TOURNAMENT_RESTORATION -> tournamentRestoration.executeForRetry(tournamentId).toRetryOutcome()
-            SyncQueueOperationType.DRAFT_MATCH_SYNC -> draftMatchSync.executeForRetry(tournamentId).toRetryOutcome()
-            SyncQueueOperationType.FINALIZED_MATCH_SYNC -> finalizedMatchSync.executeForRetry(tournamentId).toRetryOutcome()
-            SyncQueueOperationType.MATCH_RESTORATION -> matchRestoration.executeForRetry(tournamentId).toRetryOutcome()
-            SyncQueueOperationType.ROSTER_REPLACEMENT -> rosterReplacement.executeForRetry(tournamentId).toRetryOutcome()
+            SyncQueueOperationType.TOURNAMENT_UPLOAD -> tournamentUpload.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
+            SyncQueueOperationType.TOURNAMENT_RESTORATION -> tournamentRestoration.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
+            SyncQueueOperationType.DRAFT_MATCH_SYNC -> draftMatchSync.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
+            SyncQueueOperationType.FINALIZED_MATCH_SYNC -> finalizedMatchSync.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
+            SyncQueueOperationType.MATCH_RESTORATION -> matchRestoration.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
+            SyncQueueOperationType.ROSTER_REPLACEMENT -> rosterReplacement.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
         }
     }
 }

@@ -49,4 +49,6 @@ fun interface TournamentCloudUploadAction {
 
 fun interface TournamentCloudUploadRetryAction {
     suspend fun executeForRetry(tournamentId: String): TournamentCloudUploadResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): TournamentCloudUploadResult =
+        throw SecurityException("Expected queue owner is required.")
 }

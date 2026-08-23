@@ -51,7 +51,7 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -637,6 +637,26 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_tournaments_owner_user_id` " +
                         "ON `tournaments` (`owner_user_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `sync_queue_entries` ADD COLUMN `owner_user_id` TEXT",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_createdAtEpochMillis_id` " +
+                        "ON `sync_queue_entries` (`owner_user_id`, `createdAtEpochMillis`, `id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_operationType_tournamentId_status_createdAtEpochMillis_id` " +
+                        "ON `sync_queue_entries` (`owner_user_id`, `operationType`, `tournamentId`, `status`, `createdAtEpochMillis`, `id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_tournamentId` " +
+                        "ON `sync_queue_entries` (`owner_user_id`, `tournamentId`)",
                 )
             }
         }

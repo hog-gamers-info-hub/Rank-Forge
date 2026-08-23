@@ -37,14 +37,10 @@ class UploadTournamentUseCaseTest {
         val result = useCase(TOURNAMENT_ID)
 
         assertEquals(TournamentCloudUploadResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertNull(cloud.snapshot)
         assertEquals(before, repository.observeById(TOURNAMENT_ID).first())
-        assertEquals(1, queueRepository.entries.size)
-        assertEquals(SyncQueueOperationType.TOURNAMENT_UPLOAD, queueRepository.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queueRepository.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queueRepository.entries.single().status)
-        assertEquals(0, queueRepository.entries.single().attemptCount)
+        assertTrue(queueRepository.entries.isEmpty())
     }
 
     @Test
@@ -84,6 +80,7 @@ class UploadTournamentUseCaseTest {
         assertEquals(TournamentCloudUploadResult.NetworkFailure, result.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queueRepository.entries.single().status)
+        assertEquals(OWNER_ID, queueRepository.entries.single().ownerUserId)
     }
 
     @Test
@@ -153,6 +150,7 @@ class UploadTournamentUseCaseTest {
                     organizerName = "Organizer",
                     organizerContactNumber = "123",
                     status = TournamentStatus.DRAFT,
+                    ownerUserId = OWNER_ID,
                 ),
             )
             repository.saveRoster(

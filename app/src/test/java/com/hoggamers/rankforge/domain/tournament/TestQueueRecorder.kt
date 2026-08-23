@@ -14,6 +14,7 @@ internal class RecordingTestQueueRepository(
     val entries = mutableListOf<SyncQueueEntry>()
     override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(entries)
     override suspend fun enqueue(
+        ownerUserId: String,
         operationType: SyncQueueOperationType,
         tournamentId: String?,
         status: SyncQueueStatus,
@@ -28,13 +29,14 @@ internal class RecordingTestQueueRepository(
             status = status,
             failureCategory = failureCategory,
             attemptCount = 0,
+            ownerUserId = ownerUserId,
         ).also(entries::add)
     }
-    override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
-    override suspend fun incrementAttemptCount(id: String) = Unit
-    override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
-    override suspend fun markCompleted(id: String) = Unit
-    override suspend fun remove(id: String) = Unit
+    override suspend fun completeOldestUnresolvedByOwner(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?) = Unit
+    override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) = Unit
+    override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) = Unit
+    override suspend fun markCompletedByOwner(id: String, ownerUserId: String) = Unit
+    override suspend fun removeByOwner(id: String, ownerUserId: String) = Unit
 }
 internal fun RecordingTestQueueRepository.recorder() = RecordSyncQueueOutcome(this)
 internal fun testQueueRecorder() = RecordSyncQueueOutcome(RecordingTestQueueRepository())

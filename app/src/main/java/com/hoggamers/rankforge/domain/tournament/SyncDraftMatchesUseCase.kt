@@ -21,32 +21,37 @@ class SyncDraftMatchesUseCase @Inject constructor(
 ) : DraftMatchCloudSyncAction, DraftMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<DraftMatchCloudSyncResult> = record(
-        result = executeForRetry(tournamentId),
-        id = tournamentId,
-    )
+    ): QueueAwareActionResult<DraftMatchCloudSyncResult> {
+        val ownerUserId = currentOwnerUserId()
+            ?: return QueueAwareActionResult(DraftMatchCloudSyncResult.AuthenticationRequired, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
+        if (!hasOwnedTournament(tournamentId, ownerUserId)) {
+            return QueueAwareActionResult(DraftMatchCloudSyncResult.ValidationFailure, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
+        }
+        val result = executeForRetry(tournamentId, ownerUserId)
+        return record(result, tournamentId, ownerUserId)
+    }
 
     override suspend fun executeForRetry(
         tournamentId: String,
+    ): DraftMatchCloudSyncResult = currentOwnerUserId()?.let { ownerUserId ->
+        executeForRetry(tournamentId, ownerUserId)
+    } ?: DraftMatchCloudSyncResult.AuthenticationRequired
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
     ): DraftMatchCloudSyncResult {
-        val authenticated = try {
-            authRepository.observeAuthState().first() is AuthState.SignedIn
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            false
-        }
-        if (!authenticated) return DraftMatchCloudSyncResult.AuthenticationRequired
+        if (currentOwnerUserId() != expectedOwnerUserId) return DraftMatchCloudSyncResult.AuthorizationFailure
         if (deletionIntentRepository.isBlocking(tournamentId)) {
             return DraftMatchCloudSyncResult.ValidationFailure
         }
 
         val snapshot = try {
-            val tournament = tournamentRepository.observeById(tournamentId).first()
+            val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
                 ?: return DraftMatchCloudSyncResult.ValidationFailure
             DraftMatchCloudSyncSnapshot(
                 tournament = tournament,
-                matches = tournamentRepository.observeMatchesByTournamentId(tournamentId).first(),
+                matches = tournamentRepository.observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite(),
@@ -57,10 +62,11 @@ class SyncDraftMatchesUseCase @Inject constructor(
             return DraftMatchCloudSyncResult.ValidationFailure
         }
 
+        if (currentOwnerUserId() != expectedOwnerUserId) return DraftMatchCloudSyncResult.AuthorizationFailure
         val result = cloudSyncRepository.sync(snapshot).withConflictContext(snapshot)
         if (result == DraftMatchCloudSyncResult.Success) {
             snapshot.expectedCloudRevision?.let { expected ->
-                tournamentRepository.confirmCloudRevision(tournamentId, expected + 1)
+                tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, expected + 1)
             }
         }
         return result
@@ -69,15 +75,29 @@ class SyncDraftMatchesUseCase @Inject constructor(
     private suspend fun record(
         result: DraftMatchCloudSyncResult,
         id: String,
+        ownerUserId: String,
     ): QueueAwareActionResult<DraftMatchCloudSyncResult> = QueueAwareActionResult(
         primaryResult = result,
         queueRecordingResult = queueRecorder.record(
+            ownerUserId = ownerUserId,
             operation = SyncQueueOperationType.DRAFT_MATCH_SYNC,
             tournamentId = id,
             status = result.queueStatus(),
             failureCategory = result.queueFailureCategory() ?: result.queueStatus().name,
         ),
     )
+
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
+    }
+
+    private suspend fun hasOwnedTournament(tournamentId: String, ownerUserId: String): Boolean =
+        tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() != null
 }
 
 private fun DraftMatchCloudSyncResult.withConflictContext(

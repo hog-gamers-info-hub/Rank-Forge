@@ -1,5 +1,12 @@
 package com.hoggamers.rankforge.domain.sync
 
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
@@ -66,6 +73,44 @@ class QueueOperationRetryExecutorTest {
         )
     }
 
+    @Test fun foreignOrLegacyQueueOwnershipNeverDispatchesCloudWork() = runTest {
+        var cloudCalls = 0
+        val foreign = executor(
+            authRepository = testAuth("owner-b"),
+            tournamentUpload = TournamentCloudUploadRetryAction {
+                cloudCalls += 1
+                TournamentCloudUploadResult.Success(1)
+            },
+        )
+
+        assertEquals(SyncQueueRetryOutcome.Skipped, foreign.execute(entry(SyncQueueOperationType.TOURNAMENT_UPLOAD)))
+        assertEquals(SyncQueueRetryOutcome.Skipped, executor().execute(entry(SyncQueueOperationType.TOURNAMENT_UPLOAD).copy(ownerUserId = null)))
+        assertEquals(0, cloudCalls)
+    }
+
+    @Test fun dispatchPassesTheQueueOwnerToTheRetryAction() = runTest {
+        var expectedOwner: String? = null
+        val upload = object : TournamentCloudUploadRetryAction {
+            override suspend fun executeForRetry(tournamentId: String) = error("expected owner is required")
+            override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): TournamentCloudUploadResult {
+                expectedOwner = expectedOwnerUserId
+                return TournamentCloudUploadResult.Success(1)
+            }
+        }
+        val executor = QueueOperationRetryExecutor(
+            authRepository = testAuth(),
+            tournamentUpload = upload,
+            tournamentRestoration = ownerBound(TournamentCloudRestorationRetryAction { TournamentCloudRestorationResult.Success("Tournament") }),
+            draftMatchSync = ownerBound(DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success }),
+            finalizedMatchSync = ownerBound(FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success(1) }),
+            matchRestoration = ownerBound(MatchCloudRestorationRetryAction { MatchCloudRestorationResult.Success }),
+            rosterReplacement = ownerBound(TournamentRosterCloudReplacementRetryAction { TournamentRosterCloudReplacementResult.Success(1) }),
+        )
+
+        assertEquals(SyncQueueRetryOutcome.Success, executor.execute(entry(SyncQueueOperationType.TOURNAMENT_UPLOAD)))
+        assertEquals(OWNER_A, expectedOwner)
+    }
+
     @Test fun rosterReplacementBlockedByMatchesIsFailedAsValidationWithoutEnqueueing() = runTest {
         val outcome = executor(
             rosterReplacement = TournamentRosterCloudReplacementRetryAction {
@@ -104,9 +149,10 @@ class QueueOperationRetryExecutorTest {
         val coordinator = ForegroundSyncQueueRetryCoordinator(
             repository = repository,
             executor = executor(),
+            authRepository = testAuth(),
         )
 
-        coordinator.retryEligible(listOf(queuedEntry), hasAuthenticatedSession = false)
+        coordinator.retryEligible(listOf(queuedEntry), ownerUserId = OWNER_A)
 
         assertEquals(0, repository.enqueueCalls)
         assertEquals(1, repository.entries.size)
@@ -124,9 +170,10 @@ class QueueOperationRetryExecutorTest {
                     FinalizedMatchCloudSyncResult.Success(8)
                 },
             ),
+            authRepository = testAuth(),
         )
 
-        coordinator.retryEligible(listOf(queuedEntry), hasAuthenticatedSession = true)
+        coordinator.retryEligible(listOf(queuedEntry), ownerUserId = OWNER_A)
 
         assertEquals(0, repository.enqueueCalls)
         assertEquals(1, repository.entries.single().attemptCount)
@@ -160,9 +207,10 @@ class QueueOperationRetryExecutorTest {
                     FinalizedMatchCloudSyncResult.AuthorizationFailure
                 },
             ),
+            authRepository = testAuth(),
         )
 
-        coordinator.retryEligible(listOf(queuedEntry), hasAuthenticatedSession = false)
+        coordinator.retryEligible(listOf(queuedEntry), ownerUserId = OWNER_A)
 
         assertEquals(0, repository.enqueueCalls)
         assertEquals(1, repository.entries.size)
@@ -186,9 +234,10 @@ class QueueOperationRetryExecutorTest {
                     MatchCloudRestorationResult.Success
                 },
             ),
+            authRepository = testAuthState(AuthState.SignedOut),
         )
 
-        coordinator.retryEligible(listOf(queuedEntry), hasAuthenticatedSession = false)
+        coordinator.retryEligible(listOf(queuedEntry), ownerUserId = OWNER_A)
 
         assertFalse(executed)
         assertTrue(repository.incrementedIds.isEmpty())
@@ -196,6 +245,7 @@ class QueueOperationRetryExecutorTest {
     }
 
     private fun executor(
+        authRepository: AuthRepository = testAuth(),
         tournamentUpload: TournamentCloudUploadRetryAction = TournamentCloudUploadRetryAction { TournamentCloudUploadResult.Success(1) },
         tournamentRestoration: TournamentCloudRestorationRetryAction = TournamentCloudRestorationRetryAction { TournamentCloudRestorationResult.Success("Tournament") },
         draftMatchSync: DraftMatchCloudSyncRetryAction = DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success },
@@ -203,13 +253,39 @@ class QueueOperationRetryExecutorTest {
         matchRestoration: MatchCloudRestorationRetryAction = MatchCloudRestorationRetryAction { MatchCloudRestorationResult.Success },
         rosterReplacement: TournamentRosterCloudReplacementRetryAction = TournamentRosterCloudReplacementRetryAction { TournamentRosterCloudReplacementResult.Success(2) },
     ) = QueueOperationRetryExecutor(
-        tournamentUpload = tournamentUpload,
-        tournamentRestoration = tournamentRestoration,
-        draftMatchSync = draftMatchSync,
-        finalizedMatchSync = finalizedMatchSync,
-        matchRestoration = matchRestoration,
-        rosterReplacement = rosterReplacement,
+        authRepository = authRepository,
+        tournamentUpload = ownerBound(tournamentUpload),
+        tournamentRestoration = ownerBound(tournamentRestoration),
+        draftMatchSync = ownerBound(draftMatchSync),
+        finalizedMatchSync = ownerBound(finalizedMatchSync),
+        matchRestoration = ownerBound(matchRestoration),
+        rosterReplacement = ownerBound(rosterReplacement),
     )
+
+    private fun ownerBound(action: TournamentCloudUploadRetryAction) = object : TournamentCloudUploadRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
+    private fun ownerBound(action: TournamentCloudRestorationRetryAction) = object : TournamentCloudRestorationRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
+    private fun ownerBound(action: DraftMatchCloudSyncRetryAction) = object : DraftMatchCloudSyncRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
+    private fun ownerBound(action: FinalizedMatchCloudSyncRetryAction) = object : FinalizedMatchCloudSyncRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
+    private fun ownerBound(action: MatchCloudRestorationRetryAction) = object : MatchCloudRestorationRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
+    private fun ownerBound(action: TournamentRosterCloudReplacementRetryAction) = object : TournamentRosterCloudReplacementRetryAction {
+        override suspend fun executeForRetry(tournamentId: String) = action.executeForRetry(tournamentId)
+        override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String) = action.executeForRetry(tournamentId)
+    }
 
     private fun entry(
         operationType: SyncQueueOperationType,
@@ -222,6 +298,7 @@ class QueueOperationRetryExecutorTest {
         status = status,
         failureCategory = status.name,
         attemptCount = 0,
+        ownerUserId = OWNER_A,
     )
 
     private class RecordingQueueRepository(
@@ -252,9 +329,36 @@ class QueueOperationRetryExecutorTest {
             replace(id) { it.copy(status = SyncQueueStatus.COMPLETED, failureCategory = null) }
         }
         override suspend fun remove(id: String) = Unit
+        override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) {
+            require(ownerUserId == OWNER_A)
+            incrementAttemptCount(id)
+        }
+        override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) {
+            require(ownerUserId == OWNER_A)
+            updateRetryFailure(id, status, failureCategory)
+        }
+        override suspend fun markCompletedByOwner(id: String, ownerUserId: String) {
+            require(ownerUserId == OWNER_A)
+            markCompleted(id)
+        }
         private fun replace(id: String, transform: (SyncQueueEntry) -> SyncQueueEntry) {
             val index = entries.indexOfFirst { it.id == id }
             entries[index] = transform(entries[index])
         }
     }
+
+    private fun testAuth(ownerUserId: String = OWNER_A): AuthRepository = testAuthState(
+        AuthState.SignedIn(AuthUser(ownerUserId, "$ownerUserId@example.test")),
+    )
+
+    private fun testAuthState(state: AuthState): AuthRepository = object : AuthRepository {
+        override fun observeAuthState() = flowOf(state)
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = failure()
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private companion object { const val OWNER_A = "owner-a" }
 }

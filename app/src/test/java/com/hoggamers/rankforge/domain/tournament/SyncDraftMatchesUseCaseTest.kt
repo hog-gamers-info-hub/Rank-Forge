@@ -34,12 +34,9 @@ class SyncDraftMatchesUseCaseTest {
 
         val result = useCase(TOURNAMENT_ID)
         assertEquals(DraftMatchCloudSyncResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertNull(cloud.snapshot)
-        assertEquals(SyncQueueOperationType.DRAFT_MATCH_SYNC, queue.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
-        assertEquals(0, queue.entries.single().attemptCount)
+        assertTrue(queue.entries.isEmpty())
     }
 
     @Test
@@ -50,7 +47,7 @@ class SyncDraftMatchesUseCaseTest {
         val queue = RecordingTestQueueRepository()
         val useCase = SyncDraftMatchesUseCase(
             tournamentRepository = local,
-            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", "owner@example.com"))),
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.com"))),
             cloudSyncRepository = cloud,
             queueRecorder = queue.recorder(),
         )
@@ -67,7 +64,7 @@ class SyncDraftMatchesUseCaseTest {
     @Test
     fun networkFailureIsRecordedAndQueuePersistenceFailureIsExposed() = runTest {
         val local = localRepository()
-        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null)))
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
         val queue = RecordingTestQueueRepository()
         val networkResult = SyncDraftMatchesUseCase(
             local,
@@ -78,6 +75,7 @@ class SyncDraftMatchesUseCaseTest {
         assertEquals(DraftMatchCloudSyncResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
 
         val persistenceFailure = SyncDraftMatchesUseCase(
             local,
@@ -93,7 +91,7 @@ class SyncDraftMatchesUseCaseTest {
     fun authorizationAndNetworkFailuresPassThroughWithoutLocalMutation() = runTest {
         val local = localRepository()
         val before = local.observeMatchesByTournamentId(TOURNAMENT_ID).first()
-        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null)))
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
 
         val authorizationResult = SyncDraftMatchesUseCase(
             local,
@@ -122,6 +120,7 @@ class SyncDraftMatchesUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = OWNER_ID,
             ),
         )
         repository.createDraftMatch(
@@ -166,5 +165,6 @@ class SyncDraftMatchesUseCaseTest {
 
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
+        const val OWNER_ID = "owner-id"
     }
 }

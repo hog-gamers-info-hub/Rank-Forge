@@ -193,6 +193,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
         assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
         assertEquals(SyncQueueOperationType.ROSTER_REPLACEMENT, queue.entries.single().operationType)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
     }
 
     private fun useCase(
@@ -274,6 +275,16 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
             require(cloudRevision > 0)
             establishedBaseline = cloudRevision
         }
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            require(ownerUserId == OWNER_ID)
+            confirmCloudRevision(tournamentId, cloudRevision)
+            return OwnerScopedTournamentMutationResult.Saved
+        }
     }
 
     private suspend fun localRepository(): InMemoryTournamentRepository = InMemoryTournamentRepository().also { repository ->
@@ -285,6 +296,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
                 "Organizer",
                 "123",
                 TournamentStatus.DRAFT,
+                ownerUserId = OWNER_ID,
             ),
         )
         repository.saveTeamNames(
@@ -335,6 +347,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
 
         override fun observeAll(): Flow<List<SyncQueueEntry>> = state
         override suspend fun enqueue(
+            ownerUserId: String,
             operationType: SyncQueueOperationType,
             tournamentId: String?,
             status: SyncQueueStatus,
@@ -348,15 +361,16 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
                 status = status,
                 failureCategory = failureCategory,
                 attemptCount = 0,
+                ownerUserId = ownerUserId,
             )
             state.value = listOf(entry)
             return entry
         }
-        override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
-        override suspend fun incrementAttemptCount(id: String) = Unit
-        override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
-        override suspend fun markCompleted(id: String) = Unit
-        override suspend fun remove(id: String) = Unit
+        override suspend fun completeOldestUnresolvedByOwner(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?) = Unit
+        override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) = Unit
+        override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) = Unit
+        override suspend fun markCompletedByOwner(id: String, ownerUserId: String) = Unit
+        override suspend fun removeByOwner(id: String, ownerUserId: String) = Unit
     }
 
     private companion object {

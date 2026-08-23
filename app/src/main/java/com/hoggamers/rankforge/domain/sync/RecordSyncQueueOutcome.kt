@@ -6,15 +6,31 @@ import java.util.concurrent.CancellationException
 enum class QueueRecordingResult { NOT_REQUIRED, RECORDED, PERSISTENCE_FAILED }
 
 class RecordSyncQueueOutcome @Inject constructor(private val repository: PersistentSyncQueueRepository) {
+    /** Legacy test-only overload; production callers must provide an authenticated owner. */
     suspend fun record(
         operation: SyncQueueOperationType,
         tournamentId: String?,
         status: SyncQueueStatus,
         failureCategory: String? = status.name,
+    ): QueueRecordingResult = record(
+        ownerUserId = null,
+        operation = operation,
+        tournamentId = tournamentId,
+        status = status,
+        failureCategory = failureCategory,
+    )
+
+    suspend fun record(
+        ownerUserId: String?,
+        operation: SyncQueueOperationType,
+        tournamentId: String?,
+        status: SyncQueueStatus,
+        failureCategory: String? = status.name,
     ): QueueRecordingResult {
+        if (ownerUserId.isNullOrBlank()) return QueueRecordingResult.NOT_REQUIRED
         if (status == SyncQueueStatus.COMPLETED) {
             try {
-                repository.completeOldestUnresolved(operation, tournamentId)
+                repository.completeOldestUnresolvedByOwner(ownerUserId, operation, tournamentId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -23,7 +39,7 @@ class RecordSyncQueueOutcome @Inject constructor(private val repository: Persist
             return QueueRecordingResult.NOT_REQUIRED
         }
         return try {
-            repository.enqueue(operation, tournamentId, status, failureCategory)
+            repository.enqueue(ownerUserId, operation, tournamentId, status, failureCategory)
             QueueRecordingResult.RECORDED
         } catch (cancellation: CancellationException) {
             throw cancellation

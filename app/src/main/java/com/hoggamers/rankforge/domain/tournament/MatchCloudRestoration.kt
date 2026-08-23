@@ -53,6 +53,8 @@ fun interface MatchCloudRestorationAction {
 
 fun interface MatchCloudRestorationRetryAction {
     suspend fun executeForRetry(tournamentId: String): MatchCloudRestorationResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): MatchCloudRestorationResult =
+        throw SecurityException("Expected queue owner is required.")
 }
 
 fun interface MatchScreenshotRestorationAction {

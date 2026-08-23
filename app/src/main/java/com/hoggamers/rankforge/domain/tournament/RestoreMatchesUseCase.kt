@@ -22,18 +22,27 @@ class RestoreMatchesUseCase @Inject constructor(
 ) : MatchCloudRestorationAction, MatchCloudRestorationRetryAction {
     override suspend fun invoke(
         tournamentId: String,
-    ): QueueAwareActionResult<MatchCloudRestorationResult> = record(
-        result = executeForRetry(tournamentId),
-        id = tournamentId,
-    )
+    ): QueueAwareActionResult<MatchCloudRestorationResult> {
+        val ownerUserId = currentOwnerUserId()
+            ?: return QueueAwareActionResult(MatchCloudRestorationResult.AuthenticationRequired, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
+        return record(executeForRetry(tournamentId, ownerUserId), tournamentId, ownerUserId)
+    }
 
     override suspend fun executeForRetry(
         tournamentId: String,
+    ): MatchCloudRestorationResult = currentOwnerUserId()?.let { ownerUserId ->
+        executeForRetry(tournamentId, ownerUserId)
+    } ?: MatchCloudRestorationResult.AuthenticationRequired
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult {
-        if (!isAuthenticated()) return MatchCloudRestorationResult.AuthenticationRequired
+        if (currentOwnerUserId() != expectedOwnerUserId) return MatchCloudRestorationResult.AuthorizationFailure
         if (deletionIntentRepository.isBlocking(tournamentId)) {
             return MatchCloudRestorationResult.ValidationFailure
         }
+        if (currentOwnerUserId() != expectedOwnerUserId) return MatchCloudRestorationResult.AuthorizationFailure
         return when (val result = cloudRepository.readOwnedMatches(tournamentId)) {
             is MatchCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is MatchCloudRestorationRemoteResult.Success -> {
@@ -79,9 +88,11 @@ class RestoreMatchesUseCase @Inject constructor(
     private suspend fun record(
         result: MatchCloudRestorationResult,
         id: String,
+        ownerUserId: String,
     ): QueueAwareActionResult<MatchCloudRestorationResult> = QueueAwareActionResult(
         primaryResult = result,
         queueRecordingResult = queueRecorder.record(
+            ownerUserId = ownerUserId,
             operation = SyncQueueOperationType.MATCH_RESTORATION,
             tournamentId = id,
             status = result.queueStatus(),
@@ -89,11 +100,12 @@ class RestoreMatchesUseCase @Inject constructor(
         ),
     )
 
-    private suspend fun isAuthenticated() = try {
-        authRepository.observeAuthState().first() is AuthState.SignedIn
+    private suspend fun currentOwnerUserId() = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
     } catch (cancellation: CancellationException) {
         throw cancellation
-    } catch (_: Throwable) { false }
+    } catch (_: Throwable) { null }
 }
 
 private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL; is MatchCloudRestorationResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT }
