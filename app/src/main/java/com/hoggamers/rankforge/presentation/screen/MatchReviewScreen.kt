@@ -618,11 +618,13 @@ private fun MatchReviewContent(
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
+    val hasLobbyScreenshotSelection = lobbyUiState.slots.any { slot ->
+        slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
+    }
+    val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
     val isEmptyScreenshotUi = !showLegacyManualReviewContent &&
-        lobbyUiState.slots.none { slot ->
-            slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
-        } &&
-        uiState.resultScreenshots.none { it.hasSelection() }
+        !hasLobbyScreenshotSelection &&
+        !hasResultScreenshotSelection
 
     Column(
         modifier = Modifier
@@ -748,12 +750,14 @@ private fun MatchReviewContent(
                     color = PointIqMatchReviewNavy,
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Text(
-                    text = stringResource(R.string.pointiq_match_review_result_description),
-                    color = PointIqMatchReviewBody,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                )
+                if (!hasResultScreenshotSelection) {
+                    Text(
+                        text = stringResource(R.string.pointiq_match_review_result_description),
+                        color = PointIqMatchReviewBody,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     isEditable = uiState.isEditable,
@@ -789,6 +793,14 @@ private fun MatchReviewContent(
                     color = PointIqMatchReviewNavy,
                     style = MaterialTheme.typography.titleMedium,
                 )
+                if (!hasResultScreenshotSelection) {
+                    Text(
+                        text = stringResource(R.string.pointiq_match_review_result_description),
+                        color = PointIqMatchReviewBody,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     isEditable = uiState.isEditable,
