@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -80,7 +82,10 @@ private val PointIqMatchReviewNavy = Color(0xFF071B3E)
 private val PointIqMatchReviewBody = Color(0xFF607393)
 private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
+private val PointIqMatchReviewEmptyCardBorder = Color(0xFF9DB5D3)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
+private val PointIqMatchReviewBackgroundTop = Color(0xFFFDFEFF)
+private val PointIqMatchReviewBackgroundBottom = Color(0xFFF4FAFF)
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
@@ -612,10 +617,20 @@ private fun MatchReviewContent(
         } &&
         uiState.resultScreenshots.none { it.hasSelection() }
 
-    RankForgeScreenContainer(
+    Column(
         modifier = Modifier
             .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        PointIqMatchReviewBackgroundTop,
+                        PointIqMatchReviewBackgroundBottom,
+                    ),
+                ),
+            )
+            .padding(RankForgeSpacing.Large),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
@@ -712,12 +727,14 @@ private fun MatchReviewContent(
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
+                emphasizedSurface = true,
             ) {
                 matchLobbyScreenshotIntake()
             }
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+                emphasizedSurface = true,
             ) {
                 Text(
                     text = stringResource(R.string.match_review_result_screenshots_title),
@@ -1193,15 +1210,19 @@ private fun MatchReviewContent(
 private fun PointIqEmptyMatchReviewSection(
     modifier: Modifier = Modifier,
     contentSpacing: Dp = RankForgeSpacing.Small,
+    emphasizedSurface: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         color = PointIqMatchReviewCard,
-        border = BorderStroke(1.dp, PointIqMatchReviewBorder),
+        border = BorderStroke(
+            if (emphasizedSurface) 1.5.dp else 1.dp,
+            if (emphasizedSurface) PointIqMatchReviewEmptyCardBorder else PointIqMatchReviewBorder,
+        ),
         tonalElevation = 0.dp,
-        shadowElevation = 2.dp,
+        shadowElevation = if (emphasizedSurface) 3.dp else 2.dp,
     ) {
         Column(
             modifier = Modifier
@@ -1909,6 +1930,11 @@ private fun ResultScreenshotSelector(
                     )
                 } else {
                     ButtonDefaults.buttonColors()
+                },
+                shape = if (selectedPages.isEmpty()) {
+                    RoundedCornerShape(18.dp)
+                } else {
+                    ButtonDefaults.shape
                 },
                 modifier = Modifier
                     .fillMaxWidth()
