@@ -169,6 +169,59 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun ownerScopedChildReadsExcludeOtherOwnersAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-child-reads.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+            repository.saveTeamNames("owner-a", mapOf(1 to "A Team"))
+            repository.saveTeamNames("owner-b", mapOf(1 to "B Team"))
+            repository.saveTeamNames("legacy", mapOf(1 to "Legacy Team"))
+            repository.saveRoster("owner-a", 1, listOf(RosterPlayer("owner-a", 1, "A Player")))
+            repository.saveRoster("owner-b", 1, listOf(RosterPlayer("owner-b", 1, "B Player")))
+            repository.createDraftMatch(draftMatch("owner-a", "match-a", 1))
+            repository.createDraftMatch(draftMatch("owner-b", "match-b", 1))
+            repository.createDraftMatch(draftMatch("legacy", "match-legacy", 1))
+            repository.saveDraftMatchValue("owner-a", "match-a", 1, placementInput = "1", killsInput = "4")
+
+            assertEquals(
+                "A Team",
+                repository.observeSlotsByTournamentIdAndOwner("owner-a", "user-a").first().first().teamName,
+            )
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty())
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("legacy", "user-a").first().isEmpty())
+            assertEquals(
+                "A Player",
+                repository.observeRosterByTournamentAndSlotAndOwner("owner-a", 1, "user-a")
+                    .first().single().displayName,
+            )
+            assertTrue(
+                repository.observeRosterByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty(),
+            )
+            assertEquals(
+                "match-a",
+                repository.observeMatchesByTournamentIdAndOwner("owner-a", "user-a").first().single().id,
+            )
+            assertTrue(repository.observeMatchesByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty())
+            assertEquals(
+                MatchDraftFieldValues("1", "4"),
+                repository.observeDraftMatchValuesByOwner("owner-a", "match-a", "user-a").first()[1],
+            )
+            assertTrue(
+                repository.observeDraftMatchValuesByOwner("owner-a", "match-b", "user-a").first().isEmpty(),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun observingTournamentsPreservesCreationOrderAcrossDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-tournament-order.db"

@@ -1,9 +1,13 @@
 package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
+@OptIn(ExperimentalCoroutinesApi::class)
 interface TournamentRepository {
     /** Missing revision metadata intentionally blocks a cloud write until a safe restore establishes a base. */
     suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState = LocalRevisionState.Missing
@@ -53,6 +57,14 @@ interface TournamentRepository {
 
     fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
 
+    fun observeSlotsByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<TeamSlot>> = observeByIdAndOwner(tournamentId, ownerUserId).flatMapLatest {
+        tournament ->
+        if (tournament == null) flowOf(emptyList()) else observeSlotsByTournamentId(tournamentId)
+    }
+
     suspend fun saveTeamNames(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
@@ -63,9 +75,30 @@ interface TournamentRepository {
         slotNumber: Int,
     ): Flow<List<RosterPlayer>>
 
+    fun observeRosterByTournamentAndSlotAndOwner(
+        tournamentId: String,
+        slotNumber: Int,
+        ownerUserId: String,
+    ): Flow<List<RosterPlayer>> = observeByIdAndOwner(tournamentId, ownerUserId).flatMapLatest {
+        tournament ->
+        if (tournament == null) {
+            flowOf(emptyList())
+        } else {
+            observeRosterByTournamentAndSlot(tournamentId, slotNumber)
+        }
+    }
+
     fun observeRosterByTournamentId(
         tournamentId: String,
     ): Flow<Map<Int, List<RosterPlayer>>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+
+    fun observeRosterByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<Map<Int, List<RosterPlayer>>> = observeByIdAndOwner(tournamentId, ownerUserId).flatMapLatest {
+        tournament ->
+        if (tournament == null) flowOf(emptyMap()) else observeRosterByTournamentId(tournamentId)
+    }
 
     suspend fun saveRoster(
         tournamentId: String,
@@ -82,6 +115,13 @@ interface TournamentRepository {
 
     fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
         kotlinx.coroutines.flow.flowOf(emptyList())
+
+    fun observeMatchesByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<Match>> = observeByIdAndOwner(tournamentId, ownerUserId).flatMapLatest { tournament ->
+        if (tournament == null) flowOf(emptyList()) else observeMatchesByTournamentId(tournamentId)
+    }
 
     fun observeMatchById(matchId: String): Flow<Match?> =
         kotlinx.coroutines.flow.flowOf(null)
@@ -136,6 +176,25 @@ interface TournamentRepository {
         tournamentId: String,
         matchId: String,
     ): Flow<Map<Int, MatchDraftFieldValues>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+
+    fun observeDraftMatchValuesByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): Flow<Map<Int, MatchDraftFieldValues>> = observeByIdAndOwner(tournamentId, ownerUserId).flatMapLatest {
+        tournament ->
+        if (tournament == null) {
+            flowOf(emptyMap())
+        } else {
+            observeMatchById(matchId).flatMapLatest { match ->
+                if (match?.tournamentId == tournamentId) {
+                    observeDraftMatchValues(tournamentId, matchId)
+                } else {
+                    flowOf(emptyMap())
+                }
+            }
+        }
+    }
 
     suspend fun saveDraftMatchValue(
         tournamentId: String,

@@ -64,13 +64,16 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -667,6 +670,19 @@ class RoomTournamentRepository @Inject constructor(
         })
     }
 
+    override fun observeSlotsByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<TeamSlot>> = observeOwnedTournamentChildren(
+        tournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        emptyValue = emptyList(),
+    ) {
+        database.teamSlotDao().observeByTournamentId(tournamentId).map { slots ->
+            slots.map { it.toDomain() }
+        }
+    }
+
     override suspend fun saveTeamNames(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
@@ -725,6 +741,20 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override fun observeRosterByTournamentAndSlotAndOwner(
+        tournamentId: String,
+        slotNumber: Int,
+        ownerUserId: String,
+    ): Flow<List<RosterPlayer>> = observeOwnedTournamentChildren(
+        tournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        emptyValue = emptyList(),
+    ) {
+        database.rosterPlayerDao()
+            .observeByTournamentAndSlot(tournamentId, slotNumber)
+            .map { players -> players.map { it.toDomain() } }
+    }
+
     override fun observeRosterByTournamentId(
         tournamentId: String,
     ): Flow<Map<Int, List<RosterPlayer>>> = flow {
@@ -737,6 +767,20 @@ class RoomTournamentRepository @Inject constructor(
                         .mapValues { (_, roster) -> roster.map { it.toDomain() } }
                 },
         )
+    }
+
+    override fun observeRosterByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<Map<Int, List<RosterPlayer>>> = observeOwnedTournamentChildren(
+        tournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        emptyValue = emptyMap(),
+    ) {
+        database.rosterPlayerDao().observeByTournamentId(tournamentId).map { players ->
+            players.groupBy { it.slotNumber }
+                .mapValues { (_, roster) -> roster.map { it.toDomain() } }
+        }
     }
 
     override suspend fun saveRoster(
@@ -906,6 +950,17 @@ class RoomTournamentRepository @Inject constructor(
                 }
             },
         )
+    }
+
+    override fun observeMatchesByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<Match>> = observeOwnedTournamentChildren(
+        tournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        emptyValue = emptyList(),
+    ) {
+        observeMatchesByTournamentId(tournamentId)
     }
 
     override fun observeMatchById(matchId: String): Flow<Match?> = flow {
@@ -1299,6 +1354,27 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeDraftMatchValuesByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): Flow<Map<Int, MatchDraftFieldValues>> = observeOwnedTournamentChildren(
+        tournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        emptyValue = emptyMap(),
+    ) {
+        database.matchDao().observeById(matchId).flatMapLatest { match ->
+            if (match?.tournamentId != tournamentId) {
+                flowOf(emptyMap())
+            } else {
+                database.matchDraftValueDao().observeByMatchId(matchId).map { values ->
+                    values.associate { it.teamSlotNumber to it.toDomain() }
+                }
+            }
+        }
+    }
+
     override suspend fun saveDraftMatchValue(
         tournamentId: String,
         matchId: String,
@@ -1585,6 +1661,22 @@ class RoomTournamentRepository @Inject constructor(
     private suspend fun saveLegacyState(state: RepositoryState) {
         database.stateDao().save(
             RankForgeStateEntity(payload = json.encodeToString(state.toPersistedState())),
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <T> observeOwnedTournamentChildren(
+        tournamentId: String,
+        ownerUserId: String,
+        emptyValue: T,
+        childObservation: () -> Flow<T>,
+    ): Flow<T> = flow {
+        ready.await()
+        emitAll(
+            database.tournamentDao().observeByIdAndOwner(tournamentId, ownerUserId)
+                .flatMapLatest { tournament ->
+                    if (tournament == null) flowOf(emptyValue) else childObservation()
+                },
         )
     }
 

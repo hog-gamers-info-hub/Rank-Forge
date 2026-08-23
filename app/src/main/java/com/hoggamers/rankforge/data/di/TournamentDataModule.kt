@@ -278,7 +278,8 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideObserveTournamentSlotsUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentSlotsUseCase = ObserveTournamentSlotsUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentSlotsUseCase = ObserveTournamentSlotsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -290,13 +291,15 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideObserveRosterPlayersUseCase(
         repository: TournamentRepository,
-    ): ObserveRosterPlayersUseCase = ObserveRosterPlayersUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveRosterPlayersUseCase = ObserveRosterPlayersUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveRosterByTournamentUseCase(
         repository: TournamentRepository,
-    ): ObserveRosterByTournamentUseCase = ObserveRosterByTournamentUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveRosterByTournamentUseCase = ObserveRosterByTournamentUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -346,7 +349,8 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideObserveMatchesUseCase(
         repository: TournamentRepository,
-    ): ObserveMatchesUseCase = ObserveMatchesUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveMatchesUseCase = ObserveMatchesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -373,8 +377,9 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideObserveMatchDraftValuesUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase =
-        com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
