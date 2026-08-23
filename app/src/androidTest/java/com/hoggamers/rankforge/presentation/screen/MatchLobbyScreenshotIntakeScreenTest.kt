@@ -862,7 +862,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
     }
 
     @Test
-    fun finalizedSelectedSlotRemainsViewableButActionsAreDisabled() {
+    fun finalizedSelectedSlotRemainsViewableButMutationActionsAreAbsent() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchLobbyScreenshotIntakeScreen(
@@ -871,7 +871,14 @@ class MatchLobbyScreenshotIntakeScreenTest {
                         isAvailable = true,
                         status = MatchStatus.FINALIZED,
                         slots = defaultMatchLobbyScreenshotSlots().map { slot ->
-                            if (slot.index == 1) slot.copy(hasLinkedAsset = true) else slot
+                            if (slot.index == 1) slot.copy(
+                                hasLinkedAsset = true,
+                                selectedScreenshotUri = "file:///private/lobby-1.png",
+                                selectedScreenshotWidth = 1920,
+                                selectedScreenshotHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "lobby",
+                            ) else slot
                         },
                     ),
                     onSelect = {},
@@ -885,14 +892,56 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsDisplayed()
             .performClick()
             .assertIsSelected()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
-            .assertIsNotEnabled()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 1)
-            .assertIsNotEnabled()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
-            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun finalizedSelectedSlotInCompactModeKeepsPreviewButHidesMutationActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchLobbyScreenshotIntakeScreen(
+                    uiState = MatchLobbyScreenshotIntakeUiState(
+                        isLoading = false,
+                        isAvailable = true,
+                        status = MatchStatus.FINALIZED,
+                        slots = defaultMatchLobbyScreenshotSlots().map { slot ->
+                            if (slot.index == 1) slot.copy(
+                                hasLinkedAsset = true,
+                                selectedScreenshotUri = "file:///private/lobby-1.png",
+                                selectedScreenshotWidth = 1920,
+                                selectedScreenshotHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "lobby",
+                            ) else slot
+                        },
+                    ),
+                    onSelect = {},
+                    onCrop = {},
+                    onRemove = {},
+                    showTitle = false,
+                    compactSelectors = true,
+                    compactActions = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
     }
 
     private fun completeLobbySlots() = defaultMatchLobbyScreenshotSlots().map { slot ->

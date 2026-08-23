@@ -538,7 +538,7 @@ private fun LobbyScreenshotDetail(
                         testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
                     )
                 }
-                if (compactActions) {
+                if (compactActions && !isFinalized) {
                     MatchReviewScreenshotActionRow(
                         replaceLabel = stringResource(R.string.match_lobby_screenshot_replace_action),
                         editLabel = stringResource(R.string.match_review_screenshot_edit_action),
@@ -600,7 +600,7 @@ private fun LobbyScreenshotActions(
     onRemove: (Int) -> Unit,
     compactActions: Boolean,
 ) {
-    if (slot.hasLinkedAsset) {
+    if (!isFinalized && slot.hasLinkedAsset) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -627,7 +627,7 @@ private fun LobbyScreenshotActions(
                 label = stringResource(R.string.match_lobby_screenshot_remove_action),
             )
         }
-    } else {
+    } else if (!isFinalized) {
         Button(
             onClick = { (onSelectBatch ?: { onSelect(slot.index) })() },
             enabled = isAvailable && !isFinalized && !slot.isBusy,
