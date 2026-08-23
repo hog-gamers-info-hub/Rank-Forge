@@ -39,7 +39,7 @@ class RestoreMatchesUseCase @Inject constructor(
         expectedOwnerUserId: String,
     ): MatchCloudRestorationResult {
         if (currentOwnerUserId() != expectedOwnerUserId) return MatchCloudRestorationResult.AuthorizationFailure
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return MatchCloudRestorationResult.ValidationFailure
         }
         if (currentOwnerUserId() != expectedOwnerUserId) return MatchCloudRestorationResult.AuthorizationFailure

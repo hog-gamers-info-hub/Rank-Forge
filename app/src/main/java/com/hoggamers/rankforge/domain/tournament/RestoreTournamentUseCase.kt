@@ -43,7 +43,7 @@ class RestoreTournamentUseCase @Inject constructor(
         expectedOwnerUserId: String,
     ): TournamentCloudRestorationResult {
         if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudRestorationResult.AuthorizationFailure
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return TournamentCloudRestorationResult.ValidationFailure
         }
         if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudRestorationResult.AuthorizationFailure

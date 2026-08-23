@@ -25,33 +25,49 @@ interface SyncRevisionDao {
 
 @Dao
 interface DeletionIntentDao {
-    @Query("SELECT * FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId")
-    suspend fun read(targetType: String, targetId: String): DeletionIntentEntity?
+    @Query(
+        "SELECT * FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId " +
+            "AND owner_user_id = :ownerUserId",
+    )
+    suspend fun findByTargetAndOwner(
+        targetType: String,
+        targetId: String,
+        ownerUserId: String,
+    ): DeletionIntentEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(intent: DeletionIntentEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(intent: DeletionIntentEntity): Long
 
     @Query(
         "UPDATE deletion_intents SET phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING', " +
             "updated_at_epoch_millis = :updatedAtEpochMillis " +
-            "WHERE target_type = :targetType AND target_id = :targetId",
+            "WHERE target_type = :targetType AND target_id = :targetId AND owner_user_id = :ownerUserId",
     )
-    suspend fun markRemoteDeleted(targetType: String, targetId: String, updatedAtEpochMillis: Long)
+    suspend fun markRemoteDeletedByTargetAndOwner(
+        targetType: String,
+        targetId: String,
+        ownerUserId: String,
+        updatedAtEpochMillis: Long,
+    ): Int
 
-    @Query("DELETE FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId")
-    suspend fun delete(targetType: String, targetId: String)
+    @Query(
+        "DELETE FROM deletion_intents WHERE target_type = :targetType AND target_id = :targetId " +
+            "AND owner_user_id = :ownerUserId",
+    )
+    suspend fun deleteByTargetAndOwner(targetType: String, targetId: String, ownerUserId: String): Int
 
-    @Query("SELECT EXISTS(SELECT 1 FROM deletion_intents WHERE tournament_id = :tournamentId)")
-    suspend fun isBlocking(tournamentId: String): Boolean
-
-    @Query("SELECT * FROM deletion_intents ORDER BY updated_at_epoch_millis")
-    suspend fun readAll(): List<DeletionIntentEntity>
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM deletion_intents WHERE tournament_id = :tournamentId " +
+            "AND owner_user_id = :ownerUserId)",
+    )
+    suspend fun isBlockingByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean
 
     @Query(
         "SELECT * FROM deletion_intents " +
-            "WHERE phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING' ORDER BY updated_at_epoch_millis",
+            "WHERE phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING' AND owner_user_id = :ownerUserId " +
+                "ORDER BY updated_at_epoch_millis",
     )
-    suspend fun readPendingLocalCleanup(): List<DeletionIntentEntity>
+    suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntentEntity>
 }
 
 @Dao

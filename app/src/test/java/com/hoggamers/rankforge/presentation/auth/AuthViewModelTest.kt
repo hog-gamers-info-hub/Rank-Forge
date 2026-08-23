@@ -18,6 +18,14 @@ import com.hoggamers.rankforge.domain.auth.SignUpUseCase
 import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
 import com.hoggamers.rankforge.domain.auth.UpdateRecoveredPasswordUseCase
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
+import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
+import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
+import com.hoggamers.rankforge.domain.tournament.DeletionIntent
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
+import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +118,18 @@ class AuthViewModelTest {
         assertFalse(viewModel.uiState.value.isSignedIn)
         assertEquals(null, viewModel.uiState.value.errorMessage)
         assertEquals(0, recoveryCalls)
+    }
+
+    @Test
+    fun signedInStateInvokesOwnerScopedPendingLocalCleanup() = runTest {
+        val pending = RecordingPendingCleanup()
+        val viewModel = createViewModel(pending.action(repository))
+
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("owner-a"), pending.intentQueries)
     }
 
     @Test
@@ -776,7 +796,9 @@ class AuthViewModelTest {
         viewModel.onPasswordRecoveryLinkVerified()
     }
 
-    private fun createViewModel(): AuthViewModel =
+    private fun createViewModel(
+        pendingCleanup: RecoverPendingLocalDeletionCleanupUseCase = noOpPendingCleanup(),
+    ): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
             restoreSession = RestoreSessionUseCase(repository),
@@ -787,7 +809,63 @@ class AuthViewModelTest {
             requestPasswordReset = RequestPasswordResetUseCase(repository),
             updateRecoveredPassword = UpdateRecoveredPasswordUseCase(repository),
             recoverForegroundSyncQueue = foregroundRecovery,
+            recoverPendingLocalDeletionCleanup = pendingCleanup,
         )
+
+    private fun noOpPendingCleanup() = RecoverPendingLocalDeletionCleanupUseCase(
+        authRepository = repository,
+        deletionIntentRepository = NoOpDeletionIntentRepository,
+        localDeletionRepository = object : LocalDeletionRepository {
+            override suspend fun deleteMatchLocallyByOwner(
+                matchId: String,
+                ownerUserId: String,
+            ): LocalDeletionResult = LocalDeletionResult.NotFound
+
+            override suspend fun deleteTournamentLocallyByOwner(
+                tournamentId: String,
+                ownerUserId: String,
+            ): LocalDeletionResult = LocalDeletionResult.NotFound
+        },
+    )
+
+    private class RecordingPendingCleanup {
+        val intentQueries = mutableListOf<String>()
+
+        fun action(authRepository: AuthRepository) = RecoverPendingLocalDeletionCleanupUseCase(
+            authRepository = authRepository,
+            deletionIntentRepository = object : DeletionIntentRepository {
+                override suspend fun findByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ): DeletionIntent? = null
+
+                override suspend fun startIfAbsent(intent: DeletionIntent) = false
+                override suspend fun markRemoteDeletedByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun clearByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun isBlockingByTournamentIdAndOwner(
+                    tournamentId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> {
+                    intentQueries += ownerUserId
+                    return emptyList()
+                }
+            },
+            localDeletionRepository = object : LocalDeletionRepository {},
+        )
+    }
 
     private class FakeAuthRepository : AuthRepository {
         val authState = MutableStateFlow<AuthState>(AuthState.SignedOut)

@@ -49,11 +49,6 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
-import com.hoggamers.rankforge.domain.tournament.DeletionIntent
-import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
-import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
-import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
-import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import com.hoggamers.rankforge.domain.sync.CloudRevision
@@ -93,7 +88,6 @@ import java.io.File
 class RoomTournamentRepository @Inject constructor(
     private val database: RankForgeDatabase,
     private val localImagePreserver: LocalImagePreserver,
-    private val deletionIntentRepository: DeletionIntentRepository,
     private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
     LocalDeletionRepository {
@@ -104,7 +98,6 @@ class RoomTournamentRepository @Inject constructor(
             sourceStreamOpener = ImageSourceStreamOpener { null },
             mimeTypeReader = ImageSourceMimeTypeReader { null },
         ),
-        deletionIntentRepository = NoOpDeletionIntentRepository,
         clock = Clock.systemUTC(),
     )
 
@@ -114,18 +107,6 @@ class RoomTournamentRepository @Inject constructor(
     ) : this(
         database = database,
         localImagePreserver = localImagePreserver,
-        deletionIntentRepository = NoOpDeletionIntentRepository,
-        clock = Clock.systemUTC(),
-    )
-
-    constructor(
-        database: RankForgeDatabase,
-        localImagePreserver: LocalImagePreserver,
-        deletionIntentRepository: DeletionIntentRepository,
-    ) : this(
-        database = database,
-        localImagePreserver = localImagePreserver,
-        deletionIntentRepository = deletionIntentRepository,
         clock = Clock.systemUTC(),
     )
 
@@ -136,7 +117,6 @@ class RoomTournamentRepository @Inject constructor(
             sourceStreamOpener = ImageSourceStreamOpener { null },
             mimeTypeReader = ImageSourceMimeTypeReader { null },
         ),
-        deletionIntentRepository = NoOpDeletionIntentRepository,
         clock = clock,
     )
 
@@ -149,8 +129,6 @@ class RoomTournamentRepository @Inject constructor(
     init {
         scope.launch {
             try {
-                val deletionIntents = runCatching { deletionIntentRepository.readAll() }
-                    .getOrDefault(emptyList())
                 val restored = runCatching { database.stateDao().readPayload() }
                     .getOrNull()
                     ?.let { payload ->
@@ -158,11 +136,9 @@ class RoomTournamentRepository @Inject constructor(
                             .getOrNull()
                     }
                     ?: RepositoryState()
-                val restoredWithoutActiveDeletionTargets =
-                    restored.withoutActiveDeletionTargets(deletionIntents)
                 val synchronizedState = database.withTransaction {
                     val existingIds = database.tournamentDao().observeAll().first().map { it.id }.toSet()
-                    restoredWithoutActiveDeletionTargets.tournaments
+                    restored.tournaments
                         .filter { it.id !in existingIds }
                         .forEach { tournament ->
                             database.tournamentDao().upsert(
@@ -174,8 +150,8 @@ class RoomTournamentRepository @Inject constructor(
 
                     val normalizedTournaments = database.tournamentDao().observeAll().first().map { it.toDomain() }
                     normalizedTournaments.forEach { tournament ->
-                        backfillSlots(tournament.id, restoredWithoutActiveDeletionTargets)
-                        backfillRoster(tournament.id, restoredWithoutActiveDeletionTargets)
+                        backfillSlots(tournament.id, restored)
+                        backfillRoster(tournament.id, restored)
                     }
 
                     val normalizedTournamentIds = normalizedTournaments.map { it.id }.toSet()
@@ -184,7 +160,7 @@ class RoomTournamentRepository @Inject constructor(
                     val existingMatchIds = existingMatches
                         .map { it.id }
                         .toSet()
-                    restoredWithoutActiveDeletionTargets.matches.values.flatten()
+                    restored.matches.values.flatten()
                         .filter { it.id !in existingMatchIds }
                         .filter { match -> normalizedTournaments.any { it.id == match.tournamentId } }
                         .forEach { database.matchDao().upsert(it.toEntity()) }
@@ -192,13 +168,13 @@ class RoomTournamentRepository @Inject constructor(
                     val normalizedMatchEntities = database.matchDao().observeAll().first()
                         .filter { it.tournamentId in normalizedTournamentIds }
                     normalizedMatchEntities.forEach { match ->
-                        val legacyMatch = restoredWithoutActiveDeletionTargets.matches.values.flatten()
+                        val legacyMatch = restored.matches.values.flatten()
                             .firstOrNull { it.id == match.id }
                         backfillMatchPlacements(match.id, legacyMatch)
                         backfillMatchKills(match.id, legacyMatch)
                         backfillMatchParticipantResults(match.id, legacyMatch)
                         backfillMatchCorrections(match.id, legacyMatch)
-                        backfillMatchDraftValues(match.id, restoredWithoutActiveDeletionTargets)
+                        backfillMatchDraftValues(match.id, restored)
                     }
 
                     val normalizedSlots = normalizedTournaments.associate { tournament ->
@@ -245,34 +221,28 @@ class RoomTournamentRepository @Inject constructor(
                         keySelector = { it.first },
                         valueTransform = { it.second },
                     ).mapValues { (_, values) -> values.toMap() }
-                    val synchronized = restoredWithoutActiveDeletionTargets.copy(
+                    val synchronized = restored.copy(
                         tournaments = normalizedTournaments,
                         slots = normalizedSlots,
                         rosters = normalizedRosters,
                         matches = normalizedMatches.groupBy { it.tournamentId },
                         draftValues = normalizedDraftValues,
                     )
-                    val synchronizedWithoutActiveDeletionTargets =
-                        synchronized.withoutActiveDeletionTargets(deletionIntents)
-                    if (synchronizedWithoutActiveDeletionTargets != restored) {
+                    if (synchronized != restored) {
                         database.stateDao().save(
                             RankForgeStateEntity(
                                 payload = json.encodeToString(
-                                    synchronizedWithoutActiveDeletionTargets.toPersistedState(),
+                                    synchronized.toPersistedState(),
                                 ),
                             ),
                         )
                     }
-                    synchronizedWithoutActiveDeletionTargets
+                    synchronized
                 }
                 state.value = synchronizedState
             } finally {
                 ready.complete(Unit)
             }
-        }
-        scope.launch {
-            ready.await()
-            recoverPendingLocalCleanup()
         }
     }
 
@@ -448,10 +418,14 @@ class RoomTournamentRepository @Inject constructor(
         }
     }
 
-    override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult {
+    override suspend fun deleteMatchLocallyByOwner(
+        matchId: String,
+        ownerUserId: String,
+    ): LocalDeletionResult {
+        require(ownerUserId.isNotBlank())
         awaitState()
         return writeMutex.withLock {
-            val match = database.matchDao().observeById(matchId).first()
+            val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
                 ?: return@withLock LocalDeletionResult.NotFound
             val referencedPaths = buildList {
                 database.screenshotMetadataDao().readByMatchId(matchId)?.localRelativePath?.let(::add)
@@ -476,35 +450,28 @@ class RoomTournamentRepository @Inject constructor(
                 draftValues = state.value.draftValues.filterKeys { it.matchId != matchId },
             )
             database.withTransaction {
+                if (!database.matchDao().existsByIdAndOwner(matchId, ownerUserId)) {
+                    return@withTransaction LocalDeletionResult.NotFound
+                }
                 database.matchDao().deleteById(matchId)
                 // The queue stores tournamentId only, so purge the full tournament scope.
-                database.syncQueueDao().deleteByTournamentId(match.tournamentId)
+                database.syncQueueDao().deleteByTournamentIdAndOwner(match.tournamentId, ownerUserId)
                 touchTournament(match.tournamentId)
                 saveLegacyState(next)
+                LocalDeletionResult.Deleted
             }
-            state.value = next
-            LocalDeletionResult.Deleted
+                .also { result -> if (result == LocalDeletionResult.Deleted) state.value = next }
         }
     }
 
-    private suspend fun recoverPendingLocalCleanup() {
-        deletionIntentRepository.readPendingLocalCleanup().forEach { intent ->
-            val result = when (intent.targetType) {
-                DeletionTargetType.MATCH -> deleteMatchLocally(intent.targetId)
-                DeletionTargetType.TOURNAMENT -> deleteTournamentLocally(intent.targetId)
-            }
-            if (result == LocalDeletionResult.Deleted || result == LocalDeletionResult.NotFound) {
-                runCatching {
-                    deletionIntentRepository.clear(intent.targetType, intent.targetId)
-                }
-            }
-        }
-    }
-
-    override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
+    override suspend fun deleteTournamentLocallyByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): LocalDeletionResult {
+        require(ownerUserId.isNotBlank())
         awaitState()
         return writeMutex.withLock {
-            database.tournamentDao().observeById(tournamentId).first()
+            database.tournamentDao().observeByIdAndOwner(tournamentId, ownerUserId).first()
                 ?: return@withLock LocalDeletionResult.NotFound
             val matches = database.matchDao().observeByTournamentId(tournamentId).first()
             val templates = database.tournamentLobbyTemplateAssetDao().readByTournamentId(tournamentId)
@@ -543,13 +510,16 @@ class RoomTournamentRepository @Inject constructor(
                 draftValues = state.value.draftValues.filterKeys { it.tournamentId != tournamentId },
             )
             database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction LocalDeletionResult.NotFound
+                }
                 database.syncRevisionDao().deleteByTournamentId(tournamentId)
-                database.syncQueueDao().deleteByTournamentId(tournamentId)
+                database.syncQueueDao().deleteByTournamentIdAndOwner(tournamentId, ownerUserId)
                 database.tournamentDao().deleteById(tournamentId)
                 saveLegacyState(next)
+                LocalDeletionResult.Deleted
             }
-            state.value = next
-            LocalDeletionResult.Deleted
+                .also { result -> if (result == LocalDeletionResult.Deleted) state.value = next }
         }
     }
 
@@ -2347,31 +2317,6 @@ private data class RepositoryState(
     val matches: Map<String, List<Match>> = emptyMap(),
     val draftValues: Map<DraftKey, Map<Int, MatchDraftFieldValues>> = emptyMap(),
 )
-
-private fun RepositoryState.withoutActiveDeletionTargets(
-    intents: List<DeletionIntent>,
-): RepositoryState {
-    val activeTournamentIds = intents
-        .filter { it.targetType == DeletionTargetType.TOURNAMENT }
-        .map { it.targetId }
-        .toSet()
-    val activeMatchIds = intents
-        .filter { it.targetType == DeletionTargetType.MATCH }
-        .map { it.targetId }
-        .toSet()
-    return copy(
-        tournaments = tournaments.filterNot { it.id in activeTournamentIds },
-        slots = slots.filterKeys { it !in activeTournamentIds },
-        rosters = rosters.filterKeys { it.tournamentId !in activeTournamentIds },
-        matches = matches
-            .filterKeys { it !in activeTournamentIds }
-            .mapValues { (_, values) -> values.filterNot { it.id in activeMatchIds } }
-            .filterValues { it.isNotEmpty() },
-        draftValues = draftValues.filterKeys {
-            it.tournamentId !in activeTournamentIds && it.matchId !in activeMatchIds
-        },
-    )
-}
 
 private fun RepositoryState.withTournamentMirror(
     tournament: Tournament,

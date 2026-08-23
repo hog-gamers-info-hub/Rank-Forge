@@ -64,7 +64,10 @@ class RoomTournamentRepositoryLocalDeletionTest {
                 ),
             )
 
-            assertEquals(LocalDeletionResult.Deleted, repository.deleteMatchLocally("match-without-assets"))
+            assertEquals(
+                LocalDeletionResult.Deleted,
+                repository.deleteMatchLocallyByOwner("match-without-assets", "owner-a"),
+            )
             assertTrue(database.matchDao().observeByTournamentId(tournament.id).first().isEmpty())
         } finally {
             if (database.isOpen) database.close()
@@ -105,7 +108,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             val survivorFile = preserver.preservedFile(tournament.id, matches[0].id, "png")
             writeFile(survivorFile)
 
-            assertEquals(LocalDeletionResult.Deleted, repository.deleteMatchLocally("match-2"))
+            assertEquals(LocalDeletionResult.Deleted, repository.deleteMatchLocallyByOwner("match-2", "owner-a"))
             assertEquals(listOf(1, 3), database.matchDao().observeByTournamentId(tournament.id).first().map { it.matchNumber })
             assertTrue(database.matchPlacementDao().observeByMatchId("match-2").first().isEmpty())
             assertTrue(database.matchKillDao().observeByMatchId("match-2").first().isEmpty())
@@ -166,7 +169,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             }
             files.forEach(::writeFile)
 
-            assertEquals(LocalDeletionResult.Deleted, repository.deleteTournamentLocally(tournament.id))
+            assertEquals(LocalDeletionResult.Deleted, repository.deleteTournamentLocallyByOwner(tournament.id, "owner-a"))
             assertNull(database.tournamentDao().observeById(tournament.id).first())
             assertTrue(database.teamSlotDao().observeByTournamentId(tournament.id).first().isEmpty())
             assertTrue(database.rosterPlayerDao().observeByTournamentId(tournament.id).first().isEmpty())
@@ -192,109 +195,25 @@ class RoomTournamentRepositoryLocalDeletionTest {
     }
 
     @Test
-    fun deleteStartedIntentPreventsLegacyMirrorResurrectionAfterRestart() = runBlocking {
+    fun foreignAndNullOwnerTargetsLeaveTournamentAndMatchDataUntouched() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val databaseName = "deletion-intent-restart-${UUID.randomUUID()}.db"
-        val root = File(context.cacheDir, "deletion-intent-restart-${UUID.randomUUID()}")
+        val databaseName = "local-owner-delete-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-owner-delete-${UUID.randomUUID()}")
         val database = database(context, databaseName)
         try {
-            val tournamentId = "tournament-intent-restart"
-            val matchId = "match-intent-restart"
-            val intentRepository = RoomDeletionIntentRepository(database.deletionIntentDao())
-            val repository = repository(database, preserver(root), intentRepository)
-            repository.create(tournament(tournamentId))
-            repository.createDraftMatch(
-                Match(
-                    id = matchId,
-                    tournamentId = tournamentId,
-                    matchNumber = 7,
-                    date = LocalDate.of(2026, 8, 21),
-                    mapName = "Alpine",
-                    status = MatchStatus.DRAFT,
-                ),
-            )
-            intentRepository.start(
-                DeletionIntent(
-                    targetType = DeletionTargetType.MATCH,
-                    targetId = matchId,
-                    tournamentId = tournamentId,
-                    ownerUserId = "owner-1",
-                    phase = DeletionIntentPhase.DELETE_STARTED,
-                    updatedAtEpochMillis = 1,
-                ),
-            )
-            database.matchDao().deleteById(matchId)
-            database.close()
-
-            val restartedDatabase = database(context, databaseName)
-            try {
-                val restartedRepository = repository(
-                    restartedDatabase,
-                    preserver(root),
-                    RoomDeletionIntentRepository(restartedDatabase.deletionIntentDao()),
-                )
-                assertNull(restartedRepository.observeMatchById(matchId).first())
-                assertTrue(restartedRepository.observeAll().first().any { it.id == tournamentId })
-            } finally {
-                restartedDatabase.close()
-            }
-        } finally {
-            if (database.isOpen) database.close()
-            context.deleteDatabase(databaseName)
-            root.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun pendingIntentRestartsIntoLocalOnlyCleanupAndClearsIntent() = runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val databaseName = "deletion-pending-restart-${UUID.randomUUID()}.db"
-        val root = File(context.cacheDir, "deletion-pending-restart-${UUID.randomUUID()}")
-        val database = database(context, databaseName)
-        try {
-            val tournamentId = "tournament-pending-restart"
-            val matchId = "match-pending-restart"
             val repository = repository(database, preserver(root))
-            repository.create(tournament(tournamentId))
-            repository.createDraftMatch(
-                Match(
-                    id = matchId,
-                    tournamentId = tournamentId,
-                    matchNumber = 2,
-                    date = LocalDate.of(2026, 8, 21),
-                    mapName = "Alpine",
-                    status = MatchStatus.DRAFT,
-                ),
-            )
-            RoomDeletionIntentRepository(database.deletionIntentDao()).start(
-                DeletionIntent(
-                    targetType = DeletionTargetType.MATCH,
-                    targetId = matchId,
-                    tournamentId = tournamentId,
-                    ownerUserId = "owner-1",
-                    phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
-                    updatedAtEpochMillis = 1,
-                ),
-            )
-            database.close()
+            val foreignTournament = tournament("foreign").copy(ownerUserId = "owner-b")
+            val nullOwnerTournament = tournament("null-owner").copy(ownerUserId = null)
+            repository.create(foreignTournament)
+            repository.create(nullOwnerTournament)
+            repository.createDraftMatch(match("foreign-match", foreignTournament.id))
 
-            val restartedDatabase = database(context, databaseName)
-            try {
-                val restartedIntentRepository = RoomDeletionIntentRepository(restartedDatabase.deletionIntentDao())
-                val restartedRepository = repository(restartedDatabase, preserver(root), restartedIntentRepository)
-                withTimeout(5_000) {
-                    while (
-                        restartedDatabase.matchDao().observeById(matchId).first() != null ||
-                        restartedIntentRepository.read(DeletionTargetType.MATCH, matchId) != null
-                    ) {
-                        delay(20)
-                    }
-                }
-                assertNull(restartedIntentRepository.read(DeletionTargetType.MATCH, matchId))
-                assertNull(restartedRepository.observeMatchById(matchId).first())
-            } finally {
-                restartedDatabase.close()
-            }
+            assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("foreign", "owner-a"))
+            assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("null-owner", "owner-a"))
+            assertEquals(LocalDeletionResult.NotFound, repository.deleteMatchLocallyByOwner("foreign-match", "owner-a"))
+            assertTrue(database.tournamentDao().observeById("foreign").first() != null)
+            assertTrue(database.tournamentDao().observeById("null-owner").first() != null)
+            assertTrue(database.matchDao().observeById("foreign-match").first() != null)
         } finally {
             if (database.isOpen) database.close()
             context.deleteDatabase(databaseName)
@@ -317,13 +236,10 @@ class RoomTournamentRepositoryLocalDeletionTest {
     private fun repository(
         database: RankForgeDatabase,
         preserver: LocalImagePreserver,
-        deletionIntentRepository: com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository =
-            com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository,
     ): RoomTournamentRepository =
         RoomTournamentRepository(
             database = database,
             localImagePreserver = preserver,
-            deletionIntentRepository = deletionIntentRepository,
         )
 
     private fun tournament(id: String) = Tournament(
@@ -333,6 +249,16 @@ class RoomTournamentRepositoryLocalDeletionTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = "owner-a",
+    )
+
+    private fun match(id: String, tournamentId: String) = Match(
+        id = id,
+        tournamentId = tournamentId,
+        matchNumber = 1,
+        date = LocalDate.of(2026, 8, 21),
+        mapName = "Alpine",
+        status = MatchStatus.DRAFT,
     )
 
     private fun queueEntry(id: String, tournamentId: String) = SyncQueueEntity(
@@ -343,6 +269,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
         status = SyncQueueStatus.PENDING.name,
         failureCategory = null,
         attemptCount = 0,
+        ownerUserId = "owner-a",
     )
 
     private fun matchFiles(

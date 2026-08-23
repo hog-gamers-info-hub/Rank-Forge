@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
     }
     override suspend fun enqueue(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?): SyncQueueEntry = enqueueMutex.withLock {
         require(ownerUserId.isNotBlank())
-        if (tournamentId != null && deletionIntentRepository.isBlocking(tournamentId)) {
+        if (tournamentId != null && deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, ownerUserId)) {
             throw DeletionBlockedException(tournamentId)
         }
         val identity = SyncOperationIdentity.from(operationType, tournamentId)

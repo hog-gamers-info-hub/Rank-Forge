@@ -51,7 +51,7 @@ class UploadTournamentUseCase @Inject constructor(
         if (currentOwnerUserId() != expectedOwnerUserId) {
             return TournamentCloudUploadResult.AuthorizationFailure
         }
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return TournamentCloudUploadResult.ValidationFailure
         }
 

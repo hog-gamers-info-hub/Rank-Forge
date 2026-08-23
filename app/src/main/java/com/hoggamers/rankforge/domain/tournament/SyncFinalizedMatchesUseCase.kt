@@ -42,7 +42,7 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         expectedOwnerUserId: String,
     ): FinalizedMatchCloudSyncResult {
         if (currentOwnerUserId() != expectedOwnerUserId) return FinalizedMatchCloudSyncResult.AuthorizationFailure
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return FinalizedMatchCloudSyncResult.ValidationFailure
         }
 

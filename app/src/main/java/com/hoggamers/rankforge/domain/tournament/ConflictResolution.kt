@@ -60,7 +60,7 @@ class ResolveDraftConflictUseCase @Inject constructor(
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
             return DraftConflictResolutionResult.Unsupported
         }
-        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(context.tournamentId, ownerUserId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val currentRevision = context.currentCloudRevision
@@ -99,7 +99,7 @@ class ResolveDraftConflictUseCase @Inject constructor(
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
             return DraftConflictResolutionResult.Unsupported
         }
-        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(context.tournamentId, ownerUserId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val localMatches = try {

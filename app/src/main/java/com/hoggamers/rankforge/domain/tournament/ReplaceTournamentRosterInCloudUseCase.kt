@@ -44,7 +44,7 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         expectedOwnerUserId: String,
     ): TournamentRosterCloudReplacementResult {
         if (currentOwnerUserId() != expectedOwnerUserId) return TournamentRosterCloudReplacementResult.AuthorizationFailure
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return TournamentRosterCloudReplacementResult.ValidationFailure
         }
 

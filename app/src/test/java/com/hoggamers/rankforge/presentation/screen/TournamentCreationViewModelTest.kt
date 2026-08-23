@@ -207,6 +207,7 @@ class TournamentCreationViewModelTest {
 
         val newTournamentId = uploadAction.tournamentIds.single()
         assertEquals(listOf(newTournamentId), localDeletionRepository.deletedTournamentIds)
+        assertEquals(listOf("user-a"), localDeletionRepository.deletedTournamentOwners)
         assertEquals(existingTournamentId, repository.records.first().id)
         assertEquals(
             TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
@@ -464,12 +465,17 @@ class TournamentCreationViewModelTest {
 
     private class RecordingLocalDeletionRepository : LocalDeletionRepository {
         val deletedTournamentIds = mutableListOf<String>()
+        val deletedTournamentOwners = mutableListOf<String>()
 
         override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult =
             LocalDeletionResult.NotFound
 
-        override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
+        override suspend fun deleteTournamentLocallyByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): LocalDeletionResult {
             deletedTournamentIds += tournamentId
+            deletedTournamentOwners += ownerUserId
             return LocalDeletionResult.Deleted
         }
     }

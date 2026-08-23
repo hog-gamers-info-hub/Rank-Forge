@@ -160,7 +160,14 @@ class TournamentCreationViewModel @Inject constructor(
                 }
                 if (uploadResult?.primaryResult == TournamentCloudUploadResult.TournamentLimitReached) {
                     try {
-                        localDeletionRepository.deleteTournamentLocally(result.tournament.id)
+                        result.tournament.ownerUserId
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { ownerUserId ->
+                                localDeletionRepository.deleteTournamentLocallyByOwner(
+                                    result.tournament.id,
+                                    ownerUserId,
+                                )
+                            }
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (_: Throwable) {
