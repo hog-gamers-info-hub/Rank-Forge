@@ -16,7 +16,7 @@ class CreateNextMatchUseCaseTest {
     @Before
     fun setUp() {
         repository = InMemoryTournamentRepository()
-        useCase = CreateNextMatchUseCase(repository)
+        useCase = CreateNextMatchUseCase(repository, SignedInTournamentTestAuthRepository())
     }
 
     @Test
@@ -95,7 +95,7 @@ class CreateNextMatchUseCaseTest {
     }
 
     private suspend fun createExistingMatch(tournamentId: String, matchNumber: Int) {
-        CreateMatchUseCase(repository)(
+        CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())(
             CreateMatchInput(
                 tournamentId = tournamentId,
                 matchNumber = matchNumber.toString(),
@@ -115,5 +115,6 @@ class CreateNextMatchUseCaseTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 }

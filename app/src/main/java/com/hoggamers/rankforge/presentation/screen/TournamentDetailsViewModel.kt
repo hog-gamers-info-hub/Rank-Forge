@@ -339,6 +339,7 @@ class TournamentDetailsViewModel @Inject constructor(
     private fun CreateNextMatchFailure.toCalculatePointsMessage(): CalculatePointsMessage = when (this) {
         CreateNextMatchFailure.NO_PARTICIPATING_TEAMS -> CalculatePointsMessage.NO_TEAMS_SAVED
         CreateNextMatchFailure.INVALID_TEAM_SLOTS -> CalculatePointsMessage.INVALID_TEAM_SLOTS
+        CreateNextMatchFailure.AUTHENTICATION_REQUIRED,
         CreateNextMatchFailure.TOURNAMENT_NOT_FOUND,
         CreateNextMatchFailure.LIMIT_REACHED,
         CreateNextMatchFailure.REPOSITORY_REJECTED,

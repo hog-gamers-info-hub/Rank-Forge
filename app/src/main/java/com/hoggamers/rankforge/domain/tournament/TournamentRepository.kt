@@ -178,6 +178,19 @@ interface TournamentRepository {
     fun observeMatchById(matchId: String): Flow<Match?> =
         kotlinx.coroutines.flow.flowOf(null)
 
+    fun observeMatchByIdAndOwner(
+        matchId: String,
+        ownerUserId: String,
+    ): Flow<Match?> = observeMatchById(matchId).flatMapLatest { match ->
+        if (match == null) {
+            flowOf(null)
+        } else {
+            observeByIdAndOwner(match.tournamentId, ownerUserId).map { tournament ->
+                match.takeIf { tournament != null }
+            }
+        }
+    }
+
     /** Returns the authoritative OCR evidence already persisted for a match, if any. */
     suspend fun readPreservedMatchOcrEvidence(
         tournamentId: String,
@@ -187,17 +200,37 @@ interface TournamentRepository {
     suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
         error("Match creation is not supported by this repository.")
 
+    suspend fun createDraftMatchByOwner(
+        match: Match,
+        ownerUserId: String,
+    ): CreateMatchRepositoryResult =
+        error("Owner-scoped match creation is not supported by this repository.")
+
     suspend fun saveDraftMatchPlacements(
         matchId: String,
         placements: List<MatchPlacement>,
     ): SaveMatchPlacementsRepositoryResult =
         error("Match placement updates are not supported by this repository.")
 
+    suspend fun saveDraftMatchPlacementsByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+    ): SaveMatchPlacementsRepositoryResult =
+        error("Owner-scoped match placement updates are not supported by this repository.")
+
     suspend fun saveDraftMatchKills(
         matchId: String,
         kills: List<MatchKill>,
     ): SaveMatchKillsRepositoryResult =
         error("Match kill updates are not supported by this repository.")
+
+    suspend fun saveDraftMatchKillsByOwner(
+        matchId: String,
+        ownerUserId: String,
+        kills: List<MatchKill>,
+    ): SaveMatchKillsRepositoryResult =
+        error("Owner-scoped match kill updates are not supported by this repository.")
 
     suspend fun finalizeDraftMatch(
         matchId: String,
@@ -256,16 +289,46 @@ interface TournamentRepository {
         killsInput: String? = null,
     ) = Unit
 
+    suspend fun saveDraftMatchValueByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+        teamSlotNumber: Int,
+        placementInput: String? = null,
+        killsInput: String? = null,
+    ): OwnerScopedMatchMutationResult =
+        error("Owner-scoped draft match value updates are not supported by this repository.")
+
     /** Clears editable result values for one draft match. Finalization can call this later. */
     suspend fun clearDraftMatch(
         tournamentId: String,
         matchId: String,
     ) = Unit
 
+    suspend fun clearDraftMatchByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): OwnerScopedMatchMutationResult =
+        error("Owner-scoped draft match clearing is not supported by this repository.")
+
     suspend fun clearMatchCorrectionDraft(
         tournamentId: String,
         matchId: String,
     ) = Unit
+
+    suspend fun clearMatchCorrectionDraftByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): OwnerScopedMatchMutationResult =
+        error("Owner-scoped correction draft clearing is not supported by this repository.")
+}
+
+sealed interface OwnerScopedMatchMutationResult {
+    data object Saved : OwnerScopedMatchMutationResult
+
+    data object MatchNotFound : OwnerScopedMatchMutationResult
 }
 
 sealed interface OwnerScopedTournamentMutationResult {

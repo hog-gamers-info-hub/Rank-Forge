@@ -16,7 +16,7 @@ class CreateMatchUseCaseTest {
     @Before
     fun setUp() {
         repository = InMemoryTournamentRepository()
-        useCase = CreateMatchUseCase(repository)
+        useCase = CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())
     }
 
     @Test
@@ -157,5 +157,6 @@ class CreateMatchUseCaseTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 }

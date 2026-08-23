@@ -3,14 +3,17 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftInput
+import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftResult
 import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
+import com.hoggamers.rankforge.domain.tournament.MatchCorrectionGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueInput
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionInput
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionResult
@@ -46,6 +49,7 @@ class MatchCorrectionViewModel @Inject constructor(
     private var loadedMatchKey: String? = null
     private val draftWriteMutex = Mutex()
     private var draftWriteJob: Job? = null
+    private var draftWriteError: MatchCorrectionGlobalError? = null
 
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
@@ -150,8 +154,13 @@ class MatchCorrectionViewModel @Inject constructor(
         if (!current.canSubmit) return
         _uiState.update { it.copy(isSubmitting = true, globalError = null) }
         viewModelScope.launch {
+            draftWriteError = null
             current.rows.forEach { row -> enqueueDraftWrite(row.teamSlotNumber) }
             draftWriteJob?.join()
+            draftWriteError?.let { error ->
+                _uiState.update { it.copy(isSubmitting = false, globalError = error) }
+                return@launch
+            }
             when (
                 val result = submitCorrection(
                     SubmitMatchCorrectionInput(
@@ -185,8 +194,17 @@ class MatchCorrectionViewModel @Inject constructor(
         val matchId = current.matchId ?: return
         viewModelScope.launch {
             draftWriteJob?.join()
-            clearCorrectionDraft(ClearMatchCorrectionDraftInput(tournamentId, matchId))
-            _uiState.update { it.copy(navigation = MatchCorrectionNavigation.REVIEW) }
+            when (clearCorrectionDraft(ClearMatchCorrectionDraftInput(tournamentId, matchId))) {
+                ClearMatchCorrectionDraftResult.Cleared -> _uiState.update {
+                    it.copy(navigation = MatchCorrectionNavigation.REVIEW)
+                }
+                ClearMatchCorrectionDraftResult.AuthenticationRequired -> _uiState.update {
+                    it.copy(globalError = MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED)
+                }
+                ClearMatchCorrectionDraftResult.MatchNotFound -> _uiState.update {
+                    it.copy(globalError = MatchCorrectionGlobalError.MATCH_NOT_FOUND)
+                }
+            }
         }
     }
 
@@ -234,7 +252,14 @@ class MatchCorrectionViewModel @Inject constructor(
         val previousWrite = draftWriteJob
         draftWriteJob = viewModelScope.launch {
             previousWrite?.join()
-            draftWriteMutex.withLock { saveDraftValue(input) }
+            draftWriteMutex.withLock {
+                draftWriteError = when (saveDraftValue(input)) {
+                    SaveMatchDraftValueResult.Saved -> draftWriteError
+                    SaveMatchDraftValueResult.AuthenticationRequired ->
+                        MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED
+                    SaveMatchDraftValueResult.MatchNotFound -> MatchCorrectionGlobalError.MATCH_NOT_FOUND
+                }
+            }
         }
     }
 }

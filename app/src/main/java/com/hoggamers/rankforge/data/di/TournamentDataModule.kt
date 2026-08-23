@@ -350,13 +350,15 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideCreateMatchUseCase(
         repository: TournamentRepository,
-    ): CreateMatchUseCase = CreateMatchUseCase(repository)
+        authRepository: AuthRepository,
+    ): CreateMatchUseCase = CreateMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideCreateNextMatchUseCase(
         repository: TournamentRepository,
-    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository)
+        authRepository: AuthRepository,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -378,13 +380,15 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideSaveMatchPlacementsUseCase(
         repository: TournamentRepository,
-    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSaveMatchKillsUseCase(
         repository: TournamentRepository,
-    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -398,15 +402,17 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideSaveMatchDraftValueUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase =
-        com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideClearDraftMatchUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase =
-        com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -445,5 +451,6 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideClearMatchCorrectionDraftUseCase(
         repository: TournamentRepository,
-    ): ClearMatchCorrectionDraftUseCase = ClearMatchCorrectionDraftUseCase(repository)
+        authRepository: AuthRepository,
+    ): ClearMatchCorrectionDraftUseCase = ClearMatchCorrectionDraftUseCase(repository, authRepository)
 }

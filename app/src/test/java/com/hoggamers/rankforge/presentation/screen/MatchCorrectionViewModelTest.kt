@@ -13,6 +13,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.SubmitMatchCorrectionUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,12 @@ class MatchCorrectionViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
+        )
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
         )
         repository.createDraftMatch(
             com.hoggamers.rankforge.domain.tournament.Match(
@@ -152,7 +158,7 @@ class MatchCorrectionViewModelTest {
                 com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionResult.Success(2)
             },
         ),
-        saveDraftValue = SaveMatchDraftValueUseCase(repository),
-        clearCorrectionDraft = ClearMatchCorrectionDraftUseCase(repository),
+        saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+        clearCorrectionDraft = ClearMatchCorrectionDraftUseCase(repository, SignedInTournamentTestAuthRepository()),
     )
 }

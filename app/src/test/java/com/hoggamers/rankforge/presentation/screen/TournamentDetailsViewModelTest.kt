@@ -47,6 +47,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.MatchCreationFailure
@@ -592,9 +593,15 @@ class TournamentDetailsViewModelTest {
         observeMatches = ObserveMatchesUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
-        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+        saveTeamSlotNames = SaveTeamSlotNamesUseCase(
+            repository,
+            SignedInTournamentTestAuthRepository(),
+        ),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
-        createNextMatch = CreateNextMatchUseCase(repository),
+        createNextMatch = CreateNextMatchUseCase(
+            repository,
+            SignedInTournamentTestAuthRepository(),
+        ),
         syncDraftMatches = syncDraftMatches,
         applyLobbyTemplate = applyLobbyTemplate,
         lobbyUploadCheckpoint = lobbyUploadCheckpoint,
@@ -607,6 +614,7 @@ class TournamentDetailsViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 
     private fun finalizedMatch() = Match(
@@ -700,6 +708,16 @@ class TournamentDetailsViewModelTest {
             }
             matchesState.value = matchesState.value + (match.tournamentId to (current + match))
             return CreateMatchRepositoryResult.Created
+        }
+
+        override suspend fun createDraftMatchByOwner(
+            match: Match,
+            ownerUserId: String,
+        ): CreateMatchRepositoryResult {
+            if (state.value.none { it.id == match.tournamentId && it.ownerUserId == ownerUserId }) {
+                return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_FOUND)
+            }
+            return createDraftMatch(match)
         }
     }
 

@@ -17,8 +17,8 @@ class SaveMatchKillsUseCaseTest {
     @Before
     fun setUp() {
         repository = InMemoryTournamentRepository()
-        createMatch = CreateMatchUseCase(repository)
-        saveKills = SaveMatchKillsUseCase(repository)
+        createMatch = CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())
+        saveKills = SaveMatchKillsUseCase(repository, SignedInTournamentTestAuthRepository())
     }
 
     @Test
@@ -94,8 +94,10 @@ class SaveMatchKillsUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
+        repository.saveTeamNames("tournament-id", mapOf(1 to "Team One"))
         return (createMatch(
             CreateMatchInput(
                 tournamentId = "tournament-id",

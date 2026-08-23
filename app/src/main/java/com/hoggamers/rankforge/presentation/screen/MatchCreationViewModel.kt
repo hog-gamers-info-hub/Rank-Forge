@@ -87,6 +87,13 @@ class MatchCreationViewModel @Inject constructor(
                             navigation = MatchCreationNavigation.Created(tournamentId, result.match.id),
                         )
                     }
+
+                    CreateMatchResult.AuthenticationRequired -> _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = MatchCreationSubmissionError.UNKNOWN,
+                        )
+                    }
                 }
             } catch (_: Throwable) {
                 _uiState.update {
@@ -108,4 +115,3 @@ class MatchCreationViewModel @Inject constructor(
         _uiState.update { it.copy(navigation = null) }
     }
 }
-

@@ -199,6 +199,43 @@ interface MatchDao {
     @Query("SELECT * FROM matches WHERE id = :matchId")
     fun observeById(matchId: String): Flow<MatchEntity?>
 
+    @Query(
+        """
+        SELECT matches.* FROM matches
+        INNER JOIN tournaments ON tournaments.id = matches.tournament_id
+        WHERE matches.id = :matchId AND tournaments.owner_user_id = :ownerUserId
+        """,
+    )
+    fun observeByIdAndOwner(matchId: String, ownerUserId: String): Flow<MatchEntity?>
+
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM matches
+            INNER JOIN tournaments ON tournaments.id = matches.tournament_id
+            WHERE matches.id = :matchId AND tournaments.owner_user_id = :ownerUserId
+        )
+        """,
+    )
+    suspend fun existsByIdAndOwner(matchId: String, ownerUserId: String): Boolean
+
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM matches
+            INNER JOIN tournaments ON tournaments.id = matches.tournament_id
+            WHERE matches.id = :matchId
+                AND matches.tournament_id = :tournamentId
+                AND tournaments.owner_user_id = :ownerUserId
+        )
+        """,
+    )
+    suspend fun existsByIdAndTournamentAndOwner(
+        matchId: String,
+        tournamentId: String,
+        ownerUserId: String,
+    ): Boolean
+
     @Upsert
     suspend fun upsert(match: MatchEntity)
 

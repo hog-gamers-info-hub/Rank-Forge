@@ -3,13 +3,16 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.PlacementGlobalError
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueInput
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchInput
+import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchResult
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsResult
@@ -42,6 +45,7 @@ class MatchPlacementViewModel @Inject constructor(
     private var loadedMatchKey: String? = null
     private val draftWriteMutex = Mutex()
     private var draftWriteJob: Job? = null
+    private var draftWriteError: PlacementGlobalError? = null
 
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
@@ -147,6 +151,7 @@ class MatchPlacementViewModel @Inject constructor(
         if (!currentState.canSave) return
         _uiState.update { it.copy(isSubmitting = true, globalError = null) }
         viewModelScope.launch {
+            draftWriteError = null
             currentState.rows.forEach { row ->
                 enqueueDraftWrite(
                     SaveMatchDraftValueInput(
@@ -158,6 +163,10 @@ class MatchPlacementViewModel @Inject constructor(
                 )
             }
             draftWriteJob?.join()
+            draftWriteError?.let { error ->
+                _uiState.update { it.copy(isSubmitting = false, globalError = error) }
+                return@launch
+            }
             when (
                 val result = saveMatchPlacements(
                     SaveMatchPlacementsInput(
@@ -198,7 +207,15 @@ class MatchPlacementViewModel @Inject constructor(
         }
         viewModelScope.launch {
             draftWriteJob?.join()
-            clearDraftMatch(ClearDraftMatchInput(tournamentId, matchId))
+            when (clearDraftMatch(ClearDraftMatchInput(tournamentId, matchId))) {
+                ClearDraftMatchResult.Cleared -> Unit
+                ClearDraftMatchResult.AuthenticationRequired -> _uiState.update {
+                    it.copy(globalError = PlacementGlobalError.AUTHENTICATION_REQUIRED)
+                }
+                ClearDraftMatchResult.MatchNotFound -> _uiState.update {
+                    it.copy(globalError = PlacementGlobalError.MATCH_NOT_FOUND)
+                }
+            }
         }
     }
 
@@ -221,7 +238,11 @@ class MatchPlacementViewModel @Inject constructor(
         draftWriteJob = viewModelScope.launch {
             previousWrite?.join()
             draftWriteMutex.withLock {
-                saveDraftValue(input)
+                draftWriteError = when (saveDraftValue(input)) {
+                    SaveMatchDraftValueResult.Saved -> draftWriteError
+                    SaveMatchDraftValueResult.AuthenticationRequired -> PlacementGlobalError.AUTHENTICATION_REQUIRED
+                    SaveMatchDraftValueResult.MatchNotFound -> PlacementGlobalError.MATCH_NOT_FOUND
+                }
             }
         }
     }

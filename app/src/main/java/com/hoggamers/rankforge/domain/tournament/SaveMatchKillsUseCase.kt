@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.flow.first
 
 data class SaveMatchKillsInput(
@@ -12,6 +14,7 @@ enum class KillValidationError {
 }
 
 enum class KillGlobalError {
+    AUTHENTICATION_REQUIRED,
     MATCH_NOT_FOUND,
     MATCH_NOT_DRAFT,
     INVALID_DATA,
@@ -28,9 +31,15 @@ sealed interface SaveMatchKillsResult {
 
 class SaveMatchKillsUseCase(
     private val repository: TournamentRepository,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(input: SaveMatchKillsInput): SaveMatchKillsResult {
-        val match = repository.observeMatchById(input.matchId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.AUTHENTICATION_REQUIRED)
+        val match = repository.observeMatchByIdAndOwner(input.matchId, ownerUserId).first()
             ?: return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.MATCH_NOT_FOUND)
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.MATCH_NOT_DRAFT)
@@ -62,7 +71,7 @@ class SaveMatchKillsUseCase(
             .map { (teamSlotNumber, teamKills) ->
                 MatchKill(teamSlotNumber = teamSlotNumber, kills = teamKills)
             }
-        return when (val result = repository.saveDraftMatchKills(input.matchId, kills)) {
+        return when (val result = repository.saveDraftMatchKillsByOwner(input.matchId, ownerUserId, kills)) {
             SaveMatchKillsRepositoryResult.Saved -> SaveMatchKillsResult.Saved(kills)
             is SaveMatchKillsRepositoryResult.Rejected -> when (result.reason) {
                 SaveMatchKillsFailure.MATCH_NOT_FOUND -> SaveMatchKillsResult.Invalid(
