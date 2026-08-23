@@ -49,6 +49,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
+import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import com.hoggamers.rankforge.domain.sync.CloudRevision
@@ -288,6 +289,43 @@ class RoomTournamentRepository @Inject constructor(
             database.tournamentDao().observeByIdAndOwner(tournamentId, ownerUserId)
                 .map { it?.toDomain() },
         )
+    }
+
+    override suspend fun readOwnerlessLegacyTournaments(): List<Tournament> {
+        awaitState()
+        return database.tournamentDao().readOwnerlessLegacyTournaments().map { it.toDomain() }
+    }
+
+    override suspend fun assignLegacyTournamentOwnerIfUnassigned(
+        tournamentId: String,
+        provenOwnerUserId: String,
+    ): LegacyTournamentOwnerAssignmentResult {
+        require(provenOwnerUserId.isNotBlank())
+        awaitState()
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (database.tournamentDao().assignOwnerIfUnassigned(tournamentId, provenOwnerUserId) == 0) {
+                    return@withTransaction LegacyTournamentOwnerAssignmentResult.NotUnassigned
+                }
+                val next = state.value.copy(
+                    tournaments = state.value.tournaments.map { tournament ->
+                        if (tournament.id == tournamentId) {
+                            tournament.copy(ownerUserId = provenOwnerUserId)
+                        } else {
+                            tournament
+                        }
+                    },
+                )
+                saveLegacyState(next)
+                updatedState = next
+                LegacyTournamentOwnerAssignmentResult.Assigned
+            }
+            if (result is LegacyTournamentOwnerAssignmentResult.Assigned) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
+        }
     }
 
     override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState {

@@ -17,6 +17,7 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
+import com.hoggamers.rankforge.domain.tournament.ReconcileLegacyTournamentOwnershipUseCase
 import java.util.concurrent.CancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -39,6 +40,7 @@ class AuthViewModel @Inject constructor(
     private val updateRecoveredPassword: UpdateRecoveredPasswordUseCase,
     private val recoverForegroundSyncQueue: ForegroundSyncQueueRecoveryAction,
     private val recoverPendingLocalDeletionCleanup: RecoverPendingLocalDeletionCleanupUseCase,
+    private val reconcileLegacyTournamentOwnership: ReconcileLegacyTournamentOwnershipUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState(isSessionLoading = true))
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -74,6 +76,7 @@ class AuthViewModel @Inject constructor(
                     ?.user?.id?.takeIf { it.isNotBlank() }
                     ?: return@collectLatest
                 recoverPendingLocalDeletionCleanup(ownerUserId)
+                reconcileLegacyTournamentOwnership(ownerUserId)
             }
         }
     }

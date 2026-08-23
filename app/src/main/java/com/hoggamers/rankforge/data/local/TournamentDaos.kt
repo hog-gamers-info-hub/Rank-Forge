@@ -80,6 +80,12 @@ interface TournamentDao {
     )
     fun observeAllByOwner(ownerUserId: String): Flow<List<TournamentEntity>>
 
+    /** Trusted reconciliation-only read; normal production reads must remain owner-scoped. */
+    @Query(
+        "SELECT * FROM tournaments WHERE owner_user_id IS NULL ORDER BY creation_order, id",
+    )
+    suspend fun readOwnerlessLegacyTournaments(): List<TournamentEntity>
+
     @Query(
         """
         SELECT
@@ -143,6 +149,12 @@ interface TournamentDao {
         "SELECT EXISTS(SELECT 1 FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId)",
     )
     suspend fun existsByIdAndOwner(tournamentId: String, ownerUserId: String): Boolean
+
+    @Query(
+        "UPDATE tournaments SET owner_user_id = :ownerUserId " +
+            "WHERE id = :tournamentId AND owner_user_id IS NULL",
+    )
+    suspend fun assignOwnerIfUnassigned(tournamentId: String, ownerUserId: String): Int
 
     @Upsert
     suspend fun upsert(tournament: TournamentEntity)

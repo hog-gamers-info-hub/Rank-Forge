@@ -63,6 +63,14 @@ interface TournamentRepository {
         tournament?.takeIf { it.ownerUserId == ownerUserId }
     }
 
+    /** Trusted reconciliation-only API for pre-ownership legacy rows. */
+    suspend fun readOwnerlessLegacyTournaments(): List<Tournament> = emptyList()
+
+    suspend fun assignLegacyTournamentOwnerIfUnassigned(
+        tournamentId: String,
+        provenOwnerUserId: String,
+    ): LegacyTournamentOwnerAssignmentResult = LegacyTournamentOwnerAssignmentResult.NotUnassigned
+
     fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
 
     fun observeSlotsByTournamentIdAndOwner(
@@ -379,4 +387,11 @@ sealed interface OwnerScopedTournamentConfirmationResult {
     data object AlreadyConfirmed : OwnerScopedTournamentConfirmationResult
 
     data object TournamentNotFound : OwnerScopedTournamentConfirmationResult
+}
+
+sealed interface LegacyTournamentOwnerAssignmentResult {
+    data object Assigned : LegacyTournamentOwnerAssignmentResult
+
+    /** The row is missing or has already been assigned by another safe writer. */
+    data object NotUnassigned : LegacyTournamentOwnerAssignmentResult
 }

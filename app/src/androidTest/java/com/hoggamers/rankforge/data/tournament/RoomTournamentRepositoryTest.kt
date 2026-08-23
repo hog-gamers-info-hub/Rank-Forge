@@ -24,6 +24,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedMatchMutationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
+import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterResult
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
@@ -81,6 +82,72 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryTest {
+    @Test
+    fun legacyOwnerAssignmentIsConditionalAndChangesOnlyTheParentOwnerAndMirror() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-legacy-owner-assignment.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("legacy-a", TournamentStatus.DRAFT))
+            repository.saveTeamNames("legacy-a", mapOf(1 to "Legacy Team"))
+            repository.saveRoster(
+                "legacy-a",
+                1,
+                listOf(RosterPlayer("legacy-a", 1, "Legacy Player")),
+            )
+
+            val beforeTournament = database.tournamentDao().observeById("legacy-a").first()!!
+            val beforeSlots = database.teamSlotDao().observeByTournamentId("legacy-a").first()
+            val beforeRoster = database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first()
+            val beforeRevision = repository.readLocalRevisionState("legacy-a")
+            val beforeMirror = database.stateDao().readPayload()!!
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("legacy-a", "user-a").first().isEmpty())
+
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.Assigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-a", "user-a"),
+            )
+
+            assertEquals(beforeTournament.copy(ownerUserId = "user-a"), database.tournamentDao().observeById("legacy-a").first())
+            assertEquals(beforeSlots, database.teamSlotDao().observeByTournamentId("legacy-a").first())
+            assertEquals(beforeRoster, database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first())
+            assertEquals(beforeRevision, repository.readLocalRevisionState("legacy-a"))
+            assertTrue(beforeMirror.contains("\"ownerUserId\":null"))
+            assertTrue(database.stateDao().readPayload()!!.contains("\"ownerUserId\":\"user-a\""))
+            assertEquals(
+                beforeSlots,
+                repository.observeSlotsByTournamentIdAndOwner("legacy-a", "user-a").first(),
+            )
+
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-a", "user-b"),
+            )
+            assertEquals("user-a", database.tournamentDao().observeById("legacy-a").first()!!.ownerUserId)
+
+            repository.create(tournament("legacy-b", TournamentStatus.DRAFT))
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.Assigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-b", "user-b"),
+            )
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-b", "user-a"),
+            )
+            assertEquals("user-b", database.tournamentDao().observeById("legacy-b").first()!!.ownerUserId)
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("missing", "user-a"),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun ownerScopedSetupMutationsOnlyChangeOwnedTournamentAndRejectForeignAndLegacyRows() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
