@@ -22,6 +22,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -745,16 +747,21 @@ private fun MatchReviewContent(
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
+                contentSpacing = 4.dp,
             ) {
                 matchLobbyScreenshotIntake()
-            }
-            if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                MatchReviewLobbyPlayerDetailsContent(ocrUiState)
+                if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
+                    MatchReviewLobbyPlayerDetailsContent(ocrUiState)
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+                contentSpacing = if (uiState.resultScreenshots.any { it.hasSelection() }) {
+                    4.dp
+                } else {
+                    RankForgeSpacing.Small
+                },
             ) {
                 Text(
                     text = stringResource(R.string.match_review_result_screenshots_title),
@@ -769,6 +776,20 @@ private fun MatchReviewContent(
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
                 )
+                if (shouldShowInlineOcrDetails) {
+                    MatchReviewResultOcrDetailsContent(
+                        uiState = ocrUiState,
+                        onPlacementChanged = onOcrPlacementChanged,
+                        onKillsChanged = onOcrKillsChanged,
+                        onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                        onExcludeOcrRow = onExcludeOcrRow,
+                        onResetRowCorrection = onOcrResetRowCorrection,
+                        onResetAllCorrections = onOcrResetAllCorrections,
+                        onFinalizeOcrCorrection = onOcrFinalize,
+                        onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                        onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -811,20 +832,6 @@ private fun MatchReviewContent(
                     ocrReviewOpened = false
                     onOpenResultScreenshotCrop(role)
                 },
-            )
-        }
-        if (shouldShowInlineOcrDetails) {
-            MatchReviewResultOcrDetailsContent(
-                uiState = ocrUiState,
-                onPlacementChanged = onOcrPlacementChanged,
-                onKillsChanged = onOcrKillsChanged,
-                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-                onExcludeOcrRow = onExcludeOcrRow,
-                onResetRowCorrection = onOcrResetRowCorrection,
-                onResetAllCorrections = onOcrResetAllCorrections,
-                onFinalizeOcrCorrection = onOcrFinalize,
-                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
             )
         }
         when (ocrCacheAvailability) {
@@ -1188,21 +1195,23 @@ private fun MatchReviewContent(
 @Composable
 private fun PointIqEmptyMatchReviewSection(
     modifier: Modifier = Modifier,
+    contentSpacing: Dp = RankForgeSpacing.Small,
     content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         color = PointIqMatchReviewCard,
-        border = BorderStroke(1.dp, PointIqMatchReviewBorder),
+        border = BorderStroke(3.dp, Color.Red),
         tonalElevation = 0.dp,
         shadowElevation = 2.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(5.dp)
+                .border(2.dp, Color.Blue),
+            verticalArrangement = Arrangement.spacedBy(contentSpacing),
         ) {
             content()
         }
@@ -1868,7 +1877,9 @@ private fun ResultScreenshotSelector(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(2.dp, Color.Green),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         if (selectedPages.isNotEmpty()) {
@@ -1876,6 +1887,7 @@ private fun ResultScreenshotSelector(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .border(2.dp, Color.Cyan)
                     .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
             ) { page ->
                 selectedPages.getOrNull(page)?.let { (role, slot) ->
@@ -1950,6 +1962,7 @@ private fun ResultScreenshotPage(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .border(2.dp, Color.Yellow)
             .testTag(
                 if (screenshotNumber == 1) {
                     MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG
@@ -1961,7 +1974,9 @@ private fun ResultScreenshotPage(
     ) {
         previewImageUri?.let { imageUri ->
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, Color.Magenta),
                 contentAlignment = Alignment.Center,
             ) {
                 LocalScreenshotPreview(
@@ -1973,7 +1988,9 @@ private fun ResultScreenshotPage(
                     ),
                     sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
                     sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(2.dp, Color(0xFFFF9800)),
                     testTag = if (screenshotNumber == 1) {
                         MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
                     } else {

@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,21 +18,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,10 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -148,8 +146,23 @@ fun MatchLobbyScreenshotIntakeScreen(
     compactActions: Boolean = false,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (compactActions && !showTitle) {
+                    Modifier.border(2.dp, Color.Green)
+                } else {
+                    Modifier
+                },
+            )
+            .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(
+            if (compactActions && !showTitle && uiState.slots.any { it.hasScreenshotSelection() }) {
+                4.dp
+            } else {
+                RankForgeSpacing.Small
+            },
+        ),
     ) {
         if (showTitle) {
             Text(text = stringResource(R.string.match_lobby_screenshot_intake_title), style = MaterialTheme.typography.titleLarge)
@@ -190,13 +203,15 @@ fun MatchLobbyScreenshotIntakeScreen(
 
             if (compactActions && !showTitle) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(2.dp, Color.Gray),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                     ) {
                         Text(
                             text = stringResource(R.string.match_review_lobby_screenshots_title),
@@ -211,6 +226,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             uiState = uiState,
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                             onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                            modifier = Modifier.align(Alignment.Top),
                         )
                     }
                     if (selectedSlots.isEmpty()) {
@@ -224,11 +240,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            if (!compactSelectors || (compactActions && showTitle)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(2.dp, Color.Black),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 if (!compactSelectors) {
                     uiState.slots.forEach { slot ->
                         val hasSelection = slot.hasScreenshotSelection()
@@ -252,13 +271,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                         )
                     }
                 }
-                if (compactActions && showTitle) {
-                    Spacer(modifier = Modifier.weight(1f))
-                    LobbyTemplateToggle(
-                        uiState = uiState,
-                        onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
-                        onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
-                    )
+                    if (compactActions && showTitle) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        LobbyTemplateToggle(
+                            uiState = uiState,
+                            onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
+                            onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                        )
+                    }
                 }
             }
 
@@ -267,6 +287,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .border(2.dp, Color.Cyan)
                         .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
                 ) { page ->
                     selectedSlots.getOrNull(page)?.let { slot ->
@@ -382,30 +403,36 @@ private fun LobbyTemplateToggle(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = stringResource(R.string.match_lobby_screenshot_save_template_compact_action))
-        Switch(
-            checked = isSaved,
-            onCheckedChange = { checked ->
-                if (checked) {
-                    onSaveLobbyForNextMatches()
-                } else {
-                    onUnsaveLobbyForNextMatches()
-                }
-            },
-            enabled = enabled,
-            thumbContent = {
-                Icon(
-                    imageVector = if (isSaved) Icons.Default.Check else Icons.Default.Close,
-                    contentDescription = null,
-                )
-            },
+        Box(
             modifier = Modifier
-                .graphicsLayer {
-                    scaleX = 0.82f
-                    scaleY = 0.82f
-                }
+                .size(width = 30.dp, height = 18.dp)
+                .toggleable(
+                    value = isSaved,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onValueChange = { checked ->
+                        if (checked) {
+                            onSaveLobbyForNextMatches()
+                        } else {
+                            onUnsaveLobbyForNextMatches()
+                        }
+                    },
+                )
+                .background(
+                    color = if (isSaved) PointIqMatchReviewBlue else Color(0xFFD7DEE8),
+                    shape = CircleShape,
+                )
                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
                 .semantics { contentDescription = accessibilityDescription },
-        )
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(2.dp)
+                    .offset(x = if (isSaved) 12.dp else 0.dp)
+                    .size(14.dp)
+                    .background(Color.White, CircleShape),
+            )
+        }
     }
 }
 
@@ -497,7 +524,9 @@ private fun LobbyScreenshotDetail(
         null
     }
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(2.dp, Color.Yellow),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         if (!compactActions && slot.hasLinkedAsset && !slot.isLocalFileMissing) {
@@ -510,7 +539,9 @@ private fun LobbyScreenshotDetail(
         }
         previewImageUri?.let { imageUri ->
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, Color.Magenta),
                 contentAlignment = Alignment.Center,
             ) {
                 LocalScreenshotPreview(
@@ -522,7 +553,9 @@ private fun LobbyScreenshotDetail(
                     ),
                     sourceImageWidth = slot.selectedScreenshotWidth,
                     sourceImageHeight = slot.selectedScreenshotHeight,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(2.dp, Color(0xFFFF9800)),
                     testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
                 )
                 if (compactActions) {
@@ -580,7 +613,7 @@ private fun LobbyScreenshotActionOverlay(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LobbyScreenshotActionIconButton(
-            symbol = "✎",
+            symbol = "âœŽ",
             contentDescription = stringResource(R.string.match_review_screenshot_replace_content_description),
             enabled = isAvailable && !isFinalized && !slot.isBusy,
             onClick = { onSelect(slot.index) },
@@ -588,7 +621,7 @@ private fun LobbyScreenshotActionOverlay(
             iconModifier = Modifier.offset(y = (-2).dp),
         )
         LobbyScreenshotActionIconButton(
-            symbol = "✂",
+            symbol = "âœ‚",
             contentDescription = stringResource(R.string.match_review_screenshot_crop_content_description),
             enabled = !isFinalized && !slot.isBusy,
             onClick = { onCrop(slot.index) },
@@ -596,7 +629,7 @@ private fun LobbyScreenshotActionOverlay(
             iconModifier = Modifier.offset(y = (-2).dp),
         )
         LobbyScreenshotActionIconButton(
-            symbol = "×",
+            symbol = "Ã—",
             contentDescription = stringResource(R.string.match_review_screenshot_remove_content_description),
             enabled = !isFinalized && !slot.isBusy,
             onClick = { onRemove(slot.index) },
