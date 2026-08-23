@@ -200,6 +200,16 @@
     <string name="tournament_standings_finalized_only_message">Only finalized matches are included in these standings.</string>
     <string name="tournament_standings_empty_title">No finalized matches yet</string>
     <string name="tournament_standings_empty_message">Finalize a match to see tournament standings.</string>
+    <string name="tournament_standing_position_label">Position</string>
+    <string name="tournament_standing_team_slot_label">Team slot</string>
+    <string name="tournament_standing_team_slot_inline">Team slot - %1$d</string>
+    <string name="tournament_standing_total_points_label">Total points</string>
+    <string name="tournament_standing_position_points_label">Position points</string>
+    <string name="tournament_standing_kill_points_label">Kill points</string>
+    <string name="tournament_standing_first_place_finishes_label">1st place finishes</string>
+    <string name="tournament_standing_latest_placement_label">Latest placement</string>
+    <string name="tournament_standing_latest_placement_none_value">—</string>
+    <string name="tournament_standing_matches_included_label">Matches included</string>
     <string name="tournament_standing_order_value">Order: %1$d</string>
     <string name="tournament_standing_team_slot_value">Team slot: %1$d</string>
     <string name="tournament_standing_total_points_value">Total points: %1$d</string>
