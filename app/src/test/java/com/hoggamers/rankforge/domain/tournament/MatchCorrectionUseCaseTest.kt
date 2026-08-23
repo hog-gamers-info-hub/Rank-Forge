@@ -13,7 +13,7 @@ class MatchCorrectionUseCaseTest {
     fun finalizedMatchCanStartCorrection() = runTest {
         val repository = createFinalizedRepository()
 
-        val result = StartMatchCorrectionUseCase(repository)("match-id")
+        val result = StartMatchCorrectionUseCase(repository, SignedInTournamentTestAuthRepository())("match-id")
 
         assertTrue(result is StartMatchCorrectionResult.Started)
         assertEquals(MatchStatus.FINALIZED, (result as StartMatchCorrectionResult.Started).match.status)
@@ -23,7 +23,7 @@ class MatchCorrectionUseCaseTest {
     fun draftMatchCannotStartCorrection() = runTest {
         val repository = createDraftRepository()
 
-        val result = StartMatchCorrectionUseCase(repository)("match-id")
+        val result = StartMatchCorrectionUseCase(repository, SignedInTournamentTestAuthRepository())("match-id")
 
         assertEquals(
             MatchCorrectionGlobalError.MATCH_NOT_FINALIZED,
@@ -37,7 +37,7 @@ class MatchCorrectionUseCaseTest {
         repository.saveDraftMatchValue("tournament-id", "match-id", 1, "12", "99")
         val before = repository.observeMatchById("match-id").first()!!
 
-        ClearMatchCorrectionDraftUseCase(repository)(
+        ClearMatchCorrectionDraftUseCase(repository, SignedInTournamentTestAuthRepository())(
             ClearMatchCorrectionDraftInput("tournament-id", "match-id"),
         )
 
@@ -51,6 +51,7 @@ class MatchCorrectionUseCaseTest {
         val result = SubmitMatchCorrectionUseCase(
             repository,
             ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
             ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
         )(
             SubmitMatchCorrectionInput("match-id", correctedRows()),
@@ -69,7 +70,11 @@ class MatchCorrectionUseCaseTest {
     @Test
     fun invalidCorrectionIsBlockedAndFinalizedResultRemains() = runTest {
         val repository = createFinalizedRepository()
-        val result = SubmitMatchCorrectionUseCase(repository, ValidateMatchResultUseCase())(
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
+        )(
             SubmitMatchCorrectionInput(
                 "match-id",
                 correctedRows().map { row -> if (row.teamSlotNumber == 1) row.copy(placement = "") else row },
@@ -91,6 +96,7 @@ class MatchCorrectionUseCaseTest {
         val result = SubmitMatchCorrectionUseCase(
             repository,
             ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
             ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.NetworkFailure },
         )(SubmitMatchCorrectionInput("match-id", correctedRows()))
 
@@ -109,6 +115,7 @@ class MatchCorrectionUseCaseTest {
         val result = SubmitMatchCorrectionUseCase(
             repository,
             ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
             ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
         )(
             SubmitMatchCorrectionInput("match-id", correctedRows(10)),
@@ -135,6 +142,7 @@ class MatchCorrectionUseCaseTest {
             val result = SubmitMatchCorrectionUseCase(
                 repository,
                 ValidateMatchResultUseCase(),
+                SignedInTournamentTestAuthRepository(),
                 ProtectedMatchCorrectionAction { error("cloud correction must not be called") },
             )(
                 SubmitMatchCorrectionInput("match-id", rows),
@@ -180,14 +188,14 @@ class MatchCorrectionUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
-        activeCount?.let { count ->
-            repository.saveTeamNames(
-                "tournament-id",
-                (1..count).associateWith { slotNumber -> "Team $slotNumber" },
-            )
-        }
+        val participatingTeamCount = activeCount ?: TeamSlot.MAX_SLOT_NUMBER
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..participatingTeamCount).associateWith { slotNumber -> "Team $slotNumber" },
+        )
         repository.createDraftMatch(
             Match(
                 id = "match-id",

@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.flow.first
 
 enum class MatchCorrectionGlobalError {
@@ -21,9 +23,15 @@ sealed interface StartMatchCorrectionResult {
 
 class StartMatchCorrectionUseCase(
     private val repository: TournamentRepository,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(matchId: String): StartMatchCorrectionResult {
-        val match = repository.observeMatchById(matchId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return StartMatchCorrectionResult.Rejected(MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED)
+        val match = repository.observeMatchByIdAndOwner(matchId, ownerUserId).first()
             ?: return StartMatchCorrectionResult.Rejected(MatchCorrectionGlobalError.MATCH_NOT_FOUND)
         return if (match.status == MatchStatus.FINALIZED) {
             StartMatchCorrectionResult.Started(match)
@@ -50,12 +58,32 @@ sealed interface SubmitMatchCorrectionResult {
 class SubmitMatchCorrectionUseCase(
     private val repository: TournamentRepository,
     private val validateMatchResult: ValidateMatchResultUseCase,
+    private val authRepository: AuthRepository,
     private val protectedCorrection: ProtectedMatchCorrectionAction = ProtectedMatchCorrectionAction {
         ProtectedMatchCorrectionResult.AuthenticationRequired
     },
 ) {
+    constructor(
+        repository: TournamentRepository,
+        validateMatchResult: ValidateMatchResultUseCase,
+        protectedCorrection: ProtectedMatchCorrectionAction = ProtectedMatchCorrectionAction {
+            ProtectedMatchCorrectionResult.AuthenticationRequired
+        },
+    ) : this(
+        repository,
+        validateMatchResult,
+        SetupMutationUnauthenticatedAuthRepository,
+        protectedCorrection,
+    )
+
     suspend operator fun invoke(input: SubmitMatchCorrectionInput): SubmitMatchCorrectionResult {
-        val match = repository.observeMatchById(input.matchId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return SubmitMatchCorrectionResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED,
+            )
+        val match = repository.observeMatchByIdAndOwner(input.matchId, ownerUserId).first()
             ?: return SubmitMatchCorrectionResult.Invalid(
                 validation = MatchResultValidation(),
                 globalError = MatchCorrectionGlobalError.MATCH_NOT_FOUND,
@@ -102,7 +130,7 @@ class SubmitMatchCorrectionUseCase(
                 kills = result.kills,
             )
         }
-        val tournament = repository.observeById(match.tournamentId).first()
+        val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
             ?: return cloudFailure(MatchCorrectionGlobalError.MATCH_NOT_FOUND, match)
         val expectedRevision = repository.readLocalRevisionState(match.tournamentId).expectedCloudRevision
             ?: return cloudFailure(MatchCorrectionGlobalError.MISSING_REVISION, match)
@@ -134,16 +162,22 @@ class SubmitMatchCorrectionUseCase(
             )
         }
         return when (
-            val result = repository.submitMatchCorrection(
+            val result = repository.submitMatchCorrectionByOwner(
                 matchId = input.matchId,
+                ownerUserId = ownerUserId,
                 placements = placements,
                 kills = kills,
                 participantResults = participantResults,
             )
         ) {
             is SubmitMatchCorrectionRepositoryResult.Submitted -> {
-                repository.confirmCloudRevision(match.tournamentId, cloudRevision)
-                SubmitMatchCorrectionResult.Submitted(result.match)
+                when (repository.confirmCloudRevisionByOwner(match.tournamentId, ownerUserId, cloudRevision)) {
+                    OwnerScopedTournamentMutationResult.Saved -> SubmitMatchCorrectionResult.Submitted(result.match)
+                    OwnerScopedTournamentMutationResult.TournamentNotFound -> cloudFailure(
+                        MatchCorrectionGlobalError.MATCH_NOT_FOUND,
+                        match,
+                    )
+                }
             }
             is SubmitMatchCorrectionRepositoryResult.Rejected ->
                 SubmitMatchCorrectionResult.Invalid(

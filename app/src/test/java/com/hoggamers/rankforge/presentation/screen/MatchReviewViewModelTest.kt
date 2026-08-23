@@ -109,6 +109,7 @@ class MatchReviewViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
         repository.saveTeamNames(
@@ -1249,7 +1250,10 @@ class MatchReviewViewModelTest {
 
     @Test
     fun screenshotLinkDoesNotCarryToAnotherMatchContext() = runTest {
-        val secondMatchId = (CreateMatchUseCase(repository)(
+        val secondMatchId = (CreateMatchUseCase(
+            repository,
+            com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+        )(
             CreateMatchInput(
                 tournamentId = TOURNAMENT_ID,
                 matchNumber = "2",
@@ -1306,7 +1310,10 @@ class MatchReviewViewModelTest {
 
     @Test
     fun duplicateLinkedToAnotherMatchIsRejectedWithinTheTournament() = runTest {
-        val secondMatchId = (CreateMatchUseCase(repository)(
+        val secondMatchId = (CreateMatchUseCase(
+            repository,
+            com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+        )(
             CreateMatchInput(
                 tournamentId = TOURNAMENT_ID,
                 matchNumber = "2",
@@ -2369,7 +2376,11 @@ class MatchReviewViewModelTest {
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
         validateMatchResult = ValidateMatchResultUseCase(),
-        finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+        finalizeMatch = FinalizeMatchUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+        ),
         imageCandidateValidator = imageCandidateValidator,
         screenshotDuplicateDetector = screenshotDuplicateDetector,
         matchResultScreenshotDuplicateDetector = matchResultScreenshotDuplicateDetector,

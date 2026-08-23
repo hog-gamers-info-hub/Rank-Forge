@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.time.Clock
@@ -37,6 +39,7 @@ enum class FinalizeOcrCorrectionMatchWarning {
 }
 
 enum class FinalizeOcrCorrectionMatchFailure {
+    AUTHENTICATION_REQUIRED,
     MISSING_CORRECTION_DRAFT,
     INVALID_CORRECTION_DRAFT,
     MISSING_CORRECTION_ROW,
@@ -78,9 +81,23 @@ sealed interface FinalizeOcrCorrectionMatchResult {
 class FinalizeOcrCorrectionMatchUseCase(
     private val repository: TournamentRepository,
     private val finalizeMatch: FinalizeMatchUseCase,
+    private val authRepository: AuthRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val validateMatchResult: ValidateMatchResultUseCase = ValidateMatchResultUseCase(),
 ) {
+    constructor(
+        repository: TournamentRepository,
+        finalizeMatch: FinalizeMatchUseCase,
+        clock: Clock = Clock.systemUTC(),
+        validateMatchResult: ValidateMatchResultUseCase = ValidateMatchResultUseCase(),
+    ) : this(
+        repository,
+        finalizeMatch,
+        SetupMutationUnauthenticatedAuthRepository,
+        clock,
+        validateMatchResult,
+    )
+
     suspend operator fun invoke(input: FinalizeOcrCorrectionMatchInput): FinalizeOcrCorrectionMatchResult {
         return try {
             finalize(input)
@@ -94,6 +111,11 @@ class FinalizeOcrCorrectionMatchUseCase(
     private suspend fun finalize(
         input: FinalizeOcrCorrectionMatchInput,
     ): FinalizeOcrCorrectionMatchResult {
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return FinalizeOcrCorrectionMatchResult.Blocked(
+                failures = setOf(FinalizeOcrCorrectionMatchFailure.AUTHENTICATION_REQUIRED),
+            )
         val correctionRows = input.correctionRows
             ?: return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_CORRECTION_DRAFT),
@@ -106,11 +128,11 @@ class FinalizeOcrCorrectionMatchUseCase(
                 failuresByRowIndex = rowValidation.failuresByRowIndex,
             )
         }
-        val tournament = repository.observeById(input.tournamentId).first()
+        val tournament = repository.observeByIdAndOwner(input.tournamentId, ownerUserId).first()
             ?: return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_TOURNAMENT),
             )
-        val match = repository.observeMatchById(input.matchId).first()
+        val match = repository.observeMatchByIdAndOwner(input.matchId, ownerUserId).first()
             ?: return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_MATCH),
             )
@@ -125,7 +147,7 @@ class FinalizeOcrCorrectionMatchUseCase(
             )
         }
 
-        val slots = repository.observeSlotsByTournamentId(input.tournamentId).first()
+        val slots = repository.observeSlotsByTournamentIdAndOwner(input.tournamentId, ownerUserId).first()
         val participation = slots.analyzeTeamSlotParticipation()
         if (!participation.isReadyForMatchCreation) {
             // Invalid participation is reported through the existing draft-integrity contract.
@@ -183,12 +205,13 @@ class FinalizeOcrCorrectionMatchUseCase(
             )
         }
 
-        val finalizeMatchResult = finalizeMatch(
+        val finalizeMatchResult = finalizeMatch.finalizeByOwner(
             FinalizeMatchInput(
                 matchId = input.matchId,
                 rows = rowValidation.finalizeRows,
                 ocrEvidence = input.toPreservedEvidence(correctionRows, rowValidation),
             ),
+            ownerUserId,
         )
         return when (val result = finalizeMatchResult) {
             is FinalizeMatchResult.Finalized -> FinalizeOcrCorrectionMatchResult.Finalized(result.match)
@@ -395,6 +418,8 @@ class FinalizeOcrCorrectionMatchUseCase(
 
     private fun FinalizeMatchGlobalError?.toOcrCorrectionFailure(): FinalizeOcrCorrectionMatchFailure =
         when (this) {
+            FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED ->
+                FinalizeOcrCorrectionMatchFailure.AUTHENTICATION_REQUIRED
             FinalizeMatchGlobalError.MATCH_NOT_FOUND -> FinalizeOcrCorrectionMatchFailure.MISSING_MATCH
             FinalizeMatchGlobalError.MATCH_NOT_DRAFT -> FinalizeOcrCorrectionMatchFailure.ALREADY_FINALIZED
             FinalizeMatchGlobalError.INVALID_DATA, null -> FinalizeOcrCorrectionMatchFailure.FINALIZATION_FAILED

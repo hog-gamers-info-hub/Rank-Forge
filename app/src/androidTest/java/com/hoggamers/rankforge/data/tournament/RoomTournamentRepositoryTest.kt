@@ -454,6 +454,115 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun ownerScopedFinalizationCorrectionAndRevisionRejectForeignAndLegacyRowsWithoutWrites() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-finalization.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            listOf(
+                "owner-a" to "user-a",
+                "owner-a-ocr" to "user-a",
+                "owner-b" to "user-b",
+                "legacy" to null,
+            ).forEach { (id, owner) ->
+                repository.create(tournament(id, TournamentStatus.DRAFT, ownerUserId = owner))
+                nameTeams(repository, id, 1)
+                repository.createDraftMatch(draftMatch(id, "$id-match", 1))
+                repository.saveDraftMatchValue(id, "$id-match", 1, "1", "0")
+            }
+            val placements = listOf(MatchPlacement(1, 1))
+            val kills = listOf(MatchKill(1, 0))
+            val participants = listOf(MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 0))
+            val ownerFinalBefore = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            val ownerFinalization = repository.finalizeDraftMatchByOwner(
+                "owner-a-match",
+                "user-a",
+                placements,
+                kills,
+                participants,
+            ) as FinalizeMatchRepositoryResult.Finalized
+            val ownerFinalized = repository.observeMatchById("owner-a-match").first()!!
+            assertEquals(MatchStatus.FINALIZED, ownerFinalized.status)
+            assertEquals(placements, ownerFinalization.match.placements)
+            assertEquals(kills, ownerFinalized.kills)
+            assertEquals(participants, ownerFinalized.participantResults)
+            assertTrue(repository.observeDraftMatchValues("owner-a", "owner-a-match").first().isEmpty())
+            val ownerFinalAfter = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            assertEquals(ownerFinalBefore[2].let { (it as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision!! + 1 }, (ownerFinalAfter[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision)
+            assertTrue((ownerFinalAfter[3] as Long) >= (ownerFinalBefore[3] as Long))
+            assertTrue(ownerFinalAfter[4] != ownerFinalBefore[4])
+
+            val rejected = listOf("owner-b" to "owner-b-match", "legacy" to "legacy-match")
+            val before = rejected.associate { (id, matchId) -> id to ownerScopedMutationSnapshot(database, repository, id, matchId) }
+            assertEquals(
+                FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND),
+                repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+                    "owner-a",
+                    "owner-b-match",
+                    "user-a",
+                    placements,
+                    kills,
+                    participants,
+                    preservedEvidence("owner-a", "owner-b-match", (0 until 1).toList()),
+                ),
+            )
+            assertEquals(before.getValue("owner-b"), ownerScopedMutationSnapshot(database, repository, "owner-b", "owner-b-match"))
+            rejected.forEach { (id, matchId) ->
+                assertEquals(FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND), repository.finalizeDraftMatchByOwner(matchId, "user-a", placements, kills, participants))
+                assertEquals(FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND), repository.finalizeDraftMatchWithOcrEvidenceByOwner(id, matchId, "user-a", placements, kills, participants, preservedEvidence(id, matchId, (0 until 1).toList())))
+                assertEquals(OwnerScopedTournamentMutationResult.TournamentNotFound, repository.confirmCloudRevisionByOwner(id, "user-a", 99))
+                assertEquals(before.getValue(id), ownerScopedMutationSnapshot(database, repository, id, matchId))
+            }
+            assertEquals(OwnerScopedTournamentMutationResult.Saved, repository.confirmCloudRevisionByOwner("owner-a", "user-a", 99))
+            assertEquals(99, repository.readLocalRevisionState("owner-a").localRevision)
+            val correctedKills = listOf(MatchKill(1, 7))
+            val correctedParticipants = listOf(MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 7))
+            val correctionBefore = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            val corrected = repository.submitMatchCorrectionByOwner("owner-a-match", "user-a", placements, correctedKills, correctedParticipants)
+                as SubmitMatchCorrectionRepositoryResult.Submitted
+            assertEquals(MatchStatus.FINALIZED, corrected.match.status)
+            assertEquals(correctedKills, corrected.match.kills)
+            assertEquals(correctedParticipants, corrected.match.participantResults)
+            val correctionAfter = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            assertEquals((correctionBefore[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision!! + 1, (correctionAfter[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision)
+            assertTrue(correctionAfter[4] != correctionBefore[4])
+
+            val ocrEvidence = preservedEvidence("owner-a-ocr", "owner-a-ocr-match", (0 until 1).toList())
+            assertTrue(
+                repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+                    "owner-a-ocr",
+                    "owner-a-ocr-match",
+                    "user-a",
+                    placements,
+                    kills,
+                    participants,
+                    ocrEvidence,
+                ) is FinalizeMatchRepositoryResult.Finalized,
+            )
+            val ocrFinalized = repository.observeMatchById("owner-a-ocr-match").first()!!
+            assertEquals(MatchStatus.FINALIZED, ocrFinalized.status)
+            assertEquals(placements, ocrFinalized.placements)
+            assertEquals(kills, ocrFinalized.kills)
+            assertEquals(participants, ocrFinalized.participantResults)
+            assertEquals(ocrEvidence, repository.readPreservedMatchOcrEvidence("owner-a-ocr", "owner-a-ocr-match"))
+
+            listOf("owner-b", "legacy").forEach { id ->
+                val matchId = "$id-match"
+                assertTrue(repository.finalizeDraftMatch(matchId, placements, kills, participants) is FinalizeMatchRepositoryResult.Finalized)
+                val snapshot = ownerScopedMutationSnapshot(database, repository, id, matchId)
+                assertEquals(SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND), repository.submitMatchCorrectionByOwner(matchId, "user-a", placements, correctedKills, correctedParticipants))
+                assertEquals(snapshot, ownerScopedMutationSnapshot(database, repository, id, matchId))
+            }
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun observingTournamentsPreservesCreationOrderAcrossDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-tournament-order.db"
@@ -2687,6 +2796,20 @@ class RoomTournamentRepositoryTest {
             )
         },
         correctionSnapshots = snapshots,
+    )
+
+    private suspend fun ownerScopedMutationSnapshot(
+        database: RankForgeDatabase,
+        repository: RoomTournamentRepository,
+        tournamentId: String,
+        matchId: String,
+    ): List<Any?> = listOf(
+        repository.observeMatchById(matchId).first(),
+        repository.observeDraftMatchValues(tournamentId, matchId).first(),
+        repository.readLocalRevisionState(tournamentId),
+        database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis,
+        database.stateDao().readPayload(),
+        repository.readPreservedMatchOcrEvidence(tournamentId, matchId),
     )
 
     private suspend fun nameTeams(

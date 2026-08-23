@@ -423,29 +423,38 @@ object TournamentDataProvidersModule {
     fun provideFinalizeMatchUseCase(
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
-    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult)
+        authRepository: AuthRepository,
+    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult, authRepository)
 
     @Provides
     @Singleton
     fun provideFinalizeOcrCorrectionMatchUseCase(
         repository: TournamentRepository,
         finalizeMatch: FinalizeMatchUseCase,
+        authRepository: AuthRepository,
     ): FinalizeOcrCorrectionMatchUseCase =
-        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch)
+        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch, authRepository)
 
     @Provides
     @Singleton
     fun provideStartMatchCorrectionUseCase(
         repository: TournamentRepository,
-    ): StartMatchCorrectionUseCase = StartMatchCorrectionUseCase(repository)
+        authRepository: AuthRepository,
+    ): StartMatchCorrectionUseCase = StartMatchCorrectionUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSubmitMatchCorrectionUseCase(
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
+        authRepository: AuthRepository,
         protectedCorrection: ProtectedMatchCorrectionAction,
-    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(repository, validateMatchResult, protectedCorrection)
+    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(
+        repository,
+        validateMatchResult,
+        authRepository,
+        protectedCorrection,
+    )
 
     @Provides
     @Singleton

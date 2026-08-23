@@ -2436,6 +2436,8 @@ private fun MatchResultValidationError.toMessageRes(): Int = when (this) {
 }
 
 private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.toMessageRes(): Int = when (this) {
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED ->
+        R.string.match_review_finalize_invalid_data_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_FOUND ->
         R.string.match_review_finalize_match_not_found_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_DRAFT ->

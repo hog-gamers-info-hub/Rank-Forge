@@ -15,6 +15,13 @@ interface TournamentRepository {
 
     suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) = Unit
 
+    suspend fun confirmCloudRevisionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult =
+        error("Owner-scoped cloud revision confirmation is not supported by this repository.")
+
     /** Records an authoritative cloud baseline without discarding local unsynchronized changes. */
     suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) = Unit
 
@@ -240,6 +247,15 @@ interface TournamentRepository {
     ): FinalizeMatchRepositoryResult =
         error("Match finalization is not supported by this repository.")
 
+    suspend fun finalizeDraftMatchByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
+    ): FinalizeMatchRepositoryResult =
+        error("Owner-scoped match finalization is not supported by this repository.")
+
     suspend fun finalizeDraftMatchWithOcrEvidence(
         matchId: String,
         placements: List<MatchPlacement>,
@@ -249,6 +265,17 @@ interface TournamentRepository {
     ): FinalizeMatchRepositoryResult =
         error("OCR evidence finalization is not supported by this repository.")
 
+    suspend fun finalizeDraftMatchWithOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult =
+        error("Owner-scoped OCR evidence finalization is not supported by this repository.")
+
     suspend fun submitMatchCorrection(
         matchId: String,
         placements: List<MatchPlacement>,
@@ -256,6 +283,15 @@ interface TournamentRepository {
         participantResults: List<MatchParticipantResult>? = null,
     ): SubmitMatchCorrectionRepositoryResult =
         error("Match correction is not supported by this repository.")
+
+    suspend fun submitMatchCorrectionByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>? = null,
+    ): SubmitMatchCorrectionRepositoryResult =
+        error("Owner-scoped match correction is not supported by this repository.")
 
     fun observeDraftMatchValues(
         tournamentId: String,

@@ -124,6 +124,19 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         baseCloudRevisions.update { it + (tournamentId to cloudRevision) }
     }
 
+    override suspend fun confirmCloudRevisionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult = if (
+        tournaments.value.any { it.id == tournamentId && it.ownerUserId == ownerUserId }
+    ) {
+        confirmCloudRevision(tournamentId, cloudRevision)
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.Saved
+    } else {
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.TournamentNotFound
+    }
+
     override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
         require(cloudRevision > 0)
         if (cloudRevisions.value[tournamentId] == null) {
@@ -446,6 +459,18 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         return FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
     }
 
+    override suspend fun finalizeDraftMatchByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+    ): FinalizeMatchRepositoryResult = if (!isOwnedMatch(matchId, ownerUserId)) {
+        FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND)
+    } else {
+        finalizeDraftMatch(matchId, placements, kills, participantResults)
+    }
+
     override suspend fun finalizeDraftMatchWithOcrEvidence(
         matchId: String,
         placements: List<MatchPlacement>,
@@ -471,6 +496,20 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
             preservedOcrEvidenceByMatch.update { current -> current + (matchId to evidence) }
         }
         return result
+    }
+
+    override suspend fun finalizeDraftMatchWithOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult = if (!isOwnedMatch(matchId, tournamentId, ownerUserId)) {
+        FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND)
+    } else {
+        finalizeDraftMatchWithOcrEvidence(matchId, placements, kills, participantResults, evidence)
     }
 
     override suspend fun readPreservedMatchOcrEvidence(
@@ -525,6 +564,18 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         }
         draftValuesByMatch.update { current -> current - DraftKey(match.tournamentId, matchId) }
         return SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
+    }
+
+    override suspend fun submitMatchCorrectionByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+    ): SubmitMatchCorrectionRepositoryResult = if (!isOwnedMatch(matchId, ownerUserId)) {
+        SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+    } else {
+        submitMatchCorrection(matchId, placements, kills, participantResults)
     }
 
     override fun observeDraftMatchValues(

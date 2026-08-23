@@ -600,7 +600,12 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
     ): FinalizeOcrCorrectionMatchUseCase =
         FinalizeOcrCorrectionMatchUseCase(
             repository = repository,
-            finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+            finalizeMatch = FinalizeMatchUseCase(
+                repository,
+                ValidateMatchResultUseCase(),
+                SignedInTournamentTestAuthRepository(),
+            ),
+            authRepository = SignedInTournamentTestAuthRepository(),
             clock = clock,
         )
 
@@ -757,6 +762,17 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
             evidence: PreservedMatchOcrEvidence,
         ): FinalizeMatchRepositoryResult =
             finalizeDraftMatch(matchId, placements, kills)
+
+        override suspend fun finalizeDraftMatchWithOcrEvidenceByOwner(
+            tournamentId: String,
+            matchId: String,
+            ownerUserId: String,
+            placements: List<MatchPlacement>,
+            kills: List<MatchKill>,
+            participantResults: List<MatchParticipantResult>?,
+            evidence: PreservedMatchOcrEvidence,
+        ): FinalizeMatchRepositoryResult =
+            finalizeDraftMatch(matchId, placements, kills, participantResults)
     }
 
     private companion object {
@@ -770,6 +786,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
                 date = LocalDate.of(2026, 7, 24),
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
                 status = TournamentStatus.CONFIRMED,
             )
 

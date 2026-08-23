@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.flow.first
 
 data class FinalizeMatchInput(
@@ -9,6 +11,7 @@ data class FinalizeMatchInput(
 )
 
 enum class FinalizeMatchGlobalError {
+    AUTHENTICATION_REQUIRED,
     MATCH_NOT_FOUND,
     MATCH_NOT_DRAFT,
     INVALID_DATA,
@@ -26,14 +29,33 @@ sealed interface FinalizeMatchResult {
 class FinalizeMatchUseCase(
     private val repository: TournamentRepository,
     private val validateMatchResult: ValidateMatchResultUseCase,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(
+        repository: TournamentRepository,
+        validateMatchResult: ValidateMatchResultUseCase,
+    ) : this(repository, validateMatchResult, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(input: FinalizeMatchInput): FinalizeMatchResult {
-        val match = repository.observeMatchById(input.matchId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return FinalizeMatchResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED,
+            )
+        return finalizeByOwner(input, ownerUserId)
+    }
+
+    internal suspend fun finalizeByOwner(
+        input: FinalizeMatchInput,
+        ownerUserId: String,
+    ): FinalizeMatchResult {
+        val match = repository.observeMatchByIdAndOwner(input.matchId, ownerUserId).first()
             ?: return FinalizeMatchResult.Invalid(
                 validation = MatchResultValidation(),
                 globalError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
             )
-        val participation = repository.observeSlotsByTournamentId(match.tournamentId)
+        val participation = repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId)
             .first()
             .analyzeTeamSlotParticipation()
         if (!participation.isReadyForMatchCreation) {
@@ -97,15 +119,18 @@ class FinalizeMatchUseCase(
         }
         return when (
             val result = if (input.ocrEvidence == null) {
-                repository.finalizeDraftMatch(
+                repository.finalizeDraftMatchByOwner(
                     matchId = input.matchId,
+                    ownerUserId = ownerUserId,
                     placements = placements,
                     kills = kills,
                     participantResults = participantResults,
                 )
             } else {
-                repository.finalizeDraftMatchWithOcrEvidence(
+                repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+                    tournamentId = match.tournamentId,
                     matchId = input.matchId,
+                    ownerUserId = ownerUserId,
                     placements = placements,
                     kills = kills,
                     participantResults = participantResults,

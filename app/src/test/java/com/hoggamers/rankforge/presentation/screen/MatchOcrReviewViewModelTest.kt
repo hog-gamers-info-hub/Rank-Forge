@@ -1066,7 +1066,12 @@ class MatchOcrReviewViewModelTest {
     private fun createFinalizeUseCase(repository: InMemoryTournamentRepository): FinalizeOcrCorrectionMatchUseCase =
         FinalizeOcrCorrectionMatchUseCase(
             repository = repository,
-            finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+            finalizeMatch = FinalizeMatchUseCase(
+                repository,
+                ValidateMatchResultUseCase(),
+                com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+            ),
+            authRepository = com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
         )
 
     private suspend fun createRepository(
@@ -1081,6 +1086,7 @@ class MatchOcrReviewViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
         repository.saveTeamNames(

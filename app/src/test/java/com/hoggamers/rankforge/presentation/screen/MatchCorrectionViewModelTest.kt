@@ -154,6 +154,7 @@ class MatchCorrectionViewModelTest {
         submitCorrection = SubmitMatchCorrectionUseCase(
             repository,
             ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
             com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction {
                 com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionResult.Success(2)
             },

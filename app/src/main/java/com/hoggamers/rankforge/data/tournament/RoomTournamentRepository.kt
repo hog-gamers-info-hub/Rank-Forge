@@ -337,6 +337,30 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun confirmCloudRevisionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult {
+        require(cloudRevision > 0)
+        awaitState()
+        return writeMutex.withLock {
+            database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        tournamentId = tournamentId,
+                        localRevision = cloudRevision,
+                        baseCloudRevision = cloudRevision,
+                    ),
+                )
+                OwnerScopedTournamentMutationResult.Saved
+            }
+        }
+    }
+
     override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
         require(cloudRevision > 0)
         awaitState()
@@ -1381,11 +1405,29 @@ class RoomTournamentRepository @Inject constructor(
     ): FinalizeMatchRepositoryResult =
         finalizeDraftMatchInternal(
             matchId = matchId,
+            expectedTournamentId = null,
+            ownerUserId = null,
             placements = placements,
             kills = kills,
             participantResults = participantResults,
             evidence = null,
         )
+
+    override suspend fun finalizeDraftMatchByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+    ): FinalizeMatchRepositoryResult = finalizeDraftMatchInternal(
+        matchId = matchId,
+        expectedTournamentId = null,
+        ownerUserId = ownerUserId,
+        placements = placements,
+        kills = kills,
+        participantResults = participantResults,
+        evidence = null,
+    )
 
     override suspend fun finalizeDraftMatchWithOcrEvidence(
         matchId: String,
@@ -1396,14 +1438,36 @@ class RoomTournamentRepository @Inject constructor(
     ): FinalizeMatchRepositoryResult =
         finalizeDraftMatchInternal(
             matchId = matchId,
+            expectedTournamentId = null,
+            ownerUserId = null,
             placements = placements,
             kills = kills,
             participantResults = participantResults,
             evidence = evidence,
         )
 
+    override suspend fun finalizeDraftMatchWithOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+        evidence: PreservedMatchOcrEvidence,
+    ): FinalizeMatchRepositoryResult = finalizeDraftMatchInternal(
+        matchId = matchId,
+        expectedTournamentId = tournamentId,
+        ownerUserId = ownerUserId,
+        placements = placements,
+        kills = kills,
+        participantResults = participantResults,
+        evidence = evidence,
+    )
+
     private suspend fun finalizeDraftMatchInternal(
         matchId: String,
+        expectedTournamentId: String?,
+        ownerUserId: String?,
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
         participantResults: List<MatchParticipantResult>?,
@@ -1411,75 +1475,70 @@ class RoomTournamentRepository @Inject constructor(
     ): FinalizeMatchRepositoryResult {
         awaitState()
         return writeMutex.withLock {
-            val current = state.value
-            val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
-                ?: return@withLock FinalizeMatchRepositoryResult.Rejected(
-                    FinalizeMatchFailure.MATCH_NOT_FOUND,
-                )
-            if (match.status != MatchStatus.DRAFT) {
-                return@withLock FinalizeMatchRepositoryResult.Rejected(
-                    FinalizeMatchFailure.MATCH_NOT_DRAFT,
-                )
-            }
-            val participation = database.teamSlotDao()
-                .observeByTournamentId(match.tournamentId)
-                .first()
-                .map { it.toDomain() }
-                .analyzeTeamSlotParticipation()
-            val expectedTeamSlots = participation.activeSlotNumbers.toSet()
-            val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
-            val expectedPlacements = (1..placements.size).toSet()
-            val finalizedParticipantResults = participantResults
-                ?: buildLegacyParticipantResults(
-                    registeredTeamSlots = expectedTeamSlots,
-                    placements = placements,
-                    kills = kills,
-                )
-            if (
-                !participation.isReadyForMatchCreation ||
-                placements.isEmpty() ||
-                placements.any { it.teamSlotNumber !in expectedTeamSlots || it.position !in expectedPlacements } ||
-                kills.any { it.teamSlotNumber !in positionedTeamSlots || it.kills < 0 } ||
-                kills.map { it.teamSlotNumber }.toSet() != positionedTeamSlots ||
-                placements.map { it.position }.toSet() != expectedPlacements ||
-                placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
-                kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
-                placements.map { it.position }.distinct().size != placements.size ||
-                !finalizedParticipantResults.isValidSnapshotFor(
-                    registeredTeamSlots = expectedTeamSlots,
-                    positionedTeamSlots = positionedTeamSlots,
-                )
-            ) {
-                return@withLock FinalizeMatchRepositoryResult.Rejected(
-                    FinalizeMatchFailure.INVALID_DATA,
-                )
-            }
-            if (
-                evidence != null &&
-                !evidence.isValidFor(
-                    match = match,
-                    placements = placements,
-                    kills = kills,
-                    expectedTeamSlots = positionedTeamSlots,
-                    expectedPlacements = expectedPlacements,
-                )
-            ) {
-                return@withLock FinalizeMatchRepositoryResult.Rejected(
-                    FinalizeMatchFailure.INVALID_DATA,
-                )
-            }
-            val finalizedMatch = match.copy(
-                status = MatchStatus.FINALIZED,
-                placements = placements.toList(),
-                kills = kills.toList(),
-                participantResults = finalizedParticipantResults.sortedBy { it.teamSlotNumber },
-            )
-            val next = current.copy(
-                matches = current.matches.replaceMatch(match.tournamentId, matchId) { finalizedMatch },
-                draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
-            )
+            var updatedState: RepositoryState? = null
             try {
-                database.withTransaction {
+                val result = database.withTransaction {
+                    if (ownerUserId != null) {
+                        val owned = if (expectedTournamentId == null) {
+                            database.matchDao().existsByIdAndOwner(matchId, ownerUserId)
+                        } else {
+                            database.matchDao().existsByIdAndTournamentAndOwner(
+                                matchId,
+                                expectedTournamentId,
+                                ownerUserId,
+                            )
+                        }
+                        if (!owned) {
+                            return@withTransaction FinalizeMatchRepositoryResult.Rejected(
+                                FinalizeMatchFailure.MATCH_NOT_FOUND,
+                            )
+                        }
+                    }
+                    val current = state.value
+                    val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
+                        ?: return@withTransaction FinalizeMatchRepositoryResult.Rejected(
+                            FinalizeMatchFailure.MATCH_NOT_FOUND,
+                        )
+                    if (match.status != MatchStatus.DRAFT) {
+                        return@withTransaction FinalizeMatchRepositoryResult.Rejected(
+                            FinalizeMatchFailure.MATCH_NOT_DRAFT,
+                        )
+                    }
+                    val participation = database.teamSlotDao()
+                        .observeByTournamentId(match.tournamentId)
+                        .first()
+                        .map { it.toDomain() }
+                        .analyzeTeamSlotParticipation()
+                    val expectedTeamSlots = participation.activeSlotNumbers.toSet()
+                    val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
+                    val expectedPlacements = (1..placements.size).toSet()
+                    val finalizedParticipantResults = participantResults
+                        ?: buildLegacyParticipantResults(expectedTeamSlots, placements, kills)
+                    if (
+                        !participation.isReadyForMatchCreation ||
+                        placements.isEmpty() ||
+                        placements.any { it.teamSlotNumber !in expectedTeamSlots || it.position !in expectedPlacements } ||
+                        kills.any { it.teamSlotNumber !in positionedTeamSlots || it.kills < 0 } ||
+                        kills.map { it.teamSlotNumber }.toSet() != positionedTeamSlots ||
+                        placements.map { it.position }.toSet() != expectedPlacements ||
+                        placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
+                        kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
+                        placements.map { it.position }.distinct().size != placements.size ||
+                        !finalizedParticipantResults.isValidSnapshotFor(expectedTeamSlots, positionedTeamSlots)
+                    ) return@withTransaction FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+                    if (evidence != null && !evidence.isValidFor(
+                            match, placements, kills, positionedTeamSlots, expectedPlacements,
+                        )) return@withTransaction FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+                    val finalizedMatch = match.copy(
+                        status = MatchStatus.FINALIZED,
+                        placements = placements.toList(),
+                        kills = kills.toList(),
+                        participantResults = finalizedParticipantResults.sortedBy { it.teamSlotNumber },
+                    )
+                    val next = current.copy(
+                        matches = current.matches.replaceMatch(match.tournamentId, matchId) { finalizedMatch },
+                        draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
+                    )
                     database.matchDao().upsert(finalizedMatch.toEntity())
                     replaceMatchPlacements(matchId, placements)
                     replaceMatchKills(matchId, kills)
@@ -1497,7 +1556,11 @@ class RoomTournamentRepository @Inject constructor(
                             },
                         )
                     }
+                    updatedState = next
+                    FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
                 }
+                if (result is FinalizeMatchRepositoryResult.Finalized && updatedState != null) state.value = updatedState!!
+                result
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
@@ -1506,8 +1569,6 @@ class RoomTournamentRepository @Inject constructor(
                 }
                 throw throwable
             }
-            state.value = next
-            FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
         }
     }
 
@@ -1516,19 +1577,54 @@ class RoomTournamentRepository @Inject constructor(
         placements: List<MatchPlacement>,
         kills: List<MatchKill>,
         participantResults: List<MatchParticipantResult>?,
+    ): SubmitMatchCorrectionRepositoryResult = submitMatchCorrectionInternal(
+        matchId,
+        ownerUserId = null,
+        placements,
+        kills,
+        participantResults,
+    )
+
+    override suspend fun submitMatchCorrectionByOwner(
+        matchId: String,
+        ownerUserId: String,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
+    ): SubmitMatchCorrectionRepositoryResult = submitMatchCorrectionInternal(
+        matchId,
+        ownerUserId,
+        placements,
+        kills,
+        participantResults,
+    )
+
+    private suspend fun submitMatchCorrectionInternal(
+        matchId: String,
+        ownerUserId: String?,
+        placements: List<MatchPlacement>,
+        kills: List<MatchKill>,
+        participantResults: List<MatchParticipantResult>?,
     ): SubmitMatchCorrectionRepositoryResult {
         awaitState()
         return writeMutex.withLock {
-            val current = state.value
-            val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
-                ?: return@withLock SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
-            if (match.status != MatchStatus.FINALIZED) {
-                return@withLock SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
-            }
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (ownerUserId != null && !database.matchDao().existsByIdAndOwner(matchId, ownerUserId)) {
+                    return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(
+                        MatchCorrectionFailure.MATCH_NOT_FOUND,
+                    )
+                }
+                val current = state.value
+                val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
+                    ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+                if (match.status != MatchStatus.FINALIZED) {
+                    return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
+                }
             val previousParticipantResults = match.finalizedParticipantResultsOrNull()
             val correctedParticipantResults = participantResults ?: placements.map { placement ->
                 val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
-                    ?: return@withLock SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+                    ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
                 MatchParticipantResult(
                     teamSlotNumber = placement.teamSlotNumber,
                     participationStatus = MatchParticipationStatus.PARTICIPATED,
@@ -1537,7 +1633,7 @@ class RoomTournamentRepository @Inject constructor(
                 )
             }
             if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
-                return@withLock SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+                return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
             }
             val correctedMatch = match.copy(
                 placements = correctedParticipantResults.mapNotNull { result ->
@@ -1558,7 +1654,6 @@ class RoomTournamentRepository @Inject constructor(
                 matches = current.matches.replaceMatch(match.tournamentId, matchId) { correctedMatch },
                 draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
             )
-            database.withTransaction {
                 database.matchDao().upsert(correctedMatch.toEntity())
                 replaceMatchPlacements(matchId, correctedMatch.placements)
                 replaceMatchKills(matchId, correctedMatch.kills)
@@ -1568,9 +1663,11 @@ class RoomTournamentRepository @Inject constructor(
                 touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 markLocalRevisionChanged(match.tournamentId)
+                updatedState = next
+                SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
             }
-            state.value = next
-            SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
+            if (result is SubmitMatchCorrectionRepositoryResult.Submitted && updatedState != null) state.value = updatedState!!
+            result
         }
     }
 
