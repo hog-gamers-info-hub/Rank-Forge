@@ -1227,7 +1227,7 @@ private fun PointIqEmptyMatchReviewSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(5.dp),
+                .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(contentSpacing),
         ) {
             content()
