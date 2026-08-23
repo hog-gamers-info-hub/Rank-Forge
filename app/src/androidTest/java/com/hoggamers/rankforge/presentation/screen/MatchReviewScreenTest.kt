@@ -42,10 +42,49 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private const val LOBBY_SCREENSHOT_DESCRIPTION =
+    "Select all the screenshots of the lobby after all players have joined. Crop tightly to the lobby area and exclude any extra text, overlays, or unrelated content."
+private const val RESULT_SCREENSHOT_DESCRIPTION =
+    "Select all the screenshots showing the final match results. Crop tightly to the results area and exclude any extra text, overlays, or unrelated content."
+
 @RunWith(AndroidJUnit4::class)
 class MatchReviewScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Test
+    fun emptyLobbyAndResultShowBothScreenshotDescriptions() {
+        setScreenshotDescriptionContent()
+
+        assertScreenshotDescriptions(lobbyVisible = true, resultVisible = true)
+    }
+
+    @Test
+    fun selectedLobbyHidesLobbyDescriptionButKeepsResultDescription() {
+        setScreenshotDescriptionContent(lobbyUiState = allLobbyReadyState())
+
+        composeTestRule.onAllNodesWithText(LOBBY_SCREENSHOT_DESCRIPTION)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(RESULT_SCREENSHOT_DESCRIPTION)
+            .assertCountEquals(1)
+    }
+
+    @Test
+    fun selectedResultHidesOnlyResultScreenshotDescription() {
+        setScreenshotDescriptionContent(resultScreenshots = allResultReadySlots())
+
+        assertScreenshotDescriptions(lobbyVisible = true, resultVisible = false)
+    }
+
+    @Test
+    fun selectedLobbyAndResultHideBothScreenshotDescriptions() {
+        setScreenshotDescriptionContent(
+            lobbyUiState = allLobbyReadyState(),
+            resultScreenshots = allResultReadySlots(),
+        )
+
+        assertScreenshotDescriptions(lobbyVisible = false, resultVisible = false)
+    }
 
     @Test
     fun deleteMatchActionOpensConfirmationAndCancelDoesNotInvokeDeletion() {
@@ -2880,6 +2919,51 @@ class MatchReviewScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
     }
+
+    private fun setScreenshotDescriptionContent(
+        lobbyUiState: MatchLobbyScreenshotIntakeUiState = emptyLobbyReadyState(),
+        resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
+    ) {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = resultScreenshots),
+                    lobbyUiState = lobbyUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    matchLobbyScreenshotIntake = {
+                        MatchLobbyScreenshotIntakeScreen(
+                            uiState = lobbyUiState,
+                            onSelect = {},
+                            onCrop = {},
+                            onRemove = {},
+                            showTitle = false,
+                            compactSelectors = true,
+                            compactActions = true,
+                        )
+                    },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+    }
+
+    private fun assertScreenshotDescriptions(lobbyVisible: Boolean, resultVisible: Boolean) {
+        composeTestRule.onAllNodesWithText(LOBBY_SCREENSHOT_DESCRIPTION)
+            .assertCountEquals(if (lobbyVisible) 1 else 0)
+        composeTestRule.onAllNodesWithText(RESULT_SCREENSHOT_DESCRIPTION)
+            .assertCountEquals(if (resultVisible) 1 else 0)
+    }
+
+    private fun emptyLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
+        isLoading = false,
+        isAvailable = true,
+        tournamentId = "tournament-id",
+        matchId = "match-id",
+        status = MatchStatus.DRAFT,
+        slots = (1..3).map { index -> MatchLobbyScreenshotSlotUiState(index = index) },
+    )
 
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
