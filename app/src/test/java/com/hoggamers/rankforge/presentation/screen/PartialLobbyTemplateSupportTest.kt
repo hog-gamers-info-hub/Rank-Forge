@@ -8,9 +8,18 @@ import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
+import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.auth.*
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import java.time.LocalDate
 import java.nio.file.Files
 import java.time.Clock
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +27,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,6 +39,17 @@ class PartialLobbyTemplateSupportTest {
     private val tournamentId = "partial-lobby-tournament"
     private val sourceMatchId = "partial-lobby-source"
     private val targetMatchId = "partial-lobby-target"
+
+    private fun auth() = object : AuthRepository {
+        override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedIn(AuthUser("owner", "owner@example.test")))
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private fun tournamentRepository() = FakeTournamentRepository(tournamentId, sourceMatchId, targetMatchId)
 
     @Test
     fun saveReadinessRequiresAtLeastOneReadyScreenshotButNotAllThree() {
@@ -67,6 +88,8 @@ class PartialLobbyTemplateSupportTest {
             templateRepository = templateRepository,
             localImagePreserver = preserver,
             clock = Clock.systemUTC(),
+            authRepository = auth(),
+            tournamentRepository = tournamentRepository(),
         )(tournamentId, sourceMatchId)
 
         assertEquals(SaveLobbyTemplateResult.NotReady, result)
@@ -95,6 +118,8 @@ class PartialLobbyTemplateSupportTest {
             templateRepository = templateRepository,
             localImagePreserver = preserver,
             clock = Clock.systemUTC(),
+            authRepository = auth(),
+            tournamentRepository = tournamentRepository(),
         )
 
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
@@ -106,10 +131,9 @@ class PartialLobbyTemplateSupportTest {
             templateRepository = templateRepository,
             assetRepository = repository,
             localImagePreserver = preserver,
-            screenshotOwnerProvider = object : ScreenshotOwnerProvider {
-                override suspend fun currentOwnerUserId(): String = "next-owner"
-            },
             clock = Clock.systemUTC(),
+            authRepository = auth(),
+            tournamentRepository = tournamentRepository(),
         )
         assertEquals(ApplyLobbyTemplateResult.Applied, apply(tournamentId, targetMatchId))
 
@@ -120,7 +144,7 @@ class PartialLobbyTemplateSupportTest {
             if (index in indices) {
                 assertTrue(inherited != null)
                 assertEquals("sha-$index", inherited?.sha256)
-                assertEquals("next-owner", inherited?.ownerUserId)
+                assertEquals("owner", inherited?.ownerUserId)
             } else {
                 assertNull(inherited)
             }
@@ -200,6 +224,10 @@ class PartialLobbyTemplateSupportTest {
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow()
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            state.value.firstOrNull { it.identityOrNull() == identity && it.ownerUserId == ownerUserId }
+        override suspend fun saveOrReplaceByOwner(asset: MatchLobbyScreenshotAssetEntity, ownerUserId: String) =
+            saveOrReplace(asset.copy(ownerUserId = ownerUserId))
 
         override suspend fun findDuplicateFingerprint(
             identity: MatchLobbyScreenshotIdentity,
@@ -250,6 +278,10 @@ class PartialLobbyTemplateSupportTest {
 
         override suspend fun getByTournamentId(tournamentId: String): List<TournamentLobbyTemplateAssetEntity> =
             state.value.filter { it.tournamentId == tournamentId }
+        override fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> =
+            state.map { templates -> templates.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId } }
+        override suspend fun getByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): List<TournamentLobbyTemplateAssetEntity> =
+            state.value.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
 
         override suspend fun replaceForTournament(
             tournamentId: String,
@@ -261,5 +293,38 @@ class PartialLobbyTemplateSupportTest {
         override suspend fun deleteByTournamentId(tournamentId: String) {
             state.value = state.value.filterNot { it.tournamentId == tournamentId }
         }
+        override suspend fun replaceForTournamentByOwner(tournamentId: String, ownerUserId: String, assets: List<TournamentLobbyTemplateAssetEntity>): Boolean {
+            state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+            return true
+        }
+        override suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean {
+            val before = state.value.size
+            state.value = state.value.filterNot { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
+            return state.value.size != before || before == 0
+        }
+    }
+
+    private class FakeTournamentRepository(
+        private val tournamentId: String,
+        private val sourceMatchId: String,
+        private val targetMatchId: String,
+    ) : TournamentRepository {
+        private val tournament = Tournament(tournamentId, "partial", LocalDate.of(2026, 1, 1), "org", "contact", TournamentStatus.DRAFT, "owner")
+        private val matches = listOf(
+            Match(sourceMatchId, tournamentId, 1, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),
+            Match(targetMatchId, tournamentId, 2, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),
+        )
+        override suspend fun create(tournament: Tournament) = Unit
+        override fun observeAll(): Flow<List<Tournament>> = flowOf(listOf(tournament))
+        override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(tournament.takeIf { it.id == tournamentId })
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = flowOf(emptyList())
+        override suspend fun saveTeamNames(tournamentId: String, teamNamesBySlotNumber: Map<Int, String>) = Unit
+        override fun observeRosterByTournamentAndSlot(tournamentId: String, slotNumber: Int): Flow<List<RosterPlayer>> = flowOf(emptyList())
+        override suspend fun saveRoster(tournamentId: String, slotNumber: Int, players: List<RosterPlayer>) = Unit
+        override suspend fun confirmTournament(tournamentId: String): Boolean = true
+        override fun observeMatchById(matchId: String): Flow<Match?> = flowOf(matches.firstOrNull { it.id == matchId })
+        override fun observeMatchByIdAndOwner(matchId: String, ownerUserId: String): Flow<Match?> = flowOf(
+            matches.firstOrNull { it.id == matchId && ownerUserId == "owner" },
+        )
     }
 }

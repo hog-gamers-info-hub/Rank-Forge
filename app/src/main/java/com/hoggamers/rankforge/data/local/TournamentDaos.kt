@@ -1220,12 +1220,37 @@ interface TournamentLobbyTemplateAssetDao {
 
     @Query(
         """
+        SELECT template.* FROM tournament_lobby_template_assets AS template
+        INNER JOIN tournaments AS tournament ON tournament.id = template.tournament_id
+        WHERE template.tournament_id = :tournamentId
+          AND tournament.owner_user_id = :ownerUserId
+        ORDER BY template.lobby_screenshot_index ASC
+        """,
+    )
+    fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<TournamentLobbyTemplateAssetEntity>>
+
+    @Query(
+        """
         SELECT * FROM tournament_lobby_template_assets
         WHERE tournament_id = :tournamentId
         ORDER BY lobby_screenshot_index ASC
         """,
     )
     suspend fun readByTournamentId(tournamentId: String): List<TournamentLobbyTemplateAssetEntity>
+
+    @Query(
+        """
+        SELECT template.* FROM tournament_lobby_template_assets AS template
+        INNER JOIN tournaments AS tournament ON tournament.id = template.tournament_id
+        WHERE template.tournament_id = :tournamentId
+          AND tournament.owner_user_id = :ownerUserId
+        ORDER BY template.lobby_screenshot_index ASC
+        """,
+    )
+    suspend fun readByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): List<TournamentLobbyTemplateAssetEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId)")
+    suspend fun existsTournamentByOwner(tournamentId: String, ownerUserId: String): Boolean
 
     @Upsert
     suspend fun upsertAll(assets: List<TournamentLobbyTemplateAssetEntity>)
@@ -1241,6 +1266,31 @@ interface TournamentLobbyTemplateAssetDao {
         deleteByTournamentId(tournamentId)
         upsertAll(assets)
     }
+
+    @Transaction
+    suspend fun replaceForTournamentByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        assets: List<TournamentLobbyTemplateAssetEntity>,
+    ): Boolean {
+        if (!existsTournamentByOwner(tournamentId, ownerUserId)) return false
+        deleteByTournamentId(tournamentId)
+        upsertAll(assets)
+        return true
+    }
+
+    @Query(
+        """
+        DELETE FROM tournament_lobby_template_assets
+        WHERE tournament_id = :tournamentId
+          AND EXISTS (
+            SELECT 1 FROM tournaments
+            WHERE tournaments.id = tournament_lobby_template_assets.tournament_id
+              AND tournaments.owner_user_id = :ownerUserId
+          )
+        """,
+    )
+    suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Int
 }
 
 @Dao
