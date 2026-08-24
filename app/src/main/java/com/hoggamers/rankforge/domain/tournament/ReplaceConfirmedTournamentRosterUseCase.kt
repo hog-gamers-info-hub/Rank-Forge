@@ -1,5 +1,9 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
+import kotlinx.coroutines.flow.first
+
 data class ConfirmedRosterReplacementCandidate(
     val tournamentId: String,
     val teamNamesBySlotNumber: Map<Int, String>,
@@ -24,12 +28,20 @@ sealed interface ReplaceConfirmedTournamentRosterResult {
     data object InvalidCandidate : ReplaceConfirmedTournamentRosterResult
 
     data object BlockedByExistingMatches : ReplaceConfirmedTournamentRosterResult
+
+    data object AuthenticationRequired : ReplaceConfirmedTournamentRosterResult
 }
 
 class ReplaceConfirmedTournamentRosterUseCase(
     private val repository: TournamentRepository,
     private val rosterValidator: RosterValidator,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(
+        repository: TournamentRepository,
+        rosterValidator: RosterValidator,
+    ) : this(repository, rosterValidator, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(
         candidate: ConfirmedRosterReplacementCandidate,
     ): ReplaceConfirmedTournamentRosterResult {
@@ -56,7 +68,18 @@ class ReplaceConfirmedTournamentRosterUseCase(
             return ReplaceConfirmedTournamentRosterResult.InvalidCandidate
         }
 
-        return when (repository.replaceConfirmedTournamentRoster(candidate)) {
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id
+            ?.takeIf { it.isNotBlank() }
+            ?: return ReplaceConfirmedTournamentRosterResult.AuthenticationRequired
+        return mapRepositoryResult(
+            repository.replaceConfirmedTournamentRosterByOwner(candidate, ownerUserId),
+        )
+    }
+
+    private fun mapRepositoryResult(
+        repositoryResult: ReplaceConfirmedTournamentRosterRepositoryResult,
+    ): ReplaceConfirmedTournamentRosterResult = when (repositoryResult) {
             ReplaceConfirmedTournamentRosterRepositoryResult.Replaced ->
                 ReplaceConfirmedTournamentRosterResult.Replaced
             ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound ->
@@ -66,7 +89,6 @@ class ReplaceConfirmedTournamentRosterUseCase(
             ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches ->
                 ReplaceConfirmedTournamentRosterResult.BlockedByExistingMatches
         }
-    }
 }
 
 private fun ConfirmedRosterReplacementCandidate.isStructurallyComplete(): Boolean {

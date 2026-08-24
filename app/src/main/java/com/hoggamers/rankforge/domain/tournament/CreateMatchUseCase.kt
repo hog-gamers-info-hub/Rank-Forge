@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
@@ -32,6 +34,8 @@ enum class MatchValidationError {
 sealed interface CreateMatchResult {
     data class Created(val match: Match) : CreateMatchResult
 
+    data object AuthenticationRequired : CreateMatchResult
+
     data class Invalid(
         val errors: Map<MatchField, MatchValidationError>,
     ) : CreateMatchResult
@@ -39,9 +43,15 @@ sealed interface CreateMatchResult {
 
 class CreateMatchUseCase(
     private val repository: TournamentRepository,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(input: CreateMatchInput): CreateMatchResult {
-        val tournament = repository.observeById(input.tournamentId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return CreateMatchResult.AuthenticationRequired
+        val tournament = repository.observeByIdAndOwner(input.tournamentId, ownerUserId).first()
         if (tournament == null) {
             return CreateMatchResult.Invalid(
                 mapOf(MatchField.TOURNAMENT to MatchValidationError.TOURNAMENT_NOT_FOUND),
@@ -49,7 +59,7 @@ class CreateMatchUseCase(
         }
 
         val participation = repository
-            .observeSlotsByTournamentId(input.tournamentId)
+            .observeSlotsByTournamentIdAndOwner(input.tournamentId, ownerUserId)
             .first()
             .analyzeTeamSlotParticipation()
         if (participation.activeCount == 0) {
@@ -86,7 +96,7 @@ class CreateMatchUseCase(
             mapName = input.mapName.trim(),
             status = MatchStatus.DRAFT,
         )
-        return when (val result = repository.createDraftMatch(match)) {
+        return when (val result = repository.createDraftMatchByOwner(match, ownerUserId)) {
             CreateMatchRepositoryResult.Created -> CreateMatchResult.Created(match)
             is CreateMatchRepositoryResult.Rejected -> CreateMatchResult.Invalid(
                 mapOf(result.reason.field to result.reason.error),

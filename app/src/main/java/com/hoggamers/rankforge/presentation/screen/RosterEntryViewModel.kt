@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidationPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterValidationTeam
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveRosterResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -161,9 +162,17 @@ class RosterEntryViewModel @Inject constructor(
                         slotNumber = slotNumber,
                         players = players,
                     )
+                } else {
+                    null
                 }
-            }.onSuccess {
-                _uiState.update { it.copy(isSaving = false) }
+            }.onSuccess { result ->
+                _uiState.update {
+                    it.copy(
+                        isSaving = false,
+                        hasSaveError = result == SaveRosterResult.AuthenticationRequired ||
+                            result == SaveRosterResult.TournamentNotFound,
+                    )
+                }
             }.onFailure {
                 _uiState.update { it.copy(isSaving = false, hasSaveError = true) }
             }

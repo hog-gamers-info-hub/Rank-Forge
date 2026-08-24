@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -404,12 +405,16 @@ class MatchLobbyScreenshotCropViewModelTest {
         storageUploader: MatchLobbyScreenshotStorageUploader = RecordingLobbyStorageUploader(),
         autoCropProposer: MatchLobbyAutoCropProposer = MatchLobbyAutoCropProposer { MatchLobbyAutoCropResult.NoProposal },
     ): MatchLobbyScreenshotCropViewModel {
+        val ownerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String = "owner-1"
+        }
         val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
             assetRepository = assetRepository,
             localImagePreserver = preserver,
             clock = java.time.Clock.systemUTC(),
             storageUploader = storageUploader,
             cloudDataSource = cloud,
+            screenshotOwnerProvider = ownerProvider,
         )
         return MatchLobbyScreenshotCropViewModel(
             observeMatches = ObserveMatchesUseCase(tournamentRepository),
@@ -422,6 +427,7 @@ class MatchLobbyScreenshotCropViewModelTest {
                 testOnly = true,
             ),
             autoCropProposer = autoCropProposer,
+            screenshotOwnerProvider = ownerProvider,
         )
     }
 
@@ -476,8 +482,14 @@ class MatchLobbyScreenshotCropViewModelTest {
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.firstOrNull { asset -> asset.matchId == identity.matchId && asset.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }) } } }
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity) = state.value.firstOrNull { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = state.asStateFlow()
+        override fun observeByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Flow<MatchLobbyScreenshotAssetEntity?> =
+            if (ownerUserId.isBlank()) emptyFlow() else observeByIdentity(identity)
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else getByIdentity(identity)
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = null
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult { state.value = state.value.filterNot { it.matchId == asset.matchId && it.lobbyScreenshotIndex == asset.lobbyScreenshotIndex } + asset; return MatchLobbyScreenshotAssetSaveResult.Saved }
+        override suspend fun saveOrReplaceByOwner(asset: MatchLobbyScreenshotAssetEntity, ownerUserId: String): MatchLobbyScreenshotAssetSaveResult =
+            if (ownerUserId.isBlank()) MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired else saveOrReplace(asset.copy(ownerUserId = ownerUserId))
         override suspend fun updateUploadSuccessIfFingerprintMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean {
             val current = getByIdentity(identity) ?: return false
             if (current.sha256 != sha256) return false
@@ -493,12 +505,23 @@ class MatchLobbyScreenshotCropViewModelTest {
             if (current.sha256 != sha256 || current.revision != expectedRevision) return false
             return saveOrReplace(current.copy(storageBucket = storageBucket, storageObjectPath = storageObjectPath, uploadStatus = ScreenshotUploadStatus.UPLOADED.name, uploadFailureCode = null, uploadedAt = uploadedAt, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
         }
+        override suspend fun updateUploadSuccessIfGenerationMatchesByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean {
+            val current = getByIdentityAndOwner(identity, ownerUserId) ?: return false
+            if (current.ownerUserId != ownerUserId) return false
+            return updateUploadSuccessIfGenerationMatches(identity, sha256, expectedRevision, storageBucket, storageObjectPath, uploadedAt, updatedAt)
+        }
         override suspend fun updateUploadFailureIfGenerationMatches(identity: MatchLobbyScreenshotIdentity, sha256: String, expectedRevision: Long, failureCode: String, updatedAt: Long): Boolean {
             val current = getByIdentity(identity) ?: return false
             if (current.sha256 != sha256 || current.revision != expectedRevision) return false
             return saveOrReplace(current.copy(uploadStatus = ScreenshotUploadStatus.FAILED.name, uploadFailureCode = failureCode, updatedAt = updatedAt, revision = current.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
         }
+        override suspend fun updateUploadFailureIfGenerationMatchesByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, failureCode: String, updatedAt: Long): Boolean {
+            val current = getByIdentityAndOwner(identity, ownerUserId) ?: return false
+            if (current.ownerUserId != ownerUserId) return false
+            return updateUploadFailureIfGenerationMatches(identity, sha256, expectedRevision, failureCode, updatedAt)
+        }
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
+        override suspend fun markLocalMissingByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, updatedAt: Long) = ownerUserId.isNotBlank()
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
         override suspend fun deleteByMatchId(matchId: String) = Unit
@@ -508,6 +531,8 @@ class MatchLobbyScreenshotCropViewModelTest {
             state.value = state.value.map { if (it == current) it.copy(cropProfileId = "lobby", cropLeft = crop.left, cropTop = crop.top, cropRight = crop.right, cropBottom = crop.bottom) else it }
             return MatchLobbyScreenshotCropSaveResult.Saved
         }
+        override suspend fun persistConfirmedCropByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, crop: OcrNormalizedCropRect, updatedAt: Long) =
+            if (ownerUserId.isBlank()) MatchLobbyScreenshotCropSaveResult.AuthenticationRequired else persistConfirmedCrop(identity, crop, updatedAt)
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
     }
 
@@ -552,6 +577,10 @@ class MatchLobbyScreenshotCropViewModelTest {
             upserts += asset
             return result
         }
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity, expectedOwnerUserId: String): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            return result
+        }
 
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
             MatchLobbyScreenshotAssetCloudResult.Success
@@ -562,6 +591,10 @@ class MatchLobbyScreenshotCropViewModelTest {
         private val result: CompletableDeferred<MatchLobbyScreenshotAssetCloudResult>,
     ) : MatchLobbyScreenshotAssetCloudDataSource {
         override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            started.complete(Unit)
+            return result.await()
+        }
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity, expectedOwnerUserId: String): MatchLobbyScreenshotAssetCloudResult {
             started.complete(Unit)
             return result.await()
         }
@@ -577,6 +610,17 @@ class MatchLobbyScreenshotCropViewModelTest {
         val calls = mutableListOf<Triple<String?, String?, Int?>>()
 
         override suspend fun upload(
+            tournamentId: String?,
+            matchId: String?,
+            lobbyScreenshotIndex: Int?,
+            localFile: java.io.File?,
+        ): MatchLobbyScreenshotStorageUploadResult {
+            calls += Triple(tournamentId, matchId, lobbyScreenshotIndex)
+            assertTrue(localFile?.isFile == true)
+            return result
+        }
+        override suspend fun upload(
+            expectedOwnerUserId: String,
             tournamentId: String?,
             matchId: String?,
             lobbyScreenshotIndex: Int?,

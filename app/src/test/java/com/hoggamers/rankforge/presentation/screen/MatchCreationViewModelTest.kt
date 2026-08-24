@@ -18,6 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.MatchField
 import com.hoggamers.rankforge.domain.tournament.MatchValidationError
 import com.hoggamers.rankforge.domain.tournament.Tournament
@@ -33,7 +34,9 @@ class MatchCreationViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = InMemoryTournamentRepository()
-        viewModel = MatchCreationViewModel(CreateMatchUseCase(repository))
+        viewModel = MatchCreationViewModel(
+            CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
+        )
     }
 
     @After
@@ -123,7 +126,7 @@ class MatchCreationViewModelTest {
     @Test
     fun limitReachedStateBlocksCreation() = runTest {
         createReadyTournament(TournamentStatus.CONFIRMED)
-        val createMatch = CreateMatchUseCase(repository)
+        val createMatch = CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())
         (1..10).forEach { number ->
             createMatch(
                 com.hoggamers.rankforge.domain.tournament.CreateMatchInput(
@@ -153,6 +156,7 @@ class MatchCreationViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = status,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 
     private suspend fun createReadyTournament(status: TournamentStatus) {

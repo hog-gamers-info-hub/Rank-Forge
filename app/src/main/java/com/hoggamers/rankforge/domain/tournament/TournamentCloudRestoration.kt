@@ -71,6 +71,13 @@ interface TournamentCloudRestorationRepository {
 
 interface TournamentRestorationLocalRepository {
     suspend fun restore(snapshot: TournamentCloudRestorationSnapshot)
+
+    /** Owner-bound restoration entry point for suspended cloud workflows. */
+    suspend fun restoreByOwner(
+        snapshot: TournamentCloudRestorationSnapshot,
+        expectedOwnerUserId: String,
+    ): Unit = error("Expected owner is required for tournament restoration.")
+
     suspend fun detectTournamentDivergence(
         tournamentId: String,
         cloudRevision: CloudRevision,
@@ -85,4 +92,6 @@ interface TournamentCloudRestorationAction {
 
 fun interface TournamentCloudRestorationRetryAction {
     suspend fun executeForRetry(tournamentId: String): TournamentCloudRestorationResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): TournamentCloudRestorationResult =
+        throw SecurityException("Expected queue owner is required.")
 }

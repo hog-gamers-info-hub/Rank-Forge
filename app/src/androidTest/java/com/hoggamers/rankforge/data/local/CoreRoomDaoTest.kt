@@ -83,6 +83,7 @@ class CoreRoomDaoTest {
                 status = SyncQueueStatus.BLOCKED_NETWORK.name,
                 failureCategory = "network",
                 attemptCount = 0,
+                ownerUserId = OWNER_ID,
             ),
             SyncQueueEntity(
                 id = "completed",
@@ -92,6 +93,7 @@ class CoreRoomDaoTest {
                 status = SyncQueueStatus.COMPLETED.name,
                 failureCategory = null,
                 attemptCount = 2,
+                ownerUserId = OWNER_ID,
             ),
             SyncQueueEntity(
                 id = "tournament-old",
@@ -101,6 +103,7 @@ class CoreRoomDaoTest {
                 status = SyncQueueStatus.BLOCKED_NETWORK.name,
                 failureCategory = "network",
                 attemptCount = 1,
+                ownerUserId = OWNER_ID,
             ),
             SyncQueueEntity(
                 id = "tournament-new",
@@ -110,6 +113,7 @@ class CoreRoomDaoTest {
                 status = SyncQueueStatus.FAILED_UNKNOWN.name,
                 failureCategory = "unknown",
                 attemptCount = 0,
+                ownerUserId = OWNER_ID,
             ),
             SyncQueueEntity(
                 id = "other-operation",
@@ -119,6 +123,7 @@ class CoreRoomDaoTest {
                 status = SyncQueueStatus.BLOCKED_NETWORK.name,
                 failureCategory = "network",
                 attemptCount = 0,
+                ownerUserId = OWNER_ID,
             ),
         )
         entries.forEach { entry -> dao.insert(entry) }
@@ -129,26 +134,27 @@ class CoreRoomDaoTest {
         )
         assertEquals(
             "tournament-old",
-            dao.findOldestUnresolved(tournamentOperation, "tournament-1")?.id,
+            dao.findOldestUnresolvedByOwner(OWNER_ID, tournamentOperation, "tournament-1")?.id,
         )
         assertEquals(
             "global-old",
-            dao.findOldestUnresolved(tournamentOperation, null)?.id,
+            dao.findOldestUnresolvedByOwner(OWNER_ID, tournamentOperation, null)?.id,
         )
-        assertNull(dao.findOldestUnresolved(tournamentOperation, "missing-tournament"))
+        assertNull(dao.findOldestUnresolvedByOwner(OWNER_ID, tournamentOperation, "missing-tournament"))
 
-        dao.updateStatus(
+        dao.updateStatusByIdAndOwner(
             id = "tournament-old",
+            ownerUserId = OWNER_ID,
             status = SyncQueueStatus.FAILED_UNKNOWN.name,
             failureCategory = "retry_unknown",
         )
-        dao.incrementAttemptCount("tournament-old")
+        dao.incrementAttemptCountByIdAndOwner("tournament-old", OWNER_ID)
         val updated = dao.observeAll().first().single { it.id == "tournament-old" }
         assertEquals(SyncQueueStatus.FAILED_UNKNOWN.name, updated.status)
         assertEquals("retry_unknown", updated.failureCategory)
         assertEquals(2, updated.attemptCount)
 
-        dao.delete("tournament-old")
+        dao.deleteByIdAndOwner("tournament-old", OWNER_ID)
         database.close()
         database = openDatabase()
 
@@ -169,13 +175,15 @@ class CoreRoomDaoTest {
             status = SyncQueueStatus.BLOCKED_NETWORK.name,
             failureCategory = "network_unavailable",
             attemptCount = 1,
+            ownerUserId = OWNER_ID,
         )
         val dao = database.syncQueueDao()
 
         dao.insert(entry)
-        dao.incrementAttemptCount(entry.id)
-        dao.updateStatus(
+        dao.incrementAttemptCountByIdAndOwner(entry.id, OWNER_ID)
+        dao.updateStatusByIdAndOwner(
             id = entry.id,
+            ownerUserId = OWNER_ID,
             status = SyncQueueStatus.BLOCKED_NETWORK.name,
             failureCategory = "retry_interrupted",
         )
@@ -191,7 +199,7 @@ class CoreRoomDaoTest {
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK.name, reread.status)
         assertEquals("retry_interrupted", reread.failureCategory)
         assertEquals(2, reread.attemptCount)
-        assertEquals(entry.id, database.syncQueueDao().findOldestUnresolved(operationType, entry.tournamentId)?.id)
+        assertEquals(entry.id, database.syncQueueDao().findOldestUnresolvedByOwner(OWNER_ID, operationType, entry.tournamentId)?.id)
     }
 
     private fun openDatabase(): RankForgeDatabase = Room.databaseBuilder(
@@ -204,5 +212,6 @@ class CoreRoomDaoTest {
 
     private companion object {
         const val DATABASE_NAME = "core-room-dao-test.db"
+        const val OWNER_ID = "owner-a"
     }
 }

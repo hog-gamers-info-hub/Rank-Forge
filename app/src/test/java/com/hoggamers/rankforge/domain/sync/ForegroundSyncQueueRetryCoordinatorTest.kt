@@ -1,7 +1,17 @@
 package com.hoggamers.rankforge.domain.sync
 
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthUser
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,7 +59,6 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
         val entries = listOf(
             SyncQueueStatus.PENDING,
-            SyncQueueStatus.BLOCKED_AUTHENTICATION,
             SyncQueueStatus.FAILED_VALIDATION,
             SyncQueueStatus.FAILED_AUTHORIZATION,
             SyncQueueStatus.FAILED_LOCAL,
@@ -57,7 +66,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             SyncQueueStatus.COMPLETED,
         ).map { entry(SyncQueueOperationType.MATCH_RESTORATION, it) }
 
-        val attempted = ForegroundSyncQueueRetryCoordinator(repository, executor).retryEligible(entries, hasAuthenticatedSession = false)
+        val attempted = ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth()).retryEligible(entries, ownerUserId = OWNER_A)
 
         assertTrue(attempted.isEmpty())
         assertTrue(repository.incrementedIds.isEmpty())
@@ -69,7 +78,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         val repository = RecordingRepository(listOf(entry))
         val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
 
-        val attempted = ForegroundSyncQueueRetryCoordinator(repository, executor).retryEligible(listOf(entry), hasAuthenticatedSession = false)
+        val attempted = ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth()).retryEligible(listOf(entry), ownerUserId = OWNER_A)
 
         assertEquals(listOf(entry.id), repository.incrementedIds)
         assertEquals(3, executor.executedEntries.single().attemptCount)
@@ -89,9 +98,9 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         val repository = RecordingRepository(listOf(oldest, duplicate))
         val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
 
-        ForegroundSyncQueueRetryCoordinator(repository, executor).retryEligible(
+        ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth()).retryEligible(
             listOf(duplicate, oldest),
-            hasAuthenticatedSession = false,
+            ownerUserId = OWNER_A,
         )
 
         assertEquals(listOf("oldest"), executor.executedEntries.map { it.id })
@@ -106,7 +115,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             SyncQueueRetryOutcome.Failure(SyncQueueStatus.BLOCKED_AUTHENTICATION, "session_expired"),
         )
 
-        ForegroundSyncQueueRetryCoordinator(repository, executor).retryEligible(listOf(entry), hasAuthenticatedSession = true)
+        ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth()).retryEligible(listOf(entry), ownerUserId = OWNER_A)
 
         assertEquals(listOf(entry.id), repository.incrementedIds)
         assertEquals(emptyList<String>(), repository.completedIds)
@@ -119,10 +128,10 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         val entry = entry(SyncQueueOperationType.FINALIZED_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
         val repository = RecordingRepository(listOf(entry))
         val executor = InterruptingThenSuccessExecutor()
-        val coordinator = ForegroundSyncQueueRetryCoordinator(repository, executor)
+        val coordinator = ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth())
 
         try {
-            coordinator.retryEligible(repository.entries.toList(), hasAuthenticatedSession = false)
+            coordinator.retryEligible(repository.entries.toList(), ownerUserId = OWNER_A)
             fail("The interrupted retry should propagate its execution failure.")
         } catch (_: IllegalStateException) {
             // The interrupted execution must leave the existing entry unresolved.
@@ -135,7 +144,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, repository.entries.single().status)
         assertEquals(1, repository.entries.single().attemptCount)
 
-        val attempted = coordinator.retryEligible(repository.entries.toList(), hasAuthenticatedSession = false)
+        val attempted = coordinator.retryEligible(repository.entries.toList(), ownerUserId = OWNER_A)
 
         assertEquals(listOf(entry.id, entry.id), executor.executedEntries.map { it.id })
         assertEquals(listOf(1, 2), executor.executedEntries.map { it.attemptCount })
@@ -145,6 +154,46 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(2, repository.entries.single().attemptCount)
         assertEquals(entry.id, attempted.single().id)
         assertEquals(0, repository.enqueueCalls)
+    }
+
+    @Test fun ownerSwitchDuringDispatchLeavesQueueRowAndAttemptUnchanged() = runTest {
+        val entry = entry(SyncQueueOperationType.DRAFT_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingRepository(listOf(entry))
+        val auth = SwitchingAuth(AuthState.SignedIn(AuthUser(OWNER_A, null)))
+        val executor = SuspendingExecutor()
+        val job = launch {
+            ForegroundSyncQueueRetryCoordinator(repository, executor, auth)
+                .retryEligible(listOf(entry), ownerUserId = OWNER_A)
+        }
+
+        executor.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OWNER_B, null))
+        executor.resume.complete(Unit)
+        job.join()
+
+        assertEquals(entry, repository.entries.single())
+        assertTrue(repository.incrementedIds.isEmpty())
+        assertTrue(repository.completedIds.isEmpty())
+    }
+
+    @Test fun signOutDuringDispatchLeavesQueueRowAndAttemptUnchanged() = runTest {
+        val entry = entry(SyncQueueOperationType.DRAFT_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingRepository(listOf(entry))
+        val auth = SwitchingAuth(AuthState.SignedIn(AuthUser(OWNER_A, null)))
+        val executor = SuspendingExecutor()
+        val job = launch {
+            ForegroundSyncQueueRetryCoordinator(repository, executor, auth)
+                .retryEligible(listOf(entry), ownerUserId = OWNER_A)
+        }
+
+        executor.started.await()
+        auth.state.value = AuthState.SignedOut
+        executor.resume.complete(Unit)
+        job.join()
+
+        assertEquals(entry, repository.entries.single())
+        assertTrue(repository.incrementedIds.isEmpty())
+        assertTrue(repository.completedIds.isEmpty())
     }
 
     private fun entry(
@@ -159,6 +208,7 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         status = status,
         failureCategory = status.name,
         attemptCount = attemptCount,
+        ownerUserId = OWNER_A,
     )
 
     private class RecordingExecutor(
@@ -176,6 +226,17 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             executedEntries += entry
             executionCount += 1
             if (executionCount == 1) throw IllegalStateException("retry interrupted")
+            return SyncQueueRetryOutcome.Success
+        }
+    }
+
+    private class SuspendingExecutor : SyncQueueEntryRetryExecutor {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
+            started.complete(Unit)
+            resume.await()
             return SyncQueueRetryOutcome.Success
         }
     }
@@ -210,9 +271,45 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             replace(id) { it.copy(status = SyncQueueStatus.COMPLETED, failureCategory = null) }
         }
         override suspend fun remove(id: String) = Unit
+        override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) {
+            require(ownerUserId == OWNER_A)
+            incrementAttemptCount(id)
+        }
+        override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) {
+            require(ownerUserId == OWNER_A)
+            updateRetryFailure(id, status, failureCategory)
+        }
+        override suspend fun markCompletedByOwner(id: String, ownerUserId: String) {
+            require(ownerUserId == OWNER_A)
+            markCompleted(id)
+        }
         private fun replace(id: String, transform: (SyncQueueEntry) -> SyncQueueEntry) {
             val index = entries.indexOfFirst { it.id == id }
             entries[index] = transform(entries[index])
         }
+    }
+
+    private fun testAuth(ownerUserId: String = OWNER_A): AuthRepository = object : AuthRepository {
+        override fun observeAuthState() = flowOf(AuthState.SignedIn(AuthUser(ownerUserId, "$ownerUserId@example.test")))
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = failure()
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private class SwitchingAuth(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+        override fun observeAuthState() = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = failure()
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private companion object {
+        const val OWNER_A = "owner-a"
+        const val OWNER_B = "owner-b"
     }
 }

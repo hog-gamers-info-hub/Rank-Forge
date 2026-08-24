@@ -30,6 +30,7 @@ import com.hoggamers.rankforge.domain.tournament.PlacementValidationError
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -52,13 +53,14 @@ class MatchPlacementViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
         repository.saveTeamNames(
             "tournament-id",
             (1..12).associateWith { slotNumber -> "Team $slotNumber" },
         )
-        matchId = (CreateMatchUseCase(repository)(
+        matchId = (CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())(
             CreateMatchInput(
                 tournamentId = "tournament-id",
                 matchNumber = "1",
@@ -71,9 +73,9 @@ class MatchPlacementViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
-            saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
-            saveDraftValue = SaveMatchDraftValueUseCase(repository),
-            clearDraftMatch = ClearDraftMatchUseCase(repository),
+            saveMatchPlacements = SaveMatchPlacementsUseCase(repository, SignedInTournamentTestAuthRepository()),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
         )
     }
 
@@ -165,9 +167,9 @@ class MatchPlacementViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
-            saveMatchPlacements = SaveMatchPlacementsUseCase(repository),
-            saveDraftValue = SaveMatchDraftValueUseCase(repository),
-            clearDraftMatch = ClearDraftMatchUseCase(repository),
+            saveMatchPlacements = SaveMatchPlacementsUseCase(repository, SignedInTournamentTestAuthRepository()),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
         )
         recreated.load("tournament-id", matchId)
         advanceUntilIdle()

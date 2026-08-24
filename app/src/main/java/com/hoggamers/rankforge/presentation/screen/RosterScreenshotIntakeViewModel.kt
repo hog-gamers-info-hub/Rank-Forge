@@ -4,22 +4,30 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.NoOpRosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotAssociationSaveResult
+import com.hoggamers.rankforge.data.local.RosterScreenshotAssociationDeleteResult
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotValidationStatus
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@kotlinx.coroutines.ExperimentalCoroutinesApi
 @HiltViewModel
 class RosterScreenshotIntakeViewModel @Inject constructor(
     private val imageCandidateValidator: ImageCandidateValidator,
     private val fingerprintGenerator: ImageSourceFingerprintGenerator,
+    private val authRepository: AuthRepository,
     private val rosterScreenshotMetadataRepository: RosterScreenshotMetadataRepository =
         NoOpRosterScreenshotMetadataRepository(),
     private val rosterScreenshotLocalImageStore: RosterScreenshotLocalImageStore =
@@ -29,11 +37,15 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
     val uiState: StateFlow<RosterScreenshotIntakeUiState> = _uiState.asStateFlow()
     private var loadedTournamentId: String? = null
     private var restoreJob: Job? = null
+    private var currentOwnerUserId: String? = null
+    private var authStateLoaded = false
 
     fun load(tournamentId: String) {
         if (loadedTournamentId == tournamentId) return
         loadedTournamentId = tournamentId
         restoreJob?.cancel()
+        authStateLoaded = false
+        currentOwnerUserId = null
         _uiState.value = if (tournamentId.isBlank()) {
             RosterScreenshotIntakeUiState(
                 intakeError = RosterScreenshotIntakeError.MISSING_TOURNAMENT_ID,
@@ -43,21 +55,35 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         }
         if (tournamentId.isBlank()) return
         restoreJob = viewModelScope.launch {
-            rosterScreenshotMetadataRepository.observeByTournamentId(tournamentId).collect { metadata ->
-                _uiState.update { current ->
-                    if (current.tournamentId != tournamentId) {
-                        current
+            authRepository.observeAuthState()
+                .flatMapLatest { authState ->
+                    authStateLoaded = true
+                    currentOwnerUserId = authState.ownerUserIdOrNull()
+                    val ownerUserId = currentOwnerUserId
+                    if (ownerUserId == null) {
+                        flowOf(emptyList())
                     } else {
-                        current.copy(
-                            slots = defaultRosterScreenshotSlots().map { slot ->
-                                metadata.firstOrNull { it.rosterScreenshotIndex == slot.index }
-                                    ?.toUiState(slot.index)
-                                    ?: slot
-                            },
+                        rosterScreenshotMetadataRepository.observeByTournamentIdAndOwner(
+                            tournamentId,
+                            ownerUserId,
                         )
                     }
                 }
-            }
+                .collect { metadata ->
+                    _uiState.update { current ->
+                        if (current.tournamentId != tournamentId) {
+                            current
+                        } else {
+                            current.copy(
+                                slots = defaultRosterScreenshotSlots().map { slot ->
+                                    metadata.firstOrNull { it.rosterScreenshotIndex == slot.index }
+                                        ?.toUiState(slot.index)
+                                        ?: slot
+                                },
+                            )
+                        }
+                    }
+                }
         }
     }
 
@@ -67,6 +93,10 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
             _uiState.update {
                 it.copy(intakeError = RosterScreenshotIntakeError.MISSING_TOURNAMENT_ID)
             }
+            return
+        }
+        if (authStateLoaded && currentOwnerUserId == null) {
+            _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
             return
         }
         if (slotIndex !in 1..RosterScreenshotIntakeUiState.REQUIRED_SCREENSHOT_COUNT) return
@@ -138,8 +168,24 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         }
         updateSlot(slotIndex) { RosterScreenshotSlotUiState(index = it.index) }
         viewModelScope.launch {
-            rosterScreenshotMetadataRepository.deleteByTournamentAndIndex(tournamentId, slotIndex)
-            rosterScreenshotLocalImageStore.cleanup(tournamentId, slotIndex)
+            val ownerUserId = authenticatedOwnerUserId()
+            if (ownerUserId == null) {
+                _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
+                return@launch
+            }
+            if (!rosterScreenshotMetadataRepository.existsByTournamentIdAndOwner(tournamentId, ownerUserId)) {
+                _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND) }
+                return@launch
+            }
+            when (rosterScreenshotMetadataRepository.deleteByTournamentAndIndexAndOwner(tournamentId, slotIndex, ownerUserId)) {
+                RosterScreenshotAssociationDeleteResult.Deleted -> {
+                    rosterScreenshotLocalImageStore.cleanup(tournamentId, slotIndex)
+                }
+                RosterScreenshotAssociationDeleteResult.AuthenticationRequired ->
+                    _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
+                RosterScreenshotAssociationDeleteResult.TournamentNotFound ->
+                    _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND) }
+            }
         }
     }
 
@@ -222,7 +268,7 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
                     cropError = null,
                     associationUpdatedAt = System.currentTimeMillis(),
                 )
-            }.also { persistCurrentSlot(slotIndex) }.let { true }
+                }.also { persistCurrentSlot(slotIndex) }.let { true }
 
             is RosterScreenshotCropValidationResult.Invalid -> updateSlot(slotIndex) {
                 it.copy(cropError = validation.error.toRosterScreenshotCropError())
@@ -292,6 +338,14 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         }
 
         val tournamentId = _uiState.value.tournamentId ?: return
+        val ownerUserId = authenticatedOwnerUserId() ?: run {
+            _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
+            return
+        }
+        if (!rosterScreenshotMetadataRepository.existsByTournamentIdAndOwner(tournamentId, ownerUserId)) {
+            _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND) }
+            return
+        }
         when (val preservation = rosterScreenshotLocalImageStore.preserve(tournamentId, slotIndex, selectedUri)) {
             RosterScreenshotLocalImageStoreResult.Failed -> updateSlot(slotIndex) { slot ->
                 slot.copy(
@@ -319,7 +373,7 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
                     createdAt = existing?.associationCreatedAt ?: now,
                     updatedAt = now,
                 )
-                when (rosterScreenshotMetadataRepository.saveOrReplace(association)) {
+                when (rosterScreenshotMetadataRepository.saveOrReplaceByOwner(association, ownerUserId)) {
                     RosterScreenshotAssociationSaveResult.Saved -> updateSlot(slotIndex) { slot ->
                         slot.copy(
                             selectedImageUri = preservation.displayUri,
@@ -360,6 +414,16 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
                             isValidationInProgress = false,
                             lastValidationError = ImageValidationError.UNREADABLE_URI,
                         )
+                    }
+                    RosterScreenshotAssociationSaveResult.AuthenticationRequired -> {
+                        rosterScreenshotLocalImageStore.cleanup(tournamentId, slotIndex)
+                        updateSlot(slotIndex) { it.copy(isValidationInProgress = false) }
+                        _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
+                    }
+                    RosterScreenshotAssociationSaveResult.TournamentNotFound -> {
+                        rosterScreenshotLocalImageStore.cleanup(tournamentId, slotIndex)
+                        updateSlot(slotIndex) { it.copy(isValidationInProgress = false) }
+                        _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND) }
                     }
                 }
             }
@@ -405,7 +469,12 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
         val crop = (slot.cropState as? RosterScreenshotCropState.Set)?.crop
         val updatedAt = slot.associationUpdatedAt ?: System.currentTimeMillis()
         viewModelScope.launch {
-            rosterScreenshotMetadataRepository.saveOrReplace(
+            val ownerUserId = authenticatedOwnerUserId()
+            if (ownerUserId == null) {
+                _uiState.update { it.copy(intakeError = RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED) }
+                return@launch
+            }
+            rosterScreenshotMetadataRepository.saveOrReplaceByOwner(
                 RosterScreenshotMetadataEntity(
                     tournamentId = tournamentId,
                     rosterScreenshotIndex = slotIndex,
@@ -422,9 +491,17 @@ class RosterScreenshotIntakeViewModel @Inject constructor(
                     createdAt = createdAt,
                     updatedAt = updatedAt,
                 ),
+                ownerUserId,
             )
         }
     }
+
+    private suspend fun authenticatedOwnerUserId(): String? =
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+
+    private fun AuthState.ownerUserIdOrNull(): String? =
+        (this as? AuthState.SignedIn)?.user?.id?.takeIf { it.isNotBlank() }
 
     private fun RosterScreenshotMetadataEntity.toUiState(index: Int): RosterScreenshotSlotUiState {
         val crop = normalizedCropOrNull()

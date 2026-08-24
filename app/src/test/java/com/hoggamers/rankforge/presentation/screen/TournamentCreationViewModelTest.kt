@@ -36,6 +36,12 @@ import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AuthUser
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TournamentCreationViewModelTest {
@@ -43,6 +49,7 @@ class TournamentCreationViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: TestTournamentRepository
     private lateinit var uploadAction: FakeTournamentCloudUploadAction
+    private lateinit var authRepository: FakeAuthRepository
     private lateinit var quotaRepository: FakeTournamentQuotaRepository
     private lateinit var localDeletionRepository: RecordingLocalDeletionRepository
     private lateinit var viewModel: TournamentCreationViewModel
@@ -52,6 +59,7 @@ class TournamentCreationViewModelTest {
         Dispatchers.setMain(dispatcher)
         repository = TestTournamentRepository()
         uploadAction = FakeTournamentCloudUploadAction()
+        authRepository = FakeAuthRepository()
         quotaRepository = FakeTournamentQuotaRepository()
         localDeletionRepository = RecordingLocalDeletionRepository()
         viewModel = viewModel()
@@ -199,6 +207,7 @@ class TournamentCreationViewModelTest {
 
         val newTournamentId = uploadAction.tournamentIds.single()
         assertEquals(listOf(newTournamentId), localDeletionRepository.deletedTournamentIds)
+        assertEquals(listOf("user-a"), localDeletionRepository.deletedTournamentOwners)
         assertEquals(existingTournamentId, repository.records.first().id)
         assertEquals(
             TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
@@ -206,6 +215,23 @@ class TournamentCreationViewModelTest {
         )
         assertNull(viewModel.uiState.value.navigation)
         assertFalse(viewModel.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun creationAuthenticationFailureIsMappedWithoutLocalWrite() = runTest {
+        authRepository.state = AuthState.SignedOut
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(repository.records.isEmpty())
+        assertTrue(uploadAction.tournamentIds.isEmpty())
+        assertEquals(
+            TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED,
+            viewModel.uiState.value.submissionError,
+        )
+        assertNull(viewModel.uiState.value.navigation)
     }
 
     @Test
@@ -402,6 +428,7 @@ class TournamentCreationViewModelTest {
 
     private fun createUseCase(repository: TournamentRepository) = CreateTournamentUseCase(
         repository = repository,
+        authRepository = authRepository,
         clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
     )
 
@@ -419,14 +446,36 @@ class TournamentCreationViewModelTest {
         override suspend fun checkQuota(): TournamentQuotaResult = result
     }
 
+    private class FakeAuthRepository : AuthRepository {
+        var state: AuthState = AuthState.SignedIn(AuthUser("user-a", "user-a@example.test"))
+
+        override fun observeAuthState(): Flow<AuthState> = kotlinx.coroutines.flow.flowOf(state)
+
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+
+        override suspend fun signUp(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+
+        override suspend fun login(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private class RecordingLocalDeletionRepository : LocalDeletionRepository {
         val deletedTournamentIds = mutableListOf<String>()
+        val deletedTournamentOwners = mutableListOf<String>()
 
         override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult =
             LocalDeletionResult.NotFound
 
-        override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
+        override suspend fun deleteTournamentLocallyByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): LocalDeletionResult {
             deletedTournamentIds += tournamentId
+            deletedTournamentOwners += ownerUserId
             return LocalDeletionResult.Deleted
         }
     }

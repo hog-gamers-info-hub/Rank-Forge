@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
@@ -10,6 +12,7 @@ sealed interface CreateNextMatchResult {
 }
 
 enum class CreateNextMatchFailure {
+    AUTHENTICATION_REQUIRED,
     TOURNAMENT_NOT_FOUND,
     NO_PARTICIPATING_TEAMS,
     INVALID_TEAM_SLOTS,
@@ -19,20 +22,26 @@ enum class CreateNextMatchFailure {
 
 class CreateNextMatchUseCase(
     private val repository: TournamentRepository,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(tournamentId: String): CreateNextMatchResult {
-        val tournament = repository.observeById(tournamentId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.AUTHENTICATION_REQUIRED)
+        val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first()
             ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.TOURNAMENT_NOT_FOUND)
 
         val participation = repository
-            .observeSlotsByTournamentId(tournamentId)
+            .observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId)
             .first()
             .analyzeTeamSlotParticipation()
         if (participation.activeCount == 0) {
             return CreateNextMatchResult.Rejected(CreateNextMatchFailure.NO_PARTICIPATING_TEAMS)
         }
 
-        val existingMatches = repository.observeMatchesByTournamentId(tournamentId).first()
+        val existingMatches = repository.observeMatchesByTournamentIdAndOwner(tournamentId, ownerUserId).first()
         if (existingMatches.size >= MAX_MATCHES_PER_TOURNAMENT) {
             return CreateNextMatchResult.Rejected(CreateNextMatchFailure.LIMIT_REACHED)
         }
@@ -47,7 +56,7 @@ class CreateNextMatchUseCase(
             status = MatchStatus.DRAFT,
         )
 
-        return when (val result = repository.createDraftMatch(match)) {
+        return when (val result = repository.createDraftMatchByOwner(match, ownerUserId)) {
             CreateMatchRepositoryResult.Created -> CreateNextMatchResult.Created(match)
             is CreateMatchRepositoryResult.Rejected -> CreateNextMatchResult.Rejected(result.toNextMatchFailure())
         }

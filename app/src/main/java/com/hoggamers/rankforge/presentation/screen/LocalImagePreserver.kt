@@ -18,6 +18,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 fun interface ImageSourceMimeTypeReader {
@@ -70,6 +72,8 @@ class LocalImagePreserver(
     private val fileOperations: LocalImageFileOperations = DefaultLocalImageFileOperations,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    fun delete(file: File): Boolean = fileOperations.delete(file)
+
     @Inject
     constructor(
         @ApplicationContext context: Context,
@@ -404,12 +408,12 @@ class LocalImagePreserver(
         matchId: String,
     ): LocalImageCleanupResult = withContext(ioDispatcher) {
         val directory = matchDirectory(tournamentId, matchId)
-        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+        val files = listFilesOrNull(directory)
             ?: return@withContext LocalImageCleanupResult.Failed
         val ownedFiles = files.filter { file ->
             file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
         }
-        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+        if (deleteFiles(ownedFiles)) {
             LocalImageCleanupResult.Cleaned
         } else {
             LocalImageCleanupResult.Failed
@@ -515,12 +519,12 @@ class LocalImagePreserver(
     ): LocalImageCleanupResult = withContext(ioDispatcher) {
         if (rosterScreenshotIndex !in 1..3) return@withContext LocalImageCleanupResult.Failed
         val directory = rosterScreenshotDirectory(tournamentId, rosterScreenshotIndex)
-        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+        val files = listFilesOrNull(directory)
             ?: return@withContext LocalImageCleanupResult.Failed
         val ownedFiles = files.filter { file ->
             file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
         }
-        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+        if (deleteFiles(ownedFiles)) {
             LocalImageCleanupResult.Cleaned
         } else {
             LocalImageCleanupResult.Failed
@@ -533,12 +537,12 @@ class LocalImagePreserver(
         role: MatchResultScreenshotRole,
     ): LocalImageCleanupResult = withContext(ioDispatcher) {
         val directory = matchResultScreenshotDirectory(tournamentId, matchId, role)
-        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+        val files = listFilesOrNull(directory)
             ?: return@withContext LocalImageCleanupResult.Failed
         val ownedFiles = files.filter { file ->
             file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
         }
-        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+        if (deleteFiles(ownedFiles)) {
             LocalImageCleanupResult.Cleaned
         } else {
             LocalImageCleanupResult.Failed
@@ -552,12 +556,12 @@ class LocalImagePreserver(
     ): LocalImageCleanupResult = withContext(ioDispatcher) {
         if (lobbyScreenshotIndex !in 1..3) return@withContext LocalImageCleanupResult.Failed
         val directory = lobbyScreenshotDirectory(tournamentId, matchId, lobbyScreenshotIndex)
-        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+        val files = listFilesOrNull(directory)
             ?: return@withContext LocalImageCleanupResult.Failed
         val ownedFiles = files.filter { file ->
             file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
         }
-        if (ownedFiles.all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }) {
+        if (deleteFiles(ownedFiles)) {
             LocalImageCleanupResult.Cleaned
         } else {
             LocalImageCleanupResult.Failed
@@ -649,24 +653,24 @@ class LocalImagePreserver(
         }
         var success = true
         slotDirectories.forEach { directory ->
-            val files = runCatching { fileOperations.listFiles(directory) }.getOrNull()
+            val files = listFilesOrNull(directory)
             if (files == null) {
                 success = false
             } else {
                 files.filter { file ->
                     file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX)
                 }.forEach { file ->
-                    if (!runCatching { fileOperations.delete(file) }.getOrDefault(false)) success = false
+                    if (!deleteFile(file)) success = false
                 }
             }
         }
         if (success) {
             slotDirectories.asReversed().forEach { directory ->
-                if (directory.exists() && !runCatching { fileOperations.delete(directory) }.getOrDefault(false)) {
+                if (directory.exists() && !deleteFile(directory)) {
                     success = false
                 }
             }
-            if (generationDirectory.exists() && !runCatching { fileOperations.delete(generationDirectory) }.getOrDefault(false)) {
+            if (generationDirectory.exists() && !deleteFile(generationDirectory)) {
                 success = false
             }
         }
@@ -757,30 +761,54 @@ class LocalImagePreserver(
         MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "lower"
     }
 
-    private fun cleanupStaleFiles(directory: File, targetFile: File): Boolean {
-        val files = runCatching { fileOperations.listFiles(directory) }.getOrNull() ?: return false
-        return files
-            .filter { file ->
+    private suspend fun cleanupStaleFiles(directory: File, targetFile: File): Boolean {
+        val files = listFilesOrNull(directory) ?: return false
+        return deleteFiles(files.filter { file ->
                 file.name != targetFile.name &&
                     (file.name.startsWith("original.") || file.name.endsWith(TEMPORARY_SUFFIX))
-            }
-            .all { file -> runCatching { fileOperations.delete(file) }.getOrDefault(false) }
+            })
     }
 
-    private fun deleteReferencedFiles(
+    private suspend fun deleteReferencedFiles(
         relativePaths: Collection<String>,
         ownerDirectory: File,
     ): Boolean {
         val ownerPath = runCatching { ownerDirectory.canonicalFile.toPath() }.getOrNull() ?: return false
-        return relativePaths.all { relativePath ->
-            val file = resolveRelativePath(relativePath) ?: return@all false
-            val filePath = runCatching { file.canonicalFile.toPath() }.getOrNull() ?: return@all false
-            filePath.startsWith(ownerPath) && runCatching { fileOperations.delete(file) }.getOrDefault(false)
+        for (relativePath in relativePaths) {
+            val file = resolveRelativePath(relativePath) ?: return false
+            val filePath = runCatching { file.canonicalFile.toPath() }.getOrNull() ?: return false
+            if (!filePath.startsWith(ownerPath) || !deleteFile(file)) return false
         }
+        return true
     }
 
-    private fun safeDelete(file: File) {
-        runCatching { fileOperations.delete(file) }
+    private suspend fun safeDelete(file: File) {
+        deleteFile(file)
+    }
+
+    private suspend fun listFilesOrNull(directory: File): List<File>? = try {
+        currentCoroutineContext().ensureActive()
+        fileOperations.listFiles(directory)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun deleteFile(file: File): Boolean = try {
+        currentCoroutineContext().ensureActive()
+        fileOperations.delete(file)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        false
+    }
+
+    private suspend fun deleteFiles(files: Iterable<File>): Boolean {
+        for (file in files) {
+            if (!deleteFile(file)) return false
+        }
+        return true
     }
 
     private companion object {

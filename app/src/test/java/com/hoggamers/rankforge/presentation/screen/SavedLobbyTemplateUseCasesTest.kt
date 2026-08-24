@@ -10,6 +10,22 @@ import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import java.time.LocalDate
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Clock
@@ -19,6 +35,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +47,118 @@ class SavedLobbyTemplateUseCasesTest {
     private val tournamentId = "template-tournament"
     private val sourceMatchId = "match-1"
     private val targetMatchId = "match-2"
+
+    private fun auth(state: AuthState = AuthState.SignedIn(AuthUser("owner", "owner@example.test"))) =
+        object : AuthRepository {
+            override fun observeAuthState(): Flow<AuthState> = flowOf(state)
+            override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+            override suspend fun signUp(email: String, password: String) = failure()
+            override suspend fun login(email: String, password: String) = failure()
+            override suspend fun logout() = AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+            private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+        }
+
+    private fun tournamentRepository(
+        ownerUserId: String? = "owner",
+        sourceOwnerUserId: String? = ownerUserId,
+        targetOwnerUserId: String? = ownerUserId,
+        templateTournamentId: String = tournamentId,
+    ) = FakeTournamentRepository(
+        tournamentId = templateTournamentId,
+        ownerUserId = ownerUserId,
+        matches = listOf(
+            Match(sourceMatchId, templateTournamentId, 1, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),
+            Match(targetMatchId, templateTournamentId, 2, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),
+        ),
+        sourceOwnerUserId = sourceOwnerUserId,
+        targetOwnerUserId = targetOwnerUserId,
+    )
+
+    @Test
+    fun signedOutSaveApplyAndUnsaveFailClosedBeforeAnyTemplateOrFileAccess() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-auth").toFile()
+        val preserver = preserver(root)
+        val assets = FakeLobbyRepository()
+        val templates = FakeTemplateRepository()
+        val tournamentRepository = tournamentRepository()
+        assertEquals(
+            SaveLobbyTemplateResult.AuthenticationRequired,
+            SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(AuthState.SignedOut), tournamentRepository)(tournamentId, sourceMatchId),
+        )
+        assertEquals(
+            ApplyLobbyTemplateResult.AuthenticationRequired,
+            ApplyLobbyTemplateToMatchUseCase(templates, assets, preserver, Clock.systemUTC(), auth(AuthState.SignedOut), tournamentRepository)(tournamentId, targetMatchId),
+        )
+        assertEquals(
+            UnsaveLobbyTemplateResult.AuthenticationRequired,
+            UnsaveLobbyTemplateUseCase(templates, preserver, auth(AuthState.SignedOut), tournamentRepository)(tournamentId),
+        )
+        assertEquals(
+            UnsaveLobbyTemplateResult.Failed,
+            UnsaveLobbyTemplateUseCase(templates, preserver, auth(), tournamentRepository(ownerUserId = "owner-b"))(tournamentId),
+        )
+        assertEquals(
+            UnsaveLobbyTemplateResult.Failed,
+            UnsaveLobbyTemplateUseCase(templates, preserver, auth(), tournamentRepository(ownerUserId = null))(tournamentId),
+        )
+        assertEquals(0, assets.ownerReadCalls)
+        assertEquals(0, templates.ownerReadCalls)
+        assertEquals(0, templates.ownerWriteCalls)
+    }
+
+    @Test
+    fun blankOwnerAndForeignOrNullParentRejectSaveWithoutReadingAssets() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-owner-reject").toFile()
+        val preserver = preserver(root)
+        val assets = FakeLobbyRepository()
+        val templates = FakeTemplateRepository()
+        assertEquals(
+            SaveLobbyTemplateResult.AuthenticationRequired,
+            SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(AuthState.SignedIn(AuthUser("   ", null))), tournamentRepository())(tournamentId, sourceMatchId),
+        )
+        assertEquals(
+            SaveLobbyTemplateResult.Failed,
+            SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(), tournamentRepository(ownerUserId = "owner-b"))(tournamentId, sourceMatchId),
+        )
+        assertEquals(
+            SaveLobbyTemplateResult.Failed,
+            SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(), tournamentRepository(sourceOwnerUserId = "owner-b"))(tournamentId, sourceMatchId),
+        )
+        assertEquals(
+            SaveLobbyTemplateResult.Failed,
+            SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(), tournamentRepository(ownerUserId = null))(tournamentId, sourceMatchId),
+        )
+        assertEquals(0, assets.ownerReadCalls)
+        assertEquals(0, templates.ownerWriteCalls)
+    }
+
+    @Test
+    fun applyForeignTargetOrSourceAndNullParentRejectsBeforeCopyOrWrite() = runBlocking {
+        val root = Files.createTempDirectory("saved-lobby-template-apply-reject").toFile()
+        val preserver = preserver(root)
+        val assets = FakeLobbyRepository()
+        val templates = FakeTemplateRepository()
+        val ownerRepository = tournamentRepository()
+        seedSourceAssets(preserver, assets, listOf("A", "B", "C"))
+        assertEquals(SaveLobbyTemplateResult.Saved, SaveLobbyTemplateUseCase(assets, templates, preserver, Clock.systemUTC(), auth(), ownerRepository)(tournamentId, sourceMatchId))
+
+        val foreignTargetRepository = tournamentRepository(targetOwnerUserId = "owner-b")
+        assertEquals(
+            ApplyLobbyTemplateResult.Unavailable,
+            ApplyLobbyTemplateToMatchUseCase(templates, assets, preserver, Clock.systemUTC(), auth(), foreignTargetRepository)(tournamentId, targetMatchId),
+        )
+        val foreignSourceRepository = tournamentRepository(sourceOwnerUserId = "owner-b")
+        assertEquals(
+            ApplyLobbyTemplateResult.Unavailable,
+            ApplyLobbyTemplateToMatchUseCase(templates, assets, preserver, Clock.systemUTC(), auth(), foreignSourceRepository)(tournamentId, targetMatchId),
+        )
+        val nullParentRepository = tournamentRepository(ownerUserId = null)
+        assertEquals(
+            ApplyLobbyTemplateResult.Unavailable,
+            ApplyLobbyTemplateToMatchUseCase(templates, assets, preserver, Clock.systemUTC(), auth(), nullParentRepository)(tournamentId, targetMatchId),
+        )
+        assertEquals(0, assets.ownerWriteCalls)
+    }
 
     @Test
     fun saveSnapshotsAllThreeAndApplyCreatesIndependentMatchAssets() = runBlocking {
@@ -50,11 +179,15 @@ class SavedLobbyTemplateUseCasesTest {
             )
         }
         val templateRepository = FakeTemplateRepository()
+        val tournamentRepository = tournamentRepository()
+        val authRepository = auth()
         val save = SaveLobbyTemplateUseCase(
             assetRepository = assetRepository,
             templateRepository = templateRepository,
             localImagePreserver = preserver,
             clock = Clock.systemUTC(),
+            authRepository = authRepository,
+            tournamentRepository = tournamentRepository,
         )
 
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
@@ -70,10 +203,9 @@ class SavedLobbyTemplateUseCasesTest {
             templateRepository = templateRepository,
             assetRepository = assetRepository,
             localImagePreserver = preserver,
-            screenshotOwnerProvider = object : ScreenshotOwnerProvider {
-                override suspend fun currentOwnerUserId(): String = "owner-2"
-            },
             clock = Clock.systemUTC(),
+            authRepository = authRepository,
+            tournamentRepository = tournamentRepository,
         )
         assertEquals(ApplyLobbyTemplateResult.Applied, apply(tournamentId, targetMatchId))
 
@@ -82,7 +214,7 @@ class SavedLobbyTemplateUseCasesTest {
                 MatchLobbyScreenshotIdentity(tournamentId, targetMatchId, index),
             )
             assertNotNull(inherited)
-            assertEquals("owner-2", inherited?.ownerUserId)
+            assertEquals("owner", inherited?.ownerUserId)
             assertEquals("sha-$index", inherited?.sha256)
             assertEquals(ScreenshotUploadStatus.PENDING.name, inherited?.uploadStatus)
             assertEquals(null, inherited?.storageObjectPath)
@@ -104,6 +236,8 @@ class SavedLobbyTemplateUseCasesTest {
             templateRepository,
             normalPreserver,
             Clock.systemUTC(),
+            auth(),
+            tournamentRepository(),
         )
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val previous = templateRepository.getByTournamentId(tournamentId)
@@ -118,6 +252,8 @@ class SavedLobbyTemplateUseCasesTest {
                 templateRepository,
                 failingPreserver,
                 Clock.systemUTC(),
+                auth(),
+                tournamentRepository(),
             )(tournamentId, sourceMatchId),
         )
 
@@ -133,7 +269,7 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val previous = templateRepository.getByTournamentId(tournamentId)
         val previousFiles = allTemplateOriginals(root)
@@ -151,7 +287,7 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val previous = templateRepository.getByTournamentId(tournamentId)
         val previousFiles = allTemplateOriginals(root)
@@ -182,7 +318,7 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val previous = templateRepository.getByTournamentId(tournamentId)
         val previousFiles = previous.map { preserver.resolveRelativePath(it.localRelativePath)!! }
@@ -203,13 +339,13 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val activeFiles = allTemplateOriginals(root)
 
         assertEquals(
             UnsaveLobbyTemplateResult.Unsaved,
-            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver, auth(), tournamentRepository())(tournamentId),
         )
         assertTrue(templateRepository.getByTournamentId(tournamentId).isEmpty())
         activeFiles.forEach { file -> assertFalse(file.isFile) }
@@ -222,23 +358,22 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val apply = ApplyLobbyTemplateToMatchUseCase(
             templateRepository,
             repository,
             preserver,
-            object : ScreenshotOwnerProvider {
-                override suspend fun currentOwnerUserId(): String = "owner-2"
-            },
             Clock.systemUTC(),
+            auth(),
+            tournamentRepository(),
         )
         assertEquals(ApplyLobbyTemplateResult.Applied, apply(tournamentId, targetMatchId))
         val before = repository.snapshot()
 
         assertEquals(
             UnsaveLobbyTemplateResult.Unsaved,
-            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver, auth(), tournamentRepository())(tournamentId),
         )
         assertEquals(before, repository.snapshot())
     }
@@ -250,7 +385,7 @@ class SavedLobbyTemplateUseCasesTest {
         val preserver = preserver(root)
         seedSourceAssets(preserver, repository, listOf("A", "B", "C"))
         val templateRepository = FakeTemplateRepository()
-        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC())
+        val save = SaveLobbyTemplateUseCase(repository, templateRepository, preserver, Clock.systemUTC(), auth(), tournamentRepository())
         assertEquals(SaveLobbyTemplateResult.Saved, save(tournamentId, sourceMatchId))
         val previous = templateRepository.getByTournamentId(tournamentId)
         val previousFiles = allTemplateOriginals(root)
@@ -258,7 +393,7 @@ class SavedLobbyTemplateUseCasesTest {
 
         assertEquals(
             UnsaveLobbyTemplateResult.Failed,
-            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver, auth(), tournamentRepository())(tournamentId),
         )
         assertEquals(previous, templateRepository.getByTournamentId(tournamentId))
         previousFiles.forEach { file -> assertTrue(file.isFile) }
@@ -273,7 +408,7 @@ class SavedLobbyTemplateUseCasesTest {
         val templateRepository = FakeTemplateRepository()
         assertEquals(
             SaveLobbyTemplateResult.Saved,
-            SaveLobbyTemplateUseCase(repository, templateRepository, normalPreserver, Clock.systemUTC())(
+            SaveLobbyTemplateUseCase(repository, templateRepository, normalPreserver, Clock.systemUTC(), auth(), tournamentRepository())(
                 tournamentId,
                 sourceMatchId,
             ),
@@ -282,7 +417,7 @@ class SavedLobbyTemplateUseCasesTest {
 
         assertEquals(
             UnsaveLobbyTemplateResult.Unsaved,
-            UnsaveLobbyTemplateUseCase(templateRepository, failingPreserver)(tournamentId),
+            UnsaveLobbyTemplateUseCase(templateRepository, failingPreserver, auth(), tournamentRepository())(tournamentId),
         )
         assertTrue(templateRepository.getByTournamentId(tournamentId).isEmpty())
     }
@@ -294,7 +429,7 @@ class SavedLobbyTemplateUseCasesTest {
 
         assertEquals(
             UnsaveLobbyTemplateResult.Unsaved,
-            UnsaveLobbyTemplateUseCase(templateRepository, preserver)(tournamentId),
+            UnsaveLobbyTemplateUseCase(templateRepository, preserver, auth(), tournamentRepository())(tournamentId),
         )
     }
 
@@ -364,6 +499,8 @@ class SavedLobbyTemplateUseCasesTest {
 
     private class FakeLobbyRepository : MatchLobbyScreenshotAssetRepository {
         private val state = MutableStateFlow<List<MatchLobbyScreenshotAssetEntity>>(emptyList())
+        var ownerReadCalls = 0
+        var ownerWriteCalls = 0
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow()
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> =
@@ -371,6 +508,21 @@ class SavedLobbyTemplateUseCasesTest {
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity) =
             state.value.firstOrNull { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = state.asStateFlow()
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            state.value.also { ownerReadCalls++ }.firstOrNull {
+                it.tournamentId == identity.tournamentId && it.matchId == identity.matchId &&
+                    it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex && it.ownerUserId == ownerUserId
+            }
+        override suspend fun saveOrReplaceByOwner(asset: MatchLobbyScreenshotAssetEntity, ownerUserId: String) =
+            saveOrReplace(asset.copy(ownerUserId = ownerUserId)).also { ownerWriteCalls++ }
+        override suspend fun deleteByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Boolean {
+            val before = state.value.size
+            state.value = state.value.filterNot {
+                it.tournamentId == identity.tournamentId && it.matchId == identity.matchId &&
+                    it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex && it.ownerUserId == ownerUserId
+            }
+            return state.value.size != before
+        }
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = null
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult {
             state.value = state.value.filterNot { it.matchId == asset.matchId && it.lobbyScreenshotIndex == asset.lobbyScreenshotIndex } + asset
@@ -387,12 +539,18 @@ class SavedLobbyTemplateUseCasesTest {
 
     private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
         private val state = MutableStateFlow<List<TournamentLobbyTemplateAssetEntity>>(emptyList())
+        var ownerReadCalls = 0
+        var ownerWriteCalls = 0
         var throwOnReplace: Boolean = false
         var throwOnDelete: Boolean = false
         var cancelOnReplace: Boolean = false
         var beforeReplace: (() -> Unit)? = null
         override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> = state
         override suspend fun getByTournamentId(tournamentId: String) = state.value.filter { it.tournamentId == tournamentId }
+        override fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> =
+            state.asStateFlow().map { templates -> templates.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId } }
+        override suspend fun getByTournamentIdAndOwner(tournamentId: String, ownerUserId: String) =
+            state.value.also { ownerReadCalls++ }.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
         override suspend fun replaceForTournament(tournamentId: String, assets: List<TournamentLobbyTemplateAssetEntity>) {
             beforeReplace?.invoke()
             if (cancelOnReplace) throw CancellationException("replacement cancelled")
@@ -404,6 +562,63 @@ class SavedLobbyTemplateUseCasesTest {
             if (throwOnDelete) error("deletion failed")
             state.value = state.value.filterNot { it.tournamentId == tournamentId }
         }
+        override suspend fun replaceForTournamentByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            assets: List<TournamentLobbyTemplateAssetEntity>,
+        ): Boolean {
+            ownerWriteCalls++
+            beforeReplace?.invoke()
+            if (cancelOnReplace) throw CancellationException("replacement cancelled")
+            if (throwOnReplace) error("replacement failed")
+            state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+            return true
+        }
+        override suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean {
+            ownerWriteCalls++
+            if (throwOnDelete) error("deletion failed")
+            val before = state.value.size
+            state.value = state.value.filterNot { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
+            return state.value.size != before || before == 0
+        }
+    }
+
+    private class FakeTournamentRepository(
+        private val tournamentId: String,
+        private val ownerUserId: String?,
+        private val matches: List<Match>,
+        private val sourceOwnerUserId: String?,
+        private val targetOwnerUserId: String?,
+    ) : TournamentRepository {
+        private val tournament = Tournament(
+            id = tournamentId,
+            name = "template",
+            date = LocalDate.of(2026, 1, 1),
+            organizerName = "organizer",
+            organizerContactNumber = "contact",
+            status = TournamentStatus.DRAFT,
+            ownerUserId = ownerUserId,
+        )
+
+        override suspend fun create(tournament: Tournament) = Unit
+        override fun observeAll(): Flow<List<Tournament>> = flowOf(listOf(tournament))
+        override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(tournament.takeIf { it.id == tournamentId })
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = flowOf(emptyList())
+        override suspend fun saveTeamNames(tournamentId: String, teamNamesBySlotNumber: Map<Int, String>) = Unit
+        override fun observeRosterByTournamentAndSlot(tournamentId: String, slotNumber: Int): Flow<List<RosterPlayer>> = flowOf(emptyList())
+        override suspend fun saveRoster(tournamentId: String, slotNumber: Int, players: List<RosterPlayer>) = Unit
+        override suspend fun confirmTournament(tournamentId: String): Boolean = true
+        override fun observeMatchById(matchId: String): Flow<Match?> = flowOf(matches.firstOrNull { it.id == matchId })
+        override fun observeMatchByIdAndOwner(matchId: String, ownerUserId: String): Flow<Match?> = flowOf(
+            matches.firstOrNull { match ->
+                match.id == matchId && match.tournamentId == tournamentId &&
+                    when (match.id) {
+                        matches.firstOrNull()?.id -> sourceOwnerUserId == ownerUserId
+                        matches.getOrNull(1)?.id -> targetOwnerUserId == ownerUserId
+                        else -> this.ownerUserId == ownerUserId
+                    }
+            },
+        )
     }
 
     private open class TestTemplateFileOperations : LocalImageFileOperations {

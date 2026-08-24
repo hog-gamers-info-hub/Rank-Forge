@@ -598,8 +598,13 @@ class RosterOcrReviewViewModelTest {
             parser = parser,
             associator = associator,
             validator = validator,
+            authRepository = FakeAuthRepository(),
         )
-        val local = ReplaceConfirmedTournamentRosterUseCase(repository, RosterValidator())
+        val local = ReplaceConfirmedTournamentRosterUseCase(
+            repository,
+            RosterValidator(),
+            FakeAuthRepository(),
+        )
         val cloud = ReplaceTournamentRosterInCloudUseCase(
             tournamentRepository = repository,
             authRepository = FakeAuthRepository(),
@@ -695,6 +700,11 @@ class RosterOcrReviewViewModelTest {
             gate?.await()
             return result
         }
+
+        override suspend fun load(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+        ): RosterOcrSourceProviderResult = load(tournamentId)
     }
 
     private class FakePanelPreparer : RosterOcrPanelPreparer {
@@ -863,6 +873,7 @@ class RosterOcrReviewViewModelTest {
             replacementThrowable?.let { throw it }
             return when (replacementResult) {
                 ReplaceConfirmedTournamentRosterResult.Replaced -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.Replaced
+                ReplaceConfirmedTournamentRosterResult.AuthenticationRequired -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
                 ReplaceConfirmedTournamentRosterResult.TournamentNotFound -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
                 ReplaceConfirmedTournamentRosterResult.InvalidCandidate -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate
                 ReplaceConfirmedTournamentRosterResult.BlockedByExistingMatches -> com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches
@@ -942,6 +953,7 @@ class RosterOcrReviewViewModelTest {
         organizerName = "Synthetic organizer",
         organizerContactNumber = "synthetic-contact",
         status = TournamentStatus.DRAFT,
+        ownerUserId = "synthetic-user",
     )
 
     private companion object {

@@ -41,10 +41,33 @@ class AndroidRosterOcrPanelPreparerTest {
     fun blankTournamentIdDoesNotReadMetadataRepository() = runBlocking {
         val repository = FakeMetadataRepository(metadata = metadataSet())
 
-        val result = RoomRosterOcrSourceProvider(repository).load(" ")
+        val result = RoomRosterOcrSourceProvider(repository).load(" ", "owner-a")
 
         assertEquals(RosterOcrSourceProviderResult.InvalidTournamentContext, result)
         assertEquals(0, repository.reads)
+    }
+
+    @Test
+    fun blankOwnerIdDoesNotReadMetadataRepository() = runBlocking {
+        val repository = FakeMetadataRepository(metadata = metadataSet())
+
+        val result = RoomRosterOcrSourceProvider(repository).load(TOURNAMENT_ID, " ")
+
+        assertEquals(RosterOcrSourceProviderResult.InvalidTournamentContext, result)
+        assertEquals(0, repository.reads)
+    }
+
+    @Test
+    fun foreignOwnerReturnsNoOcrSourceAndDoesNotExposePath() = runBlocking {
+        val repository = FakeMetadataRepository(
+            ownerMetadata = mapOf("owner-a" to emptyList()),
+        )
+
+        val result = RoomRosterOcrSourceProvider(repository).load(TOURNAMENT_ID, "owner-a")
+
+        assertEquals(RosterOcrSourceProviderResult.IncompleteScreenshotSet, result)
+        assertEquals(1, repository.reads)
+        assertEquals("owner-a", repository.lastOwner)
     }
 
     @Test
@@ -55,7 +78,7 @@ class AndroidRosterOcrPanelPreparerTest {
             metadata(index = 2, path = "private/roster/two.jpg", width = 302, height = 202, crop = Crop(0.12, 0.22, 0.82, 0.92)),
         )
 
-        val result = RoomRosterOcrSourceProvider(FakeMetadataRepository(metadata)).load(TOURNAMENT_ID)
+        val result = RoomRosterOcrSourceProvider(FakeMetadataRepository(metadata)).load(TOURNAMENT_ID, "owner-a")
         val sources = (result as RosterOcrSourceProviderResult.Loaded).sources
 
         assertEquals(listOf(1, 2, 3), sources.map { it.rosterScreenshotIndex })
@@ -81,7 +104,7 @@ class AndroidRosterOcrPanelPreparerTest {
     fun incompleteMetadataSetIsRejected() = runBlocking {
         val result = RoomRosterOcrSourceProvider(
             FakeMetadataRepository(metadata = listOf(metadata(1), metadata(2))),
-        ).load(TOURNAMENT_ID)
+        ).load(TOURNAMENT_ID, "owner-a")
 
         assertEquals(RosterOcrSourceProviderResult.IncompleteScreenshotSet, result)
     }
@@ -90,7 +113,7 @@ class AndroidRosterOcrPanelPreparerTest {
     fun duplicateMetadataIndexIsRejected() = runBlocking {
         val result = RoomRosterOcrSourceProvider(
             FakeMetadataRepository(metadata = listOf(metadata(1), metadata(1), metadata(3))),
-        ).load(TOURNAMENT_ID)
+        ).load(TOURNAMENT_ID, "owner-a")
 
         assertEquals(
             RosterOcrSourceProviderResult.DuplicateScreenshotPositions(listOf(1)),
@@ -102,7 +125,7 @@ class AndroidRosterOcrPanelPreparerTest {
     fun unsupportedMetadataIndexIsRejected() = runBlocking {
         val result = RoomRosterOcrSourceProvider(
             FakeMetadataRepository(metadata = listOf(metadata(1), metadata(2), metadata(4))),
-        ).load(TOURNAMENT_ID)
+        ).load(TOURNAMENT_ID, "owner-a")
 
         assertEquals(
             RosterOcrSourceProviderResult.UnsupportedScreenshotPosition(4),
@@ -120,7 +143,7 @@ class AndroidRosterOcrPanelPreparerTest {
                     metadata(3),
                 ),
             ),
-        ).load(TOURNAMENT_ID)
+        ).load(TOURNAMENT_ID, "owner-a")
 
         assertEquals(RosterOcrSourceProviderResult.MissingCropMetadata(2), result)
     }
@@ -129,7 +152,7 @@ class AndroidRosterOcrPanelPreparerTest {
     fun metadataRepositoryFailureIsControlled() = runBlocking {
         val result = RoomRosterOcrSourceProvider(
             FakeMetadataRepository(failure = IllegalStateException("private repository failure")),
-        ).load(TOURNAMENT_ID)
+        ).load(TOURNAMENT_ID, "owner-a")
 
         assertEquals(RosterOcrSourceProviderResult.LoadingFailure, result)
     }
@@ -137,7 +160,7 @@ class AndroidRosterOcrPanelPreparerTest {
     @Test
     fun metadataRepositoryCancellationPropagates() = runBlocking {
         try {
-            RoomRosterOcrSourceProvider(FakeMetadataRepository(cancel = true)).load(TOURNAMENT_ID)
+            RoomRosterOcrSourceProvider(FakeMetadataRepository(cancel = true)).load(TOURNAMENT_ID, "owner-a")
             fail("Expected CancellationException")
         } catch (_: CancellationException) {
             Unit
@@ -388,8 +411,10 @@ class AndroidRosterOcrPanelPreparerTest {
         private val metadata: List<RosterScreenshotMetadataEntity> = emptyList(),
         private val failure: Throwable? = null,
         private val cancel: Boolean = false,
+        private val ownerMetadata: Map<String, List<RosterScreenshotMetadataEntity>> = emptyMap(),
     ) : RosterScreenshotMetadataRepository {
         var reads = 0
+        var lastOwner: String? = null
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<RosterScreenshotMetadataEntity>> = flow {
             reads++
@@ -398,10 +423,49 @@ class AndroidRosterOcrPanelPreparerTest {
             emit(metadata)
         }
 
+        override fun observeByTournamentIdAndOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): Flow<List<RosterScreenshotMetadataEntity>> = flow {
+            reads++
+            lastOwner = ownerUserId
+            if (cancel) throw CancellationException()
+            failure?.let { throw it }
+            emit(ownerMetadata[ownerUserId] ?: metadata)
+        }
+
+        override suspend fun existsByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean = true
+
+        override suspend fun readByTournamentAndIndexAndOwner(
+            tournamentId: String,
+            index: Int,
+            ownerUserId: String,
+        ): RosterScreenshotMetadataEntity? = metadata.firstOrNull { it.rosterScreenshotIndex == index }
+
+        override suspend fun findDuplicateFingerprintAndOwner(
+            tournamentId: String,
+            sha256: String,
+            index: Int,
+            ownerUserId: String,
+        ): RosterScreenshotMetadataEntity? = metadata.firstOrNull {
+            it.sha256 == sha256 && it.rosterScreenshotIndex != index
+        }
+
         override suspend fun saveOrReplace(metadata: RosterScreenshotMetadataEntity) =
             RosterScreenshotAssociationSaveResult.Saved
 
+        override suspend fun saveOrReplaceByOwner(
+            metadata: RosterScreenshotMetadataEntity,
+            ownerUserId: String,
+        ) = RosterScreenshotAssociationSaveResult.Saved
+
         override suspend fun deleteByTournamentAndIndex(tournamentId: String, index: Int) = Unit
+
+        override suspend fun deleteByTournamentAndIndexAndOwner(
+            tournamentId: String,
+            index: Int,
+            ownerUserId: String,
+        ) = com.hoggamers.rankforge.data.local.RosterScreenshotAssociationDeleteResult.Deleted
     }
 
     private class FakeImageStore(

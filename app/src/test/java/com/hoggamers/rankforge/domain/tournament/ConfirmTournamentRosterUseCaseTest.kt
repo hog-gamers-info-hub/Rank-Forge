@@ -1,7 +1,15 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -17,6 +25,7 @@ class ConfirmTournamentRosterUseCaseTest {
         val useCase = ConfirmTournamentRosterUseCase(
             repository = repository,
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            authRepository = auth("owner-a"),
         )
 
         val result = useCase("stable-id")
@@ -31,6 +40,7 @@ class ConfirmTournamentRosterUseCaseTest {
         val useCase = ConfirmTournamentRosterUseCase(
             repository = repository,
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            authRepository = auth("owner-a"),
         )
 
         assertEquals(ConfirmTournamentRosterResult.NotFound, useCase("missing-id"))
@@ -57,6 +67,7 @@ class ConfirmTournamentRosterUseCaseTest {
         val useCase = ConfirmTournamentRosterUseCase(
             repository = repository,
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            authRepository = auth("owner-a"),
         )
 
         assertTrue(useCase("stable-id") is ConfirmTournamentRosterResult.AlreadyConfirmed)
@@ -83,6 +94,7 @@ class ConfirmTournamentRosterUseCaseTest {
         val useCase = ConfirmTournamentRosterUseCase(
             repository = repository,
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            authRepository = auth("owner-a"),
         )
 
         assertTrue(useCase("stable-id") is ConfirmTournamentRosterResult.Confirmed)
@@ -97,7 +109,26 @@ class ConfirmTournamentRosterUseCaseTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = "owner-a",
     )
+
+    private fun auth(userId: String): AuthRepository = object : AuthRepository {
+        override fun observeAuthState(): Flow<AuthState> = flowOf(
+            AuthState.SignedIn(AuthUser(userId, "$userId@example.test")),
+        )
+
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+
+        override suspend fun signUp(email: String, password: String) = failure()
+
+        override suspend fun login(email: String, password: String) = failure()
+
+        override suspend fun logout() = failure()
+
+        private fun failure() = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+    }
 
     private class ConfirmationRejectingRepository(
         private val delegate: InMemoryTournamentRepository,

@@ -17,15 +17,41 @@ import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import com.hoggamers.rankforge.domain.sync.PersistentSyncQueueRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReplaceTournamentRosterInCloudUseCaseTest {
+    @Test
+    fun cloudResponseAfterOwnerSwitchDoesNotConfirmRevisionOrRecordQueue() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloud()
+        val repository = CountingRevisionRepository(localRepository())
+        val queue = RecordingQueueRepository()
+        val action = useCase(repository, cloud, queue, authRepository = auth)
+
+        val job = launch {
+            assertEquals(
+                TournamentRosterCloudReplacementResult.AuthorizationFailure,
+                action(TOURNAMENT_ID).primaryResult,
+            )
+        }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+        cloud.resume.complete(Unit)
+        job.join()
+
+        assertEquals(0, repository.revisionWrites)
+        assertEquals(0, repository.baselineWrites)
+        assertTrue(queue.entries.isEmpty())
+    }
+
     @Test
     fun missingBaselineBootstrapsAbsentCloudTournamentWithAuthoritativeRevision() = runTest {
         val repository = MissingBaselineRepository(localRepository())
@@ -193,17 +219,19 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
         assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
         assertEquals(SyncQueueOperationType.ROSTER_REPLACEMENT, queue.entries.single().operationType)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
     }
 
     private fun useCase(
         repository: TournamentRepository,
-        cloud: FakeCloud,
+        cloud: TournamentRosterCloudReplacementRepository,
         queue: RecordingQueueRepository = RecordingQueueRepository(),
         upload: TournamentCloudUploadRepository = FakeUploadRepository,
         restoration: TournamentCloudRestorationRepository = FakeRestorationRepository,
+        authRepository: AuthRepository = FakeAuthRepository,
     ) = ReplaceTournamentRosterInCloudUseCase(
         repository,
-        FakeAuthRepository,
+        authRepository,
         cloud,
         upload,
         restoration,
@@ -270,9 +298,54 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
             establishedBaselines += cloudRevision
         }
 
+        override suspend fun establishCloudBaselineByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            if (ownerUserId != OWNER_ID) return OwnerScopedTournamentMutationResult.TournamentNotFound
+            establishCloudBaseline(tournamentId, cloudRevision)
+            return OwnerScopedTournamentMutationResult.Saved
+        }
+
         override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {
             require(cloudRevision > 0)
             establishedBaseline = cloudRevision
+        }
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            require(ownerUserId == OWNER_ID)
+            confirmCloudRevision(tournamentId, cloudRevision)
+            return OwnerScopedTournamentMutationResult.Saved
+        }
+    }
+
+    private class CountingRevisionRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository by delegate {
+        var revisionWrites = 0
+        var baselineWrites = 0
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            revisionWrites += 1
+            return delegate.confirmCloudRevisionByOwner(tournamentId, ownerUserId, cloudRevision)
+        }
+
+        override suspend fun establishCloudBaselineByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            baselineWrites += 1
+            return delegate.establishCloudBaselineByOwner(tournamentId, ownerUserId, cloudRevision)
         }
     }
 
@@ -285,6 +358,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
                 "Organizer",
                 "123",
                 TournamentStatus.DRAFT,
+                ownerUserId = OWNER_ID,
             ),
         )
         repository.saveTeamNames(
@@ -329,12 +403,40 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
         }
     }
 
+    private class SuspendingCloud : TournamentRosterCloudReplacementRepository {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun replace(
+            snapshot: TournamentRosterCloudReplacement,
+            ownerId: String,
+        ): TournamentRosterCloudReplacementResult {
+            started.complete(Unit)
+            resume.await()
+            return TournamentRosterCloudReplacementResult.Success(8)
+        }
+    }
+
+    private class SwitchingAuthRepository(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+
+        override fun observeAuthState(): Flow<AuthState> = state
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+        override suspend fun login(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private class RecordingQueueRepository : PersistentSyncQueueRepository {
         private val state = MutableStateFlow<List<SyncQueueEntry>>(emptyList())
         val entries get() = state.value
 
         override fun observeAll(): Flow<List<SyncQueueEntry>> = state
         override suspend fun enqueue(
+            ownerUserId: String,
             operationType: SyncQueueOperationType,
             tournamentId: String?,
             status: SyncQueueStatus,
@@ -348,19 +450,21 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
                 status = status,
                 failureCategory = failureCategory,
                 attemptCount = 0,
+                ownerUserId = ownerUserId,
             )
             state.value = listOf(entry)
             return entry
         }
-        override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
-        override suspend fun incrementAttemptCount(id: String) = Unit
-        override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
-        override suspend fun markCompleted(id: String) = Unit
-        override suspend fun remove(id: String) = Unit
+        override suspend fun completeOldestUnresolvedByOwner(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?) = Unit
+        override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) = Unit
+        override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) = Unit
+        override suspend fun markCompletedByOwner(id: String, ownerUserId: String) = Unit
+        override suspend fun removeByOwner(id: String, ownerUserId: String) = Unit
     }
 
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
         const val OWNER_ID = "22222222-2222-2222-2222-222222222222"
+        const val OTHER_OWNER_ID = "33333333-3333-3333-3333-333333333333"
     }
 }

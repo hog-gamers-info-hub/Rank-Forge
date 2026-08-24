@@ -39,4 +39,26 @@ class ScreenshotReconciliationSchedulerTest {
         assertTrue(completed)
         schedulerScope.cancel()
     }
+
+    @Test
+    fun ownerBoundJobDoesNotRunAfterOwnerSwitch() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        val scheduler = ScreenshotReconciliationScheduler(schedulerScope, testOnly = true)
+        val owner = SchedulerOwnerProvider("owner-a")
+        var calls = 0
+
+        owner.ownerId = "owner-b"
+        val job = scheduler.schedule("owner-a", owner) { calls++ }
+        advanceUntilIdle()
+
+        assertTrue(job.isCompleted)
+        assertFalse(job.isCancelled)
+        assertTrue(calls == 0)
+        schedulerScope.cancel()
+    }
+}
+
+private class SchedulerOwnerProvider(var ownerId: String?) : ScreenshotOwnerProvider {
+    override suspend fun currentOwnerUserId(): String? = ownerId
 }

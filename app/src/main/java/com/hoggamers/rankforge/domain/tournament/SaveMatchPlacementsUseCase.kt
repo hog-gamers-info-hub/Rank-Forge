@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.flow.first
 
 data class SaveMatchPlacementsInput(
@@ -13,6 +15,7 @@ enum class PlacementValidationError {
 }
 
 enum class PlacementGlobalError {
+    AUTHENTICATION_REQUIRED,
     MATCH_NOT_FOUND,
     MATCH_NOT_DRAFT,
     INVALID_DATA,
@@ -29,9 +32,17 @@ sealed interface SaveMatchPlacementsResult {
 
 class SaveMatchPlacementsUseCase(
     private val repository: TournamentRepository,
+    private val authRepository: AuthRepository,
 ) {
+    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+
     suspend operator fun invoke(input: SaveMatchPlacementsInput): SaveMatchPlacementsResult {
-        val match = repository.observeMatchById(input.matchId).first()
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return SaveMatchPlacementsResult.Invalid(
+                globalError = PlacementGlobalError.AUTHENTICATION_REQUIRED,
+            )
+        val match = repository.observeMatchByIdAndOwner(input.matchId, ownerUserId).first()
             ?: return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.MATCH_NOT_FOUND)
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.MATCH_NOT_DRAFT)
@@ -72,7 +83,9 @@ class SaveMatchPlacementsUseCase(
             .map { (teamSlotNumber, position) ->
                 MatchPlacement(teamSlotNumber = teamSlotNumber, position = position)
             }
-        return when (val result = repository.saveDraftMatchPlacements(input.matchId, placements)) {
+        return when (
+            val result = repository.saveDraftMatchPlacementsByOwner(input.matchId, ownerUserId, placements)
+        ) {
             SaveMatchPlacementsRepositoryResult.Saved -> SaveMatchPlacementsResult.Saved(placements)
             is SaveMatchPlacementsRepositoryResult.Rejected -> when (result.reason) {
                 SaveMatchPlacementsFailure.MATCH_NOT_FOUND -> SaveMatchPlacementsResult.Invalid(

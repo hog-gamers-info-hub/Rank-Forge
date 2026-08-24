@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
@@ -188,7 +189,15 @@ class TournamentDetailsViewModel @Inject constructor(
             } else {
                 runCatching {
                     saveTeamSlotNames(tournamentId, names)
-                }.onSuccess {
+                }.onSuccess { result ->
+                    if (result != SaveTeamSlotNamesResult.Saved) {
+                        _uiState.update {
+                            it.copy(
+                                calculatePointsMessage = CalculatePointsMessage.VALIDATION_FAILED,
+                            )
+                        }
+                        return@onSuccess
+                    }
                     _uiState.update {
                         it.copy(
                             calculatePointsMessage = null,
@@ -330,6 +339,7 @@ class TournamentDetailsViewModel @Inject constructor(
     private fun CreateNextMatchFailure.toCalculatePointsMessage(): CalculatePointsMessage = when (this) {
         CreateNextMatchFailure.NO_PARTICIPATING_TEAMS -> CalculatePointsMessage.NO_TEAMS_SAVED
         CreateNextMatchFailure.INVALID_TEAM_SLOTS -> CalculatePointsMessage.INVALID_TEAM_SLOTS
+        CreateNextMatchFailure.AUTHENTICATION_REQUIRED,
         CreateNextMatchFailure.TOURNAMENT_NOT_FOUND,
         CreateNextMatchFailure.LIMIT_REACHED,
         CreateNextMatchFailure.REPOSITORY_REJECTED,

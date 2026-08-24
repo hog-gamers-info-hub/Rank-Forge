@@ -38,6 +38,15 @@ interface ScreenshotStorageUploader {
         matchId: String?,
         localFile: File?,
     ): ScreenshotStorageUploadResult
+
+    suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        localFile: File?,
+    ): ScreenshotStorageUploadResult = throw SecurityException(
+        "Owner-bound screenshot upload is not implemented",
+    )
 }
 
 @Singleton
@@ -46,6 +55,30 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
     private val clientProvider: SupabaseClientProvider,
 ) : ScreenshotStorageUploader {
     override suspend fun upload(
+        tournamentId: String?,
+        matchId: String?,
+        localFile: File?,
+    ): ScreenshotStorageUploadResult = uploadInternal(
+        expectedOwnerUserId = null,
+        tournamentId = tournamentId,
+        matchId = matchId,
+        localFile = localFile,
+    )
+
+    override suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        localFile: File?,
+    ): ScreenshotStorageUploadResult = uploadInternal(
+        expectedOwnerUserId = expectedOwnerUserId,
+        tournamentId = tournamentId,
+        matchId = matchId,
+        localFile = localFile,
+    )
+
+    private suspend fun uploadInternal(
+        expectedOwnerUserId: String?,
         tournamentId: String?,
         matchId: String?,
         localFile: File?,
@@ -71,6 +104,13 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
             ?: return ScreenshotStorageUploadResult.Failed(
                 ScreenshotStorageUploadFailure.MISSING_AUTH_SESSION,
             )
+        if (expectedOwnerUserId != null &&
+            (expectedOwnerUserId.isBlank() || userId != expectedOwnerUserId)
+        ) {
+            return ScreenshotStorageUploadResult.Failed(
+                ScreenshotStorageUploadFailure.AUTHORIZATION,
+            )
+        }
         val file = localFile
             ?: return ScreenshotStorageUploadResult.Failed(
                 ScreenshotStorageUploadFailure.MISSING_LOCAL_FILE,

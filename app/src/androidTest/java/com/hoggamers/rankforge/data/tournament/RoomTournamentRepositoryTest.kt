@@ -21,6 +21,10 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedMatchMutationResult
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
+import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterResult
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
@@ -79,21 +83,207 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryTest {
     @Test
+    fun legacyOwnerAssignmentIsConditionalAndChangesOnlyTheParentOwnerAndMirror() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-legacy-owner-assignment.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("legacy-a", TournamentStatus.DRAFT))
+            repository.saveTeamNames("legacy-a", mapOf(1 to "Legacy Team"))
+            repository.saveRoster(
+                "legacy-a",
+                1,
+                listOf(RosterPlayer("legacy-a", 1, "Legacy Player")),
+            )
+
+            val beforeTournament = database.tournamentDao().observeById("legacy-a").first()!!
+            val beforeSlots = database.teamSlotDao().observeByTournamentId("legacy-a").first()
+            val beforeRoster = database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first()
+            val beforeRevision = repository.readLocalRevisionState("legacy-a")
+            val beforeMirror = database.stateDao().readPayload()!!
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("legacy-a", "user-a").first().isEmpty())
+
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.Assigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-a", "user-a"),
+            )
+
+            assertEquals(beforeTournament.copy(ownerUserId = "user-a"), database.tournamentDao().observeById("legacy-a").first())
+            assertEquals(beforeSlots, database.teamSlotDao().observeByTournamentId("legacy-a").first())
+            assertEquals(beforeRoster, database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first())
+            assertEquals(beforeRevision, repository.readLocalRevisionState("legacy-a"))
+            assertTrue(beforeMirror.contains("\"ownerUserId\":null"))
+            assertTrue(database.stateDao().readPayload()!!.contains("\"ownerUserId\":\"user-a\""))
+            assertEquals(
+                beforeSlots,
+                repository.observeSlotsByTournamentIdAndOwner("legacy-a", "user-a").first(),
+            )
+
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-a", "user-b"),
+            )
+            assertEquals("user-a", database.tournamentDao().observeById("legacy-a").first()!!.ownerUserId)
+
+            repository.create(tournament("legacy-b", TournamentStatus.DRAFT))
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.Assigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-b", "user-b"),
+            )
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("legacy-b", "user-a"),
+            )
+            assertEquals("user-b", database.tournamentDao().observeById("legacy-b").first()!!.ownerUserId)
+            assertEquals(
+                LegacyTournamentOwnerAssignmentResult.NotUnassigned,
+                repository.assignLegacyTournamentOwnerIfUnassigned("missing", "user-a"),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerScopedSetupMutationsOnlyChangeOwnedTournamentAndRejectForeignAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-setup-mutations.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+
+            val rejectedIds = listOf("owner-b", "legacy")
+            val initialSlots = rejectedIds.associateWith { tournamentId ->
+                repository.observeSlotsByTournamentId(tournamentId).first()
+            }
+            val initialStatuses = rejectedIds.associateWith { tournamentId ->
+                repository.observeById(tournamentId).first()!!.status
+            }
+            val initialRevisions = rejectedIds.associateWith { tournamentId ->
+                repository.readLocalRevisionState(tournamentId)
+            }
+            val initialUpdatedAt = rejectedIds.associateWith { tournamentId ->
+                database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis
+            }
+
+            assertEquals(
+                OwnerScopedTournamentMutationResult.Saved,
+                repository.saveTeamNamesByOwner("owner-a", "user-a", mapOf(1 to "Owner A Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveTeamNamesByOwner("owner-b", "user-a", mapOf(1 to "Foreign Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveTeamNamesByOwner("legacy", "user-a", mapOf(1 to "Legacy Team")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.Saved,
+                repository.saveRosterByOwner(
+                    "owner-a",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("owner-a", 1, "Owner A Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveRosterByOwner(
+                    "owner-b",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("owner-b", 1, "Foreign Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveRosterByOwner(
+                    "legacy",
+                    "user-a",
+                    1,
+                    listOf(RosterPlayer("legacy", 1, "Legacy Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.TournamentNotFound,
+                repository.confirmTournamentByOwner("owner-b", "user-a"),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.TournamentNotFound,
+                repository.confirmTournamentByOwner("legacy", "user-a"),
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound,
+                repository.replaceConfirmedTournamentRosterByOwner(
+                    replacementCandidate("owner-b", "Foreign"),
+                    "user-a",
+                ),
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound,
+                repository.replaceConfirmedTournamentRosterByOwner(
+                    replacementCandidate("legacy", "Legacy"),
+                    "user-a",
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.Confirmed,
+                repository.confirmTournamentByOwner("owner-a", "user-a"),
+            )
+
+            assertEquals("Owner A Team", repository.observeSlotsByTournamentId("owner-a").first().first().teamName)
+            assertEquals(
+                listOf("Owner A Player"),
+                repository.observeRosterByTournamentAndSlot("owner-a", 1).first().map { it.displayName },
+            )
+            assertEquals(TournamentStatus.CONFIRMED, repository.observeById("owner-a").first()!!.status)
+            rejectedIds.forEach { tournamentId ->
+                assertEquals(initialSlots.getValue(tournamentId), repository.observeSlotsByTournamentId(tournamentId).first())
+                assertEquals(emptyList<RosterPlayer>(), repository.observeRosterByTournamentAndSlot(tournamentId, 1).first())
+                assertEquals(initialStatuses.getValue(tournamentId), repository.observeById(tournamentId).first()!!.status)
+                assertEquals(initialRevisions.getValue(tournamentId), repository.readLocalRevisionState(tournamentId))
+                assertEquals(
+                    initialUpdatedAt.getValue(tournamentId),
+                    database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis,
+                )
+            }
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun twelveTeamSlotsPersistThroughDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-slots-reopen.db"
         context.deleteDatabase(databaseName)
         val databases = mutableListOf<RankForgeDatabase>()
         try {
-            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
-            repository.create(tournament("tournament-1", TournamentStatus.DRAFT))
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("tournament-1", TournamentStatus.DRAFT, ownerUserId = "user-a"))
             assertEquals(12, repository.observeSlotsByTournamentId("tournament-1").first().size)
+            assertTrue(database.tournamentDao().observeById("tournament-1").first()!!.ownerUserId == "user-a")
+            assertTrue(database.stateDao().readPayload()!!.contains("\"ownerUserId\":\"user-a\""))
+            database.tournamentDao().deleteById("tournament-1")
             databases.last().close()
 
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
 
             assertEquals(12, reopenedRepository.observeSlotsByTournamentId("tournament-1").first().size)
+            assertEquals("user-a", reopenedRepository.observeById("tournament-1").first()!!.ownerUserId)
             assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("tournament-1").first().size)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -120,6 +310,319 @@ class RoomTournamentRepositoryTest {
                 tournament,
                 database.tournamentDao().observeById(tournament.id).first()!!.toDomain(),
             )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerScopedTournamentReadsExcludeOtherOwnersAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-reads.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+
+            assertEquals(
+                listOf("owner-a"),
+                database.tournamentDao().observeAllByOwner("user-a").first().map { it.id },
+            )
+            assertEquals(
+                listOf("owner-a"),
+                repository.observeAllByOwner("user-a").first().map { it.id },
+            )
+            assertEquals(
+                listOf("owner-b"),
+                repository.observeSummariesByOwner("user-b").first().map { it.tournament.id },
+            )
+            assertEquals(
+                "owner-a",
+                repository.observeByIdAndOwner("owner-a", "user-a").first()?.id,
+            )
+            assertEquals(null, repository.observeByIdAndOwner("owner-b", "user-a").first())
+            assertEquals(null, repository.observeByIdAndOwner("legacy", "user-a").first())
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerScopedChildReadsExcludeOtherOwnersAndLegacyRows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-child-reads.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            repository.create(tournament("owner-a", TournamentStatus.DRAFT, ownerUserId = "user-a"))
+            repository.create(tournament("owner-b", TournamentStatus.DRAFT, ownerUserId = "user-b"))
+            repository.create(tournament("legacy", TournamentStatus.DRAFT))
+            repository.saveTeamNames("owner-a", mapOf(1 to "A Team"))
+            repository.saveTeamNames("owner-b", mapOf(1 to "B Team"))
+            repository.saveTeamNames("legacy", mapOf(1 to "Legacy Team"))
+            repository.saveRoster("owner-a", 1, listOf(RosterPlayer("owner-a", 1, "A Player")))
+            repository.saveRoster("owner-b", 1, listOf(RosterPlayer("owner-b", 1, "B Player")))
+            repository.createDraftMatch(draftMatch("owner-a", "match-a", 1))
+            repository.createDraftMatch(draftMatch("owner-b", "match-b", 1))
+            repository.createDraftMatch(draftMatch("legacy", "match-legacy", 1))
+            repository.saveDraftMatchValue("owner-a", "match-a", 1, placementInput = "1", killsInput = "4")
+
+            assertEquals(
+                "A Team",
+                repository.observeSlotsByTournamentIdAndOwner("owner-a", "user-a").first().first().teamName,
+            )
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty())
+            assertTrue(repository.observeSlotsByTournamentIdAndOwner("legacy", "user-a").first().isEmpty())
+            assertEquals(
+                "A Player",
+                repository.observeRosterByTournamentAndSlotAndOwner("owner-a", 1, "user-a")
+                    .first().single().displayName,
+            )
+            assertTrue(
+                repository.observeRosterByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty(),
+            )
+            assertEquals(
+                "match-a",
+                repository.observeMatchesByTournamentIdAndOwner("owner-a", "user-a").first().single().id,
+            )
+            assertTrue(repository.observeMatchesByTournamentIdAndOwner("owner-b", "user-a").first().isEmpty())
+            assertEquals(
+                MatchDraftFieldValues("1", "4"),
+                repository.observeDraftMatchValuesByOwner("owner-a", "match-a", "user-a").first()[1],
+            )
+            assertTrue(
+                repository.observeDraftMatchValuesByOwner("owner-a", "match-b", "user-a").first().isEmpty(),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerScopedDraftMatchMutationsRejectForeignAndLegacyRowsWithoutChangingState() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-draft-match-mutations.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            listOf(
+                "owner-a" to "user-a",
+                "owner-b" to "user-b",
+                "legacy" to null,
+            ).forEach { (tournamentId, ownerUserId) ->
+                repository.create(tournament(tournamentId, TournamentStatus.DRAFT, ownerUserId = ownerUserId))
+                repository.saveTeamNames(tournamentId, mapOf(1 to "$tournamentId Team"))
+            }
+            repository.createDraftMatch(draftMatch("owner-a", "match-a", 1))
+            repository.createDraftMatch(draftMatch("owner-b", "match-b", 1))
+            repository.createDraftMatch(draftMatch("legacy", "match-legacy", 1))
+            repository.saveDraftMatchPlacements("match-b", listOf(MatchPlacement(1, 1)))
+            repository.saveDraftMatchKills("match-b", listOf(MatchKill(1, 3)))
+            repository.saveDraftMatchValue("owner-b", "match-b", 1, "1", "3")
+            repository.saveDraftMatchValue("legacy", "match-legacy", 1, "2", "4")
+
+            val rejectedTournamentIds = listOf("owner-b", "legacy")
+            val beforeMatches = rejectedTournamentIds.associateWith { tournamentId ->
+                repository.observeMatchesByTournamentId(tournamentId).first()
+            }
+            val beforeDraftValues = mapOf(
+                "owner-b" to repository.observeDraftMatchValues("owner-b", "match-b").first(),
+                "legacy" to repository.observeDraftMatchValues("legacy", "match-legacy").first(),
+            )
+            val beforeRevisions = rejectedTournamentIds.associateWith { tournamentId ->
+                repository.readLocalRevisionState(tournamentId)
+            }
+            val beforeUpdatedAt = rejectedTournamentIds.associateWith { tournamentId ->
+                database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis
+            }
+
+            assertEquals(
+                CreateMatchRepositoryResult.Created,
+                repository.createDraftMatchByOwner(draftMatch("owner-a", "match-a-2", 2), "user-a"),
+            )
+            assertEquals(
+                SaveMatchPlacementsRepositoryResult.Saved,
+                repository.saveDraftMatchPlacementsByOwner("match-a", "user-a", listOf(MatchPlacement(1, 1))),
+            )
+            assertEquals(
+                SaveMatchKillsRepositoryResult.Saved,
+                repository.saveDraftMatchKillsByOwner("match-a", "user-a", listOf(MatchKill(1, 5))),
+            )
+            assertEquals(
+                OwnerScopedMatchMutationResult.Saved,
+                repository.saveDraftMatchValueByOwner("owner-a", "match-a", "user-a", 1, "1", "5"),
+            )
+            assertEquals(
+                OwnerScopedMatchMutationResult.Saved,
+                repository.clearDraftMatchByOwner("owner-a", "match-a", "user-a"),
+            )
+            repository.saveDraftMatchValue("owner-a", "match-a", 1, "1", "5")
+            assertEquals(
+                OwnerScopedMatchMutationResult.Saved,
+                repository.clearMatchCorrectionDraftByOwner("owner-a", "match-a", "user-a"),
+            )
+
+            val beforeLegacyState = database.stateDao().readPayload()
+
+            rejectedTournamentIds.forEach { tournamentId ->
+                val matchId = if (tournamentId == "owner-b") "match-b" else "match-legacy"
+                assertTrue(repository.createDraftMatchByOwner(draftMatch(tournamentId, "$matchId-new", 2), "user-a") is CreateMatchRepositoryResult.Rejected)
+                assertEquals(
+                    SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.MATCH_NOT_FOUND),
+                    repository.saveDraftMatchPlacementsByOwner(matchId, "user-a", listOf(MatchPlacement(1, 2))),
+                )
+                assertEquals(
+                    SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.MATCH_NOT_FOUND),
+                    repository.saveDraftMatchKillsByOwner(matchId, "user-a", listOf(MatchKill(1, 9))),
+                )
+                assertEquals(
+                    OwnerScopedMatchMutationResult.MatchNotFound,
+                    repository.saveDraftMatchValueByOwner(tournamentId, matchId, "user-a", 1, "9", "9"),
+                )
+                assertEquals(
+                    OwnerScopedMatchMutationResult.MatchNotFound,
+                    repository.clearDraftMatchByOwner(tournamentId, matchId, "user-a"),
+                )
+                assertEquals(
+                    OwnerScopedMatchMutationResult.MatchNotFound,
+                    repository.clearMatchCorrectionDraftByOwner(tournamentId, matchId, "user-a"),
+                )
+            }
+            assertEquals(
+                OwnerScopedMatchMutationResult.MatchNotFound,
+                repository.saveDraftMatchValueByOwner("owner-a", "match-b", "user-a", 1, "9", "9"),
+            )
+
+            rejectedTournamentIds.forEach { tournamentId ->
+                val matchId = if (tournamentId == "owner-b") "match-b" else "match-legacy"
+                assertEquals(beforeMatches.getValue(tournamentId), repository.observeMatchesByTournamentId(tournamentId).first())
+                assertEquals(beforeDraftValues.getValue(tournamentId), repository.observeDraftMatchValues(tournamentId, matchId).first())
+                assertEquals(beforeRevisions.getValue(tournamentId), repository.readLocalRevisionState(tournamentId))
+                assertEquals(
+                    beforeUpdatedAt.getValue(tournamentId),
+                    database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis,
+                )
+            }
+            assertEquals(beforeLegacyState, database.stateDao().readPayload())
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerScopedFinalizationCorrectionAndRevisionRejectForeignAndLegacyRowsWithoutWrites() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-owner-scoped-finalization.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            listOf(
+                "owner-a" to "user-a",
+                "owner-a-ocr" to "user-a",
+                "owner-b" to "user-b",
+                "legacy" to null,
+            ).forEach { (id, owner) ->
+                repository.create(tournament(id, TournamentStatus.DRAFT, ownerUserId = owner))
+                nameTeams(repository, id, 1)
+                repository.createDraftMatch(draftMatch(id, "$id-match", 1))
+                repository.saveDraftMatchValue(id, "$id-match", 1, "1", "0")
+            }
+            val placements = listOf(MatchPlacement(1, 1))
+            val kills = listOf(MatchKill(1, 0))
+            val participants = listOf(MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 0))
+            val ownerFinalBefore = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            val ownerFinalization = repository.finalizeDraftMatchByOwner(
+                "owner-a-match",
+                "user-a",
+                placements,
+                kills,
+                participants,
+            ) as FinalizeMatchRepositoryResult.Finalized
+            val ownerFinalized = repository.observeMatchById("owner-a-match").first()!!
+            assertEquals(MatchStatus.FINALIZED, ownerFinalized.status)
+            assertEquals(placements, ownerFinalization.match.placements)
+            assertEquals(kills, ownerFinalized.kills)
+            assertEquals(participants, ownerFinalized.participantResults)
+            assertTrue(repository.observeDraftMatchValues("owner-a", "owner-a-match").first().isEmpty())
+            val ownerFinalAfter = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            assertEquals(ownerFinalBefore[2].let { (it as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision!! + 1 }, (ownerFinalAfter[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision)
+            assertTrue((ownerFinalAfter[3] as Long) >= (ownerFinalBefore[3] as Long))
+            assertTrue(ownerFinalAfter[4] != ownerFinalBefore[4])
+
+            val rejected = listOf("owner-b" to "owner-b-match", "legacy" to "legacy-match")
+            val before = rejected.associate { (id, matchId) -> id to ownerScopedMutationSnapshot(database, repository, id, matchId) }
+            assertEquals(
+                FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND),
+                repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+                    "owner-a",
+                    "owner-b-match",
+                    "user-a",
+                    placements,
+                    kills,
+                    participants,
+                    preservedEvidence("owner-a", "owner-b-match", (0 until 1).toList()),
+                ),
+            )
+            assertEquals(before.getValue("owner-b"), ownerScopedMutationSnapshot(database, repository, "owner-b", "owner-b-match"))
+            rejected.forEach { (id, matchId) ->
+                assertEquals(FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND), repository.finalizeDraftMatchByOwner(matchId, "user-a", placements, kills, participants))
+                assertEquals(FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND), repository.finalizeDraftMatchWithOcrEvidenceByOwner(id, matchId, "user-a", placements, kills, participants, preservedEvidence(id, matchId, (0 until 1).toList())))
+                assertEquals(OwnerScopedTournamentMutationResult.TournamentNotFound, repository.confirmCloudRevisionByOwner(id, "user-a", 99))
+                assertEquals(before.getValue(id), ownerScopedMutationSnapshot(database, repository, id, matchId))
+            }
+            assertEquals(OwnerScopedTournamentMutationResult.Saved, repository.confirmCloudRevisionByOwner("owner-a", "user-a", 99))
+            assertEquals(99, repository.readLocalRevisionState("owner-a").localRevision)
+            val correctedKills = listOf(MatchKill(1, 7))
+            val correctedParticipants = listOf(MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 1, 7))
+            val correctionBefore = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            val corrected = repository.submitMatchCorrectionByOwner("owner-a-match", "user-a", placements, correctedKills, correctedParticipants)
+                as SubmitMatchCorrectionRepositoryResult.Submitted
+            assertEquals(MatchStatus.FINALIZED, corrected.match.status)
+            assertEquals(correctedKills, corrected.match.kills)
+            assertEquals(correctedParticipants, corrected.match.participantResults)
+            val correctionAfter = ownerScopedMutationSnapshot(database, repository, "owner-a", "owner-a-match")
+            assertEquals((correctionBefore[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision!! + 1, (correctionAfter[2] as com.hoggamers.rankforge.domain.sync.LocalRevisionState).localRevision)
+            assertTrue(correctionAfter[4] != correctionBefore[4])
+
+            val ocrEvidence = preservedEvidence("owner-a-ocr", "owner-a-ocr-match", (0 until 1).toList())
+            assertTrue(
+                repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+                    "owner-a-ocr",
+                    "owner-a-ocr-match",
+                    "user-a",
+                    placements,
+                    kills,
+                    participants,
+                    ocrEvidence,
+                ) is FinalizeMatchRepositoryResult.Finalized,
+            )
+            val ocrFinalized = repository.observeMatchById("owner-a-ocr-match").first()!!
+            assertEquals(MatchStatus.FINALIZED, ocrFinalized.status)
+            assertEquals(placements, ocrFinalized.placements)
+            assertEquals(kills, ocrFinalized.kills)
+            assertEquals(participants, ocrFinalized.participantResults)
+            assertEquals(ocrEvidence, repository.readPreservedMatchOcrEvidence("owner-a-ocr", "owner-a-ocr-match"))
+
+            listOf("owner-b", "legacy").forEach { id ->
+                val matchId = "$id-match"
+                assertTrue(repository.finalizeDraftMatch(matchId, placements, kills, participants) is FinalizeMatchRepositoryResult.Finalized)
+                val snapshot = ownerScopedMutationSnapshot(database, repository, id, matchId)
+                assertEquals(SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND), repository.submitMatchCorrectionByOwner(matchId, "user-a", placements, correctedKills, correctedParticipants))
+                assertEquals(snapshot, ownerScopedMutationSnapshot(database, repository, id, matchId))
+            }
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -1045,6 +1548,7 @@ class RoomTournamentRepositoryTest {
 
             val backfilledTournament = repository.observeById("legacy-tournament").first { it != null }!!
             assertEquals("Legacy Cup", backfilledTournament.name)
+            assertEquals(null, backfilledTournament.ownerUserId)
             assertEquals(
                 listOf(backfilledTournament),
                 repository.observeAll().first(),
@@ -1065,6 +1569,7 @@ class RoomTournamentRepositoryTest {
             val reopenedDatabase = openDatabase(context, databaseName, databases)
             val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
             assertEquals("Legacy Cup", reopenedRepository.observeById("legacy-tournament").first { it != null }!!.name)
+            assertEquals(null, reopenedRepository.observeById("legacy-tournament").first { it != null }!!.ownerUserId)
             assertEquals(1, reopenedDatabase.tournamentDao().observeAll().first().size)
             assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("legacy-tournament").first().size)
             assertEquals(2, reopenedDatabase.rosterPlayerDao().observeByTournamentAndSlot("legacy-tournament", 1).first().size)
@@ -2209,6 +2714,7 @@ class RoomTournamentRepositoryTest {
         id: String,
         status: TournamentStatus,
         date: LocalDate = LocalDate.of(2026, 7, 24),
+        ownerUserId: String? = null,
     ) = Tournament(
         id = id,
         name = "Summer Cup",
@@ -2216,6 +2722,7 @@ class RoomTournamentRepositoryTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = status,
+        ownerUserId = ownerUserId,
     )
 
     private fun legacyPayload(
@@ -2356,6 +2863,20 @@ class RoomTournamentRepositoryTest {
             )
         },
         correctionSnapshots = snapshots,
+    )
+
+    private suspend fun ownerScopedMutationSnapshot(
+        database: RankForgeDatabase,
+        repository: RoomTournamentRepository,
+        tournamentId: String,
+        matchId: String,
+    ): List<Any?> = listOf(
+        repository.observeMatchById(matchId).first(),
+        repository.observeDraftMatchValues(tournamentId, matchId).first(),
+        repository.readLocalRevisionState(tournamentId),
+        database.tournamentDao().observeById(tournamentId).first()!!.lastUpdatedEpochMillis,
+        database.stateDao().readPayload(),
+        repository.readPreservedMatchOcrEvidence(tournamentId, matchId),
     )
 
     private suspend fun nameTeams(

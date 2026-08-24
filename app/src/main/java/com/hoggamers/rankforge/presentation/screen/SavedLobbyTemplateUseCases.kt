@@ -14,6 +14,9 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import java.io.File
 import java.time.Clock
 import java.util.UUID
@@ -21,21 +24,25 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 sealed interface SaveLobbyTemplateResult {
     data object Saved : SaveLobbyTemplateResult
     data object NotReady : SaveLobbyTemplateResult
+    data object AuthenticationRequired : SaveLobbyTemplateResult
     data object Failed : SaveLobbyTemplateResult
 }
 
 sealed interface UnsaveLobbyTemplateResult {
     data object Unsaved : UnsaveLobbyTemplateResult
+    data object AuthenticationRequired : UnsaveLobbyTemplateResult
     data object Failed : UnsaveLobbyTemplateResult
 }
 
 sealed interface ApplyLobbyTemplateResult {
     data object Applied : ApplyLobbyTemplateResult
     data object Unavailable : ApplyLobbyTemplateResult
+    data object AuthenticationRequired : ApplyLobbyTemplateResult
     data object Failed : ApplyLobbyTemplateResult
 }
 
@@ -45,6 +52,13 @@ fun interface ApplyLobbyTemplateAction {
 
 fun interface MatchLobbyScreenshotUploadCheckpointAction {
     suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult
+
+    suspend fun run(
+        identity: MatchLobbyScreenshotIdentity,
+        expectedOwnerUserId: String,
+    ): MatchLobbyScreenshotUploadCheckpointResult = throw SecurityException(
+        "Expected screenshot owner is required.",
+    )
 }
 
 class SaveLobbyTemplateUseCase @Inject constructor(
@@ -52,26 +66,37 @@ class SaveLobbyTemplateUseCase @Inject constructor(
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
+    private val authRepository: AuthRepository,
+    private val tournamentRepository: TournamentRepository,
 ) {
     suspend operator fun invoke(
         tournamentId: String,
         sourceMatchId: String,
     ): SaveLobbyTemplateResult {
+        val ownerUserId = currentOwnerUserId() ?: return SaveLobbyTemplateResult.AuthenticationRequired
+        if (tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() == null) {
+            return SaveLobbyTemplateResult.Failed
+        }
+        val sourceMatch = tournamentRepository.observeMatchByIdAndOwner(sourceMatchId, ownerUserId).first()
+        if (sourceMatch == null || sourceMatch.tournamentId != tournamentId) {
+            return SaveLobbyTemplateResult.Failed
+        }
         val previousTemplates = try {
-            templateRepository.getByTournamentId(tournamentId)
+            templateRepository.getByTournamentIdAndOwner(tournamentId, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             return SaveLobbyTemplateResult.Failed
         }
         val assets = (1..3).mapNotNull { index ->
-            assetRepository.getByIdentity(
+            assetRepository.getByIdentityAndOwner(
                 MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, index),
+                ownerUserId,
             )?.let { asset -> index to asset }
         }
         if (assets.isEmpty()) return SaveLobbyTemplateResult.NotReady
         val prepared = assets.map { (index, asset) ->
-            prepareAsset(tournamentId, sourceMatchId, index, asset)
+            prepareAsset(tournamentId, sourceMatchId, ownerUserId, index, asset)
         }
         if (prepared.any { it == null }) return SaveLobbyTemplateResult.NotReady
         val validAssets = prepared.filterNotNull()
@@ -107,7 +132,7 @@ class SaveLobbyTemplateUseCase @Inject constructor(
                 snapshots += TournamentLobbyTemplateAssetEntity(
                     tournamentId = tournamentId,
                     lobbyScreenshotIndex = preparedAsset.index,
-                    ownerUserId = preparedAsset.asset.ownerUserId,
+                    ownerUserId = ownerUserId,
                     localRelativePath = relativePath,
                     fileExtension = preparedAsset.asset.fileExtension,
                     mimeType = preparedAsset.asset.mimeType,
@@ -134,8 +159,11 @@ class SaveLobbyTemplateUseCase @Inject constructor(
             return SaveLobbyTemplateResult.Failed
         }
         val replacementResult = try {
-            templateRepository.replaceForTournament(tournamentId, snapshots)
-            SaveLobbyTemplateResult.Saved
+            if (templateRepository.replaceForTournamentByOwner(tournamentId, ownerUserId, snapshots)) {
+                SaveLobbyTemplateResult.Saved
+            } else {
+                SaveLobbyTemplateResult.Failed
+            }
         } catch (cancellation: CancellationException) {
             cleanupTemplateGenerationBestEffort(tournamentId, generation)
             throw cancellation
@@ -175,14 +203,26 @@ class SaveLobbyTemplateUseCase @Inject constructor(
         }
     }
 
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
+    }
+
     private fun prepareAsset(
         tournamentId: String,
         sourceMatchId: String,
+        ownerUserId: String,
         index: Int,
         asset: MatchLobbyScreenshotAssetEntity,
     ): PreparedAsset? {
         val identity = MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, index)
-        if (asset.identityOrNull() != identity || asset.ownerUserId.isBlank() || asset.sha256.isBlank()) return null
+        if (asset.identityOrNull() != identity || asset.ownerUserId != ownerUserId || asset.sha256.isBlank()) return null
         val file = localImagePreserver.resolveRelativePath(asset.localRelativePath)
             ?: return null
         if (!runCatching { file.isFile && file.canRead() && file.length() > 0L }.getOrDefault(false)) return null
@@ -228,10 +268,16 @@ class SaveLobbyTemplateUseCase @Inject constructor(
 class UnsaveLobbyTemplateUseCase @Inject constructor(
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
+    private val authRepository: AuthRepository,
+    private val tournamentRepository: TournamentRepository,
 ) {
     suspend operator fun invoke(tournamentId: String): UnsaveLobbyTemplateResult {
+        val ownerUserId = currentOwnerUserId() ?: return UnsaveLobbyTemplateResult.AuthenticationRequired
+        if (tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() == null) {
+            return UnsaveLobbyTemplateResult.Failed
+        }
         val templates = try {
-            templateRepository.getByTournamentId(tournamentId)
+            templateRepository.getByTournamentIdAndOwner(tournamentId, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -244,7 +290,9 @@ class UnsaveLobbyTemplateUseCase @Inject constructor(
             )
         }.distinct()
         try {
-            templateRepository.deleteByTournamentId(tournamentId)
+            if (!templateRepository.deleteByTournamentIdAndOwner(tournamentId, ownerUserId)) {
+                return UnsaveLobbyTemplateResult.Failed
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -262,6 +310,17 @@ class UnsaveLobbyTemplateUseCase @Inject constructor(
             }
         }
         return UnsaveLobbyTemplateResult.Unsaved
+    }
+
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 }
 
@@ -297,14 +356,44 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
-    private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val clock: Clock,
+    private val authRepository: AuthRepository,
+    private val tournamentRepository: TournamentRepository,
 ) : ApplyLobbyTemplateAction {
     override suspend operator fun invoke(
         tournamentId: String,
         newMatchId: String,
     ): ApplyLobbyTemplateResult {
-        val templates = templateRepository.getByTournamentId(tournamentId)
+        val ownerUserId = currentOwnerUserId() ?: return ApplyLobbyTemplateResult.AuthenticationRequired
+        if (tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() == null) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
+        val targetMatch = tournamentRepository.observeMatchByIdAndOwner(newMatchId, ownerUserId).first()
+        if (targetMatch == null || targetMatch.tournamentId != tournamentId) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
+        val templates = templateRepository.getByTournamentIdAndOwner(tournamentId, ownerUserId)
+        if (templates.isEmpty() || templates.any { it.tournamentId != tournamentId }) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
+        val sourceMatchId = templates.first().sourceMatchId
+        if (sourceMatchId.isBlank() || templates.any { it.sourceMatchId != sourceMatchId || it.tournamentId != tournamentId }) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
+        val sourceMatch = tournamentRepository.observeMatchByIdAndOwner(sourceMatchId, ownerUserId).first()
+        if (sourceMatch == null || sourceMatch.tournamentId != tournamentId) {
+            return ApplyLobbyTemplateResult.Unavailable
+        }
+        val sourceAssets = templates.map { template ->
+            assetRepository.getByIdentityAndOwner(
+                MatchLobbyScreenshotIdentity(tournamentId, sourceMatchId, template.lobbyScreenshotIndex),
+                ownerUserId,
+            )
+        }
+        if (sourceAssets.any { it == null } || sourceAssets.zip(templates).any { (asset, template) ->
+                asset!!.sha256 != template.sha256
+            }
+        ) return ApplyLobbyTemplateResult.Unavailable
         if (!isCompleteLobbyTemplate(tournamentId, templates, localImagePreserver)) {
             return ApplyLobbyTemplateResult.Unavailable
         }
@@ -334,8 +423,6 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
             copied += template to file
         }
         val now = clock.millis()
-        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
-            ?: templates.first().ownerUserId
         val savedIndices = mutableListOf<Int>()
         copied.forEach { (template, file) ->
             val identity = MatchLobbyScreenshotIdentity(tournamentId, newMatchId, template.lobbyScreenshotIndex)
@@ -373,10 +460,11 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
                 uploadedAt = null,
                 revision = 1L,
             )
-            if (assetRepository.saveOrReplace(asset) !is MatchLobbyScreenshotAssetSaveResult.Saved) {
+            if (assetRepository.saveOrReplaceByOwner(asset, ownerUserId) !is MatchLobbyScreenshotAssetSaveResult.Saved) {
                 savedIndices.forEach { savedIndex ->
-                    assetRepository.deleteByIdentity(
+                    assetRepository.deleteByIdentityAndOwner(
                         MatchLobbyScreenshotIdentity(tournamentId, newMatchId, savedIndex),
+                        ownerUserId,
                     )
                 }
                 copied.forEach { (_, copiedFile) ->
@@ -392,6 +480,17 @@ class ApplyLobbyTemplateToMatchUseCase @Inject constructor(
             if (asset.identityOrNull() != identity) return ApplyLobbyTemplateResult.Failed
         }
         return ApplyLobbyTemplateResult.Applied
+    }
+
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 
 }

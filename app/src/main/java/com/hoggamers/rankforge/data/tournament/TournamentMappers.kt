@@ -40,6 +40,7 @@ internal fun Tournament.toEntity(
     status = status.name,
     creationOrder = creationOrder,
     lastUpdatedEpochMillis = lastUpdatedEpochMillis,
+    ownerUserId = ownerUserId,
 )
 
 internal fun TournamentEntity.toDomain(): Tournament = Tournament(
@@ -49,6 +50,7 @@ internal fun TournamentEntity.toDomain(): Tournament = Tournament(
     organizerName = organizerName,
     organizerContactNumber = organizerContactNumber,
     status = TournamentStatus.valueOf(status),
+    ownerUserId = ownerUserId,
 )
 
 internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = TournamentSummary(
@@ -59,6 +61,7 @@ internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = Tournam
         organizerName = organizerName,
         organizerContactNumber = organizerContactNumber,
         status = TournamentStatus.valueOf(status),
+        ownerUserId = ownerUserId,
     ),
     totalTeams = totalTeams,
     totalMatches = totalMatches,

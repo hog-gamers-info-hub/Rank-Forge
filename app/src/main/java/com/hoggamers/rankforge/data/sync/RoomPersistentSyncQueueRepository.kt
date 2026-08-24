@@ -25,32 +25,39 @@ import kotlinx.coroutines.sync.withLock
     constructor(dao: SyncQueueDao) : this(dao, NoOpDeletionIntentRepository)
     private val enqueueMutex = Mutex()
     override fun observeAll(): Flow<List<SyncQueueEntry>> = dao.observeAll().map { entries -> entries.map { it.toDomain() } }
-    override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?): SyncQueueEntry = enqueueMutex.withLock {
-        if (tournamentId != null && deletionIntentRepository.isBlocking(tournamentId)) {
+    override fun observePendingByOwner(ownerUserId: String): Flow<List<SyncQueueEntry>> {
+        require(ownerUserId.isNotBlank())
+        return dao.observeByOwner(ownerUserId).map { entries -> entries.map { it.toDomain() } }
+    }
+    override suspend fun enqueue(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?): SyncQueueEntry = enqueueMutex.withLock {
+        require(ownerUserId.isNotBlank())
+        if (tournamentId != null && deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, ownerUserId)) {
             throw DeletionBlockedException(tournamentId)
         }
         val identity = SyncOperationIdentity.from(operationType, tournamentId)
-        val existing = dao.findOldestUnresolved(identity.operationType.name, identity.tournamentId)
+        val existing = dao.findOldestUnresolvedByOwner(ownerUserId, identity.operationType.name, identity.tournamentId)
         if (existing != null) {
-            dao.updateStatus(existing.id, status.name, failureCategory)
+            dao.updateStatusByIdAndOwner(existing.id, ownerUserId, status.name, failureCategory)
             return@withLock existing.copy(status = status.name, failureCategory = failureCategory).toDomain()
         }
-        val entry = SyncQueueEntry(UUID.randomUUID().toString(), operationType, tournamentId, System.currentTimeMillis(), status, failureCategory, 0)
+        val entry = SyncQueueEntry(UUID.randomUUID().toString(), operationType, tournamentId, System.currentTimeMillis(), status, failureCategory, 0, ownerUserId)
         dao.insert(entry.toEntity()); return entry
     }
-    override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) {
+    override suspend fun completeOldestUnresolvedByOwner(ownerUserId: String, operationType: SyncQueueOperationType, tournamentId: String?) {
+        require(ownerUserId.isNotBlank())
         enqueueMutex.withLock {
             val identity = SyncOperationIdentity.from(operationType, tournamentId)
-            dao.findOldestUnresolved(identity.operationType.name, identity.tournamentId)?.let { entry ->
-                dao.updateStatus(entry.id, SyncQueueStatus.COMPLETED.name, null)
+            dao.findOldestUnresolvedByOwner(ownerUserId, identity.operationType.name, identity.tournamentId)?.let { entry ->
+                dao.updateStatusByIdAndOwner(entry.id, ownerUserId, SyncQueueStatus.COMPLETED.name, null)
             }
         }
     }
-    override suspend fun incrementAttemptCount(id: String) { dao.incrementAttemptCount(id) }
-    override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) { dao.updateStatus(id, status.name, failureCategory) }
-    override suspend fun markCompleted(id: String) { dao.updateStatus(id, SyncQueueStatus.COMPLETED.name, null) }
-    override suspend fun remove(id: String) { dao.delete(id) }
+    override suspend fun incrementAttemptCountByOwner(id: String, ownerUserId: String) { dao.incrementAttemptCountByIdAndOwner(id, ownerUserId) }
+    override suspend fun updateRetryFailureByOwner(id: String, ownerUserId: String, status: SyncQueueStatus, failureCategory: String?) { dao.updateStatusByIdAndOwner(id, ownerUserId, status.name, failureCategory) }
+    override suspend fun markCompletedByOwner(id: String, ownerUserId: String) { dao.updateStatusByIdAndOwner(id, ownerUserId, SyncQueueStatus.COMPLETED.name, null) }
+    override suspend fun removeByOwner(id: String, ownerUserId: String) { dao.deleteByIdAndOwner(id, ownerUserId) }
     override suspend fun purgeByTournamentId(tournamentId: String) { dao.deleteByTournamentId(tournamentId) }
+    override suspend fun purgeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String) { dao.deleteByTournamentIdAndOwner(tournamentId, ownerUserId) }
 }
-private fun SyncQueueEntity.toDomain() = SyncQueueEntry(id, SyncQueueOperationType.valueOf(operationType), tournamentId, createdAtEpochMillis, SyncQueueStatus.valueOf(status), failureCategory, attemptCount)
-private fun SyncQueueEntry.toEntity() = SyncQueueEntity(id, operationType.name, tournamentId, createdAtEpochMillis, status.name, failureCategory, attemptCount)
+private fun SyncQueueEntity.toDomain() = SyncQueueEntry(id, SyncQueueOperationType.valueOf(operationType), tournamentId, createdAtEpochMillis, SyncQueueStatus.valueOf(status), failureCategory, attemptCount, ownerUserId)
+private fun SyncQueueEntry.toEntity() = SyncQueueEntity(id, operationType.name, tournamentId, createdAtEpochMillis, status.name, failureCategory, attemptCount, ownerUserId)

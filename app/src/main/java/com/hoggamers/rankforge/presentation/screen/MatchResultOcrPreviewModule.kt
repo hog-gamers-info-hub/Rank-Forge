@@ -30,16 +30,19 @@ object MatchResultOcrPreviewModule {
         assetRepository: MatchResultScreenshotAssetRepository,
         cacheRepository: MatchResultOcrCacheRepository,
         localImagePreserver: LocalImagePreserver,
+        screenshotOwnerProvider: ScreenshotOwnerProvider,
     ): MatchResultOcrPreviewRunner {
         val delegate = AndroidMatchResultOcrPreviewProcessor(
             assetRepository = assetRepository,
             localFileResolver = MatchResultOcrPreviewLocalFileResolver(
                 localImagePreserver::resolveRelativePath,
             ),
+            screenshotOwnerProvider = screenshotOwnerProvider,
         )
         return CachingMatchResultOcrPreviewRunner(
             assetRepository = assetRepository,
             cacheRepository = cacheRepository,
+            screenshotOwnerProvider = screenshotOwnerProvider,
             delegate = delegate,
         )
     }

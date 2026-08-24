@@ -29,34 +29,39 @@ class DeleteTournamentUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(tournamentId: String): DeleteTournamentResult {
         val ownerUserId = currentOwnerUserId() ?: return DeleteTournamentResult.AuthenticationRequired
-        val existingIntent = try {
-            deletionIntentRepository.read(DeletionTargetType.TOURNAMENT, tournamentId)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return DeleteTournamentResult.PendingSyncPreparationFailed
-        }
-        if (existingIntent != null && existingIntent.ownerUserId != ownerUserId) {
-            return DeleteTournamentResult.AuthenticationRequired
-        }
-        if (existingIntent?.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
-            return completePendingLocalCleanup(tournamentId)
-        }
         val tournament = try {
-            tournamentRepository.observeById(tournamentId).first()
+            tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             return DeleteTournamentResult.TargetNotFound
         }
-
+        val existingIntent = try {
+            deletionIntentRepository.findByTargetAndOwner(
+                DeletionTargetType.TOURNAMENT,
+                tournamentId,
+                ownerUserId,
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return DeleteTournamentResult.PendingSyncPreparationFailed
+        }
+        if (existingIntent?.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+            return completePendingLocalCleanup(tournamentId, ownerUserId)
+        }
         if (existingIntent != null && tournament == null) {
-            deletionIntentRepository.clear(DeletionTargetType.TOURNAMENT, tournamentId)
+            deletionIntentRepository.clearByTargetAndOwner(
+                DeletionTargetType.TOURNAMENT,
+                tournamentId,
+                ownerUserId,
+            )
             return DeleteTournamentResult.Success
         }
         if (tournament == null) return DeleteTournamentResult.TargetNotFound
-        if (existingIntent == null) try {
-            deletionIntentRepository.start(
+        if (existingIntent == null) {
+            val started = try {
+                deletionIntentRepository.startIfAbsent(
                 DeletionIntent(
                     targetType = DeletionTargetType.TOURNAMENT,
                     targetId = tournament.id,
@@ -66,14 +71,33 @@ class DeleteTournamentUseCase @Inject constructor(
                     updatedAtEpochMillis = System.currentTimeMillis(),
                 ),
             )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return DeleteTournamentResult.PendingSyncPreparationFailed
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                return DeleteTournamentResult.PendingSyncPreparationFailed
+            }
+            if (!started) {
+                val reread = try {
+                    deletionIntentRepository.findByTargetAndOwner(
+                        DeletionTargetType.TOURNAMENT,
+                        tournamentId,
+                        ownerUserId,
+                    )
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    return DeleteTournamentResult.PendingSyncPreparationFailed
+                }
+                if (reread == null) return DeleteTournamentResult.TargetNotFound
+                if (reread.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+                    return completePendingLocalCleanup(tournamentId, ownerUserId)
+                }
+            }
         }
-        if (!purgeQueue(tournament.id)) return DeleteTournamentResult.PendingSyncPreparationFailed
+        if (!purgeQueue(tournament.id, ownerUserId)) return DeleteTournamentResult.PendingSyncPreparationFailed
         val matchIds = try {
-            tournamentRepository.observeMatchesByTournamentId(tournament.id).first().map { it.id }.toSet()
+            tournamentRepository.observeMatchesByTournamentIdAndOwner(tournament.id, ownerUserId)
+                .first().map { it.id }.toSet()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -89,32 +113,50 @@ class DeleteTournamentUseCase @Inject constructor(
             is CloudDeletionStageResult.Failed -> return DeleteTournamentResult.RemoteDeletionFailed(result.category)
         }
         try {
-            deletionIntentRepository.markRemoteDeleted(DeletionTargetType.TOURNAMENT, tournament.id)
+            if (!deletionIntentRepository.markRemoteDeletedByTargetAndOwner(
+                    DeletionTargetType.TOURNAMENT,
+                    tournament.id,
+                    ownerUserId,
+                )
+            ) return DeleteTournamentResult.TargetNotFound
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             return DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
         }
-        return completePendingLocalCleanup(tournament.id)
+        return completePendingLocalCleanup(tournament.id, ownerUserId)
     }
 
     /** Completes local cleanup after a prior RemoteDeletedLocalCleanupFailed result. */
     suspend fun retryLocalCleanup(tournamentId: String): DeleteTournamentResult {
         val ownerUserId = currentOwnerUserId() ?: return DeleteTournamentResult.AuthenticationRequired
-        val intent = deletionIntentRepository.read(DeletionTargetType.TOURNAMENT, tournamentId)
-        if (intent?.ownerUserId != ownerUserId ||
-            intent.phase != DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
-        ) {
-            return DeleteTournamentResult.RemoteDeletionFailed(CloudDeletionFailureCategory.AUTHORIZATION)
+        val intent = deletionIntentRepository.findByTargetAndOwner(
+            DeletionTargetType.TOURNAMENT,
+            tournamentId,
+            ownerUserId,
+        ) ?: return DeleteTournamentResult.TargetNotFound
+        if (intent.phase != DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+            return DeleteTournamentResult.TargetNotFound
         }
-        return completePendingLocalCleanup(tournamentId)
+        return completePendingLocalCleanup(tournamentId, ownerUserId)
     }
 
-    private suspend fun completePendingLocalCleanup(tournamentId: String): DeleteTournamentResult {
-        val result = localResult(localDeletionRepository.deleteTournamentLocally(tournamentId), missingIsSuccess = true)
+    private suspend fun completePendingLocalCleanup(
+        tournamentId: String,
+        ownerUserId: String,
+    ): DeleteTournamentResult {
+        val result = localResult(
+            localDeletionRepository.deleteTournamentLocallyByOwner(tournamentId, ownerUserId),
+            missingIsSuccess = true,
+        )
         if (result == DeleteTournamentResult.Success) {
             try {
-                deletionIntentRepository.clear(DeletionTargetType.TOURNAMENT, tournamentId)
+                if (!deletionIntentRepository.clearByTargetAndOwner(
+                        DeletionTargetType.TOURNAMENT,
+                        tournamentId,
+                        ownerUserId,
+                    )
+                ) return DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -133,8 +175,8 @@ class DeleteTournamentUseCase @Inject constructor(
         null
     }
 
-    private suspend fun purgeQueue(tournamentId: String): Boolean = try {
-        queueRepository.purgeByTournamentId(tournamentId)
+    private suspend fun purgeQueue(tournamentId: String, ownerUserId: String): Boolean = try {
+        queueRepository.purgeByTournamentIdAndOwner(tournamentId, ownerUserId)
         true
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -145,6 +187,7 @@ class DeleteTournamentUseCase @Inject constructor(
     private fun localResult(result: LocalDeletionResult, missingIsSuccess: Boolean = false): DeleteTournamentResult = when (result) {
         LocalDeletionResult.Deleted -> DeleteTournamentResult.Success
         LocalDeletionResult.NotFound -> if (missingIsSuccess) DeleteTournamentResult.Success else DeleteTournamentResult.TargetNotFound
+        LocalDeletionResult.CleanupClaimLost -> DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
         LocalDeletionResult.FileCleanupFailed -> DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
     }
 }

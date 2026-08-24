@@ -106,6 +106,7 @@ class TournamentStandingsScreenTest {
     ) = TournamentStandingRowUiState(
         displayOrder = order,
         teamSlotNumber = slot,
+        teamName = null,
         totalPoints = 19,
         totalPositionPoints = 9,
         totalKillPoints = 10,

@@ -1,5 +1,9 @@
 package com.hoggamers.rankforge.domain.sync
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
+import java.util.concurrent.CancellationException
+
 class SyncQueueRetryEligibilityPolicy {
     fun isEligible(entry: SyncQueueEntry, hasAuthenticatedSession: Boolean): Boolean =
         if (entry.status == SyncQueueStatus.FAILED_CONFLICT) {
@@ -27,6 +31,8 @@ interface SyncQueueEntryRetryExecutor {
 }
 
 sealed interface SyncQueueRetryOutcome {
+    /** The authentication identity changed; leave the selected row pending for its owner. */
+    data object Skipped : SyncQueueRetryOutcome
     data object Success : SyncQueueRetryOutcome
     data class Failure(
         val status: SyncQueueStatus,
@@ -37,29 +43,51 @@ sealed interface SyncQueueRetryOutcome {
 class ForegroundSyncQueueRetryCoordinator(
     private val repository: PersistentSyncQueueRepository,
     private val executor: SyncQueueEntryRetryExecutor,
+    private val authRepository: AuthRepository,
     private val eligibilityPolicy: SyncQueueRetryEligibilityPolicy = SyncQueueRetryEligibilityPolicy(),
 ) {
     suspend fun retryEligible(
         entries: Iterable<SyncQueueEntry>,
-        hasAuthenticatedSession: Boolean,
+        ownerUserId: String,
     ): List<SyncQueueEntry> = entries
-        .filter { eligibilityPolicy.isEligible(it, hasAuthenticatedSession) }
+        .filter { it.ownerUserId == ownerUserId }
+        .filter { eligibilityPolicy.isEligible(it, hasAuthenticatedSession = true) }
         .groupBy { SyncOperationIdentity.from(it.operationType, it.tournamentId) }
         .values
         .map { duplicates ->
             duplicates.minWith(compareBy<SyncQueueEntry> { it.createdAtEpochMillis }.thenBy { it.id })
         }
         .map { entry ->
-        repository.incrementAttemptCount(entry.id)
-        val attemptedEntry = entry.copy(attemptCount = entry.attemptCount + 1)
-        when (val outcome = executor.execute(attemptedEntry)) {
-            SyncQueueRetryOutcome.Success -> repository.markCompleted(entry.id)
-            is SyncQueueRetryOutcome.Failure -> repository.updateRetryFailure(
-                id = entry.id,
-                status = outcome.status,
-                failureCategory = outcome.failureCategory,
-            )
+            if (!authRepository.isSignedInAs(ownerUserId)) return@map null
+            val attemptedEntry = entry.copy(attemptCount = entry.attemptCount + 1)
+            val outcome = try {
+                executor.execute(attemptedEntry)
+            } catch (cancellation: CancellationException) {
+                if (authRepository.isSignedInAs(ownerUserId)) {
+                    repository.incrementAttemptCountByOwner(entry.id, ownerUserId)
+                }
+                throw cancellation
+            } catch (failure: Throwable) {
+                if (authRepository.isSignedInAs(ownerUserId)) {
+                    repository.incrementAttemptCountByOwner(entry.id, ownerUserId)
+                }
+                throw failure
+            }
+            if (!authRepository.isSignedInAs(ownerUserId) || outcome == SyncQueueRetryOutcome.Skipped) {
+                return@map null
+            }
+            repository.incrementAttemptCountByOwner(entry.id, ownerUserId)
+            when (outcome) {
+                SyncQueueRetryOutcome.Skipped -> Unit
+                SyncQueueRetryOutcome.Success -> repository.markCompletedByOwner(entry.id, ownerUserId)
+                is SyncQueueRetryOutcome.Failure -> repository.updateRetryFailureByOwner(
+                    id = entry.id,
+                    ownerUserId = ownerUserId,
+                    status = outcome.status,
+                    failureCategory = outcome.failureCategory,
+                )
+            }
+            attemptedEntry
         }
-        attemptedEntry
-        }
+        .filterNotNull()
 }

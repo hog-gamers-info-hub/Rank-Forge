@@ -42,6 +42,15 @@ interface MatchLobbyScreenshotStorageUploader {
         lobbyScreenshotIndex: Int?,
         localFile: File?,
     ): MatchLobbyScreenshotStorageUploadResult
+
+    suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        lobbyScreenshotIndex: Int?,
+        localFile: File?,
+    ): MatchLobbyScreenshotStorageUploadResult =
+        throw SecurityException("Expected screenshot owner is required.")
 }
 
 @Singleton
@@ -73,6 +82,30 @@ class SupabaseMatchLobbyScreenshotStorageUploader internal constructor(
         lobbyScreenshotIndex: Int?,
         localFile: File?,
     ): MatchLobbyScreenshotStorageUploadResult {
+        return uploadInternal(null, tournamentId, matchId, lobbyScreenshotIndex, localFile)
+    }
+
+    override suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        lobbyScreenshotIndex: Int?,
+        localFile: File?,
+    ): MatchLobbyScreenshotStorageUploadResult = uploadInternal(
+        expectedOwnerUserId,
+        tournamentId,
+        matchId,
+        lobbyScreenshotIndex,
+        localFile,
+    )
+
+    private suspend fun uploadInternal(
+        expectedOwnerUserId: String?,
+        tournamentId: String?,
+        matchId: String?,
+        lobbyScreenshotIndex: Int?,
+        localFile: File?,
+    ): MatchLobbyScreenshotStorageUploadResult {
         val normalizedTournamentId = tournamentId?.takeIf { it.isNotBlank() }
             ?: return failed(MatchLobbyScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID)
         val normalizedMatchId = matchId?.takeIf { it.isNotBlank() }
@@ -82,6 +115,9 @@ class SupabaseMatchLobbyScreenshotStorageUploader internal constructor(
         if (!isConfigured()) return failed(MatchLobbyScreenshotStorageUploadFailure.UPLOAD_FAILED)
         val userId = currentUserId()
             ?: return failed(MatchLobbyScreenshotStorageUploadFailure.MISSING_AUTH_SESSION)
+        if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || userId != expectedOwnerUserId)) {
+            return failed(MatchLobbyScreenshotStorageUploadFailure.AUTHORIZATION)
+        }
         val file = localFile ?: return failed(MatchLobbyScreenshotStorageUploadFailure.MISSING_LOCAL_FILE)
         val readable = runCatching { file.isFile && file.canRead() && file.length() > 0L }.getOrDefault(false)
         if (!readable) return failed(MatchLobbyScreenshotStorageUploadFailure.LOCAL_FILE_READ_FAILED)

@@ -73,6 +73,7 @@ import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCas
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
+import com.hoggamers.rankforge.domain.auth.AuthRepository
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -172,6 +173,8 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_14_15,
         RankForgeDatabase.MIGRATION_15_16,
         RankForgeDatabase.MIGRATION_16_17,
+        RankForgeDatabase.MIGRATION_17_18,
+        RankForgeDatabase.MIGRATION_18_19,
     ).build()
 
     @Provides
@@ -208,7 +211,8 @@ object TournamentDataProvidersModule {
         dao: MatchResultOcrCacheDao,
         codec: MatchResultOcrCacheCodec,
         clock: Clock,
-    ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock)
+        database: RankForgeDatabase,
+    ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock, database)
 
     @Provides
     @Singleton
@@ -221,7 +225,8 @@ object TournamentDataProvidersModule {
         dao: MatchLobbyOcrCacheDao,
         codec: MatchLobbyOcrCacheCodec,
         clock: Clock,
-    ): MatchLobbyOcrCacheRepository = RoomMatchLobbyOcrCacheRepository(dao, codec, clock)
+        database: RankForgeDatabase,
+    ): MatchLobbyOcrCacheRepository = RoomMatchLobbyOcrCacheRepository(dao, codec, clock, database)
 
     @Provides
     @Singleton
@@ -247,64 +252,74 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideCreateTournamentUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
         clock: Clock,
-    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, clock)
+    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, authRepository, clock)
 
     @Provides
     @Singleton
     fun provideObserveTournamentsUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentsUseCase = ObserveTournamentsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveTournamentSummariesUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentSummariesUseCase = ObserveTournamentSummariesUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentSummariesUseCase = ObserveTournamentSummariesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideGetTournamentByIdUseCase(
         repository: TournamentRepository,
-    ): GetTournamentByIdUseCase = GetTournamentByIdUseCase(repository)
+        authRepository: AuthRepository,
+    ): GetTournamentByIdUseCase = GetTournamentByIdUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveTournamentSlotsUseCase(
         repository: TournamentRepository,
-    ): ObserveTournamentSlotsUseCase = ObserveTournamentSlotsUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveTournamentSlotsUseCase = ObserveTournamentSlotsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSaveTeamSlotNamesUseCase(
         repository: TournamentRepository,
-    ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveRosterPlayersUseCase(
         repository: TournamentRepository,
-    ): ObserveRosterPlayersUseCase = ObserveRosterPlayersUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveRosterPlayersUseCase = ObserveRosterPlayersUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveRosterByTournamentUseCase(
         repository: TournamentRepository,
-    ): ObserveRosterByTournamentUseCase = ObserveRosterByTournamentUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveRosterByTournamentUseCase = ObserveRosterByTournamentUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSaveRosterUseCase(
         repository: TournamentRepository,
-    ): SaveRosterUseCase = SaveRosterUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveRosterUseCase = SaveRosterUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideReplaceConfirmedTournamentRosterUseCase(
         repository: TournamentRepository,
         rosterValidator: RosterValidator,
+        authRepository: AuthRepository,
     ): ReplaceConfirmedTournamentRosterUseCase =
-        ReplaceConfirmedTournamentRosterUseCase(repository, rosterValidator)
+        ReplaceConfirmedTournamentRosterUseCase(repository, rosterValidator, authRepository)
 
     @Provides
     @Singleton
@@ -313,34 +328,47 @@ object TournamentDataProvidersModule {
     @Provides
     @Singleton
     fun provideValidateTournamentRosterUseCase(
-        repository: TournamentRepository,
+        observeTournamentSlots: ObserveTournamentSlotsUseCase,
+        observeRosterPlayers: ObserveRosterPlayersUseCase,
         validator: RosterValidator,
-    ): ValidateTournamentRosterUseCase = ValidateTournamentRosterUseCase(repository, validator)
+    ): ValidateTournamentRosterUseCase = ValidateTournamentRosterUseCase(
+        observeTournamentSlots,
+        observeRosterPlayers,
+        validator,
+    )
 
     @Provides
     @Singleton
     fun provideConfirmTournamentRosterUseCase(
         repository: TournamentRepository,
         validateTournamentRoster: ValidateTournamentRosterUseCase,
-    ): ConfirmTournamentRosterUseCase = ConfirmTournamentRosterUseCase(repository, validateTournamentRoster)
+        authRepository: AuthRepository,
+    ): ConfirmTournamentRosterUseCase = ConfirmTournamentRosterUseCase(
+        repository,
+        validateTournamentRoster,
+        authRepository,
+    )
 
     @Provides
     @Singleton
     fun provideCreateMatchUseCase(
         repository: TournamentRepository,
-    ): CreateMatchUseCase = CreateMatchUseCase(repository)
+        authRepository: AuthRepository,
+    ): CreateMatchUseCase = CreateMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideCreateNextMatchUseCase(
         repository: TournamentRepository,
-    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository)
+        authRepository: AuthRepository,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveMatchesUseCase(
         repository: TournamentRepository,
-    ): ObserveMatchesUseCase = ObserveMatchesUseCase(repository)
+        authRepository: AuthRepository,
+    ): ObserveMatchesUseCase = ObserveMatchesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -355,34 +383,39 @@ object TournamentDataProvidersModule {
     @Singleton
     fun provideSaveMatchPlacementsUseCase(
         repository: TournamentRepository,
-    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSaveMatchKillsUseCase(
         repository: TournamentRepository,
-    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository)
+        authRepository: AuthRepository,
+    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideObserveMatchDraftValuesUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase =
-        com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSaveMatchDraftValueUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase =
-        com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideClearDraftMatchUseCase(
         repository: TournamentRepository,
+        authRepository: AuthRepository,
     ): com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase =
-        com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository)
+        com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -393,33 +426,43 @@ object TournamentDataProvidersModule {
     fun provideFinalizeMatchUseCase(
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
-    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult)
+        authRepository: AuthRepository,
+    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult, authRepository)
 
     @Provides
     @Singleton
     fun provideFinalizeOcrCorrectionMatchUseCase(
         repository: TournamentRepository,
         finalizeMatch: FinalizeMatchUseCase,
+        authRepository: AuthRepository,
     ): FinalizeOcrCorrectionMatchUseCase =
-        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch)
+        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch, authRepository)
 
     @Provides
     @Singleton
     fun provideStartMatchCorrectionUseCase(
         repository: TournamentRepository,
-    ): StartMatchCorrectionUseCase = StartMatchCorrectionUseCase(repository)
+        authRepository: AuthRepository,
+    ): StartMatchCorrectionUseCase = StartMatchCorrectionUseCase(repository, authRepository)
 
     @Provides
     @Singleton
     fun provideSubmitMatchCorrectionUseCase(
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
+        authRepository: AuthRepository,
         protectedCorrection: ProtectedMatchCorrectionAction,
-    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(repository, validateMatchResult, protectedCorrection)
+    ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(
+        repository,
+        validateMatchResult,
+        authRepository,
+        protectedCorrection,
+    )
 
     @Provides
     @Singleton
     fun provideClearMatchCorrectionDraftUseCase(
         repository: TournamentRepository,
-    ): ClearMatchCorrectionDraftUseCase = ClearMatchCorrectionDraftUseCase(repository)
+        authRepository: AuthRepository,
+    ): ClearMatchCorrectionDraftUseCase = ClearMatchCorrectionDraftUseCase(repository, authRepository)
 }

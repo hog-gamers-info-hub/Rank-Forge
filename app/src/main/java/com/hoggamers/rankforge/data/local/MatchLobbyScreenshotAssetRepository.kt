@@ -13,6 +13,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
+import androidx.room.withTransaction
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 
 sealed interface MatchLobbyScreenshotAssetSaveResult {
     data object Saved : MatchLobbyScreenshotAssetSaveResult
@@ -22,6 +25,8 @@ sealed interface MatchLobbyScreenshotAssetSaveResult {
     ) : MatchLobbyScreenshotAssetSaveResult
 
     data object StateConflict : MatchLobbyScreenshotAssetSaveResult
+    data object AuthenticationRequired : MatchLobbyScreenshotAssetSaveResult
+    data object MatchNotFound : MatchLobbyScreenshotAssetSaveResult
 }
 
 sealed interface MatchLobbyScreenshotCropSaveResult {
@@ -29,6 +34,8 @@ sealed interface MatchLobbyScreenshotCropSaveResult {
     data object MissingAsset : MatchLobbyScreenshotCropSaveResult
     data object InvalidIdentity : MatchLobbyScreenshotCropSaveResult
     data object InvalidCrop : MatchLobbyScreenshotCropSaveResult
+    data object AuthenticationRequired : MatchLobbyScreenshotCropSaveResult
+    data object MatchNotFound : MatchLobbyScreenshotCropSaveResult
 }
 
 interface MatchLobbyScreenshotAssetRepository {
@@ -39,6 +46,39 @@ interface MatchLobbyScreenshotAssetRepository {
     suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotAssetEntity?
 
     fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
+
+    fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
+
+    fun observeByIdentityAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+    ): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(null)
+
+    suspend fun getByIdentityAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetEntity? = null
+
+    fun observeByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
+
+    suspend fun findDuplicateFingerprintAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetEntity? = null
+
+    suspend fun saveOrReplaceByOwner(
+        asset: MatchLobbyScreenshotAssetEntity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
+
+    suspend fun restoreOrReplaceByOwner(
+        asset: MatchLobbyScreenshotAssetEntity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetSaveResult = saveOrReplaceByOwner(asset, ownerUserId)
 
     suspend fun findDuplicateFingerprint(
         identity: MatchLobbyScreenshotIdentity,
@@ -76,6 +116,17 @@ interface MatchLobbyScreenshotAssetRepository {
         updatedAt: Long,
     ): Boolean = false
 
+    suspend fun updateUploadSuccessIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun updateUploadFailureIfGenerationMatches(
         identity: MatchLobbyScreenshotIdentity,
         sha256: String,
@@ -84,11 +135,28 @@ interface MatchLobbyScreenshotAssetRepository {
         updatedAt: Long,
     ): Boolean = false
 
+    suspend fun updateUploadFailureIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long)
+
+    suspend fun markLocalMissingByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): Boolean = false
 
     suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long)
 
     suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity)
+
+    suspend fun deleteByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Boolean = false
 
     suspend fun deleteByMatchId(matchId: String)
 
@@ -98,10 +166,23 @@ interface MatchLobbyScreenshotAssetRepository {
         updatedAt: Long,
     ): MatchLobbyScreenshotCropSaveResult
 
+    suspend fun persistConfirmedCropByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.AuthenticationRequired
+
     suspend fun clearConfirmedCrop(
         identity: MatchLobbyScreenshotIdentity,
         updatedAt: Long,
     ): MatchLobbyScreenshotCropSaveResult
+
+    suspend fun clearConfirmedCropByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.AuthenticationRequired
 }
 
 internal object ScreenshotAssetMutationCoordinator {
@@ -147,7 +228,9 @@ internal object ScreenshotCloudReconciliationCoordinator {
 @Singleton
 class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
     private val dao: MatchLobbyScreenshotAssetDao,
+    private val database: RankForgeDatabase?,
 ) : MatchLobbyScreenshotAssetRepository {
+    constructor(dao: MatchLobbyScreenshotAssetDao) : this(dao, null)
     override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
         dao.observeByMatchId(matchId)
 
@@ -163,6 +246,87 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
 
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
         dao.observeByTournamentId(tournamentId)
+
+    override fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+        if (ownerUserId.isBlank()) emptyFlow() else dao.observeByMatchIdAndOwner(matchId, ownerUserId)
+
+    override fun observeByIdentityAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+    ): Flow<MatchLobbyScreenshotAssetEntity?> =
+        if (ownerUserId.isBlank()) emptyFlow() else dao.observeByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+            .map { asset -> asset?.takeIf { it.tournamentId == identity.tournamentId } }
+
+    override suspend fun getByIdentityAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetEntity? =
+        if (ownerUserId.isBlank()) null else dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+            ?.takeIf { it.tournamentId == identity.tournamentId }
+
+    override fun observeByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+        if (ownerUserId.isBlank()) emptyFlow() else dao.observeByTournamentIdAndOwner(tournamentId, ownerUserId)
+
+    override suspend fun findDuplicateFingerprintAndOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetEntity? =
+        if (ownerUserId.isBlank()) null else dao.readDuplicateFingerprintAndOwner(sha256, identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+
+    override suspend fun saveOrReplaceByOwner(
+        asset: MatchLobbyScreenshotAssetEntity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetSaveResult {
+        if (ownerUserId.isBlank()) return MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
+        val db = database ?: return MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
+        val identity = asset.identityOrNull() ?: return MatchLobbyScreenshotAssetSaveResult.InvalidIdentity
+        return ScreenshotAssetMutationCoordinator.withLock(ScreenshotAssetMutationCoordinator.key(identity)) {
+            db.withTransaction {
+                if (!db.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.MatchNotFound
+                }
+                if (db.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.StateConflict
+                }
+                val duplicate = dao.readDuplicateFingerprintAndOwner(asset.sha256, identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+                if (duplicate != null) return@withTransaction MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
+                val existing = dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+                val ownerBoundAsset = asset.copy(ownerUserId = ownerUserId)
+                val toSave = if (existing != null && existing.sha256 != asset.sha256) ownerBoundAsset.copy(
+                    cropProfileId = null, cropLeft = null, cropTop = null, cropRight = null, cropBottom = null,
+                ) else ownerBoundAsset
+                dao.upsert(toSave)
+                MatchLobbyScreenshotAssetSaveResult.Saved
+            }
+        }
+    }
+
+    override suspend fun restoreOrReplaceByOwner(
+        asset: MatchLobbyScreenshotAssetEntity,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetSaveResult {
+        if (ownerUserId.isBlank()) return MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
+        val db = database ?: return MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
+        val identity = asset.identityOrNull() ?: return MatchLobbyScreenshotAssetSaveResult.InvalidIdentity
+        return ScreenshotAssetMutationCoordinator.withLock(ScreenshotAssetMutationCoordinator.key(identity)) {
+            db.withTransaction {
+                if (!db.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.MatchNotFound
+                }
+                if (db.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.StateConflict
+                }
+                val duplicate = dao.readDuplicateFingerprintAndOwner(asset.sha256, identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+                if (duplicate != null) return@withTransaction MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
+                dao.upsert(asset.copy(ownerUserId = ownerUserId))
+                MatchLobbyScreenshotAssetSaveResult.Saved
+            }
+        }
+    }
 
     override suspend fun findDuplicateFingerprint(
         identity: MatchLobbyScreenshotIdentity,
@@ -309,6 +473,42 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         ) > 0
     }
 
+    override suspend fun updateUploadSuccessIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+        if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
+        if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
+        dao.updateUploadSuccessIfGenerationMatches(
+            identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
+            storageBucket, storageObjectPath, ScreenshotUploadStatus.UPLOADED.name, uploadedAt, updatedAt,
+        ) > 0
+    }
+
+    override suspend fun updateUploadFailureIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+        if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
+        if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
+        dao.updateUploadFailureIfGenerationMatches(
+            identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
+            ScreenshotUploadStatus.FAILED.name, failureCode, updatedAt,
+        ) > 0
+    }
+
     override suspend fun markLocalMissing(
         identity: MatchLobbyScreenshotIdentity,
         updatedAt: Long,
@@ -319,6 +519,17 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
             localStatus = ScreenshotLocalStatus.MISSING.name,
             updatedAt = updatedAt,
         )
+    }
+
+    override suspend fun markLocalMissingByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+        if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
+        dao.markLocalMissing(identity.matchId, identity.lobbyScreenshotIndex, ScreenshotLocalStatus.MISSING.name, updatedAt)
+        true
     }
 
     override suspend fun markCleanupFailure(
@@ -336,6 +547,15 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
     override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) {
         dao.deleteByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
     }
+
+    override suspend fun deleteByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Boolean =
+        if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+            if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                return@withTransaction false
+            }
+            dao.deleteByMatchAndIndex(identity.matchId, identity.lobbyScreenshotIndex)
+            true
+        }
 
     override suspend fun deleteByMatchId(matchId: String) {
         dao.deleteByMatchId(matchId)
@@ -396,6 +616,59 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         if (storedIdentity != identity) return@withLock MatchLobbyScreenshotCropSaveResult.InvalidIdentity
         dao.clearConfirmedCrop(identity.matchId, identity.lobbyScreenshotIndex, updatedAt)
         MatchLobbyScreenshotCropSaveResult.Saved
+    }
+
+    override suspend fun persistConfirmedCropByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult {
+        if (ownerUserId.isBlank() || database == null) return MatchLobbyScreenshotCropSaveResult.AuthenticationRequired
+        return ScreenshotAssetMutationCoordinator.withLock(ScreenshotAssetMutationCoordinator.key(identity)) {
+            database!!.withTransaction {
+                if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotCropSaveResult.MatchNotFound
+                }
+                if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
+                }
+                val asset = dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+                    ?: return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
+                val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
+                    ?: return@withTransaction MatchLobbyScreenshotCropSaveResult.InvalidCrop
+                when (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.Lobby)) {
+                    is OcrCropValidationResult.Invalid -> MatchLobbyScreenshotCropSaveResult.InvalidCrop
+                    is OcrCropValidationResult.Valid -> {
+                        dao.updateConfirmedCrop(identity.matchId, identity.lobbyScreenshotIndex, OcrCropValidationProfiles.Lobby.id, crop.left, crop.top, crop.right, crop.bottom, updatedAt)
+                        MatchLobbyScreenshotCropSaveResult.Saved
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun clearConfirmedCropByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): MatchLobbyScreenshotCropSaveResult = ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
+        if (ownerUserId.isBlank() || database == null) return@withLock MatchLobbyScreenshotCropSaveResult.AuthenticationRequired
+        database!!.withTransaction {
+            if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                return@withTransaction MatchLobbyScreenshotCropSaveResult.MatchNotFound
+            }
+            if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
+            }
+            if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) {
+                return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
+            }
+            dao.clearConfirmedCrop(identity.matchId, identity.lobbyScreenshotIndex, updatedAt)
+            MatchLobbyScreenshotCropSaveResult.Saved
+        }
     }
 }
 

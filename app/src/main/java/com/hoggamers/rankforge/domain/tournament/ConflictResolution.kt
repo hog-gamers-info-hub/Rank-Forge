@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.PersistentSyncQueueRepository
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
@@ -46,6 +49,7 @@ interface DraftConflictResolver {
 /** Foreground-only, user-initiated draft conflict actions. */
 class ResolveDraftConflictUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
+    private val authRepository: AuthRepository,
     private val cloudRepository: MatchCloudRestorationRepository,
     private val localRepository: MatchRestorationLocalRepository,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
@@ -53,16 +57,17 @@ class ResolveDraftConflictUseCase @Inject constructor(
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : DraftConflictResolver {
     override suspend fun keepLocal(context: ConflictResolutionContext): DraftConflictResolutionResult {
+        val ownerUserId = currentOwnerUserId() ?: return DraftConflictResolutionResult.Failed
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
             return DraftConflictResolutionResult.Unsupported
         }
-        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(context.tournamentId, ownerUserId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val currentRevision = context.currentCloudRevision
             ?: return DraftConflictResolutionResult.Unsupported
         val localMatches = try {
-            tournamentRepository.observeMatchesByTournamentId(context.tournamentId).first()
+            tournamentRepository.observeMatchesByTournamentIdAndOwner(context.tournamentId, ownerUserId).first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -72,11 +77,18 @@ class ResolveDraftConflictUseCase @Inject constructor(
             return DraftConflictResolutionResult.Unsupported
         }
         return try {
-            tournamentRepository.rebaseCloudRevisionForConflictResolution(
-                context.tournamentId,
-                currentRevision.value,
-            )
-            when (val result = syncDraftMatches(context.tournamentId).primaryResult) {
+            if (!authRepository.isSignedInAs(ownerUserId)) return DraftConflictResolutionResult.Failed
+            if (
+                tournamentRepository.rebaseCloudRevisionForConflictResolutionByOwner(
+                    context.tournamentId,
+                    ownerUserId,
+                    currentRevision.value,
+                ) != OwnerScopedTournamentMutationResult.Saved
+            ) {
+                return DraftConflictResolutionResult.Failed
+            }
+            if (!authRepository.isSignedInAs(ownerUserId)) return DraftConflictResolutionResult.Failed
+            when (val result = syncDraftMatches(context.tournamentId, ownerUserId).primaryResult) {
                 DraftMatchCloudSyncResult.Success -> DraftConflictResolutionResult.KeepLocalSucceeded
                 is DraftMatchCloudSyncResult.Conflict -> DraftConflictResolutionResult.Conflict(
                     result.context ?: context.copy(conflict = result.conflict),
@@ -91,14 +103,15 @@ class ResolveDraftConflictUseCase @Inject constructor(
     }
 
     override suspend fun acceptCloudDraft(context: ConflictResolutionContext): DraftConflictResolutionResult {
+        val ownerUserId = currentOwnerUserId() ?: return DraftConflictResolutionResult.Failed
         if (context.resolvability != ConflictResolvability.DRAFT_RESOLVABLE) {
             return DraftConflictResolutionResult.Unsupported
         }
-        if (deletionIntentRepository.isBlocking(context.tournamentId)) {
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(context.tournamentId, ownerUserId)) {
             return DraftConflictResolutionResult.Unsupported
         }
         val localMatches = try {
-            tournamentRepository.observeMatchesByTournamentId(context.tournamentId).first()
+            tournamentRepository.observeMatchesByTournamentIdAndOwner(context.tournamentId, ownerUserId).first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -110,11 +123,28 @@ class ResolveDraftConflictUseCase @Inject constructor(
                 is MatchCloudRestorationRemoteResult.Failure -> DraftConflictResolutionResult.Failed
                 is MatchCloudRestorationRemoteResult.Success -> {
                     val revision = cloud.value.cloudRevision ?: return DraftConflictResolutionResult.Unsupported
-                    if (cloud.value.matches.any { it.status != MatchStatus.DRAFT }) {
+                    if (
+                        cloud.value.tournamentId != context.tournamentId ||
+                        cloud.value.matches.any {
+                            it.tournamentId != context.tournamentId || it.status != MatchStatus.DRAFT
+                        } ||
+                        (context.matchId != null && cloud.value.matches.none { it.id == context.matchId })
+                    ) {
                         return DraftConflictResolutionResult.Unsupported
                     }
-                    localRepository.replaceDraftMatches(cloud.value)
-                    queueRepository.completeOldestUnresolved(
+                    if (!authRepository.isSignedInAs(ownerUserId)) {
+                        return DraftConflictResolutionResult.Failed
+                    }
+                    localRepository.replaceDraftMatchesByOwner(
+                        tournamentId = context.tournamentId,
+                        expectedOwnerUserId = ownerUserId,
+                        snapshot = cloud.value,
+                    )
+                    if (!authRepository.isSignedInAs(ownerUserId)) {
+                        return DraftConflictResolutionResult.Failed
+                    }
+                    queueRepository.completeOldestUnresolvedByOwner(
+                        ownerUserId,
                         SyncQueueOperationType.DRAFT_MATCH_SYNC,
                         context.tournamentId,
                     )
@@ -126,5 +156,14 @@ class ResolveDraftConflictUseCase @Inject constructor(
         } catch (_: Throwable) {
             DraftConflictResolutionResult.Failed
         }
+    }
+
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 }

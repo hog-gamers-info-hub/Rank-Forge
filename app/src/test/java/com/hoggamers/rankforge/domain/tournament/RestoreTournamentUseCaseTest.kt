@@ -12,7 +12,10 @@ import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +23,123 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RestoreTournamentUseCaseTest {
+    @Test
+    fun ownerSwitchDuringCloudReadAbortsBeforeAnyRestoreOrChildContinuation() = runTest {
+        val auth = MutableFakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository(snapshot())
+        val local = RecordingLocalRepository()
+        val child = RecordingMatchRestorationAction()
+        val useCase = RestoreTournamentUseCase(auth, cloud, local, testQueueRecorder(), child)
+
+        val operation = launch {
+            assertEquals(
+                TournamentCloudRestorationResult.AuthorizationFailure,
+                useCase.executeForRetry(TOURNAMENT_ID),
+            )
+        }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+        cloud.resume.complete(Unit)
+        operation.join()
+
+        assertFalse(local.restoreCalled)
+        assertEquals(0, child.invocationCount)
+    }
+
+    @Test
+    fun signedOutDuringCloudReadAbortsBeforeAnyRestoreOrChildContinuation() = runTest {
+        val auth = MutableFakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository(snapshot())
+        val local = RecordingLocalRepository()
+        val child = RecordingMatchRestorationAction()
+        val useCase = RestoreTournamentUseCase(auth, cloud, local, testQueueRecorder(), child)
+
+        val operation = launch {
+            assertEquals(
+                TournamentCloudRestorationResult.AuthorizationFailure,
+                useCase.executeForRetry(TOURNAMENT_ID),
+            )
+        }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedOut
+        cloud.resume.complete(Unit)
+        operation.join()
+
+        assertFalse(local.restoreCalled)
+        assertEquals(0, child.invocationCount)
+    }
+
+    @Test
+    fun sameOwnerSessionRefreshMayContinueAfterCloudRead() = runTest {
+        val auth = MutableFakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, "old@example.com")))
+        val cloud = SuspendingCloudRepository(snapshot())
+        val local = RecordingLocalRepository()
+        val useCase = RestoreTournamentUseCase(
+            auth,
+            cloud,
+            local,
+            testQueueRecorder(),
+            RecordingMatchRestorationAction(),
+        )
+
+        val operation = launch {
+            assertEquals(
+                TournamentCloudRestorationResult.Success("Summer Cup"),
+                useCase.executeForRetry(TOURNAMENT_ID),
+            )
+        }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OWNER_ID, "refreshed@example.com"))
+        cloud.resume.complete(Unit)
+        operation.join()
+
+        assertTrue(local.restoreCalled)
+    }
+
+    @Test
+    fun blankOwnerAfterCloudReadAbortsBeforeRestore() = runTest {
+        val auth = MutableFakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository(snapshot())
+        val local = RecordingLocalRepository()
+        val useCase = RestoreTournamentUseCase(auth, cloud, local, testQueueRecorder(), RecordingMatchRestorationAction())
+
+        val operation = launch {
+            assertEquals(
+                TournamentCloudRestorationResult.AuthorizationFailure,
+                useCase.executeForRetry(TOURNAMENT_ID),
+            )
+        }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(" ", null))
+        cloud.resume.complete(Unit)
+        operation.join()
+
+        assertFalse(local.restoreCalled)
+    }
+
+    @Test
+    fun mismatchedTournamentPayloadIsRejectedBeforeRestore() = runTest {
+        val base = snapshot()
+        val returnedSnapshots = listOf(
+            base.copy(tournament = base.tournament.copy(id = OTHER_TOURNAMENT_ID)),
+            base.copy(tournament = base.tournament.copy(ownerUserId = OTHER_OWNER_ID)),
+            base.copy(tournament = base.tournament.copy(ownerUserId = " ")),
+        )
+
+        returnedSnapshots.forEach { returned ->
+            val local = RecordingLocalRepository()
+            val result = RestoreTournamentUseCase(
+                FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+                RecordingCloudRepository(snapshot = returned),
+                local,
+                testQueueRecorder(),
+                RecordingMatchRestorationAction(),
+            ).executeForRetry(TOURNAMENT_ID)
+            assertEquals(TournamentCloudRestorationResult.ValidationFailure, result)
+            assertFalse(local.restoreCalled)
+        }
+    }
+
     @Test
     fun unauthenticatedRestoreDoesNotReadCloudOrChangeLocalData() = runTest {
         val cloud = RecordingCloudRepository()
@@ -36,13 +156,10 @@ class RestoreTournamentUseCaseTest {
         val result = useCase.restore(TOURNAMENT_ID)
 
         assertEquals(TournamentCloudRestorationResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertFalse(cloud.readCalled)
         assertFalse(local.restoreCalled)
-        assertEquals(SyncQueueOperationType.TOURNAMENT_RESTORATION, queue.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
-        assertEquals(0, queue.entries.single().attemptCount)
+        assertTrue(queue.entries.isEmpty())
     }
 
     @Test
@@ -95,6 +212,7 @@ class RestoreTournamentUseCaseTest {
         assertEquals(TournamentCloudRestorationResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
 
         val persistenceFailureResult = RestoreTournamentUseCase(
             auth,
@@ -300,6 +418,7 @@ class RestoreTournamentUseCaseTest {
             organizerName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
+            ownerUserId = OWNER_ID,
         ),
         slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
         players = listOf(
@@ -332,6 +451,23 @@ class RestoreTournamentUseCaseTest {
         }
     }
 
+    private class SuspendingCloudRepository(
+        private val returned: TournamentCloudRestorationSnapshot,
+    ) : TournamentCloudRestorationRepository {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun listOwnedTournaments() =
+            TournamentCloudRestorationRemoteResult.Success<List<TournamentCloudRestorationSummary>>(emptyList())
+
+        override suspend fun readOwnedTournament(tournamentId: String) =
+            run {
+                started.complete(Unit)
+                resume.await()
+                TournamentCloudRestorationRemoteResult.Success(returned)
+            }
+    }
+
     private class RecordingLocalRepository(
         private val throwOnRestore: Boolean = false,
         private val events: MutableList<String>? = null,
@@ -345,6 +481,11 @@ class RestoreTournamentUseCaseTest {
             if (throwOnRestore) error("transaction failed")
             this.snapshot = snapshot
         }
+
+        override suspend fun restoreByOwner(
+            snapshot: TournamentCloudRestorationSnapshot,
+            expectedOwnerUserId: String,
+        ) = restore(snapshot)
     }
 
     private class RecordingMatchRestorationAction(
@@ -365,6 +506,11 @@ class RestoreTournamentUseCaseTest {
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         }
+
+        override suspend fun invoke(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+        ): QueueAwareActionResult<MatchCloudRestorationResult> = invoke(tournamentId)
     }
 
     private class FakeAuthRepository(
@@ -380,8 +526,22 @@ class RestoreTournamentUseCaseTest {
             AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
     }
 
+    private class MutableFakeAuthRepository(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+        override fun observeAuthState(): Flow<AuthState> = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+        override suspend fun login(email: String, password: String) =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun logout() =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
         const val OWNER_ID = "22222222-2222-2222-2222-222222222222"
+        const val OTHER_OWNER_ID = "44444444-4444-4444-4444-444444444444"
+        const val OTHER_TOURNAMENT_ID = "55555555-5555-5555-5555-555555555555"
     }
 }

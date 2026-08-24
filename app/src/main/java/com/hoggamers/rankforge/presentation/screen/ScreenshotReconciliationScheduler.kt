@@ -4,6 +4,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +32,21 @@ class ScreenshotReconciliationScheduler private constructor(
             throw cancellation
         } catch (_: Throwable) {
             // The local crop is already authoritative; a later foreground retry remains available.
+        }
+    }
+
+    fun schedule(
+        expectedOwnerUserId: String,
+        ownerProvider: ScreenshotOwnerProvider,
+        block: suspend () -> Unit,
+    ): Job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        if (expectedOwnerUserId.isBlank() || ownerProvider.currentOwnerUserId() != expectedOwnerUserId) return@launch
+        try {
+            block()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // A later foreground retry remains available for the owner-bound asset.
         }
     }
 }

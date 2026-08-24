@@ -8,6 +8,12 @@ import com.hoggamers.rankforge.domain.tournament.CreateTournamentResult
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
+import com.hoggamers.rankforge.domain.tournament.DeletionIntent
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
+import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
+import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
@@ -29,6 +35,7 @@ class TournamentCreationViewModel @Inject constructor(
     private val checkTournamentQuota: CheckTournamentQuotaUseCase,
     private val uploadTournament: TournamentCloudUploadAction,
     private val localDeletionRepository: LocalDeletionRepository,
+    private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentCreationUiState())
     val uiState: StateFlow<TournamentCreationUiState> = _uiState.asStateFlow()
@@ -136,6 +143,13 @@ class TournamentCreationViewModel @Inject constructor(
 
     private suspend fun createAndUpload(input: CreateTournamentInput) {
         when (val result = createTournament(input)) {
+            CreateTournamentResult.AuthenticationRequired -> _uiState.update {
+                it.copy(
+                    isSubmitting = false,
+                    submissionError = TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED,
+                )
+            }
+
             is CreateTournamentResult.Invalid -> _uiState.update {
                 it.copy(
                     isSubmitting = false,
@@ -153,7 +167,32 @@ class TournamentCreationViewModel @Inject constructor(
                 }
                 if (uploadResult?.primaryResult == TournamentCloudUploadResult.TournamentLimitReached) {
                     try {
-                        localDeletionRepository.deleteTournamentLocally(result.tournament.id)
+                        result.tournament.ownerUserId
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { ownerUserId ->
+                                val claimed = deletionIntentRepository.startIfAbsent(
+                                    DeletionIntent(
+                                        targetType = DeletionTargetType.TOURNAMENT,
+                                        targetId = result.tournament.id,
+                                        tournamentId = result.tournament.id,
+                                        ownerUserId = ownerUserId,
+                                        phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+                                        updatedAtEpochMillis = clock.millis(),
+                                    ),
+                                )
+                                if (!claimed) return@let
+                                val localResult = localDeletionRepository.deleteTournamentLocallyByOwner(
+                                    result.tournament.id,
+                                    ownerUserId,
+                                )
+                                if (localResult == LocalDeletionResult.Deleted || localResult == LocalDeletionResult.NotFound) {
+                                    deletionIntentRepository.clearByTargetAndOwner(
+                                        DeletionTargetType.TOURNAMENT,
+                                        result.tournament.id,
+                                        ownerUserId,
+                                    )
+                                }
+                            }
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (_: Throwable) {

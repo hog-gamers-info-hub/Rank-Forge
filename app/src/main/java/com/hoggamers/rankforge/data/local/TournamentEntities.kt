@@ -17,7 +17,10 @@ data class SyncRevisionEntity(
     val baseCloudRevision: Int?,
 )
 
-@Entity(tableName = "tournaments")
+@Entity(
+    tableName = "tournaments",
+    indices = [Index(value = ["owner_user_id"])],
+)
 data class TournamentEntity(
     @PrimaryKey val id: String,
     val name: String,
@@ -27,6 +30,7 @@ data class TournamentEntity(
     val status: String,
     @ColumnInfo(name = "creation_order", defaultValue = "0") val creationOrder: Long = 0L,
     @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long? = null,
+    @ColumnInfo(name = "owner_user_id") val ownerUserId: String? = null,
 )
 
 data class TournamentSummaryProjection(
@@ -39,6 +43,7 @@ data class TournamentSummaryProjection(
     @ColumnInfo(name = "total_teams") val totalTeams: Int,
     @ColumnInfo(name = "total_matches") val totalMatches: Int,
     @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long?,
+    @ColumnInfo(name = "owner_user_id") val ownerUserId: String?,
 )
 
 @Entity(

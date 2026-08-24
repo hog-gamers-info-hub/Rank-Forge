@@ -245,6 +245,7 @@ private fun MatchKillRow(
 @Composable
 private fun MatchKillGlobalError(error: KillGlobalError?) {
     val message = when (error) {
+        KillGlobalError.AUTHENTICATION_REQUIRED -> stringResource(R.string.match_kill_invalid_data_error)
         KillGlobalError.MATCH_NOT_FOUND -> stringResource(R.string.match_kill_match_not_found_error)
         KillGlobalError.MATCH_NOT_DRAFT -> stringResource(R.string.match_kill_not_draft_error)
         KillGlobalError.INVALID_DATA -> stringResource(R.string.match_kill_invalid_data_error)

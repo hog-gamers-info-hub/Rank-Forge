@@ -264,6 +264,8 @@ private fun MatchPlacementRow(
 @Composable
 private fun MatchPlacementGlobalError(error: PlacementGlobalError?) {
     val message = when (error) {
+        PlacementGlobalError.AUTHENTICATION_REQUIRED ->
+            stringResource(R.string.match_placement_invalid_data_error)
         PlacementGlobalError.MATCH_NOT_FOUND -> stringResource(R.string.match_placement_match_not_found_error)
         PlacementGlobalError.MATCH_NOT_DRAFT -> stringResource(R.string.match_placement_not_draft_error)
         PlacementGlobalError.INVALID_DATA -> stringResource(R.string.match_placement_invalid_data_error)

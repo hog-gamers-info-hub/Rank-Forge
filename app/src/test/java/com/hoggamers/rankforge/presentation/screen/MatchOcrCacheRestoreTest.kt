@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCa
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -91,6 +92,7 @@ class MatchOcrCacheRestoreTest {
                     ),
                 )
             },
+            screenshotOwnerProvider = ownerProvider,
         )
 
         viewModel.loadCached("tournament", "match")
@@ -128,6 +130,10 @@ class MatchOcrCacheRestoreTest {
             repository = repository,
             finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
         )
+    }
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String = SignedInTournamentTestAuthRepository.OWNER_USER_ID
     }
 
     private fun cachedResultRoles(): List<MatchResultOcrPreviewRoleResult> = listOf(

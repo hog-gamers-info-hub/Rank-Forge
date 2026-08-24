@@ -15,6 +15,7 @@ class TournamentCloudRestorationMapperTest {
         assertTrue(result is TournamentCloudRestorationMappingResult.Success)
         val snapshot = (result as TournamentCloudRestorationMappingResult.Success).value
         assertEquals(TOURNAMENT_ID, snapshot.tournament.id)
+        assertEquals(OWNER_ID, snapshot.tournament.ownerUserId)
         assertEquals(LocalDate.of(2026, 7, 24), snapshot.tournament.date)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), snapshot.slots.map { it.slotNumber })
         assertEquals("Alpha", snapshot.slots.first().teamName)
@@ -57,6 +58,17 @@ class TournamentCloudRestorationMapperTest {
                     ),
                 ),
             ),
+        )
+
+        assertEquals(TournamentCloudRestorationMappingResult.Invalid, result)
+    }
+
+    @Test
+    fun rejectsBlankTournamentOwner() {
+        val base = payloads()
+
+        val result = TournamentCloudRestorationMapper.mapSnapshot(
+            base.copy(tournament = base.tournament.copy(ownerId = " ")),
         )
 
         assertEquals(TournamentCloudRestorationMappingResult.Invalid, result)

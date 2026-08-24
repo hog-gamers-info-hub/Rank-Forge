@@ -26,12 +26,13 @@ class DeleteUseCasesTest {
         val events = mutableListOf<String>()
         val repository = testRepository(withMatch = true)
         val cloud = RecordingCloud(events)
+        val queue = RecordingQueue(events)
         val local = RecordingLocal(events)
 
         val result = DeleteMatchUseCase(
             repository,
             signedInAuth(),
-            RecordingQueue(events),
+            queue,
             cloud,
             local,
         )("match-1")
@@ -39,6 +40,8 @@ class DeleteUseCasesTest {
         assertEquals(DeleteMatchResult.Success, result)
         assertEquals(listOf("queue:tournament-1", "match-storage", "match-remote", "local-match:match-1"), events)
         assertEquals("match-1", cloud.matchId)
+        assertEquals(listOf("tournament-1" to "owner-1"), queue.purgeCalls)
+        assertEquals(listOf("match-1" to "owner-1"), local.matchOwnerCalls)
     }
 
     @Test
@@ -131,7 +134,7 @@ class DeleteUseCasesTest {
         )
 
         assertEquals(DeleteMatchResult.RemoteDeletionFailed(CloudDeletionFailureCategory.AUTHORIZATION), useCase("match-1"))
-        assertEquals(DeleteMatchResult.RemoteDeletionFailed(CloudDeletionFailureCategory.AUTHORIZATION), useCase.retryLocalCleanup("match-1"))
+        assertEquals(DeleteMatchResult.TargetNotFound, useCase.retryLocalCleanup("match-1"))
         assertTrue(events.none { it.startsWith("local-") })
     }
 
@@ -152,15 +155,121 @@ class DeleteUseCasesTest {
     }
 
     @Test
+    fun blankForeignAndNullOwnerTargetsProduceNoDeletionSideEffects() = runTest {
+        val scenarios = listOf(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser("", "blank@example.com"))) to "owner-1",
+            signedInAuth() to "owner-2",
+            signedInAuth() to null,
+        )
+        scenarios.forEach { (auth, targetOwner) ->
+            val matchEvents = mutableListOf<String>()
+            val tournamentEvents = mutableListOf<String>()
+            val matchIntents = RecordingDeletionIntentRepository()
+            val tournamentIntents = RecordingDeletionIntentRepository()
+            assertEquals(
+                if (targetOwner == "owner-1") DeleteMatchResult.AuthenticationRequired else DeleteMatchResult.TargetNotFound,
+                DeleteMatchUseCase(
+                    testRepository(withMatch = true, ownerUserId = targetOwner),
+                    auth,
+                    RecordingQueue(matchEvents),
+                    RecordingCloud(matchEvents),
+                    RecordingLocal(matchEvents),
+                    matchIntents,
+                )("match-1"),
+            )
+            assertEquals(
+                if (targetOwner == "owner-1") DeleteTournamentResult.AuthenticationRequired else DeleteTournamentResult.TargetNotFound,
+                DeleteTournamentUseCase(
+                    testRepository(withMatch = true, ownerUserId = targetOwner),
+                    auth,
+                    RecordingQueue(tournamentEvents),
+                    RecordingCloud(tournamentEvents),
+                    RecordingLocal(tournamentEvents),
+                    tournamentIntents,
+                )("tournament-1"),
+            )
+            assertTrue(matchEvents.isEmpty())
+            assertTrue(tournamentEvents.isEmpty())
+            assertEquals(0, matchIntents.ownerScopedMutationCallCount)
+            assertEquals(0, tournamentIntents.ownerScopedMutationCallCount)
+        }
+    }
+
+    @Test
+    fun foreignIntentCollisionsAreNotOverwrittenOrExecuted() = runTest {
+        val matchEvents = mutableListOf<String>()
+        val tournamentEvents = mutableListOf<String>()
+        val matchIntents = RecordingDeletionIntentRepository().apply {
+            put(intentFor(DeletionTargetType.MATCH, "match-1", "owner-2"))
+        }
+        val tournamentIntents = RecordingDeletionIntentRepository().apply {
+            put(intentFor(DeletionTargetType.TOURNAMENT, "tournament-1", "owner-2"))
+        }
+
+        assertEquals(
+            DeleteMatchResult.TargetNotFound,
+            DeleteMatchUseCase(
+                testRepository(withMatch = true), signedInAuth(), RecordingQueue(matchEvents),
+                RecordingCloud(matchEvents), RecordingLocal(matchEvents), matchIntents,
+            )("match-1"),
+        )
+        assertEquals(
+            DeleteTournamentResult.TargetNotFound,
+            DeleteTournamentUseCase(
+                testRepository(withMatch = true), signedInAuth(), RecordingQueue(tournamentEvents),
+                RecordingCloud(tournamentEvents), RecordingLocal(tournamentEvents), tournamentIntents,
+            )("tournament-1"),
+        )
+
+        assertEquals("owner-2", matchIntents.read(DeletionTargetType.MATCH, "match-1")?.ownerUserId)
+        assertEquals("owner-2", tournamentIntents.read(DeletionTargetType.TOURNAMENT, "tournament-1")?.ownerUserId)
+        assertTrue(matchEvents.isEmpty())
+        assertTrue(tournamentEvents.isEmpty())
+    }
+
+    @Test
+    fun insertIgnoreSameOwnerRereadResumesSafely() = runTest {
+        val matchEvents = mutableListOf<String>()
+        val tournamentEvents = mutableListOf<String>()
+        val matchIntents = RecordingDeletionIntentRepository().apply { collideNextInsertWithSameOwner = true }
+        val tournamentIntents = RecordingDeletionIntentRepository().apply { collideNextInsertWithSameOwner = true }
+
+        assertEquals(
+            DeleteMatchResult.Success,
+            DeleteMatchUseCase(
+                testRepository(withMatch = true), signedInAuth(), RecordingQueue(matchEvents),
+                RecordingCloud(matchEvents), RecordingLocal(matchEvents), matchIntents,
+            )("match-1"),
+        )
+        assertEquals(
+            DeleteTournamentResult.Success,
+            DeleteTournamentUseCase(
+                testRepository(withMatch = true), signedInAuth(), RecordingQueue(tournamentEvents),
+                RecordingCloud(tournamentEvents), RecordingLocal(tournamentEvents), tournamentIntents,
+            )("tournament-1"),
+        )
+
+        assertNull(matchIntents.read(DeletionTargetType.MATCH, "match-1"))
+        assertNull(tournamentIntents.read(DeletionTargetType.TOURNAMENT, "tournament-1"))
+        assertEquals(listOf("queue:tournament-1", "match-storage", "match-remote", "local-match:match-1"), matchEvents)
+        assertEquals(
+            listOf("queue:tournament-1", "tournament-storage", "tournament-remote", "local-tournament:tournament-1"),
+            tournamentEvents,
+        )
+    }
+
+    @Test
     fun tournamentDeletionPassesAllLocalMatchIdsWithoutRenumbering() = runTest {
         val events = mutableListOf<String>()
         val cloud = RecordingCloud(events)
+        val queue = RecordingQueue(events)
+        val local = RecordingLocal(events)
         val result = DeleteTournamentUseCase(
             testRepository(withMatch = true, withSecondMatch = true),
             signedInAuth(),
-            RecordingQueue(events),
+            queue,
             cloud,
-            RecordingLocal(events),
+            local,
         )("tournament-1")
 
         assertEquals(DeleteTournamentResult.Success, result)
@@ -169,6 +278,8 @@ class DeleteUseCasesTest {
             listOf("queue:tournament-1", "tournament-storage", "tournament-remote", "local-tournament:tournament-1"),
             events,
         )
+        assertEquals(listOf("tournament-1" to "owner-1"), queue.purgeCalls)
+        assertEquals(listOf("tournament-1" to "owner-1"), local.tournamentOwnerCalls)
     }
 
     @Test
@@ -288,6 +399,58 @@ class DeleteUseCasesTest {
     }
 
     @Test
+    fun lostCleanupClaimIsReportedAndPendingIntentRemainsForRetry() = runTest {
+        val events = mutableListOf<String>()
+        val intents = RecordingDeletionIntentRepository().apply {
+            put(intentFor(
+                targetType = DeletionTargetType.MATCH,
+                targetId = "match-1",
+                ownerUserId = "owner-1",
+                phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+            ))
+        }
+        val local = RecordingLocal(events).apply { matchResults += LocalDeletionResult.CleanupClaimLost }
+        val useCase = DeleteMatchUseCase(
+            testRepository(withMatch = true),
+            signedInAuth(),
+            RecordingQueue(events),
+            RecordingCloud(events),
+            local,
+            intents,
+        )
+
+        assertEquals(DeleteMatchResult.RemoteDeletedLocalCleanupFailed, useCase("match-1"))
+        assertEquals(
+            DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+            intents.read(DeletionTargetType.MATCH, "match-1")?.phase,
+        )
+        assertEquals(listOf("local-match:match-1"), events)
+    }
+
+    @Test
+    fun sameOwnerPendingTournamentIntentResumesLocalOnlyCleanup() = runTest {
+        val events = mutableListOf<String>()
+        val intents = RecordingDeletionIntentRepository().apply {
+            put(intentFor(
+                targetType = DeletionTargetType.TOURNAMENT,
+                targetId = "tournament-1",
+                ownerUserId = "owner-1",
+                phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+            ))
+        }
+
+        assertEquals(
+            DeleteTournamentResult.Success,
+            DeleteTournamentUseCase(
+                testRepository(withMatch = true), signedInAuth(), RecordingQueue(events),
+                RecordingCloud(events), RecordingLocal(events), intents,
+            )("tournament-1"),
+        )
+        assertEquals(listOf("local-tournament:tournament-1"), events)
+        assertNull(intents.read(DeletionTargetType.TOURNAMENT, "tournament-1"))
+    }
+
+    @Test
     fun retryAfterRemoteCommitBeforePendingPhaseCompletesLocalCleanup() = runTest {
         val events = mutableListOf<String>()
         val intents = RecordingDeletionIntentRepository().apply {
@@ -329,6 +492,7 @@ class DeleteUseCasesTest {
     private fun testRepository(
         withMatch: Boolean,
         withSecondMatch: Boolean = false,
+        ownerUserId: String? = "owner-1",
     ) = TestTournamentRepository(
         tournament = Tournament(
             id = "tournament-1",
@@ -337,6 +501,7 @@ class DeleteUseCasesTest {
             organizerName = "Test Organizer",
             organizerContactNumber = "000",
             status = TournamentStatus.DRAFT,
+            ownerUserId = ownerUserId,
         ),
         matches = buildList {
             if (withMatch) add(Match("match-1", "tournament-1", 1, LocalDate.of(2026, 8, 21), "Map A", MatchStatus.DRAFT))
@@ -346,6 +511,20 @@ class DeleteUseCasesTest {
 
     private fun signedInAuth() = FakeAuthRepository(
         AuthState.SignedIn(AuthUser("owner-1", "owner@example.com")),
+    )
+
+    private fun intentFor(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+        phase: DeletionIntentPhase = DeletionIntentPhase.DELETE_STARTED,
+    ) = DeletionIntent(
+        targetType = targetType,
+        targetId = targetId,
+        tournamentId = "tournament-1",
+        ownerUserId = ownerUserId,
+        phase = phase,
+        updatedAtEpochMillis = 1,
     )
 }
 
@@ -378,6 +557,7 @@ private class RecordingQueue(
     private val events: MutableList<String>,
     private val fail: Boolean = false,
 ) : PersistentSyncQueueRepository {
+    val purgeCalls = mutableListOf<Pair<String, String>>()
     override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(emptyList())
     override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?) =
         SyncQueueEntry("queue-id", operationType, tournamentId, 0L, status, failureCategory, 0)
@@ -386,7 +566,8 @@ private class RecordingQueue(
     override suspend fun updateRetryFailure(id: String, status: SyncQueueStatus, failureCategory: String?) = Unit
     override suspend fun markCompleted(id: String) = Unit
     override suspend fun remove(id: String) = Unit
-    override suspend fun purgeByTournamentId(tournamentId: String) {
+    override suspend fun purgeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String) {
+        purgeCalls += tournamentId to ownerUserId
         events += "queue:$tournamentId"
         if (fail) error("queue unavailable")
     }
@@ -422,15 +603,22 @@ private class RecordingCloud(private val events: MutableList<String>) : CloudDel
 
 private class RecordingLocal(private val events: MutableList<String>) : LocalDeletionRepository {
     val matchCalls = mutableListOf<String>()
+    val matchOwnerCalls = mutableListOf<Pair<String, String>>()
+    val tournamentOwnerCalls = mutableListOf<Pair<String, String>>()
     val matchResults = mutableListOf<LocalDeletionResult>()
     val tournamentResults = mutableListOf<LocalDeletionResult>()
 
-    override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult {
+    override suspend fun deleteMatchLocallyByOwner(matchId: String, ownerUserId: String): LocalDeletionResult {
+        matchOwnerCalls += matchId to ownerUserId
         events += "local-match:$matchId"
         matchCalls += matchId
         return matchResults.removeFirstOrNull() ?: LocalDeletionResult.Deleted
     }
-    override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
+    override suspend fun deleteTournamentLocallyByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): LocalDeletionResult {
+        tournamentOwnerCalls += tournamentId to ownerUserId
         events += "local-tournament:$tournamentId"
         return tournamentResults.removeFirstOrNull() ?: LocalDeletionResult.Deleted
     }
@@ -440,13 +628,40 @@ private class RecordingDeletionIntentRepository : DeletionIntentRepository {
     private val intents = mutableMapOf<Pair<DeletionTargetType, String>, DeletionIntent>()
     var failNextClear: Boolean = false
     var failNextMarkRemoteDeleted: Boolean = false
+    var collideNextInsertWithSameOwner: Boolean = false
+    var ownerScopedMutationCallCount: Int = 0
+
+    fun put(intent: DeletionIntent) {
+        intents[intent.targetType to intent.targetId] = intent
+    }
 
     override suspend fun read(targetType: DeletionTargetType, targetId: String): DeletionIntent? =
         intents[targetType to targetId]
 
+    override suspend fun findByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): DeletionIntent? {
+        return intents[targetType to targetId]?.takeIf { it.ownerUserId == ownerUserId }
+    }
+
     override suspend fun start(intent: DeletionIntent): DeletionIntent {
         intents[intent.targetType to intent.targetId] = intent
         return intent
+    }
+
+    override suspend fun startIfAbsent(intent: DeletionIntent): Boolean {
+        ownerScopedMutationCallCount++
+        val key = intent.targetType to intent.targetId
+        if (collideNextInsertWithSameOwner) {
+            collideNextInsertWithSameOwner = false
+            intents[key] = intent
+            return false
+        }
+        if (key in intents) return false
+        intents[key] = intent
+        return true
     }
 
     override suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String) {
@@ -460,6 +675,23 @@ private class RecordingDeletionIntentRepository : DeletionIntentRepository {
         )
     }
 
+    override suspend fun markRemoteDeletedByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean {
+        ownerScopedMutationCallCount++
+        val current = intents[targetType to targetId]?.takeIf { it.ownerUserId == ownerUserId } ?: return false
+        if (failNextMarkRemoteDeleted) {
+            failNextMarkRemoteDeleted = false
+            error("process ended before intent phase update")
+        }
+        intents[targetType to targetId] = current.copy(
+            phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+        )
+        return true
+    }
+
     override suspend fun clear(targetType: DeletionTargetType, targetId: String) {
         if (failNextClear) {
             failNextClear = false
@@ -468,11 +700,38 @@ private class RecordingDeletionIntentRepository : DeletionIntentRepository {
         intents.remove(targetType to targetId)
     }
 
+    override suspend fun clearByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean {
+        ownerScopedMutationCallCount++
+        val current = intents[targetType to targetId]?.takeIf { it.ownerUserId == ownerUserId } ?: return false
+        if (failNextClear) {
+            failNextClear = false
+            error("intent clear unavailable")
+        }
+        return intents.remove(targetType to targetId, current)
+    }
+
     override suspend fun isBlocking(tournamentId: String): Boolean =
         intents.values.any { it.tournamentId == tournamentId }
+
+    override suspend fun isBlockingByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Boolean {
+        return intents.values.any { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
+    }
 
     override suspend fun readAll(): List<DeletionIntent> = intents.values.toList()
 
     override suspend fun readPendingLocalCleanup(): List<DeletionIntent> =
         intents.values.filter { it.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING }
+
+    override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> =
+        intents.values.filter {
+            it.ownerUserId == ownerUserId &&
+                it.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
+        }
 }

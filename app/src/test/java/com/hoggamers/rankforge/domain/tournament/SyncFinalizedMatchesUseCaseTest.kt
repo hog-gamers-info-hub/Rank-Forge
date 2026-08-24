@@ -13,9 +13,12 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import java.time.LocalDate
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -24,6 +27,42 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SyncFinalizedMatchesUseCaseTest {
+    @Test
+    fun cloudResponseAfterOwnerSwitchDoesNotConfirmRevisionOrRecordQueue() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository()
+        val repository = CountingRevisionRepository(localRepository())
+        val queue = RecordingTestQueueRepository()
+        val useCase = SyncFinalizedMatchesUseCase(repository, auth, cloud, queue.recorder())
+
+        val job = launch { assertEquals(FinalizedMatchCloudSyncResult.AuthorizationFailure, useCase(TOURNAMENT_ID).primaryResult) }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+        cloud.resume.complete(Unit)
+        job.join()
+
+        assertEquals(0, repository.revisionWrites)
+        assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun cloudResponseAfterSignOutDoesNotConfirmRevisionOrRecordQueue() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository()
+        val repository = CountingRevisionRepository(localRepository())
+        val queue = RecordingTestQueueRepository()
+        val useCase = SyncFinalizedMatchesUseCase(repository, auth, cloud, queue.recorder())
+
+        val job = launch { assertEquals(FinalizedMatchCloudSyncResult.AuthorizationFailure, useCase(TOURNAMENT_ID).primaryResult) }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedOut
+        cloud.resume.complete(Unit)
+        job.join()
+
+        assertEquals(0, repository.revisionWrites)
+        assertTrue(queue.entries.isEmpty())
+    }
+
     @Test
     fun unauthenticatedSyncIsRejectedBeforeCloudAccess() = runTest {
         val cloud = RecordingCloudRepository()
@@ -37,12 +76,9 @@ class SyncFinalizedMatchesUseCaseTest {
 
         val result = useCase(TOURNAMENT_ID)
         assertEquals(FinalizedMatchCloudSyncResult.AuthenticationRequired, result.primaryResult)
-        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertNull(cloud.snapshot)
-        assertEquals(SyncQueueOperationType.FINALIZED_MATCH_SYNC, queue.entries.single().operationType)
-        assertEquals(TOURNAMENT_ID, queue.entries.single().tournamentId)
-        assertEquals(SyncQueueStatus.BLOCKED_AUTHENTICATION, queue.entries.single().status)
-        assertEquals(0, queue.entries.single().attemptCount)
+        assertTrue(queue.entries.isEmpty())
     }
 
     @Test
@@ -53,7 +89,7 @@ class SyncFinalizedMatchesUseCaseTest {
         val queue = RecordingTestQueueRepository()
         val useCase = SyncFinalizedMatchesUseCase(
             tournamentRepository = local,
-            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             cloudSyncRepository = cloud,
             queueRecorder = queue.recorder(),
         )
@@ -78,6 +114,7 @@ class SyncFinalizedMatchesUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = OWNER_ID,
             ),
         )
         local.saveTeamNames(
@@ -104,7 +141,7 @@ class SyncFinalizedMatchesUseCaseTest {
         val cloud = RecordingCloudRepository(FinalizedMatchCloudSyncResult.Success(2))
         val result = SyncFinalizedMatchesUseCase(
             tournamentRepository = local,
-            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             cloudSyncRepository = cloud,
             queueRecorder = testQueueRecorder(),
         ).executeForRetry(TOURNAMENT_ID)
@@ -125,7 +162,7 @@ class SyncFinalizedMatchesUseCaseTest {
         val local = localRepository()
         val result = SyncFinalizedMatchesUseCase(
             local,
-            FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             RecordingCloudRepository(
                 FinalizedMatchCloudSyncResult.PartialFailure(
                     completedStage = FinalizedMatchCloudSyncStage.MATCHES,
@@ -145,7 +182,7 @@ class SyncFinalizedMatchesUseCaseTest {
         val queue = RecordingTestQueueRepository()
         val result = SyncFinalizedMatchesUseCase(
             local,
-            FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null))),
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             RecordingCloudRepository(FinalizedMatchCloudSyncResult.ValidationFailure),
             queue.recorder(),
         )(TOURNAMENT_ID)
@@ -168,7 +205,7 @@ class SyncFinalizedMatchesUseCaseTest {
     @Test
     fun networkFailureIsRecordedAndQueuePersistenceFailureIsExposed() = runTest {
         val local = localRepository()
-        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null)))
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
         val queue = RecordingTestQueueRepository()
         val networkResult = SyncFinalizedMatchesUseCase(
             local,
@@ -179,6 +216,7 @@ class SyncFinalizedMatchesUseCaseTest {
         assertEquals(FinalizedMatchCloudSyncResult.NetworkFailure, networkResult.primaryResult)
         assertEquals(QueueRecordingResult.RECORDED, networkResult.queueRecordingResult)
         assertEquals(SyncQueueStatus.BLOCKED_NETWORK, queue.entries.single().status)
+        assertEquals(OWNER_ID, queue.entries.single().ownerUserId)
 
         val persistenceFailure = SyncFinalizedMatchesUseCase(
             local,
@@ -194,7 +232,7 @@ class SyncFinalizedMatchesUseCaseTest {
     fun authorizationAndNetworkFailuresLeaveLocalFinalizedMatchUntouched() = runTest {
         val local = localRepository()
         val before = local.observeMatchesByTournamentId(TOURNAMENT_ID).first()
-        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-id", null)))
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
 
         val authorization = SyncFinalizedMatchesUseCase(
             local,
@@ -223,6 +261,7 @@ class SyncFinalizedMatchesUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = OWNER_ID,
             ),
         )
         repository.createDraftMatch(
@@ -253,6 +292,45 @@ class SyncFinalizedMatchesUseCaseTest {
         }
     }
 
+    private class SuspendingCloudRepository : FinalizedMatchCloudSyncRepository {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun sync(snapshot: FinalizedMatchCloudSyncSnapshot): FinalizedMatchCloudSyncResult {
+            started.complete(Unit)
+            resume.await()
+            return FinalizedMatchCloudSyncResult.Success(9)
+        }
+    }
+
+    private class CountingRevisionRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository by delegate {
+        var revisionWrites = 0
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            revisionWrites += 1
+            return delegate.confirmCloudRevisionByOwner(tournamentId, ownerUserId, cloudRevision)
+        }
+    }
+
+    private class SwitchingAuthRepository(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+
+        override fun observeAuthState(): Flow<AuthState> = state
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+        override suspend fun login(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private class FakeAuthRepository(
         private val state: AuthState,
     ) : AuthRepository {
@@ -272,5 +350,7 @@ class SyncFinalizedMatchesUseCaseTest {
 
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
+        const val OWNER_ID = "owner-id"
+        const val OTHER_OWNER_ID = "other-owner-id"
     }
 }

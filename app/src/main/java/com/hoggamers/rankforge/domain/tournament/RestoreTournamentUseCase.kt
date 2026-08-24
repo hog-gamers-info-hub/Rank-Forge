@@ -20,27 +20,44 @@ class RestoreTournamentUseCase @Inject constructor(
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : TournamentCloudRestorationAction, TournamentCloudRestorationRetryAction {
     override suspend fun loadAvailable(): TournamentCloudRestorationResult {
-        if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
+        if (currentOwnerUserId() == null) return TournamentCloudRestorationResult.AuthenticationRequired
         return cloudRepository.listOwnedTournaments().toResult()
     }
 
     override suspend fun restore(
         tournamentId: String,
-    ): QueueAwareActionResult<TournamentCloudRestorationResult> = record(
-        result = executeForRetry(tournamentId),
-        id = tournamentId,
-    )
+    ): QueueAwareActionResult<TournamentCloudRestorationResult> {
+        val ownerUserId = currentOwnerUserId()
+            ?: return QueueAwareActionResult(TournamentCloudRestorationResult.AuthenticationRequired, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
+        return record(executeForRetry(tournamentId, ownerUserId), tournamentId, ownerUserId)
+    }
 
     override suspend fun executeForRetry(
         tournamentId: String,
+    ): TournamentCloudRestorationResult = currentOwnerUserId()?.let { ownerUserId ->
+        executeForRetry(tournamentId, ownerUserId)
+    } ?: TournamentCloudRestorationResult.AuthenticationRequired
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
     ): TournamentCloudRestorationResult {
-        if (!isAuthenticated()) return TournamentCloudRestorationResult.AuthenticationRequired
-        if (deletionIntentRepository.isBlocking(tournamentId)) {
+        if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudRestorationResult.AuthorizationFailure
+        if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
             return TournamentCloudRestorationResult.ValidationFailure
         }
+        if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudRestorationResult.AuthorizationFailure
         return when (val result = cloudRepository.readOwnedTournament(tournamentId)) {
             is TournamentCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is TournamentCloudRestorationRemoteResult.Success -> {
+                val snapshot = result.value
+                if (
+                    snapshot.tournament.id != tournamentId ||
+                    snapshot.tournament.ownerUserId.isNullOrBlank() ||
+                    snapshot.tournament.ownerUserId != expectedOwnerUserId
+                ) {
+                    return TournamentCloudRestorationResult.ValidationFailure
+                }
                 val cloudRevision = result.value.cloudRevision
                     ?: return TournamentCloudRestorationResult.Conflict(
                         com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
@@ -48,15 +65,23 @@ class RestoreTournamentUseCase @Inject constructor(
                 localRepository.detectTournamentDivergence(tournamentId, cloudRevision)?.let { conflict ->
                     return TournamentCloudRestorationResult.Conflict(conflict)
                 }
+                if (currentOwnerUserId() != expectedOwnerUserId) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
+                }
                 try {
-                    localRepository.restore(result.value)
+                    localRepository.restoreByOwner(snapshot, expectedOwnerUserId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
+                } catch (_: SecurityException) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
                 } catch (_: Throwable) {
                     return TournamentCloudRestorationResult.LocalTransactionFailure
                 }
+                if (currentOwnerUserId() != expectedOwnerUserId) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
+                }
                 try {
-                    matchCloudRestorationAction(tournamentId)
+                    matchCloudRestorationAction(tournamentId, expectedOwnerUserId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
@@ -70,9 +95,11 @@ class RestoreTournamentUseCase @Inject constructor(
     private suspend fun record(
         result: TournamentCloudRestorationResult,
         id: String,
+        ownerUserId: String,
     ): QueueAwareActionResult<TournamentCloudRestorationResult> = QueueAwareActionResult(
         primaryResult = result,
         queueRecordingResult = queueRecorder.record(
+            ownerUserId = ownerUserId,
             operation = SyncQueueOperationType.TOURNAMENT_RESTORATION,
             tournamentId = id,
             status = result.queueStatus(),
@@ -80,12 +107,13 @@ class RestoreTournamentUseCase @Inject constructor(
         ),
     )
 
-    private suspend fun isAuthenticated(): Boolean = try {
-        authRepository.observeAuthState().first() is AuthState.SignedIn
+    private suspend fun currentOwnerUserId(): String? = try {
+        (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
-        false
+        null
     }
 }
 

@@ -14,6 +14,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,9 +28,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val observeMatches: ObserveMatchesUseCase,
@@ -42,6 +46,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val unsaveLobbyTemplate: UnsaveLobbyTemplateUseCase,
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
     val uiState: StateFlow<MatchLobbyScreenshotIntakeUiState> = _uiState.asStateFlow()
@@ -78,13 +83,26 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             matchId = matchId,
         )
         loadJob = viewModelScope.launch {
-            combine(
-                observeMatches(tournamentId),
-                assetRepository.observeByMatchId(matchId),
-                templateRepository.observeByTournamentId(tournamentId),
-            ) { matches, assets, templates ->
+            authRepository.observeAuthState().flatMapLatest { authState ->
+                val ownerUserId = (authState as? AuthState.SignedIn)?.user?.id?.takeIf { it.isNotBlank() }
+                if (ownerUserId == null) {
+                    kotlinx.coroutines.flow.flowOf(
+                        Triple(
+                            emptyList<com.hoggamers.rankforge.domain.tournament.Match>(),
+                            emptyList<MatchLobbyScreenshotAssetEntity>(),
+                            emptyList<com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity>(),
+                        ),
+                    )
+                } else {
+                    combine(
+                        observeMatches(tournamentId),
+                        assetRepository.observeByMatchIdAndOwner(matchId, ownerUserId),
+                        templateRepository.observeByTournamentIdAndOwner(tournamentId, ownerUserId),
+                    ) { matches, assets, templates -> Triple(matches, assets, templates) }
+                }
+            }.collect { (matches, assets, templates) ->
                 val match = matches.firstOrNull { it.id == matchId && it.tournamentId == tournamentId }
-                if (match == null) {
+                val nextState = if (match == null) {
                     MatchLobbyScreenshotIntakeUiState(
                         isLoading = false,
                         isAvailable = false,
@@ -121,7 +139,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         ),
                     )
                 }
-            }.collect { state ->
+                val state = nextState
                 state.slots.filter { it.isLocalFileMissing && it.hasLinkedAsset }.forEach { slot ->
                     markMissingIfNeeded(state.tournamentId!!, state.matchId!!, slot.index)
                 }
@@ -392,6 +410,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     lobbyTemplateSaveStatus = when (result) {
                         SaveLobbyTemplateResult.Saved -> MatchLobbyTemplateSaveStatus.SAVED
                         SaveLobbyTemplateResult.NotReady,
+                        SaveLobbyTemplateResult.AuthenticationRequired,
                         SaveLobbyTemplateResult.Failed,
                         -> MatchLobbyTemplateSaveStatus.FAILED
                     },
@@ -423,6 +442,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     isLobbyTemplateMutationInProgress = false,
                     lobbyTemplateSaveStatus = when (result) {
                         UnsaveLobbyTemplateResult.Unsaved -> MatchLobbyTemplateSaveStatus.UNSAVED
+                        UnsaveLobbyTemplateResult.AuthenticationRequired,
                         UnsaveLobbyTemplateResult.Failed -> MatchLobbyTemplateSaveStatus.FAILED
                     },
                 )
@@ -476,7 +496,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 return@launch
             }
             try {
-                assetRepository.deleteByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, index))
+                assetRepository.deleteByIdentityAndOwner(
+                    MatchLobbyScreenshotIdentity(tournamentId, matchId, index),
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                )
                 duplicateDetector.unlink(MatchLobbyScreenshotIdentity(tournamentId, matchId, index), fingerprint)
                 _uiState.update {
                     it.replaceSlot(index) { MatchLobbyScreenshotSlotUiState(index) }
@@ -510,8 +533,20 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val matchId = current.matchId ?: return false
         val existing = current.slot(index)
         val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, index)
+        val ownerId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
+        if (ownerId == null) {
+            updateSlot(index) {
+                it.copy(
+                    isValidationInProgress = false,
+                    isDuplicateDetectionInProgress = false,
+                    isPreservationInProgress = false,
+                    preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING,
+                )
+            }
+            return false
+        }
         val existingAsset = try {
-            assetRepository.getByIdentity(identity)
+            assetRepository.getByIdentityAndOwner(identity, ownerId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -606,11 +641,6 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             existingAsset?.uploadStatus == ScreenshotUploadStatus.UPLOADED.name &&
             !existingAsset?.storageBucket.isNullOrBlank() &&
             !existingAsset?.storageObjectPath.isNullOrBlank()
-        val ownerId = if (sameIdentityRecovery) {
-            existingAsset?.ownerUserId?.takeIf { it.isNotBlank() }
-        } else {
-            screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
-        }
         if (generation != intakeGeneration) return false
         if (ownerId == null) {
             if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
@@ -651,7 +681,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             uploadedAt = if (retainCloudState) existingAsset?.uploadedAt else null,
             revision = (existingAsset?.revision ?: 0L) + 1L,
         )
-        val saveResult = assetRepository.saveOrReplace(asset)
+        val saveResult = assetRepository.saveOrReplaceByOwner(asset, ownerId)
         if (generation != intakeGeneration) return false
         return when (saveResult) {
             MatchLobbyScreenshotAssetSaveResult.Saved -> {
@@ -675,13 +705,16 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
                 }
                 if (retainCloudState) {
-                    syncRetainedCloudMetadata(identity, fingerprint)
+                    syncRetainedCloudMetadata(identity, fingerprint, ownerId)
                 }
                 true
             }
             MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
             MatchLobbyScreenshotAssetSaveResult.StateConflict,
+            MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired,
+            MatchLobbyScreenshotAssetSaveResult.MatchNotFound,
             -> {
+                localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
                 false
@@ -699,11 +732,19 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private suspend fun syncRetainedCloudMetadata(
         identity: MatchLobbyScreenshotIdentity,
         uploadSha256: String,
+        expectedOwnerUserId: String,
     ) {
-        val latest = readLatestAsset(identity) ?: return
+        if (screenshotOwnerProvider.currentOwnerUserId() != expectedOwnerUserId) return
+        val latest = try {
+            assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return
         if (latest.identityOrNull() != identity || latest.sha256 != uploadSha256) return
         val result = try {
-            cloudDataSource.upsert(latest)
+            cloudDataSource.upsert(latest, expectedOwnerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -712,7 +753,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             )
         }
         if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
-            markCloudFailure(identity, uploadSha256, result.failure.name)
+            if (screenshotOwnerProvider.currentOwnerUserId() == expectedOwnerUserId) {
+                markCloudFailure(identity, uploadSha256, result.failure.name, expectedOwnerUserId)
+            }
         }
     }
 
@@ -720,8 +763,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         identity: MatchLobbyScreenshotIdentity,
         uploadSha256: String,
         failureCode: String,
+        expectedOwnerUserId: String,
     ) {
-        val latest = readLatestAsset(identity) ?: return
+        if (screenshotOwnerProvider.currentOwnerUserId() != expectedOwnerUserId) return
+        val latest = assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId) ?: return
         if (latest.sha256 != uploadSha256) return
         val failedAt = clock.millis()
         val failed = latest.copy(
@@ -730,13 +775,15 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             updatedAt = failedAt,
             revision = latest.revision + 1L,
         )
-        assetRepository.saveOrReplace(failed)
+        if (screenshotOwnerProvider.currentOwnerUserId() == expectedOwnerUserId) {
+            assetRepository.saveOrReplaceByOwner(failed, expectedOwnerUserId)
+        }
     }
 
     private suspend fun readLatestAsset(
         identity: MatchLobbyScreenshotIdentity,
     ): MatchLobbyScreenshotAssetEntity? = try {
-        assetRepository.getByIdentity(identity)
+        assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
@@ -800,8 +847,16 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val key = "$tournamentId:$matchId:$index"
         if (!missingMarked.add(key)) return
         viewModelScope.launch {
-            runCatching {
-                assetRepository.markLocalMissing(MatchLobbyScreenshotIdentity(tournamentId, matchId, index), clock.millis())
+            try {
+                assetRepository.markLocalMissingByOwner(
+                    MatchLobbyScreenshotIdentity(tournamentId, matchId, index),
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    clock.millis(),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Missing-state reconciliation remains retryable.
             }
         }
     }

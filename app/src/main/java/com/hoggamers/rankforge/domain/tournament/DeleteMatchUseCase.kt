@@ -29,34 +29,31 @@ class DeleteMatchUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(matchId: String): DeleteMatchResult {
         val ownerUserId = currentOwnerUserId() ?: return DeleteMatchResult.AuthenticationRequired
-        val existingIntent = try {
-            deletionIntentRepository.read(DeletionTargetType.MATCH, matchId)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return DeleteMatchResult.PendingSyncPreparationFailed
-        }
-        if (existingIntent != null && existingIntent.ownerUserId != ownerUserId) {
-            return DeleteMatchResult.AuthenticationRequired
-        }
-        if (existingIntent?.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
-            return completePendingLocalCleanup(matchId)
-        }
         val match = try {
-            tournamentRepository.observeMatchById(matchId).first()
+            tournamentRepository.observeMatchByIdAndOwner(matchId, ownerUserId).first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             return DeleteMatchResult.TargetNotFound
         }
-
+        val existingIntent = try {
+            deletionIntentRepository.findByTargetAndOwner(DeletionTargetType.MATCH, matchId, ownerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return DeleteMatchResult.PendingSyncPreparationFailed
+        }
+        if (existingIntent?.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+            return completePendingLocalCleanup(matchId, ownerUserId)
+        }
         if (existingIntent != null && match == null) {
-            deletionIntentRepository.clear(DeletionTargetType.MATCH, matchId)
+            deletionIntentRepository.clearByTargetAndOwner(DeletionTargetType.MATCH, matchId, ownerUserId)
             return DeleteMatchResult.Success
         }
         if (match == null) return DeleteMatchResult.TargetNotFound
-        if (existingIntent == null) try {
-            deletionIntentRepository.start(
+        if (existingIntent == null) {
+            val started = try {
+                deletionIntentRepository.startIfAbsent(
                 DeletionIntent(
                     targetType = DeletionTargetType.MATCH,
                     targetId = match.id,
@@ -66,12 +63,26 @@ class DeleteMatchUseCase @Inject constructor(
                     updatedAtEpochMillis = System.currentTimeMillis(),
                 ),
             )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return DeleteMatchResult.PendingSyncPreparationFailed
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                return DeleteMatchResult.PendingSyncPreparationFailed
+            }
+            if (!started) {
+                val reread = try {
+                    deletionIntentRepository.findByTargetAndOwner(DeletionTargetType.MATCH, matchId, ownerUserId)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    return DeleteMatchResult.PendingSyncPreparationFailed
+                }
+                if (reread == null) return DeleteMatchResult.TargetNotFound
+                if (reread.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+                    return completePendingLocalCleanup(matchId, ownerUserId)
+                }
+            }
         }
-        if (!purgeQueue(match.tournamentId)) return DeleteMatchResult.PendingSyncPreparationFailed
+        if (!purgeQueue(match.tournamentId, ownerUserId)) return DeleteMatchResult.PendingSyncPreparationFailed
 
         when (val result = cloudDeletionRepository.deleteMatchStorage(match.tournamentId, match.id)) {
             CloudDeletionStageResult.Success -> Unit
@@ -82,32 +93,50 @@ class DeleteMatchUseCase @Inject constructor(
             is CloudDeletionStageResult.Failed -> return DeleteMatchResult.RemoteDeletionFailed(result.category)
         }
         try {
-            deletionIntentRepository.markRemoteDeleted(DeletionTargetType.MATCH, match.id)
+            if (!deletionIntentRepository.markRemoteDeletedByTargetAndOwner(
+                    DeletionTargetType.MATCH,
+                    match.id,
+                    ownerUserId,
+                )
+            ) return DeleteMatchResult.TargetNotFound
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             return DeleteMatchResult.RemoteDeletedLocalCleanupFailed
         }
-        return completePendingLocalCleanup(match.id)
+        return completePendingLocalCleanup(match.id, ownerUserId)
     }
 
     /** Completes local cleanup after a prior RemoteDeletedLocalCleanupFailed result. */
     suspend fun retryLocalCleanup(matchId: String): DeleteMatchResult {
         val ownerUserId = currentOwnerUserId() ?: return DeleteMatchResult.AuthenticationRequired
-        val intent = deletionIntentRepository.read(DeletionTargetType.MATCH, matchId)
-        if (intent?.ownerUserId != ownerUserId ||
-            intent.phase != DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
-        ) {
-            return DeleteMatchResult.RemoteDeletionFailed(CloudDeletionFailureCategory.AUTHORIZATION)
+        val intent = deletionIntentRepository.findByTargetAndOwner(
+            DeletionTargetType.MATCH,
+            matchId,
+            ownerUserId,
+        ) ?: return DeleteMatchResult.TargetNotFound
+        if (intent.phase != DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING) {
+            return DeleteMatchResult.TargetNotFound
         }
-        return completePendingLocalCleanup(matchId)
+        return completePendingLocalCleanup(matchId, ownerUserId)
     }
 
-    private suspend fun completePendingLocalCleanup(matchId: String): DeleteMatchResult {
-        val result = localResult(localDeletionRepository.deleteMatchLocally(matchId), missingIsSuccess = true)
+    private suspend fun completePendingLocalCleanup(
+        matchId: String,
+        ownerUserId: String,
+    ): DeleteMatchResult {
+        val result = localResult(
+            localDeletionRepository.deleteMatchLocallyByOwner(matchId, ownerUserId),
+            missingIsSuccess = true,
+        )
         if (result == DeleteMatchResult.Success) {
             try {
-                deletionIntentRepository.clear(DeletionTargetType.MATCH, matchId)
+                if (!deletionIntentRepository.clearByTargetAndOwner(
+                        DeletionTargetType.MATCH,
+                        matchId,
+                        ownerUserId,
+                    )
+                ) return DeleteMatchResult.RemoteDeletedLocalCleanupFailed
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -126,8 +155,8 @@ class DeleteMatchUseCase @Inject constructor(
         null
     }
 
-    private suspend fun purgeQueue(tournamentId: String): Boolean = try {
-        queueRepository.purgeByTournamentId(tournamentId)
+    private suspend fun purgeQueue(tournamentId: String, ownerUserId: String): Boolean = try {
+        queueRepository.purgeByTournamentIdAndOwner(tournamentId, ownerUserId)
         true
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -138,6 +167,7 @@ class DeleteMatchUseCase @Inject constructor(
     private fun localResult(result: LocalDeletionResult, missingIsSuccess: Boolean = false): DeleteMatchResult = when (result) {
         LocalDeletionResult.Deleted -> DeleteMatchResult.Success
         LocalDeletionResult.NotFound -> if (missingIsSuccess) DeleteMatchResult.Success else DeleteMatchResult.TargetNotFound
+        LocalDeletionResult.CleanupClaimLost -> DeleteMatchResult.RemoteDeletedLocalCleanupFailed
         LocalDeletionResult.FileCleanupFailed -> DeleteMatchResult.RemoteDeletedLocalCleanupFailed
     }
 }

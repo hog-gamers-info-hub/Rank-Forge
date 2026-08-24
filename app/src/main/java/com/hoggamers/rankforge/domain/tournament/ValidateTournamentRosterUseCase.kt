@@ -3,15 +3,35 @@ package com.hoggamers.rankforge.domain.tournament
 import kotlinx.coroutines.flow.first
 
 class ValidateTournamentRosterUseCase(
-    private val repository: TournamentRepository,
+    private val observeSlots: (String) -> kotlinx.coroutines.flow.Flow<List<TeamSlot>>,
+    private val observePlayers: (String, Int) -> kotlinx.coroutines.flow.Flow<List<RosterPlayer>>,
     private val validator: RosterValidator,
 ) {
+    constructor(
+        repository: TournamentRepository,
+        validator: RosterValidator,
+    ) : this(
+        observeSlots = repository::observeSlotsByTournamentId,
+        observePlayers = repository::observeRosterByTournamentAndSlot,
+        validator = validator,
+    )
+
+    constructor(
+        observeTournamentSlots: ObserveTournamentSlotsUseCase,
+        observeRosterPlayers: ObserveRosterPlayersUseCase,
+        validator: RosterValidator,
+    ) : this(
+        observeSlots = observeTournamentSlots::invoke,
+        observePlayers = observeRosterPlayers::invoke,
+        validator = validator,
+    )
+
     suspend operator fun invoke(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String> = emptyMap(),
         activeTeamSlotNumbers: Set<Int>? = null,
     ): RosterValidationResult {
-        val slots = repository.observeSlotsByTournamentId(tournamentId)
+        val slots = observeSlots(tournamentId)
             .first()
             .sortedBy { it.slotNumber }
             .let { allSlots ->
@@ -22,9 +42,7 @@ class ValidateTournamentRosterUseCase(
                 }
             }
         val teams = slots.map { slot ->
-            val players = repository
-                .observeRosterByTournamentAndSlot(tournamentId, slot.slotNumber)
-                .first()
+            val players = observePlayers(tournamentId, slot.slotNumber).first()
             RosterValidationTeam(
                 slotNumber = slot.slotNumber,
                 teamName = teamNamesBySlotNumber[slot.slotNumber] ?: slot.teamName,

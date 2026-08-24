@@ -16,12 +16,15 @@ import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
+import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
+import com.hoggamers.rankforge.domain.tournament.ReconcileLegacyTournamentOwnershipUseCase
 import java.util.concurrent.CancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -36,6 +39,8 @@ class AuthViewModel @Inject constructor(
     private val requestPasswordReset: RequestPasswordResetUseCase,
     private val updateRecoveredPassword: UpdateRecoveredPasswordUseCase,
     private val recoverForegroundSyncQueue: ForegroundSyncQueueRecoveryAction,
+    private val recoverPendingLocalDeletionCleanup: RecoverPendingLocalDeletionCleanupUseCase,
+    private val reconcileLegacyTournamentOwnership: ReconcileLegacyTournamentOwnershipUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState(isSessionLoading = true))
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -65,10 +70,13 @@ class AuthViewModel @Inject constructor(
                 }
             }
 
-            observeAuthState().collect { authState ->
-                _uiState.update { currentState ->
-                    AuthUiStateReducer.reduceSession(currentState, authState)
-                }
+            observeAuthState().collectLatest { authState ->
+                _uiState.update { currentState -> AuthUiStateReducer.reduceSession(currentState, authState) }
+                val ownerUserId = (authState as? com.hoggamers.rankforge.domain.auth.AuthState.SignedIn)
+                    ?.user?.id?.takeIf { it.isNotBlank() }
+                    ?: return@collectLatest
+                recoverPendingLocalDeletionCleanup(ownerUserId)
+                reconcileLegacyTournamentOwnership(ownerUserId)
             }
         }
     }

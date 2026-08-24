@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import kotlinx.coroutines.CancellationException
 
@@ -18,15 +19,18 @@ const val MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION = 1
 class CachingMatchResultOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val cacheRepository: MatchResultOcrCacheRepository,
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val delegate: MatchResultOcrPreviewRunner,
 ) : MatchResultOcrPreviewRunner {
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultOcrPreviewProcessingResult {
-        val fingerprintBefore = readFingerprint(identity)
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
+            ?: return MatchResultOcrPreviewProcessingResult.MissingAsset
+        val fingerprintBefore = readFingerprint(identity, ownerUserId)
         if (fingerprintBefore != null) {
             val cached = try {
-                cacheRepository.read(fingerprintBefore)
+                cacheRepository.readByOwner(fingerprintBefore, ownerUserId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -35,7 +39,7 @@ class CachingMatchResultOcrPreviewRunner(
             if (
                 cached != null &&
                 cached.isValidFor(fingerprintBefore) &&
-                readFingerprint(identity) == fingerprintBefore
+                readFingerprint(identity, ownerUserId) == fingerprintBefore
             ) {
                 return cached
             }
@@ -43,9 +47,9 @@ class CachingMatchResultOcrPreviewRunner(
 
         val fresh = delegate.process(identity)
         if (fresh is MatchResultOcrPreviewProcessingResult.Processed && fingerprintBefore != null) {
-            if (readFingerprint(identity) == fingerprintBefore) {
+            if (readFingerprint(identity, ownerUserId) == fingerprintBefore) {
                 try {
-                    cacheRepository.save(fingerprintBefore, fresh)
+                    cacheRepository.saveByOwner(fingerprintBefore, fresh, ownerUserId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
@@ -58,8 +62,9 @@ class CachingMatchResultOcrPreviewRunner(
 
     private suspend fun readFingerprint(
         identity: MatchResultScreenshotIdentity,
+        ownerUserId: String,
     ): MatchResultOcrCacheFingerprint? = try {
-        assetRepository.getByIdentity(identity)
+        assetRepository.getByIdentityAndOwner(identity, ownerUserId)
             ?.toMatchResultOcrCacheFingerprint(identity)
     } catch (cancellation: CancellationException) {
         throw cancellation

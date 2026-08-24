@@ -262,6 +262,10 @@ private fun ImageValidationError.toStringRes(): Int = when (this) {
 private fun RosterScreenshotIntakeError.toStringRes(): Int = when (this) {
     RosterScreenshotIntakeError.MISSING_TOURNAMENT_ID ->
         R.string.roster_screenshot_intake_missing_tournament
+    RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED ->
+        R.string.roster_ocr_review_failure_invalid_tournament
+    RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND ->
+        R.string.roster_ocr_review_local_error_tournament_not_found
     RosterScreenshotIntakeError.PHOTO_PICKER_LAUNCH_FAILED ->
         R.string.roster_screenshot_intake_picker_failed
 }

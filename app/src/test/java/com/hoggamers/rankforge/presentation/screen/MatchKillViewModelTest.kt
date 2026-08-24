@@ -32,6 +32,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MatchKillViewModelTest {
@@ -52,9 +53,11 @@ class MatchKillViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
-        matchId = (CreateMatchUseCase(repository)(
+        repository.saveTeamNames("tournament-id", mapOf(1 to "Team 1"))
+        matchId = (CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())(
             CreateMatchInput(
                 tournamentId = "tournament-id",
                 matchNumber = "1",
@@ -67,9 +70,9 @@ class MatchKillViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
-            saveMatchKills = SaveMatchKillsUseCase(repository),
-            saveDraftValue = SaveMatchDraftValueUseCase(repository),
-            clearDraftMatch = ClearDraftMatchUseCase(repository),
+            saveMatchKills = SaveMatchKillsUseCase(repository, SignedInTournamentTestAuthRepository()),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
         )
     }
 
@@ -148,9 +151,9 @@ class MatchKillViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
-            saveMatchKills = SaveMatchKillsUseCase(repository),
-            saveDraftValue = SaveMatchDraftValueUseCase(repository),
-            clearDraftMatch = ClearDraftMatchUseCase(repository),
+            saveMatchKills = SaveMatchKillsUseCase(repository, SignedInTournamentTestAuthRepository()),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
         )
         recreated.load("tournament-id", matchId)
         advanceUntilIdle()

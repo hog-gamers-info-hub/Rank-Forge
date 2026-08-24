@@ -25,6 +25,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -49,14 +51,8 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
             matches = listOf(match),
             lobby = listOf(lobbyAsset(lobbyIdentity)),
             result = listOf(resultAsset(resultIdentity)),
-            lobbyAction = MatchLobbyScreenshotUploadCheckpointAction {
-                calls += "lobby:${it.tournamentId}:${it.matchId}:${it.lobbyScreenshotIndex}"
-                MatchLobbyScreenshotUploadCheckpointResult.Completed
-            },
-            resultAction = MatchResultScreenshotUploadCheckpointAction {
-                calls += "result:${it.tournamentId}:${it.matchId}:${it.role}"
-                MatchResultScreenshotUploadCheckpointResult.Completed
-            },
+            lobbyAction = recordingLobbyAction { calls += "lobby:${it.tournamentId}:${it.matchId}:${it.lobbyScreenshotIndex}" },
+            resultAction = recordingResultAction { calls += "result:${it.tournamentId}:${it.matchId}:${it.role}" },
         )
 
         useCase.recoverAfterParentQueue()
@@ -90,14 +86,8 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
                 validLobby.copy(matchId = "missing-match"),
             ),
             result = listOf(validResult),
-            lobbyAction = MatchLobbyScreenshotUploadCheckpointAction {
-                calls += "lobby"
-                MatchLobbyScreenshotUploadCheckpointResult.Skipped
-            },
-            resultAction = MatchResultScreenshotUploadCheckpointAction {
-                calls += "result"
-                MatchResultScreenshotUploadCheckpointResult.Skipped
-            },
+            lobbyAction = recordingLobbyAction { calls += "lobby" },
+            resultAction = recordingResultAction { calls += "result" },
         )
 
         useCase.recoverAfterParentQueue()
@@ -119,10 +109,17 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
             matches = listOf(match),
             lobby = lobby,
             result = emptyList(),
-            lobbyAction = MatchLobbyScreenshotUploadCheckpointAction {
-                calls += 1
-                if (calls == 1) error("metadata unavailable")
-                MatchLobbyScreenshotUploadCheckpointResult.Completed
+            lobbyAction = object : MatchLobbyScreenshotUploadCheckpointAction {
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult {
+                    calls += 1
+                    if (calls == 1) error("metadata unavailable")
+                    return MatchLobbyScreenshotUploadCheckpointResult.Completed
+                }
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity, expectedOwnerUserId: String): MatchLobbyScreenshotUploadCheckpointResult {
+                    calls += 1
+                    if (calls == 1) error("metadata unavailable")
+                    return MatchLobbyScreenshotUploadCheckpointResult.Completed
+                }
             },
         )
 
@@ -140,10 +137,51 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
             matches = listOf(match),
             lobby = listOf(lobbyAsset(MatchLobbyScreenshotIdentity(tournament.id, match.id, 1))),
             result = emptyList(),
-            lobbyAction = MatchLobbyScreenshotUploadCheckpointAction {
-                throw CancellationException("cancelled")
+            lobbyAction = object : MatchLobbyScreenshotUploadCheckpointAction {
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult = throw CancellationException("cancelled")
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity, expectedOwnerUserId: String): MatchLobbyScreenshotUploadCheckpointResult = throw CancellationException("cancelled")
             },
         ).recoverAfterParentQueue()
+    }
+
+    @Test
+    fun ownerSwitchStopsRemainingForegroundRecoveryItems() = runTest {
+        val tournament = tournament()
+        val match = match()
+        val owner = MutableRecoveryOwnerProvider("owner-1")
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val calls = mutableListOf<MatchLobbyScreenshotIdentity>()
+        val useCase = useCase(
+            tournaments = listOf(tournament),
+            matches = listOf(match),
+            lobby = listOf(
+                lobbyAsset(MatchLobbyScreenshotIdentity(tournament.id, match.id, 1)),
+                lobbyAsset(MatchLobbyScreenshotIdentity(tournament.id, match.id, 2)),
+            ),
+            result = emptyList(),
+            ownerProvider = owner,
+            lobbyAction = object : MatchLobbyScreenshotUploadCheckpointAction {
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult =
+                    MatchLobbyScreenshotUploadCheckpointResult.Skipped
+
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity, expectedOwnerUserId: String): MatchLobbyScreenshotUploadCheckpointResult {
+                    calls += identity
+                    started.complete(Unit)
+                    finish.await()
+                    return MatchLobbyScreenshotUploadCheckpointResult.Completed
+                }
+            },
+        )
+
+        val pending = async { useCase.recoverAfterParentQueue("owner-1") }
+        started.await()
+        owner.ownerId = "owner-2"
+        finish.complete(Unit)
+        pending.await()
+
+        assertEquals(1, calls.size)
+        assertEquals(1, calls.single().lobbyScreenshotIndex)
     }
 
     private fun useCase(
@@ -151,6 +189,9 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
         matches: List<Match>,
         lobby: List<MatchLobbyScreenshotAssetEntity>,
         result: List<MatchResultScreenshotAssetEntity>,
+        ownerProvider: ScreenshotOwnerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String = "owner-1"
+        },
         lobbyAction: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction {
             MatchLobbyScreenshotUploadCheckpointResult.Skipped
         },
@@ -160,14 +201,36 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
     ) = RecoverScreenshotAssetsOnForegroundConnectivityUseCase(
         observeTournaments = ObserveTournamentsUseCase(FakeTournamentRepository(tournaments, matches)),
         observeMatches = ObserveMatchesUseCase(FakeTournamentRepository(tournaments, matches)),
-        ownerProvider = object : ScreenshotOwnerProvider {
-            override suspend fun currentOwnerUserId(): String = "owner-1"
-        },
+        ownerProvider = ownerProvider,
         lobbyAssets = FakeLobbyRepository(lobby),
         resultAssets = FakeResultRepository(result),
         lobbyCheckpoint = lobbyAction,
         resultCheckpoint = resultAction,
     )
+
+    private fun recordingLobbyAction(onRun: (MatchLobbyScreenshotIdentity) -> Unit) =
+        object : MatchLobbyScreenshotUploadCheckpointAction {
+            override suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult {
+                onRun(identity)
+                return MatchLobbyScreenshotUploadCheckpointResult.Completed
+            }
+            override suspend fun run(identity: MatchLobbyScreenshotIdentity, expectedOwnerUserId: String): MatchLobbyScreenshotUploadCheckpointResult {
+                onRun(identity)
+                return MatchLobbyScreenshotUploadCheckpointResult.Completed
+            }
+        }
+
+    private fun recordingResultAction(onRun: (MatchResultScreenshotIdentity) -> Unit) =
+        object : MatchResultScreenshotUploadCheckpointAction {
+            override suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult {
+                onRun(identity)
+                return MatchResultScreenshotUploadCheckpointResult.Completed
+            }
+            override suspend fun run(identity: MatchResultScreenshotIdentity, expectedOwnerUserId: String): MatchResultScreenshotUploadCheckpointResult {
+                onRun(identity)
+                return MatchResultScreenshotUploadCheckpointResult.Completed
+            }
+        }
 
     private fun tournament() = Tournament(
         id = "tournament-1",
@@ -176,6 +239,7 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
         organizerName = "Organizer",
         organizerContactNumber = "contact",
         status = TournamentStatus.DRAFT,
+        ownerUserId = "owner-1",
     )
 
     private fun match() = Match(
@@ -247,6 +311,10 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
     )
 }
 
+private class MutableRecoveryOwnerProvider(var ownerId: String?) : ScreenshotOwnerProvider {
+    override suspend fun currentOwnerUserId(): String? = ownerId
+}
+
 private class FakeTournamentRepository(
     private val tournaments: List<Tournament>,
     private val matches: List<Match>,
@@ -269,6 +337,8 @@ private class FakeLobbyRepository(
     override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(assets.find { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex })
     override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotAssetEntity? = assets.find { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(assets.filter { it.tournamentId == tournamentId })
+    override fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+        flowOf(assets.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId })
     override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String): MatchLobbyScreenshotAssetEntity? = null
     override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.Saved
     override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
@@ -286,6 +356,8 @@ private class FakeResultRepository(
     override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> = flowOf(assets.find { it.matchId == identity.matchId && it.screenshotRole == identity.role.name })
     override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? = assets.find { it.matchId == identity.matchId && it.screenshotRole == identity.role.name }
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(assets.filter { it.tournamentId == tournamentId })
+    override fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
+        flowOf(assets.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId })
     override suspend fun findDuplicateFingerprint(identity: MatchResultScreenshotIdentity, sha256: String): MatchResultScreenshotAssetEntity? = null
     override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult = MatchResultScreenshotAssetSaveResult.Saved
     override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit

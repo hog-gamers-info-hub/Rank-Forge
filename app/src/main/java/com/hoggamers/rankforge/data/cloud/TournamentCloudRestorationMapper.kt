@@ -126,6 +126,7 @@ object TournamentCloudRestorationMapper {
                     organizerName = payloads.tournament.organizerName,
                     organizerContactNumber = payloads.tournament.organizerContact,
                     status = status,
+                    ownerUserId = payloads.tournament.ownerId,
                 ),
                 slots = slots,
                 players = players,

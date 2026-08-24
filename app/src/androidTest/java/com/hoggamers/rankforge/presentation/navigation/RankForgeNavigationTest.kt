@@ -242,6 +242,7 @@ import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
@@ -2122,6 +2123,13 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             fingerprintGenerator = ImageSourceFingerprintGenerator(
                 streamOpener = ImageSourceStreamOpener { null },
             ),
+            authRepository = object : AuthRepository {
+                override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedOut)
+                override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+                override suspend fun signUp(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun login(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun logout(): AuthOperationResult = error("unused")
+            },
         )
 
     private fun createRosterOcrReviewViewModel(
@@ -2131,6 +2139,11 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             sourceProvider = object : RosterOcrSourceProvider {
                 override suspend fun load(tournamentId: String): RosterOcrSourceProviderResult =
                     RosterOcrSourceProviderResult.IncompleteScreenshotSet
+
+                override suspend fun load(
+                    tournamentId: String,
+                    expectedOwnerUserId: String,
+                ): RosterOcrSourceProviderResult = load(tournamentId)
             },
             panelPreparer = object : RosterOcrPanelPreparer {
                 override suspend fun prepare(source: com.hoggamers.rankforge.domain.ocr.review.RosterOcrScreenshotSource): RosterOcrPanelPreparationResult =
@@ -2145,6 +2158,13 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             parser = FixedLayoutRosterCandidateParser(),
             associator = FixedRosterSlotAssociator(),
             validator = DefaultRosterOcrValidator(),
+            authRepository = object : AuthRepository {
+                override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedOut)
+                override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+                override suspend fun signUp(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun login(email: String, password: String): AuthOperationResult = error("unused")
+                override suspend fun logout(): AuthOperationResult = error("unused")
+            },
         )
         val cloudReplacement = ReplaceTournamentRosterInCloudUseCase(
             tournamentRepository = repository,
@@ -2483,6 +2503,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             standingsViewModel = { tournamentId ->
                 TournamentStandingsViewModel(
                     observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     cumulativeStandings = CumulativeTournamentStandingsEngine(),
                     tieBreakRules = TieBreakRules(),
                 ).also {
@@ -2817,6 +2838,22 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         return TournamentCreationViewModel(
             createTournament = CreateTournamentUseCase(
                 repository = repository,
+                authRepository = object : AuthRepository {
+                    override fun observeAuthState(): Flow<AuthState> = flowOf(
+                        AuthState.SignedIn(AuthUser("navigation-user", null)),
+                    )
+
+                    override suspend fun restoreSession(): AuthRestorationResult =
+                        AuthRestorationResult.NoSavedSession
+
+                    override suspend fun signUp(email: String, password: String): AuthOperationResult =
+                        error("unused")
+
+                    override suspend fun login(email: String, password: String): AuthOperationResult =
+                        error("unused")
+
+                    override suspend fun logout(): AuthOperationResult = error("unused")
+                },
                 clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             ),
             clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),

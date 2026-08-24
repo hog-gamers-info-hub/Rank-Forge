@@ -24,6 +24,20 @@ interface MatchCloudRestorationRepository {
 interface MatchRestorationLocalRepository {
     suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot)
 
+    /** Owner-bound restoration entry point for suspended cloud workflows. */
+    suspend fun replaceMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ): Unit = error("Expected owner is required for match restoration.")
+
+    /** Owner-bound draft replacement for conflict-resolution cloud continuations. */
+    suspend fun replaceDraftMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ): Unit = error("Expected owner is required for draft replacement.")
+
     /** Replaces draft rows only; finalized rows are intentionally preserved. */
     suspend fun replaceDraftMatches(snapshot: MatchCloudRestorationSnapshot): Unit =
         error("Draft-only match replacement is not supported by this repository.")
@@ -49,10 +63,19 @@ sealed interface MatchCloudRestorationResult {
 
 fun interface MatchCloudRestorationAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult>
+
+    /** Parent restoration must pass its immutable owner through to the child. */
+    suspend operator fun invoke(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> =
+        throw SecurityException("Expected owner is required for child restoration.")
 }
 
 fun interface MatchCloudRestorationRetryAction {
     suspend fun executeForRetry(tournamentId: String): MatchCloudRestorationResult
+    suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): MatchCloudRestorationResult =
+        throw SecurityException("Expected queue owner is required.")
 }
 
 fun interface MatchScreenshotRestorationAction {
@@ -60,11 +83,23 @@ fun interface MatchScreenshotRestorationAction {
         tournamentId: String,
         restoredMatchIds: Set<String>,
     ): MatchCloudRestorationResult
+
+    suspend operator fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
+    ): MatchCloudRestorationResult = throw SecurityException("Expected screenshot owner is required.")
 }
 
 object NoOpMatchScreenshotRestorationAction : MatchScreenshotRestorationAction {
     override suspend fun invoke(
         tournamentId: String,
         restoredMatchIds: Set<String>,
+    ): MatchCloudRestorationResult = MatchCloudRestorationResult.Success
+
+    override suspend fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult = MatchCloudRestorationResult.Success
 }

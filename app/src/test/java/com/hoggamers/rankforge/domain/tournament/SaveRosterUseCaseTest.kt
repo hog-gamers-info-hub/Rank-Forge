@@ -59,8 +59,8 @@ class SaveRosterUseCaseTest {
     @Test
     fun useCasePersistsAValidSixPlayerRoster() = runTest {
         val repository = InMemoryTournamentRepository()
-        repository.create(tournament())
-        val useCase = SaveRosterUseCase(repository)
+        repository.create(tournament().copy(ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID))
+        val useCase = SaveRosterUseCase(repository, SignedInTournamentTestAuthRepository())
         val players = (1..6).map { playerNumber ->
             RosterPlayer.create("stable-id", 1, "Player $playerNumber")
         }

@@ -21,6 +21,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationResult
 import com.hoggamers.rankforge.domain.tournament.MatchScreenshotRestorationAction
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreservationResult
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
+import com.hoggamers.rankforge.presentation.screen.NoOpScreenshotOwnerProvider
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.Instant
@@ -37,10 +39,33 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
     private val localImagePreserver: LocalImagePreserver,
     private val lobbyAssets: MatchLobbyScreenshotAssetRepository,
     private val resultAssets: MatchResultScreenshotAssetRepository,
+    private val ownerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : MatchScreenshotRestorationAction {
     override suspend fun invoke(
         tournamentId: String,
         restoredMatchIds: Set<String>,
+    ): MatchCloudRestorationResult {
+        val expectedOwnerUserId = ownerProvider.currentOwnerUserId()
+            ?.takeIf { it.isNotBlank() }
+            ?: return MatchCloudRestorationResult.AuthorizationFailure
+        return restore(tournamentId, restoredMatchIds, expectedOwnerUserId)
+    }
+
+    override suspend fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
+    ): MatchCloudRestorationResult {
+        if (expectedOwnerUserId.isBlank() || ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            return MatchCloudRestorationResult.AuthorizationFailure
+        }
+        return restore(tournamentId, restoredMatchIds, expectedOwnerUserId)
+    }
+
+    private suspend fun restore(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult {
         if (tournamentId.isBlank()) return MatchCloudRestorationResult.ValidationFailure
         if (restoredMatchIds.isEmpty()) return MatchCloudRestorationResult.Success
@@ -54,18 +79,22 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
             is MatchResultScreenshotAssetCloudReadResult.Success -> read.assets
         }
 
-        if (lobbyPayloads.any { !validateLobby(it, tournamentId, restoredMatchIds) } ||
-            resultPayloads.any { !validateResult(it, tournamentId, restoredMatchIds) }
+        if (lobbyPayloads.any { !validateLobby(it, tournamentId, restoredMatchIds, expectedOwnerUserId) } ||
+            resultPayloads.any { !validateResult(it, tournamentId, restoredMatchIds, expectedOwnerUserId) }
         ) return MatchCloudRestorationResult.ValidationFailure
 
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            return MatchCloudRestorationResult.AuthorizationFailure
+        }
+
         lobbyPayloads.forEach { payload ->
-            when (val outcome = restoreLobby(payload)) {
+            when (val outcome = restoreLobby(payload, expectedOwnerUserId)) {
                 null -> Unit
                 else -> return outcome
             }
         }
         resultPayloads.forEach { payload ->
-            when (val outcome = restoreResult(payload)) {
+            when (val outcome = restoreResult(payload, expectedOwnerUserId)) {
                 null -> Unit
                 else -> return outcome
             }
@@ -75,12 +104,17 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
 
     private suspend fun restoreLobby(
         payload: MatchLobbyScreenshotAssetCloudPayload,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult? {
         val identity = MatchLobbyScreenshotIdentity(payload.tournamentId, payload.matchId, payload.lobbyScreenshotIndex)
-        val bytes = when (val download = downloadAndVerify(payload.storageBucket!!, payload.storageObjectPath!!, payload.byteSize, payload.sha256)) {
+        val bytes = when (val download = downloadAndVerify(payload.storageBucket!!, payload.storageObjectPath!!, payload.byteSize, payload.sha256, expectedOwnerUserId)) {
             is VerifiedDownload.Valid -> download.bytes
             VerifiedDownload.Invalid -> return MatchCloudRestorationResult.ValidationFailure
+            VerifiedDownload.Authorization -> return MatchCloudRestorationResult.AuthorizationFailure
             VerifiedDownload.Failed -> return MatchCloudRestorationResult.NetworkFailure
+        }
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            return MatchCloudRestorationResult.AuthorizationFailure
         }
         val fileResult = localImagePreserver.restoreMatchLobbyScreenshot(
             tournamentId = identity.tournamentId,
@@ -93,6 +127,10 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
             is LocalImagePreservationResult.Preserved -> fileResult.file
             is LocalImagePreservationResult.PreservedWithCleanupFailure -> fileResult.file
             is LocalImagePreservationResult.Failed -> return MatchCloudRestorationResult.LocalTransactionFailure
+        }
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            localImagePreserver.delete(file)
+            return MatchCloudRestorationResult.AuthorizationFailure
         }
         val asset = MatchLobbyScreenshotAssetEntity(
             tournamentId = payload.tournamentId,
@@ -134,7 +172,11 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
                 payload.localFileExtension,
             )
         ) return MatchCloudRestorationResult.LocalTransactionFailure
-        return when (lobbyAssets.restoreOrReplace(asset)) {
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            localImagePreserver.delete(file)
+            return MatchCloudRestorationResult.AuthorizationFailure
+        }
+        return when (lobbyAssets.restoreOrReplaceByOwner(asset, expectedOwnerUserId)) {
             MatchLobbyScreenshotAssetSaveResult.Saved -> null
             else -> MatchCloudRestorationResult.LocalTransactionFailure
         }
@@ -142,14 +184,19 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
 
     private suspend fun restoreResult(
         payload: MatchResultScreenshotAssetCloudPayload,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult? {
         val role = runCatching { MatchResultScreenshotRole.valueOf(payload.screenshotRole) }.getOrNull()
             ?: return MatchCloudRestorationResult.ValidationFailure
         val identity = MatchResultScreenshotIdentity(payload.tournamentId, payload.matchId, role = role)
-        val bytes = when (val download = downloadAndVerify(payload.storageBucket!!, payload.storageObjectPath!!, payload.byteSize, payload.sha256)) {
+        val bytes = when (val download = downloadAndVerify(payload.storageBucket!!, payload.storageObjectPath!!, payload.byteSize, payload.sha256, expectedOwnerUserId)) {
             is VerifiedDownload.Valid -> download.bytes
             VerifiedDownload.Invalid -> return MatchCloudRestorationResult.ValidationFailure
+            VerifiedDownload.Authorization -> return MatchCloudRestorationResult.AuthorizationFailure
             VerifiedDownload.Failed -> return MatchCloudRestorationResult.NetworkFailure
+        }
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            return MatchCloudRestorationResult.AuthorizationFailure
         }
         val fileResult = localImagePreserver.restoreMatchResultScreenshot(
             tournamentId = identity.tournamentId,
@@ -162,6 +209,10 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
             is LocalImagePreservationResult.Preserved -> fileResult.file
             is LocalImagePreservationResult.PreservedWithCleanupFailure -> fileResult.file
             is LocalImagePreservationResult.Failed -> return MatchCloudRestorationResult.LocalTransactionFailure
+        }
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            localImagePreserver.delete(file)
+            return MatchCloudRestorationResult.AuthorizationFailure
         }
         val asset = MatchResultScreenshotAssetEntity(
             tournamentId = payload.tournamentId,
@@ -204,7 +255,11 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
                 payload.localFileExtension,
             )
         ) return MatchCloudRestorationResult.LocalTransactionFailure
-        return when (resultAssets.restoreOrReplace(asset)) {
+        if (ownerProvider.currentOwnerUserId() != expectedOwnerUserId) {
+            localImagePreserver.delete(file)
+            return MatchCloudRestorationResult.AuthorizationFailure
+        }
+        return when (resultAssets.restoreOrReplaceByOwner(asset, expectedOwnerUserId)) {
             MatchResultScreenshotAssetSaveResult.Saved -> null
             else -> MatchCloudRestorationResult.LocalTransactionFailure
         }
@@ -215,8 +270,9 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
         objectPath: String,
         expectedSize: Long,
         expectedSha: String,
+        expectedOwnerUserId: String,
     ): VerifiedDownload = try {
-        val bytes = storage.download(bucket, objectPath)
+        val bytes = storage.download(expectedOwnerUserId, bucket, objectPath)
         if (bytes.size.toLong() != expectedSize || bytes.sha256() != expectedSha) {
             VerifiedDownload.Invalid
         } else {
@@ -224,6 +280,8 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
+    } catch (_: SecurityException) {
+        VerifiedDownload.Authorization
     } catch (_: IOException) {
         VerifiedDownload.Failed
     } catch (_: RuntimeException) {
@@ -234,8 +292,11 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
         payload: MatchLobbyScreenshotAssetCloudPayload,
         tournamentId: String,
         matchIds: Set<String>,
+        expectedOwnerUserId: String,
     ): Boolean {
         if (payload.tournamentId != tournamentId || payload.matchId !in matchIds || payload.ownerId.isBlank() ||
+            payload.ownerId != expectedOwnerUserId ||
+            !storagePathMatchesOwner(payload.storageObjectPath, expectedOwnerUserId) ||
             payload.lobbyScreenshotIndex !in 1..3 || !validFormat(payload.localFileExtension, payload.mimeType) ||
             payload.originalWidth <= 0 || payload.originalHeight <= 0 || payload.byteSize <= 0 ||
             !validSha(payload.sha256) || payload.storageBucket.isNullOrBlank() || payload.storageObjectPath.isNullOrBlank() ||
@@ -259,8 +320,11 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
         payload: MatchResultScreenshotAssetCloudPayload,
         tournamentId: String,
         matchIds: Set<String>,
+        expectedOwnerUserId: String,
     ): Boolean {
         if (payload.tournamentId != tournamentId || payload.matchId !in matchIds || payload.ownerId.isBlank() ||
+            payload.ownerId != expectedOwnerUserId ||
+            !storagePathMatchesOwner(payload.storageObjectPath, expectedOwnerUserId) ||
             payload.screenshotKind != OcrScreenshotKind.MATCH_RESULT.name ||
             runCatching { MatchResultScreenshotRole.valueOf(payload.screenshotRole) }.isFailure ||
             !validFormat(payload.localFileExtension, payload.mimeType) || payload.originalWidth <= 0 ||
@@ -310,6 +374,9 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
 
     private fun validSha(value: String): Boolean = value.matches(Regex("[0-9a-fA-F]{64}"))
 
+    private fun storagePathMatchesOwner(path: String?, expectedOwnerUserId: String): Boolean =
+        path?.split('/')?.let { it.size >= 2 && it[0] == "users" && it[1] == expectedOwnerUserId } == true
+
     private fun String.toEpochMillis(): Long? = runCatching { Instant.parse(this).toEpochMilli() }.getOrNull()
 
     private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
@@ -319,6 +386,7 @@ class SupabaseMatchScreenshotRestorationAction @Inject constructor(
     private sealed interface VerifiedDownload {
         data class Valid(val bytes: ByteArray) : VerifiedDownload
         data object Invalid : VerifiedDownload
+        data object Authorization : VerifiedDownload
         data object Failed : VerifiedDownload
     }
 }

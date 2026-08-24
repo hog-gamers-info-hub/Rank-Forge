@@ -1,5 +1,11 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -7,6 +13,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,13 +24,16 @@ import org.junit.Test
 class CreateTournamentUseCaseTest {
     private val today = LocalDate.of(2026, 7, 24)
     private lateinit var repository: RecordingTournamentRepository
+    private lateinit var authRepository: FakeAuthRepository
     private lateinit var useCase: CreateTournamentUseCase
 
     @Before
     fun setUp() {
         repository = RecordingTournamentRepository()
+        authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("user-a", "user-a@example.test")))
         useCase = CreateTournamentUseCase(
             repository = repository,
+            authRepository = authRepository,
             clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
         )
     }
@@ -35,8 +45,26 @@ class CreateTournamentUseCaseTest {
         val created = result.createdTournament()
         assertEquals(TournamentStatus.DRAFT, created.status)
         assertTrue(created.id.isNotBlank())
+        assertEquals("user-a", created.ownerUserId)
         assertEquals(1, repository.records.size)
         assertEquals(created.id, repository.records.single().id)
+        assertEquals("user-a", repository.records.single().ownerUserId)
+    }
+
+    @Test
+    fun signedOutStateRequiresAuthenticationWithoutCreating() = runTest {
+        authRepository.state = AuthState.SignedOut
+
+        assertEquals(CreateTournamentResult.AuthenticationRequired, useCase(validInput()))
+        assertTrue(repository.records.isEmpty())
+    }
+
+    @Test
+    fun blankSignedInUserIdRequiresAuthenticationWithoutCreating() = runTest {
+        authRepository.state = AuthState.SignedIn(AuthUser("   ", "user@example.test"))
+
+        assertEquals(CreateTournamentResult.AuthenticationRequired, useCase(validInput()))
+        assertTrue(repository.records.isEmpty())
     }
 
     @Test
@@ -149,6 +177,23 @@ class CreateTournamentUseCaseTest {
 
     private fun CreateTournamentResult.createdTournament(): Tournament =
         (this as CreateTournamentResult.Created).tournament
+
+    private class FakeAuthRepository(
+        var state: AuthState,
+    ) : AuthRepository {
+        override fun observeAuthState(): Flow<AuthState> = flowOf(state)
+
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+
+        override suspend fun signUp(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+
+        override suspend fun login(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
 
     private class RecordingTournamentRepository : TournamentRepository {
         val records = mutableListOf<Tournament>()

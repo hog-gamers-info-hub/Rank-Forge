@@ -12,6 +12,7 @@ import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.auth.*
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -48,6 +49,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     private lateinit var tournamentRepository: InMemoryTournamentRepository
     private lateinit var lobbyRepository: FakeLobbyRepository
     private lateinit var templateRepository: FakeTemplateRepository
+    private lateinit var testAuthRepository: MutableTestAuthRepository
     private val tournamentId = "lobby-intake-tournament"
     private val matchId = "lobby-intake-match"
 
@@ -55,6 +57,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     fun setUp() = kotlinx.coroutines.runBlocking {
         Dispatchers.setMain(dispatcher)
         tournamentRepository = InMemoryTournamentRepository()
+        testAuthRepository = MutableTestAuthRepository()
         templateRepository = FakeTemplateRepository()
         tournamentRepository.create(
             Tournament(
@@ -64,6 +67,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = "owner-1",
             ),
         )
         tournamentRepository.saveTeamNames(
@@ -85,6 +89,21 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
     @After
     fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun templateObservationIsCancelledAndHiddenWhenAuthSwitchesFromAToB() = runTest {
+        val root = Files.createTempDirectory("lobby-intake-template-owner-switch").toFile()
+        val preserver = preserver(root)
+        seedActiveTemplate(preserver)
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isLobbySavedForNextMatches)
+
+        testAuthRepository.state.value = AuthState.SignedIn(AuthUser("owner-b", "owner-b@example.test"))
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isLobbySavedForNextMatches)
+    }
 
     @Test
     fun loadRestoresOnlyTheExactMatchAcrossThreeLobbySlots() = runTest {
@@ -333,20 +352,20 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     fun cancellingLobbyBatchMidPreservationClearsOldFlagsAndKeepsReplacementState() = runTest {
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        var ownerCalls = 0
-        val ownerProvider = object : ScreenshotOwnerProvider {
-            override suspend fun currentOwnerUserId(): String {
-                ownerCalls++
-                if (ownerCalls == 2) {
+        val gatedPreserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("lobby-cancel-preservation").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { uri ->
+                if (uri == "mid") {
                     started.complete(Unit)
                     release.await()
                 }
-                return "owner-1"
-            }
-        }
+                byteArrayOf(1, 2, 3).inputStream()
+            },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
         val viewModel = viewModel(
-            preserver(Files.createTempDirectory("lobby-cancel-preservation").toFile()),
-            ownerProvider = ownerProvider,
+            gatedPreserver,
             bytesByUri = mapOf("one" to byteArrayOf(1), "mid" to byteArrayOf(2), "three" to byteArrayOf(3)),
         )
         viewModel.load(tournamentId, matchId)
@@ -529,7 +548,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         advanceUntilIdle()
 
         val afterLateCompletion = viewModel.uiState.value.slot(2)!!
-        assertTrue(afterLateCompletion.isPreservationInProgress)
+        assertTrue(afterLateCompletion.isValidationInProgress)
         assertNull(afterLateCompletion.preservationError)
 
         replacementRelease.complete(Unit)
@@ -1048,6 +1067,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
                 templateRepository = templateRepository,
                 localImagePreserver = preserver,
                 clock = java.time.Clock.systemUTC(),
+                authRepository = testAuthRepository,
+                tournamentRepository = tournamentRepository,
             )(tournamentId, matchId),
         )
     }
@@ -1067,6 +1088,9 @@ class MatchLobbyScreenshotIntakeViewModelTest {
                 Dispatchers.Unconfined,
             ),
             lobbyRepository,
+            screenshotOwnerProvider = ownerProvider ?: object : ScreenshotOwnerProvider {
+                override suspend fun currentOwnerUserId(): String = "owner-1"
+            },
         ),
         localImagePreserver = preserver,
         assetRepository = lobbyRepository,
@@ -1079,13 +1103,18 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             templateRepository = templateRepository,
             localImagePreserver = preserver,
             clock = java.time.Clock.systemUTC(),
+            authRepository = testAuthRepository,
+            tournamentRepository = tournamentRepository,
         ),
         unsaveLobbyTemplate = UnsaveLobbyTemplateUseCase(
             templateRepository = templateRepository,
             localImagePreserver = preserver,
+            authRepository = testAuthRepository,
+            tournamentRepository = tournamentRepository,
         ),
         templateRepository = templateRepository,
         cloudDataSource = cloudDataSource,
+        authRepository = testAuthRepository,
     )
 
     private fun preserver(
@@ -1171,9 +1200,14 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         val saveResults = mutableListOf<MatchLobbyScreenshotAssetSaveResult>()
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.filter { asset -> asset.matchId == matchId }) } } }
+        override fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
+            state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.filter { asset -> asset.matchId == matchId && asset.ownerUserId == ownerUserId }) } } }
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> =
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.firstOrNull { asset -> asset.matchId == identity.matchId && asset.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }) } } }
+        override fun observeByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Flow<MatchLobbyScreenshotAssetEntity?> =
+            state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.firstOrNull { asset -> asset.ownerUserId == ownerUserId && asset.matchId == identity.matchId && asset.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }) } } }
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity) = state.value.firstOrNull { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) = state.value.firstOrNull { it.ownerUserId == ownerUserId && it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = state.asStateFlow()
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = state.value.firstOrNull { it.tournamentId == identity.tournamentId && it.sha256 == sha256 && !(it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex) }
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult {
@@ -1183,12 +1217,24 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             }
             return result
         }
+        override suspend fun saveOrReplaceByOwner(asset: MatchLobbyScreenshotAssetEntity, ownerUserId: String): MatchLobbyScreenshotAssetSaveResult =
+            if (asset.ownerUserId != ownerUserId) MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired else saveOrReplace(asset)
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
+        override suspend fun markLocalMissingByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, updatedAt: Long): Boolean = getByIdentityAndOwner(identity, ownerUserId) != null
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) { state.value = state.value.filterNot { it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex } }
+        override suspend fun deleteByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Boolean {
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) return false
+            deleteByIdentity(identity)
+            return true
+        }
         override suspend fun deleteByMatchId(matchId: String) { state.value = state.value.filterNot { it.matchId == matchId } }
         override suspend fun persistConfirmedCrop(identity: MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+        override suspend fun persistConfirmedCropByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, crop: OcrNormalizedCropRect, updatedAt: Long) =
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) MatchLobbyScreenshotCropSaveResult.MissingAsset else persistConfirmedCrop(identity, crop, updatedAt)
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+        override suspend fun clearConfirmedCropByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, updatedAt: Long) =
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) MatchLobbyScreenshotCropSaveResult.MissingAsset else clearConfirmedCrop(identity, updatedAt)
         fun readByMatchAndIndex(matchId: String, index: Int) = state.value.firstOrNull { it.matchId == matchId && it.lobbyScreenshotIndex == index }
         fun snapshot() = state.value
     }
@@ -1203,6 +1249,16 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
             MatchLobbyScreenshotAssetCloudResult.Success
+    }
+
+    private class MutableTestAuthRepository : AuthRepository {
+        val state = MutableStateFlow<AuthState>(AuthState.SignedIn(AuthUser("owner-1", "owner-1@example.test")))
+        override fun observeAuthState(): Flow<AuthState> = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
     }
 
     private class FakeTemplateRepository : TournamentLobbyTemplateAssetRepository {
@@ -1222,6 +1278,14 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
         override suspend fun getByTournamentId(tournamentId: String): List<TournamentLobbyTemplateAssetEntity> =
             state.value.filter { it.tournamentId == tournamentId }
+        override fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> =
+            state.asStateFlow().let { flow ->
+                kotlinx.coroutines.flow.flow {
+                    flow.collect { templates -> emit(templates.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }) }
+                }
+            }
+        override suspend fun getByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): List<TournamentLobbyTemplateAssetEntity> =
+            state.value.filter { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
 
         override suspend fun replaceForTournament(
             tournamentId: String,
@@ -1236,6 +1300,18 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             if (throwOnDelete) error("delete failed")
             state.value = state.value.filterNot { it.tournamentId == tournamentId }
         }
+        override suspend fun replaceForTournamentByOwner(tournamentId: String, ownerUserId: String, assets: List<TournamentLobbyTemplateAssetEntity>): Boolean {
+            state.value = state.value.filterNot { it.tournamentId == tournamentId } + assets
+            return true
+        }
+        override suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean {
+            deleteCalls += 1
+            deleteGate?.await()
+            if (throwOnDelete) error("delete failed")
+            val before = state.value.size
+            state.value = state.value.filterNot { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
+            return state.value.size != before || before == 0
+        }
 
         fun set(templates: List<TournamentLobbyTemplateAssetEntity>) {
             state.value = templates
@@ -1249,6 +1325,15 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()
 
         override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            started.complete(Unit)
+            return result.await()
+        }
+
+        override suspend fun upsert(
+            asset: MatchLobbyScreenshotAssetEntity,
+            expectedOwnerUserId: String,
+        ): MatchLobbyScreenshotAssetCloudResult {
             upserts += asset
             started.complete(Unit)
             return result.await()

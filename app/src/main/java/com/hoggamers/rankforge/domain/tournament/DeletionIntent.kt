@@ -20,27 +20,95 @@ class DeletionBlockedException(tournamentId: String) :
     IllegalStateException("Deletion is active for tournament $tournamentId")
 
 interface DeletionIntentRepository {
-    suspend fun read(targetType: DeletionTargetType, targetId: String): DeletionIntent?
+    /** Trusted legacy/test compatibility only; user-facing flows must use owner-scoped APIs. */
+    @Deprecated("Use findByTargetAndOwner")
+    suspend fun read(targetType: DeletionTargetType, targetId: String): DeletionIntent? = null
 
-    suspend fun start(intent: DeletionIntent): DeletionIntent
+    /** Trusted legacy/test compatibility only; user-facing flows must use startIfAbsent. */
+    @Deprecated("Use startIfAbsent")
+    suspend fun start(intent: DeletionIntent): DeletionIntent = intent
 
-    suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String)
+    suspend fun findByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): DeletionIntent? = error("Owner-scoped deletion intent lookup is not supported.")
 
-    suspend fun clear(targetType: DeletionTargetType, targetId: String)
+    /** Returns false when another owner already holds the target's intent key. */
+    suspend fun startIfAbsent(intent: DeletionIntent): Boolean =
+        error("Owner-scoped deletion intent creation is not supported.")
 
-    suspend fun isBlocking(tournamentId: String): Boolean
+    suspend fun markRemoteDeletedByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = error("Owner-scoped deletion intent mutation is not supported.")
 
-    suspend fun readAll(): List<DeletionIntent>
+    suspend fun clearByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = error("Owner-scoped deletion intent mutation is not supported.")
 
-    suspend fun readPendingLocalCleanup(): List<DeletionIntent>
+    suspend fun isBlockingByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean =
+        error("Owner-scoped deletion intent lookup is not supported.")
+
+    suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> =
+        error("Owner-scoped deletion intent lookup is not supported.")
+
+    suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = false
+
+    @Deprecated("Use owner-scoped APIs")
+    suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String) = Unit
+
+    @Deprecated("Use clearByTargetAndOwner")
+    suspend fun clear(targetType: DeletionTargetType, targetId: String) = Unit
+
+    @Deprecated("Use isBlockingByTournamentIdAndOwner")
+    suspend fun isBlocking(tournamentId: String): Boolean = false
+
+    @Deprecated("Use readPendingLocalCleanupByOwner")
+    suspend fun readAll(): List<DeletionIntent> = emptyList()
+
+    @Deprecated("Use readPendingLocalCleanupByOwner")
+    suspend fun readPendingLocalCleanup(): List<DeletionIntent> = emptyList()
 }
 
 object NoOpDeletionIntentRepository : DeletionIntentRepository {
-    override suspend fun read(targetType: DeletionTargetType, targetId: String): DeletionIntent? = null
-    override suspend fun start(intent: DeletionIntent): DeletionIntent = intent
-    override suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String) = Unit
-    override suspend fun clear(targetType: DeletionTargetType, targetId: String) = Unit
-    override suspend fun isBlocking(tournamentId: String): Boolean = false
-    override suspend fun readAll(): List<DeletionIntent> = emptyList()
-    override suspend fun readPendingLocalCleanup(): List<DeletionIntent> = emptyList()
+    override suspend fun findByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): DeletionIntent? = null
+
+    override suspend fun startIfAbsent(intent: DeletionIntent): Boolean = true
+
+    override suspend fun markRemoteDeletedByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = true
+
+    override suspend fun clearByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = true
+
+    override suspend fun isBlockingByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Boolean = false
+
+    override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> = emptyList()
+
+    override suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = false
 }

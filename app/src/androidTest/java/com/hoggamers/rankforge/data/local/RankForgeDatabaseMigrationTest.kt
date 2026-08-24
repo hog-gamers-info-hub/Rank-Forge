@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(17, cursor.getInt(0))
+                assertEquals(19, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -187,6 +187,91 @@ class RankForgeDatabaseMigrationTest {
             assertEquals("Legacy Cup", cursor.getString(0))
             assertNull(cursor.getString(1))
         }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion17AddsNullableOwnerWithoutAssigningLegacyTournament() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 17).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments (id, name, date, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis) VALUES " +
+                    "('legacy-ownerless', 'Legacy Ownerless Cup', '2026-08-23', 'Organizer', '123', " +
+                    "'CONFIRMED', 42, 1800000000000)",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            18,
+            true,
+            RankForgeDatabase.MIGRATION_17_18,
+        )
+
+        migrated.query(
+            "SELECT id, name, creation_order, last_updated_epoch_millis, owner_user_id " +
+                "FROM tournaments WHERE id = 'legacy-ownerless'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("legacy-ownerless", cursor.getString(0))
+            assertEquals("Legacy Ownerless Cup", cursor.getString(1))
+            assertEquals(42, cursor.getLong(2))
+            assertEquals(1_800_000_000_000L, cursor.getLong(3))
+            assertNull(cursor.getString(4))
+        }
+        migrated.query("PRAGMA table_info(tournaments)").use { cursor ->
+            var ownerUserIdType: String? = null
+            var ownerUserIdNotNull: Int? = null
+            while (cursor.moveToNext()) {
+                if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "owner_user_id") {
+                    ownerUserIdType = cursor.getString(cursor.getColumnIndexOrThrow("type"))
+                    ownerUserIdNotNull = cursor.getInt(cursor.getColumnIndexOrThrow("notnull"))
+                }
+            }
+            assertEquals("TEXT", ownerUserIdType)
+            assertEquals(0, ownerUserIdNotNull)
+        }
+        assertTrue(migrated.hasIndex("index_tournaments_owner_user_id"))
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion18QuarantinesLegacyQueueRowsWithoutDroppingMetadata() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 18).use { database ->
+            database.execSQL(
+                "INSERT INTO sync_queue_entries " +
+                    "(id, operationType, tournamentId, createdAtEpochMillis, status, failureCategory, attemptCount) " +
+                    "VALUES ('legacy-queue', 'DRAFT_MATCH_SYNC', 'legacy-tournament', 1800000000000, " +
+                    "'BLOCKED_NETWORK', 'network', 3)",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            19,
+            true,
+            RankForgeDatabase.MIGRATION_18_19,
+        )
+
+        migrated.query(
+            "SELECT id, operationType, tournamentId, createdAtEpochMillis, status, failureCategory, attemptCount, owner_user_id " +
+                "FROM sync_queue_entries WHERE id = 'legacy-queue'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("legacy-queue", cursor.getString(0))
+            assertEquals("DRAFT_MATCH_SYNC", cursor.getString(1))
+            assertEquals("legacy-tournament", cursor.getString(2))
+            assertEquals(1_800_000_000_000L, cursor.getLong(3))
+            assertEquals("BLOCKED_NETWORK", cursor.getString(4))
+            assertEquals("network", cursor.getString(5))
+            assertEquals(3, cursor.getInt(6))
+            assertNull(cursor.getString(7))
+        }
+        listOf(
+            "index_sync_queue_entries_owner_user_id_createdAtEpochMillis_id",
+            "index_sync_queue_entries_owner_user_id_operationType_tournamentId_status_createdAtEpochMillis_id",
+            "index_sync_queue_entries_owner_user_id_tournamentId",
+        ).forEach { index -> assertTrue(migrated.hasIndex(index)) }
         migrated.close()
     }
 

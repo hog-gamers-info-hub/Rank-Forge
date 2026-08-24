@@ -14,7 +14,7 @@ class FinalizeMatchUseCaseTest {
     fun validDraftFinalizesAndClearsOnlyRawDraftCache() = runTest {
         val repository = createRepository()
         repository.saveDraftMatchValue("tournament-id", "match-id", 1, "1", "4")
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
 
         val result = useCase(FinalizeMatchInput("match-id", validRows()))
 
@@ -32,7 +32,7 @@ class FinalizeMatchUseCaseTest {
     @Test
     fun tenTeamDraftFinalizesAgainstActiveTeamSlots() = runTest {
         val repository = createRepository(activeTeamCount = 10)
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
 
         val result = useCase(
             FinalizeMatchInput(
@@ -50,7 +50,7 @@ class FinalizeMatchUseCaseTest {
     @Test
     fun invalidDraftCannotFinalize() = runTest {
         val repository = createRepository()
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
         val rows = validRows().map { row ->
             if (row.teamSlotNumber == 1) row.copy(placement = "") else row
         }
@@ -65,7 +65,7 @@ class FinalizeMatchUseCaseTest {
     @Test
     fun finalizedMatchCannotBeFinalizedAgain() = runTest {
         val repository = createRepository()
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
         useCase(FinalizeMatchInput("match-id", validRows()))
 
         val result = useCase(FinalizeMatchInput("match-id", validRows()))
@@ -79,7 +79,7 @@ class FinalizeMatchUseCaseTest {
     @Test
     fun missingMatchCannotBeFinalized() = runTest {
         val repository = InMemoryTournamentRepository()
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
 
         val result = useCase(FinalizeMatchInput("missing-id", validRows()))
 
@@ -92,7 +92,7 @@ class FinalizeMatchUseCaseTest {
     fun repositoryFinalizationRejectionIsReportedWithoutChangingTheDraft() = runTest {
         val delegate = createRepository()
         val repository = FinalizationRejectingRepository(delegate)
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase())
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
 
         val result = useCase(FinalizeMatchInput("match-id", validRows()))
 
@@ -115,6 +115,7 @@ class FinalizeMatchUseCaseTest {
                 organizerName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
         repository.saveTeamNames(
@@ -182,5 +183,14 @@ class FinalizeMatchUseCaseTest {
             kills: List<MatchKill>,
             participantResults: List<MatchParticipantResult>?,
         ): FinalizeMatchRepositoryResult = FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
+
+        override suspend fun finalizeDraftMatchByOwner(
+            matchId: String,
+            ownerUserId: String,
+            placements: List<MatchPlacement>,
+            kills: List<MatchKill>,
+            participantResults: List<MatchParticipantResult>?,
+        ): FinalizeMatchRepositoryResult =
+            FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
     }
 }

@@ -18,6 +18,25 @@ import com.hoggamers.rankforge.domain.auth.SignUpUseCase
 import com.hoggamers.rankforge.domain.auth.SignInWithGoogleUseCase
 import com.hoggamers.rankforge.domain.auth.UpdateRecoveredPasswordUseCase
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
+import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
+import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
+import com.hoggamers.rankforge.domain.tournament.ReconcileLegacyTournamentOwnershipUseCase
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
+import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationFailureCategory
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.DeletionIntent
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
+import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +44,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -110,6 +130,71 @@ class AuthViewModelTest {
         assertFalse(viewModel.uiState.value.isSignedIn)
         assertEquals(null, viewModel.uiState.value.errorMessage)
         assertEquals(0, recoveryCalls)
+    }
+
+    @Test
+    fun signedInStateInvokesOwnerScopedPendingLocalCleanup() = runTest {
+        val pending = RecordingPendingCleanup()
+        val viewModel = createViewModel(pending.action(repository))
+
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("owner-a"), pending.intentQueries)
+    }
+
+    @Test
+    fun signedOutDoesNotInvokeLegacyOwnershipReconciliation() = runTest {
+        val reconciliation = RecordingLegacyReconciliation(repository)
+        val viewModel = createViewModel(reconciliation = reconciliation.action())
+
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSignedIn)
+        assertTrue(reconciliation.lookupOwners.isEmpty())
+    }
+
+    @Test
+    fun signedInStateInvokesLegacyOwnershipReconciliationWithCurrentOwner() = runTest {
+        val reconciliation = RecordingLegacyReconciliation(repository)
+        val viewModel = createViewModel(reconciliation = reconciliation.action())
+
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals(listOf("owner-a"), reconciliation.lookupOwners)
+    }
+
+    @Test
+    fun accountSwitchCancelsLegacyOwnershipReconciliationAndStartsTheNewOwner() = runTest {
+        val reconciliation = RecordingLegacyReconciliation(repository).apply {
+            firstLookupGate = CompletableDeferred()
+        }
+        val viewModel = createViewModel(reconciliation = reconciliation.action())
+
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        runCurrent()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-b", "b@example.test"))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals(listOf("owner-a", "owner-b"), reconciliation.lookupOwners)
+    }
+
+    @Test
+    fun restoredSessionInvokesLegacyOwnershipReconciliation() = runTest {
+        repository.restoreResult = AuthRestorationResult.Restored(AuthUser("owner-a", "a@example.test"))
+        val reconciliation = RecordingLegacyReconciliation(repository)
+        val viewModel = createViewModel(reconciliation = reconciliation.action())
+
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals(listOf("owner-a"), reconciliation.lookupOwners)
     }
 
     @Test
@@ -776,7 +861,10 @@ class AuthViewModelTest {
         viewModel.onPasswordRecoveryLinkVerified()
     }
 
-    private fun createViewModel(): AuthViewModel =
+    private fun createViewModel(
+        pendingCleanup: RecoverPendingLocalDeletionCleanupUseCase = noOpPendingCleanup(),
+        reconciliation: ReconcileLegacyTournamentOwnershipUseCase = noOpReconciliation(),
+    ): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
             restoreSession = RestoreSessionUseCase(repository),
@@ -787,7 +875,122 @@ class AuthViewModelTest {
             requestPasswordReset = RequestPasswordResetUseCase(repository),
             updateRecoveredPassword = UpdateRecoveredPasswordUseCase(repository),
             recoverForegroundSyncQueue = foregroundRecovery,
+            recoverPendingLocalDeletionCleanup = pendingCleanup,
+            reconcileLegacyTournamentOwnership = reconciliation,
         )
+
+    private fun noOpReconciliation() = ReconcileLegacyTournamentOwnershipUseCase(
+        authRepository = repository,
+        tournamentRepository = object : LegacyReconciliationTournamentRepository() {},
+        cloudRepository = object : TournamentCloudRestorationRepository {
+            override suspend fun listOwnedTournaments() =
+                TournamentCloudRestorationRemoteResult.Success(emptyList<TournamentCloudRestorationSummary>())
+
+            override suspend fun readOwnedTournament(tournamentId: String): TournamentCloudRestorationRemoteResult<TournamentCloudRestorationSnapshot> =
+                TournamentCloudRestorationRemoteResult.Failure(TournamentCloudRestorationFailureCategory.NOT_FOUND)
+        },
+    )
+
+    private fun noOpPendingCleanup() = RecoverPendingLocalDeletionCleanupUseCase(
+        authRepository = repository,
+        deletionIntentRepository = NoOpDeletionIntentRepository,
+        localDeletionRepository = object : LocalDeletionRepository {
+            override suspend fun deleteMatchLocallyByOwner(
+                matchId: String,
+                ownerUserId: String,
+            ): LocalDeletionResult = LocalDeletionResult.NotFound
+
+            override suspend fun deleteTournamentLocallyByOwner(
+                tournamentId: String,
+                ownerUserId: String,
+            ): LocalDeletionResult = LocalDeletionResult.NotFound
+        },
+    )
+
+    private class RecordingPendingCleanup {
+        val intentQueries = mutableListOf<String>()
+
+        fun action(authRepository: AuthRepository) = RecoverPendingLocalDeletionCleanupUseCase(
+            authRepository = authRepository,
+            deletionIntentRepository = object : DeletionIntentRepository {
+                override suspend fun findByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ): DeletionIntent? = null
+
+                override suspend fun startIfAbsent(intent: DeletionIntent) = false
+                override suspend fun markRemoteDeletedByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun clearByTargetAndOwner(
+                    targetType: DeletionTargetType,
+                    targetId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun isBlockingByTournamentIdAndOwner(
+                    tournamentId: String,
+                    ownerUserId: String,
+                ) = false
+
+                override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> {
+                    intentQueries += ownerUserId
+                    return emptyList()
+                }
+            },
+            localDeletionRepository = object : LocalDeletionRepository {},
+        )
+    }
+
+    private open class LegacyReconciliationTournamentRepository : TournamentRepository {
+        override suspend fun create(tournament: Tournament) = Unit
+        override fun observeAll(): Flow<List<Tournament>> = flowOf(emptyList())
+        override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(null)
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = flowOf(emptyList())
+        override suspend fun saveTeamNames(tournamentId: String, teamNamesBySlotNumber: Map<Int, String>) = Unit
+        override fun observeRosterByTournamentAndSlot(tournamentId: String, slotNumber: Int): Flow<List<RosterPlayer>> = flowOf(emptyList())
+        override suspend fun saveRoster(tournamentId: String, slotNumber: Int, players: List<RosterPlayer>) = Unit
+        override suspend fun confirmTournament(tournamentId: String) = false
+    }
+
+    private class RecordingLegacyReconciliation(
+        private val authRepository: FakeAuthRepository,
+    ) {
+        val lookupOwners = mutableListOf<String>()
+        var firstLookupGate: CompletableDeferred<Unit>? = null
+        private var lookupCount = 0
+
+        fun action() = ReconcileLegacyTournamentOwnershipUseCase(
+            authRepository = authRepository,
+            tournamentRepository = object : LegacyReconciliationTournamentRepository() {
+                override suspend fun readOwnerlessLegacyTournaments() = listOf(
+                    Tournament(
+                        id = "legacy-tournament",
+                        name = "Legacy",
+                        date = LocalDate.of(2026, 1, 1),
+                        organizerName = "Organizer",
+                        organizerContactNumber = "123",
+                        status = TournamentStatus.DRAFT,
+                        ownerUserId = null,
+                    ),
+                )
+            },
+            cloudRepository = object : TournamentCloudRestorationRepository {
+                override suspend fun listOwnedTournaments() =
+                    TournamentCloudRestorationRemoteResult.Success(emptyList<TournamentCloudRestorationSummary>())
+
+                override suspend fun readOwnedTournament(tournamentId: String): TournamentCloudRestorationRemoteResult<TournamentCloudRestorationSnapshot> {
+                    lookupOwners += (authRepository.authState.value as AuthState.SignedIn).user.id
+                    if (lookupCount++ == 0) firstLookupGate?.await()
+                    return TournamentCloudRestorationRemoteResult.Failure(TournamentCloudRestorationFailureCategory.NOT_FOUND)
+                }
+            },
+        )
+    }
 
     private class FakeAuthRepository : AuthRepository {
         val authState = MutableStateFlow<AuthState>(AuthState.SignedOut)
