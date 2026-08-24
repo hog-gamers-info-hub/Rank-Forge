@@ -27,7 +27,7 @@ class LobbySlotGridReconstructorTest {
     @Test
     fun fourAnchorsReconstructAllScreenshotGroupsWithObservedPoints() {
         (1..3).forEach { screenshotIndex ->
-            val grid = reconstructed(idealAnchors(screenshotIndex))
+            val grid = reconstructed(screenshotIndex, idealAnchors(screenshotIndex))
 
             assertEquals(screenshotIndex, grid.screenshotIndex)
             assertEquals(
@@ -40,66 +40,159 @@ class LobbySlotGridReconstructorTest {
 
     @Test
     fun threeAnchorsInferEachPossibleMissingRole() {
-        val cases = listOf(
-            LobbySlotGridRole.TOP_LEFT,
-            LobbySlotGridRole.TOP_RIGHT,
-            LobbySlotGridRole.BOTTOM_LEFT,
-            LobbySlotGridRole.BOTTOM_RIGHT,
-        )
+        (1..3).forEach { screenshotIndex ->
+            LobbySlotGridRole.entries.forEach { missingRole ->
+                val grid = reconstructed(
+                    screenshotIndex = screenshotIndex,
+                    observed = idealAnchors(screenshotIndex).filter { anchor ->
+                        LobbySlotGridRole.fromSlotNumber(anchor.slotNumber) != missingRole
+                    },
+                )
+                val expected = idealPoint(screenshotIndex, missingRole)
+                val actual = grid.pointFor(missingRole)
 
-        cases.forEach { missingRole ->
-            val grid = reconstructed(
-                idealAnchors(1).filter { anchor ->
-                    LobbySlotGridRole.fromSlotNumber(anchor.slotNumber) != missingRole
-                },
-            )
-            val expected = idealPoint(1, missingRole)
-            val actual = grid.pointFor(missingRole)
-
-            assertEquals(expected.slotNumber, actual.slotNumber)
-            assertEquals(missingRole, actual.role)
-            assertEquals(expected.centerX, actual.centerX, 0.0)
-            assertEquals(expected.centerY, actual.centerY, 0.0)
-            assertEquals(LobbyGridPointSource.INFERRED, actual.source)
-            assertTrue(
-                grid.points.filter { it.role != missingRole }
-                    .all { it.source == LobbyGridPointSource.OBSERVED },
-            )
+                assertEquals(expected.slotNumber, actual.slotNumber)
+                assertEquals(missingRole, actual.role)
+                assertEquals(expected.centerX, actual.centerX, 0.0)
+                assertEquals(expected.centerY, actual.centerY, 0.0)
+                assertEquals(LobbyGridPointSource.INFERRED, actual.source)
+                assertTrue(
+                    grid.points.filter { it.role != missingRole }
+                        .all { it.source == LobbyGridPointSource.OBSERVED },
+                )
+            }
         }
     }
 
     @Test
-    fun realScreenshotOneEvidenceInfersSlotThree() {
+    fun diagonalTwoAnchorsReconstructBothMissingCornersForAllScreenshotGroups() {
+        val diagonalRolePairs = listOf(
+            setOf(LobbySlotGridRole.TOP_LEFT, LobbySlotGridRole.BOTTOM_RIGHT),
+            setOf(LobbySlotGridRole.TOP_RIGHT, LobbySlotGridRole.BOTTOM_LEFT),
+        )
+
+        (1..3).forEach { screenshotIndex ->
+            diagonalRolePairs.forEach { observedRoles ->
+                val observed = idealAnchors(screenshotIndex).filter { anchor ->
+                    LobbySlotGridRole.fromSlotNumber(anchor.slotNumber) in observedRoles
+                }
+                val grid = reconstructed(screenshotIndex, observed)
+
+                LobbySlotGridRole.entries.forEach { role ->
+                    val expected = idealPoint(screenshotIndex, role)
+                    val actual = grid.pointFor(role)
+
+                    assertEquals(expected.slotNumber, actual.slotNumber)
+                    assertEquals(expected.centerX, actual.centerX, 0.0)
+                    assertEquals(expected.centerY, actual.centerY, 0.0)
+                    assertEquals(
+                        if (role in observedRoles) {
+                            LobbyGridPointSource.OBSERVED
+                        } else {
+                            LobbyGridPointSource.INFERRED
+                        },
+                        actual.source,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun realScreenshotDiagonalOneAndFourPredictsTwoAndThreeFromCenterCoordinates() {
         val grid = reconstructed(
-            listOf(
-                anchor(1, 584.5, 231.0),
-                anchor(2, 1_075.5, 231.5),
-                anchor(4, 1_075.5, 436.5),
+            screenshotIndex = 1,
+            observed = listOf(
+                anchor(1, 584.5, 236.0),
+                anchor(4, 1_075.5, 441.0),
+            ),
+        )
+
+        val slotOne = grid.pointFor(LobbySlotGridRole.TOP_LEFT)
+        val slotTwo = grid.pointFor(LobbySlotGridRole.TOP_RIGHT)
+        val slotThree = grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT)
+        val slotFour = grid.pointFor(LobbySlotGridRole.BOTTOM_RIGHT)
+
+        assertEquals(584.5, slotOne.centerX, 0.0)
+        assertEquals(236.0, slotOne.centerY, 0.0)
+        assertEquals(LobbyGridPointSource.OBSERVED, slotOne.source)
+
+        assertEquals(1_075.5, slotTwo.centerX, 0.0)
+        assertEquals(236.0, slotTwo.centerY, 0.0)
+        assertEquals(LobbyGridPointSource.INFERRED, slotTwo.source)
+
+        assertEquals(584.5, slotThree.centerX, 0.0)
+        assertEquals(441.0, slotThree.centerY, 0.0)
+        assertEquals(LobbyGridPointSource.INFERRED, slotThree.source)
+
+        assertEquals(1_075.5, slotFour.centerX, 0.0)
+        assertEquals(441.0, slotFour.centerY, 0.0)
+        assertEquals(LobbyGridPointSource.OBSERVED, slotFour.source)
+
+        assertEquals(584.5, grid.leftColumnCenterX, 0.0)
+        assertEquals(1_075.5, grid.rightColumnCenterX, 0.0)
+        assertEquals(236.0, grid.topRowCenterY, 0.0)
+        assertEquals(441.0, grid.bottomRowCenterY, 0.0)
+        assertEquals(491.0, grid.columnPitch, 0.0)
+        assertEquals(205.0, grid.rowPitch, 0.0)
+    }
+
+    @Test
+    fun realScreenshotThreeAnchorsAverageSharedAxisCentersBeforeInferringMissingSlot() {
+        val grid = reconstructed(
+            screenshotIndex = 1,
+            observed = listOf(
+                anchor(1, 584.5, 236.0),
+                anchor(2, 1_075.5, 236.5),
+                anchor(4, 1_075.5, 441.0),
             ),
         )
 
         val slotThree = grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT)
+
         assertEquals(3, slotThree.slotNumber)
         assertEquals(LobbyGridPointSource.INFERRED, slotThree.source)
         assertEquals(584.5, slotThree.centerX, 0.0)
-        assertEquals(436.5, slotThree.centerY, 0.0)
+        assertEquals(441.0, slotThree.centerY, 0.0)
+
+        assertEquals(584.5, grid.leftColumnCenterX, 0.0)
+        assertEquals(1_075.5, grid.rightColumnCenterX, 0.0)
+        assertEquals(236.25, grid.topRowCenterY, 0.0)
+        assertEquals(441.0, grid.bottomRowCenterY, 0.0)
+        assertEquals(491.0, grid.columnPitch, 0.0)
+        assertEquals(204.75, grid.rowPitch, 0.0)
     }
 
     @Test
-    fun currentScreenshotTwoAndThreeCasesRemainFullyObserved() {
-        val screenshotTwo = reconstructed(idealAnchors(2))
-        val screenshotThree = reconstructed(idealAnchors(3))
+    fun threeAnchorsUseAverageCenterForAnyRepeatedRowOrColumnEvidence() {
+        val grid = reconstructed(
+            screenshotIndex = 1,
+            observed = listOf(
+                anchor(1, 100.0, 100.0),
+                anchor(2, 300.0, 110.0),
+                anchor(4, 310.0, 210.0),
+            ),
+        )
 
-        assertTrue(screenshotTwo.points.all { it.source == LobbyGridPointSource.OBSERVED })
-        assertTrue(screenshotThree.points.all { it.source == LobbyGridPointSource.OBSERVED })
+        val slotThree = grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT)
+
+        assertEquals(100.0, slotThree.centerX, 0.0)
+        assertEquals(210.0, slotThree.centerY, 0.0)
+        assertEquals(105.0, grid.topRowCenterY, 0.0)
+        assertEquals(210.0, grid.bottomRowCenterY, 0.0)
+        assertEquals(100.0, grid.leftColumnCenterX, 0.0)
+        assertEquals(305.0, grid.rightColumnCenterX, 0.0)
+        assertEquals(105.0, grid.rowPitch, 0.0)
+        assertEquals(205.0, grid.columnPitch, 0.0)
     }
 
     @Test
-    fun twoAnchorsAreInsufficientRegardlessOfArrangement() {
+    fun twoAnchorsOnSameRowOrSameColumnRemainInsufficient() {
         val cases = listOf(
-            listOf(anchor(1, 100.0, 100.0), anchor(3, 100.0, 200.0)),
             listOf(anchor(1, 100.0, 100.0), anchor(2, 300.0, 100.0)),
-            listOf(anchor(1, 100.0, 100.0), anchor(4, 300.0, 200.0)),
+            listOf(anchor(3, 100.0, 200.0), anchor(4, 300.0, 200.0)),
+            listOf(anchor(1, 100.0, 100.0), anchor(3, 100.0, 200.0)),
+            listOf(anchor(2, 300.0, 100.0), anchor(4, 300.0, 200.0)),
         )
 
         cases.forEach { observed ->
@@ -151,7 +244,7 @@ class LobbySlotGridReconstructorTest {
                 listOf(
                     anchor(1, 100.0, 100.0),
                     anchor(1, 101.0, 101.0),
-                    anchor(2, 300.0, 100.0),
+                    anchor(4, 300.0, 200.0),
                 ),
             ),
         )
@@ -165,8 +258,6 @@ class LobbySlotGridReconstructorTest {
                 1,
                 listOf(
                     anchor(1, 300.0, 100.0),
-                    anchor(2, 100.0, 100.0),
-                    anchor(3, 300.0, 200.0),
                     anchor(4, 100.0, 200.0),
                 ),
             ),
@@ -176,10 +267,8 @@ class LobbySlotGridReconstructorTest {
             reconstructor.reconstruct(
                 1,
                 listOf(
-                    anchor(1, 100.0, 200.0),
-                    anchor(2, 300.0, 100.0),
+                    anchor(2, 300.0, 200.0),
                     anchor(3, 100.0, 100.0),
-                    anchor(4, 300.0, 200.0),
                 ),
             ),
         )
@@ -195,7 +284,8 @@ class LobbySlotGridReconstructorTest {
     @Test
     fun completeGridCalculatesPitchesAndAlignmentMetrics() {
         val grid = reconstructed(
-            listOf(
+            screenshotIndex = 1,
+            observed = listOf(
                 anchor(1, 100.0, 100.0),
                 anchor(2, 300.0, 110.0),
                 anchor(3, 105.0, 200.0),
@@ -216,7 +306,10 @@ class LobbySlotGridReconstructorTest {
         val observed = idealAnchors(1)
         val first = reconstructor.reconstruct(1, observed)
         val second = reconstructor.reconstruct(1, observed.reversed())
-        val third = reconstructor.reconstruct(1, listOf(observed[2], observed[0], observed[3], observed[1]))
+        val third = reconstructor.reconstruct(
+            1,
+            listOf(observed[2], observed[0], observed[3], observed[1]),
+        )
 
         assertEquals(first, second)
         assertEquals(first, third)
@@ -231,10 +324,14 @@ class LobbySlotGridReconstructorTest {
         )
     }
 
-    private fun reconstructed(observed: List<LobbyObservedSlotAnchor>): LobbySlotGrid {
-        val screenshotIndex = ((observed.minOf { it.slotNumber } - 1) / 4) + 1
-        return (reconstructor.reconstruct(screenshotIndex, observed) as LobbyGridReconstructionResult.Reconstructed).grid
-    }
+    private fun reconstructed(
+        screenshotIndex: Int,
+        observed: List<LobbyObservedSlotAnchor>,
+    ): LobbySlotGrid =
+        (reconstructor.reconstruct(
+            screenshotIndex,
+            observed,
+        ) as LobbyGridReconstructionResult.Reconstructed).grid
 
     private fun idealAnchors(screenshotIndex: Int): List<LobbyObservedSlotAnchor> =
         listOf(
@@ -252,11 +349,28 @@ class LobbySlotGridReconstructorTest {
     ) = LobbyGridPoint(
         slotNumber = (screenshotIndex - 1) * 4 + role.ordinal + 1,
         role = role,
-        centerX = if (role == LobbySlotGridRole.TOP_LEFT || role == LobbySlotGridRole.BOTTOM_LEFT) 100.0 else 300.0,
-        centerY = if (role == LobbySlotGridRole.TOP_LEFT || role == LobbySlotGridRole.TOP_RIGHT) 100.0 else 200.0,
+        centerX = if (
+            role == LobbySlotGridRole.TOP_LEFT ||
+            role == LobbySlotGridRole.BOTTOM_LEFT
+        ) {
+            100.0
+        } else {
+            300.0
+        },
+        centerY = if (
+            role == LobbySlotGridRole.TOP_LEFT ||
+            role == LobbySlotGridRole.TOP_RIGHT
+        ) {
+            100.0
+        } else {
+            200.0
+        },
         source = LobbyGridPointSource.OBSERVED,
     )
 
-    private fun anchor(slotNumber: Int, centerX: Double, centerY: Double) =
-        LobbyObservedSlotAnchor(slotNumber, centerX, centerY)
+    private fun anchor(
+        slotNumber: Int,
+        centerX: Double,
+        centerY: Double,
+    ) = LobbyObservedSlotAnchor(slotNumber, centerX, centerY)
 }

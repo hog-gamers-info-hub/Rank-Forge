@@ -90,13 +90,15 @@ class LobbySlotGridReconstructor {
         if (observedAnchors.any { !it.centerX.isFinite() || !it.centerY.isFinite() }) {
             return LobbyGridReconstructionResult.InvalidGeometry
         }
-        if (observedAnchors.size < 3) {
+        if (observedAnchors.size < MINIMUM_ANCHOR_COUNT) {
             return LobbyGridReconstructionResult.InsufficientAnchors
         }
 
         val observedByRole = observedAnchors
-            .sortedWith(compareBy<LobbyObservedSlotAnchor> { roleFor(it.slotNumber)!!.ordinal }
-                .thenBy { it.slotNumber })
+            .sortedWith(
+                compareBy<LobbyObservedSlotAnchor> { roleFor(it.slotNumber)!!.ordinal }
+                    .thenBy { it.slotNumber },
+            )
             .associate { anchor ->
                 roleFor(anchor.slotNumber)!! to anchor
             }
@@ -104,9 +106,39 @@ class LobbySlotGridReconstructor {
             return LobbyGridReconstructionResult.DuplicateSlot
         }
 
+        /*
+         * The lobby slot grid is an axis-aligned rectangle by contract:
+         *
+         *   TOP_LEFT  --------  TOP_RIGHT
+         *      |                    |
+         *      |                    |
+         *   BOTTOM_LEFT ------- BOTTOM_RIGHT
+         *
+         * Canonical grid axes are reconstructed from OCR center coordinates:
+         *
+         * leftColumnCenterX  = average X of observed TOP_LEFT/BOTTOM_LEFT
+         * rightColumnCenterX = average X of observed TOP_RIGHT/BOTTOM_RIGHT
+         * topRowCenterY      = average Y of observed TOP_LEFT/TOP_RIGHT
+         * bottomRowCenterY   = average Y of observed BOTTOM_LEFT/BOTTOM_RIGHT
+         *
+         * A complete grid therefore requires evidence for both columns and both rows.
+         * This is available from:
+         * - all four anchors,
+         * - any three anchors,
+         * - either diagonal two-anchor pair.
+         *
+         * Same-row and same-column two-anchor pairs remain mathematically insufficient
+         * because one complete axis is still unknown.
+         */
+        val axes = resolveAxes(observedByRole)
+            ?: return LobbyGridReconstructionResult.InsufficientAnchors
+
+        if (!axes.hasValidOrdering()) {
+            return LobbyGridReconstructionResult.InvalidGeometry
+        }
+
         val points = LobbySlotGridRole.entries.map { role ->
-            val observed = observedByRole[role]
-            if (observed != null) {
+            observedByRole[role]?.let { observed ->
                 LobbyGridPoint(
                     slotNumber = observed.slotNumber,
                     role = role,
@@ -114,65 +146,43 @@ class LobbySlotGridReconstructor {
                     centerY = observed.centerY,
                     source = LobbyGridPointSource.OBSERVED,
                 )
-            } else {
-                inferMissingPoint(role, observedByRole, screenshotIndex)
-                    ?: return LobbyGridReconstructionResult.InsufficientAnchors
-            }
+            } ?: inferredPoint(
+                screenshotIndex = screenshotIndex,
+                role = role,
+                centerX = axes.centerXFor(role),
+                centerY = axes.centerYFor(role),
+            )
         }
 
         return validateCompleteGrid(screenshotIndex, points)
     }
 
-    private fun inferMissingPoint(
-        missingRole: LobbySlotGridRole,
+    private fun resolveAxes(
         observedByRole: Map<LobbySlotGridRole, LobbyObservedSlotAnchor>,
-        screenshotIndex: Int,
-    ): LobbyGridPoint? {
-        return when (missingRole) {
-            LobbySlotGridRole.TOP_LEFT -> {
-                val bottomLeft = observedByRole[LobbySlotGridRole.BOTTOM_LEFT] ?: return null
-                val topRight = observedByRole[LobbySlotGridRole.TOP_RIGHT] ?: return null
-                inferredPoint(
-                    screenshotIndex,
-                    missingRole,
-                    centerX = bottomLeft.centerX,
-                    centerY = topRight.centerY,
-                )
-            }
+    ): AxisCenters? {
+        val leftColumnCenterX = averageOrNull(
+            observedByRole[LobbySlotGridRole.TOP_LEFT]?.centerX,
+            observedByRole[LobbySlotGridRole.BOTTOM_LEFT]?.centerX,
+        ) ?: return null
+        val rightColumnCenterX = averageOrNull(
+            observedByRole[LobbySlotGridRole.TOP_RIGHT]?.centerX,
+            observedByRole[LobbySlotGridRole.BOTTOM_RIGHT]?.centerX,
+        ) ?: return null
+        val topRowCenterY = averageOrNull(
+            observedByRole[LobbySlotGridRole.TOP_LEFT]?.centerY,
+            observedByRole[LobbySlotGridRole.TOP_RIGHT]?.centerY,
+        ) ?: return null
+        val bottomRowCenterY = averageOrNull(
+            observedByRole[LobbySlotGridRole.BOTTOM_LEFT]?.centerY,
+            observedByRole[LobbySlotGridRole.BOTTOM_RIGHT]?.centerY,
+        ) ?: return null
 
-            LobbySlotGridRole.TOP_RIGHT -> {
-                val bottomRight = observedByRole[LobbySlotGridRole.BOTTOM_RIGHT] ?: return null
-                val topLeft = observedByRole[LobbySlotGridRole.TOP_LEFT] ?: return null
-                inferredPoint(
-                    screenshotIndex,
-                    missingRole,
-                    centerX = bottomRight.centerX,
-                    centerY = topLeft.centerY,
-                )
-            }
-
-            LobbySlotGridRole.BOTTOM_LEFT -> {
-                val topLeft = observedByRole[LobbySlotGridRole.TOP_LEFT] ?: return null
-                val bottomRight = observedByRole[LobbySlotGridRole.BOTTOM_RIGHT] ?: return null
-                inferredPoint(
-                    screenshotIndex,
-                    missingRole,
-                    centerX = topLeft.centerX,
-                    centerY = bottomRight.centerY,
-                )
-            }
-
-            LobbySlotGridRole.BOTTOM_RIGHT -> {
-                val topRight = observedByRole[LobbySlotGridRole.TOP_RIGHT] ?: return null
-                val bottomLeft = observedByRole[LobbySlotGridRole.BOTTOM_LEFT] ?: return null
-                inferredPoint(
-                    screenshotIndex,
-                    missingRole,
-                    centerX = topRight.centerX,
-                    centerY = bottomLeft.centerY,
-                )
-            }
-        }
+        return AxisCenters(
+            leftColumnCenterX = leftColumnCenterX,
+            rightColumnCenterX = rightColumnCenterX,
+            topRowCenterY = topRowCenterY,
+            bottomRowCenterY = bottomRowCenterY,
+        )
     }
 
     private fun inferredPoint(
@@ -231,7 +241,43 @@ class LobbySlotGridReconstructor {
         )
     }
 
+    private data class AxisCenters(
+        val leftColumnCenterX: Double,
+        val rightColumnCenterX: Double,
+        val topRowCenterY: Double,
+        val bottomRowCenterY: Double,
+    ) {
+        fun hasValidOrdering(): Boolean =
+            leftColumnCenterX.isFinite() &&
+                rightColumnCenterX.isFinite() &&
+                topRowCenterY.isFinite() &&
+                bottomRowCenterY.isFinite() &&
+                leftColumnCenterX < rightColumnCenterX &&
+                topRowCenterY < bottomRowCenterY
+
+        fun centerXFor(role: LobbySlotGridRole): Double = when (role) {
+            LobbySlotGridRole.TOP_LEFT,
+            LobbySlotGridRole.BOTTOM_LEFT,
+            -> leftColumnCenterX
+
+            LobbySlotGridRole.TOP_RIGHT,
+            LobbySlotGridRole.BOTTOM_RIGHT,
+            -> rightColumnCenterX
+        }
+
+        fun centerYFor(role: LobbySlotGridRole): Double = when (role) {
+            LobbySlotGridRole.TOP_LEFT,
+            LobbySlotGridRole.TOP_RIGHT,
+            -> topRowCenterY
+
+            LobbySlotGridRole.BOTTOM_LEFT,
+            LobbySlotGridRole.BOTTOM_RIGHT,
+            -> bottomRowCenterY
+        }
+    }
+
     private companion object {
+        const val MINIMUM_ANCHOR_COUNT = 2
         const val ROLE_INDEX_TOP_LEFT = 0
         const val ROLE_INDEX_TOP_RIGHT = 1
         const val ROLE_INDEX_BOTTOM_LEFT = 2
@@ -251,5 +297,10 @@ class LobbySlotGridReconstructor {
             screenshotIndex: Int,
             role: LobbySlotGridRole,
         ): Int = (screenshotIndex - 1) * 4 + role.ordinal + 1
+
+        fun averageOrNull(vararg values: Double?): Double? {
+            val present = values.filterNotNull()
+            return present.takeIf { it.isNotEmpty() }?.average()
+        }
     }
 }
