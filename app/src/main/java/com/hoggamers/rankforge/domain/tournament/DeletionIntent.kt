@@ -56,6 +56,12 @@ interface DeletionIntentRepository {
     suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> =
         error("Owner-scoped deletion intent lookup is not supported.")
 
+    suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = false
+
     @Deprecated("Use owner-scoped APIs")
     suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String) = Unit
 
@@ -99,4 +105,10 @@ object NoOpDeletionIntentRepository : DeletionIntentRepository {
     ): Boolean = false
 
     override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> = emptyList()
+
+    override suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = false
 }

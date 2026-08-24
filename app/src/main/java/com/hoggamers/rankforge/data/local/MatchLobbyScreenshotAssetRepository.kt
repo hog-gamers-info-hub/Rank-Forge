@@ -289,6 +289,9 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
                 if (!db.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
                     return@withTransaction MatchLobbyScreenshotAssetSaveResult.MatchNotFound
                 }
+                if (db.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.StateConflict
+                }
                 val duplicate = dao.readDuplicateFingerprintAndOwner(asset.sha256, identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
                 if (duplicate != null) return@withTransaction MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
                 val existing = dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
@@ -313,6 +316,9 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
             db.withTransaction {
                 if (!db.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
                     return@withTransaction MatchLobbyScreenshotAssetSaveResult.MatchNotFound
+                }
+                if (db.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotAssetSaveResult.StateConflict
                 }
                 val duplicate = dao.readDuplicateFingerprintAndOwner(asset.sha256, identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
                 if (duplicate != null) return@withTransaction MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint(duplicate)
@@ -478,6 +484,7 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         updatedAt: Long,
     ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
         if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
         if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
         dao.updateUploadSuccessIfGenerationMatches(
             identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
@@ -494,6 +501,7 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         updatedAt: Long,
     ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
         if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
         if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
         dao.updateUploadFailureIfGenerationMatches(
             identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
@@ -519,6 +527,7 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         updatedAt: Long,
     ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
         if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) return@withTransaction false
         dao.markLocalMissing(identity.matchId, identity.lobbyScreenshotIndex, ScreenshotLocalStatus.MISSING.name, updatedAt)
         true
     }
@@ -621,6 +630,9 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
                 if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
                     return@withTransaction MatchLobbyScreenshotCropSaveResult.MatchNotFound
                 }
+                if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                    return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
+                }
                 val asset = dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
                     ?: return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
                 val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
@@ -647,6 +659,9 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
         database!!.withTransaction {
             if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
                 return@withTransaction MatchLobbyScreenshotCropSaveResult.MatchNotFound
+            }
+            if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset
             }
             if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) {
                 return@withTransaction MatchLobbyScreenshotCropSaveResult.MissingAsset

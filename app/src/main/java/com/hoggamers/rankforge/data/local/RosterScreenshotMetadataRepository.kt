@@ -154,6 +154,9 @@ class RoomRosterScreenshotMetadataRepository @Inject constructor(
             if (!database.tournamentDao().existsByIdAndOwner(metadata.tournamentId, ownerUserId)) {
                 return@withTransaction RosterScreenshotAssociationSaveResult.TournamentNotFound
             }
+            if (database.deletionIntentDao().isLocalMutationBlocked(metadata.tournamentId, null, ownerUserId)) {
+                return@withTransaction RosterScreenshotAssociationSaveResult.TournamentNotFound
+            }
             if (dao.readDuplicateFingerprintAndOwner(
                     tournamentId = metadata.tournamentId,
                     sha256 = metadata.sha256,

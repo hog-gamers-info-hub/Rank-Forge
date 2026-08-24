@@ -714,6 +714,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired,
             MatchLobbyScreenshotAssetSaveResult.MatchNotFound,
             -> {
+                localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
                 updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
                 false

@@ -68,7 +68,50 @@ interface DeletionIntentDao {
                 "ORDER BY updated_at_epoch_millis",
     )
     suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntentEntity>
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM deletion_intents " +
+            "WHERE target_type = :targetType AND target_id = :targetId " +
+            "AND owner_user_id = :ownerUserId " +
+            "AND phase = 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING')",
+    )
+    suspend fun hasLocalCleanupClaim(
+        targetType: String,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM deletion_intents " +
+            "WHERE target_type = 'TOURNAMENT' AND target_id = :tournamentId " +
+            "AND owner_user_id = :ownerUserId " +
+            "AND phase IN ('DELETE_STARTED', 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING'))",
+    )
+    suspend fun isLocalMutationBlockedByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM deletion_intents " +
+            "WHERE target_type = 'MATCH' AND target_id = :matchId " +
+            "AND tournament_id = :tournamentId AND owner_user_id = :ownerUserId " +
+            "AND phase IN ('DELETE_STARTED', 'REMOTE_DELETED_LOCAL_CLEANUP_PENDING'))",
+    )
+    suspend fun isLocalMutationBlockedByMatchIdAndOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): Boolean
 }
+
+suspend fun DeletionIntentDao.isLocalMutationBlocked(
+    tournamentId: String,
+    matchId: String?,
+    ownerUserId: String,
+): Boolean =
+    isLocalMutationBlockedByTournamentIdAndOwner(tournamentId, ownerUserId) ||
+        (matchId != null && isLocalMutationBlockedByMatchIdAndOwner(tournamentId, matchId, ownerUserId))
 
 @Dao
 interface TournamentDao {

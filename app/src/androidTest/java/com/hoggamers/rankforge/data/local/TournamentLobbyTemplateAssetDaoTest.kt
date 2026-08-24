@@ -31,7 +31,7 @@ class TournamentLobbyTemplateAssetDaoTest {
                     template("tournament-legacy", "legacy-child", 1),
                 ),
             )
-            val repository = RoomTournamentLobbyTemplateAssetRepository(dao)
+            val repository = RoomTournamentLobbyTemplateAssetRepository(dao, database)
 
             assertEquals(listOf("tournament-a"), repository.getByTournamentIdAndOwner("tournament-a", "owner-a").map { it.tournamentId })
             assertTrue(repository.getByTournamentIdAndOwner("tournament-a", "owner-b").isEmpty())

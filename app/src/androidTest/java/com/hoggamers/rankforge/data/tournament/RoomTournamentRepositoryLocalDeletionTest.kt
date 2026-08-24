@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.local.MatchKillEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
+import com.hoggamers.rankforge.data.local.DeletionIntentEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.SyncQueueEntity
 import com.hoggamers.rankforge.data.local.SyncRevisionEntity
@@ -19,6 +20,8 @@ import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
+import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -63,6 +66,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
                     status = MatchStatus.DRAFT,
                 ),
             )
+            claim(database, DeletionTargetType.MATCH, "match-without-assets", tournament.id)
 
             assertEquals(
                 LocalDeletionResult.Deleted,
@@ -102,6 +106,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             database.matchKillDao().upsertAll(listOf(MatchKillEntity("match-2", 1, 4)))
             database.syncQueueDao().insert(queueEntry("queue-match", tournament.id))
             database.syncQueueDao().insert(queueEntry("queue-other", "other-tournament"))
+            claim(database, DeletionTargetType.MATCH, "match-2", tournament.id)
 
             val selectedFiles = matchFiles(preserver, tournament.id, matches[1].id)
             selectedFiles.forEach(::writeFile)
@@ -168,6 +173,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
                 (1..3).forEach { index -> add(preserver.resolveRelativePath(preserver.rosterRelativePath(tournament.id, index, "png"))!!) }
             }
             files.forEach(::writeFile)
+            claim(database, DeletionTargetType.TOURNAMENT, tournament.id, tournament.id)
 
             assertEquals(LocalDeletionResult.Deleted, repository.deleteTournamentLocallyByOwner(tournament.id, "owner-a"))
             assertNull(database.tournamentDao().observeById(tournament.id).first())
@@ -221,6 +227,50 @@ class RoomTournamentRepositoryLocalDeletionTest {
         }
     }
 
+    @Test
+    fun ownedTournamentClaimBlocksOwnerMutationsWithoutChangingRoomState() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-mutation-block-${UUID.randomUUID()}.db"
+        val database = database(context, databaseName)
+        try {
+            val repository = repository(database, preserver(File(context.cacheDir, "local-mutation-block-${UUID.randomUUID()}")))
+            val tournament = tournament("blocked-tournament")
+            repository.create(tournament)
+            repository.saveTeamNames(tournament.id, mapOf(1 to "Before"))
+            repository.saveRoster(tournament.id, 1, listOf(RosterPlayer(tournament.id, 1, "Before Player")))
+            val beforeTeam = database.teamSlotDao().observeByTournamentId(tournament.id).first()
+            val beforeRoster = database.rosterPlayerDao().observeByTournamentId(tournament.id).first()
+            val beforeTournament = database.tournamentDao().observeById(tournament.id).first()
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            claim(database, DeletionTargetType.TOURNAMENT, tournament.id, tournament.id)
+
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveTeamNamesByOwner(tournament.id, "owner-a", mapOf(1 to "After")),
+            )
+            assertEquals(
+                OwnerScopedTournamentMutationResult.TournamentNotFound,
+                repository.saveRosterByOwner(
+                    tournament.id,
+                    "owner-a",
+                    1,
+                    listOf(RosterPlayer(tournament.id, 1, "After Player")),
+                ),
+            )
+            assertEquals(
+                OwnerScopedTournamentConfirmationResult.TournamentNotFound,
+                repository.confirmTournamentByOwner(tournament.id, "owner-a"),
+            )
+            assertEquals(beforeTeam, database.teamSlotDao().observeByTournamentId(tournament.id).first())
+            assertEquals(beforeRoster, database.rosterPlayerDao().observeByTournamentId(tournament.id).first())
+            assertEquals(beforeTournament, database.tournamentDao().observeById(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private fun database(context: Context, name: String): RankForgeDatabase =
         Room.databaseBuilder(context, RankForgeDatabase::class.java, name)
             .allowMainThreadQueries()
@@ -271,6 +321,25 @@ class RoomTournamentRepositoryLocalDeletionTest {
         attemptCount = 0,
         ownerUserId = "owner-a",
     )
+
+    private suspend fun claim(
+        database: RankForgeDatabase,
+        targetType: DeletionTargetType,
+        targetId: String,
+        tournamentId: String,
+        ownerUserId: String = "owner-a",
+    ) {
+        database.deletionIntentDao().insertIfAbsent(
+            DeletionIntentEntity(
+                targetType = targetType.name,
+                targetId = targetId,
+                tournamentId = tournamentId,
+                ownerUserId = ownerUserId,
+                phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING.name,
+                updatedAtEpochMillis = 1,
+            ),
+        )
+    }
 
     private fun matchFiles(
         preserver: LocalImagePreserver,

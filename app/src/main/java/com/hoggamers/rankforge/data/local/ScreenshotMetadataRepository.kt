@@ -137,6 +137,9 @@ class RoomScreenshotMetadataRepository @Inject constructor(
             if (!database.matchDao().existsByIdAndTournamentAndOwner(metadata.matchId, metadata.tournamentId, ownerUserId)) {
                 return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
             }
+            if (database.deletionIntentDao().isLocalMutationBlocked(metadata.tournamentId, metadata.matchId, ownerUserId)) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
             dao.upsert(metadata.copy(ownerUserId = ownerUserId))
             ScreenshotMetadataMutationResult.Saved
         }
@@ -153,6 +156,9 @@ class RoomScreenshotMetadataRepository @Inject constructor(
         if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
         val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
             ?: return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+        if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
+            return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+        }
         dao.updateUploadSuccess(matchId, storageBucket, storageObjectPath, ScreenshotUploadStatus.UPLOADED.name, uploadedAt, updatedAt)
         ScreenshotMetadataMutationResult.Saved
     }
@@ -164,7 +170,11 @@ class RoomScreenshotMetadataRepository @Inject constructor(
         updatedAt: Long,
     ): ScreenshotMetadataMutationResult = database.withTransaction {
         if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
-        if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+        val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+        if (match == null) {
+            return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+        }
+        if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
             return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
         }
         dao.updateUploadFailure(matchId, ScreenshotUploadStatus.FAILED.name, failureCode, updatedAt)
@@ -174,7 +184,11 @@ class RoomScreenshotMetadataRepository @Inject constructor(
     override suspend fun markLocalMissingByOwner(matchId: String, ownerUserId: String, updatedAt: Long): ScreenshotMetadataMutationResult =
         database.withTransaction {
             if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
-            if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+            val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+            if (match == null) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
                 return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
             }
             dao.markLocalMissing(matchId, ScreenshotLocalStatus.MISSING.name, updatedAt)
@@ -184,7 +198,11 @@ class RoomScreenshotMetadataRepository @Inject constructor(
     override suspend fun markCleanupFailureByOwner(matchId: String, ownerUserId: String, updatedAt: Long): ScreenshotMetadataMutationResult =
         database.withTransaction {
             if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
-            if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+            val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+            if (match == null) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
                 return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
             }
             dao.markCleanupFailure(matchId, ScreenshotLocalStatus.CLEANUP_FAILED.name, updatedAt)

@@ -1,5 +1,12 @@
 package com.hoggamers.rankforge.domain.tournament
 
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -83,7 +90,7 @@ class ReplaceConfirmedTournamentRosterUseCaseTest {
     }
 
     private fun useCase(repository: TournamentRepository) =
-        ReplaceConfirmedTournamentRosterUseCase(repository, RosterValidator())
+        ReplaceConfirmedTournamentRosterUseCase(repository, RosterValidator(), auth("owner-a"))
 
     private fun candidate(tournamentId: String = "tournament-1") = ConfirmedRosterReplacementCandidate(
         tournamentId = tournamentId,
@@ -104,7 +111,17 @@ class ReplaceConfirmedTournamentRosterUseCaseTest {
 
         override fun observeAll(): Flow<List<Tournament>> = flowOf(emptyList())
 
-        override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(null)
+        override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(
+            Tournament(
+                id = tournamentId,
+                name = "Tournament",
+                date = LocalDate.of(2026, 1, 1),
+                organizerName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+                ownerUserId = "owner-a",
+            ),
+        )
 
         override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
             flowOf(TeamSlot.fixedSlotsForTournament(tournamentId))
@@ -133,5 +150,23 @@ class ReplaceConfirmedTournamentRosterUseCaseTest {
         }
 
         override suspend fun confirmTournament(tournamentId: String): Boolean = false
+    }
+
+    private fun auth(userId: String): AuthRepository = object : AuthRepository {
+        override fun observeAuthState(): Flow<AuthState> = flowOf(
+            AuthState.SignedIn(AuthUser(userId, "$userId@example.test")),
+        )
+
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+
+        override suspend fun signUp(email: String, password: String) = failure()
+
+        override suspend fun login(email: String, password: String) = failure()
+
+        override suspend fun logout() = failure()
+
+        private fun failure() = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
     }
 }

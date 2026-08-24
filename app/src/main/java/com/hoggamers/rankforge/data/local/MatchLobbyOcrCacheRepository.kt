@@ -130,6 +130,9 @@ class RoomMatchLobbyOcrCacheRepository(
             if (!database.matchDao().existsByIdAndTournamentAndOwner(fingerprint.matchId, fingerprint.tournamentId, ownerUserId)) {
                 return@withTransaction false
             }
+            if (database.deletionIntentDao().isLocalMutationBlocked(fingerprint.tournamentId, fingerprint.matchId, ownerUserId)) {
+                return@withTransaction false
+            }
             dao.upsert(
                 MatchLobbyOcrCacheEntity(
                     tournamentId = fingerprint.tournamentId,

@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.local.MatchOcrCorrectionSnapshotEntity
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceEntity
 import com.hoggamers.rankforge.data.local.MatchOcrRowEvidenceEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.isLocalMutationBlocked
 import com.hoggamers.rankforge.data.local.RankForgeStateEntity
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchFailure
@@ -49,6 +50,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
+import com.hoggamers.rankforge.domain.tournament.DeletionBlockedException
+import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
@@ -517,6 +520,14 @@ class RoomTournamentRepository @Inject constructor(
         return writeMutex.withLock {
             val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
                 ?: return@withLock LocalDeletionResult.NotFound
+            if (!database.deletionIntentDao().hasLocalCleanupClaim(
+                    DeletionTargetType.MATCH.name,
+                    matchId,
+                    ownerUserId,
+                )
+            ) {
+                return@withLock LocalDeletionResult.NotFound
+            }
             val referencedPaths = buildList {
                 database.screenshotMetadataDao().readByMatchId(matchId)?.localRelativePath?.let(::add)
                 database.matchResultScreenshotAssetDao().observeByMatchId(matchId).first()
@@ -563,6 +574,14 @@ class RoomTournamentRepository @Inject constructor(
         return writeMutex.withLock {
             database.tournamentDao().observeByIdAndOwner(tournamentId, ownerUserId).first()
                 ?: return@withLock LocalDeletionResult.NotFound
+            if (!database.deletionIntentDao().hasLocalCleanupClaim(
+                    DeletionTargetType.TOURNAMENT.name,
+                    tournamentId,
+                    ownerUserId,
+                )
+            ) {
+                return@withLock LocalDeletionResult.NotFound
+            }
             val matches = database.matchDao().observeByTournamentId(tournamentId).first()
             val templates = database.tournamentLobbyTemplateAssetDao().readByTournamentId(tournamentId)
             val referencedPaths = buildList {
@@ -742,6 +761,9 @@ class RoomTournamentRepository @Inject constructor(
                 if (existingTournament != null && existingTournament.ownerUserId != expectedOwnerUserId) {
                     throw SecurityException("Tournament ownership changed during restoration.")
                 }
+                if (database.deletionIntentDao().isLocalMutationBlocked(snapshot.tournament.id, null, expectedOwnerUserId)) {
+                    throw DeletionBlockedException(snapshot.tournament.id)
+                }
                 database.tournamentDao().upsert(
                     snapshot.tournament.toEntity(
                         creationOrder = existingTournament?.creationOrder
@@ -813,6 +835,9 @@ class RoomTournamentRepository @Inject constructor(
             database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected restoration owner.")
+                }
+                if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, expectedOwnerUserId)) {
+                    throw DeletionBlockedException(tournamentId)
                 }
                 database.matchDao().deleteByTournamentId(tournamentId)
                 snapshot.matches.forEach { match ->
@@ -890,6 +915,9 @@ class RoomTournamentRepository @Inject constructor(
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected draft owner.")
                 }
+                if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, expectedOwnerUserId)) {
+                    throw DeletionBlockedException(tournamentId)
+                }
                 database.matchDao().deleteDraftByTournamentId(tournamentId)
                 snapshot.matches.forEach { match ->
                     database.matchDao().upsert(match.toEntity())
@@ -957,6 +985,9 @@ class RoomTournamentRepository @Inject constructor(
             var updatedState: RepositoryState? = null
             val result = database.withTransaction {
                 if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, ownerUserId)) {
                     return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
                 }
                 val current = state.value
@@ -1092,6 +1123,9 @@ class RoomTournamentRepository @Inject constructor(
                 if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
                     return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
                 }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
                 val current = state.value
                 if (current.tournaments.none { it.id == tournamentId }) {
                     return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
@@ -1159,6 +1193,9 @@ class RoomTournamentRepository @Inject constructor(
             var updatedState: RepositoryState? = null
             val result = database.withTransaction {
                 if (ownerUserId != null && !database.tournamentDao().existsByIdAndOwner(candidate.tournamentId, ownerUserId)) {
+                    return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
+                }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(candidate.tournamentId, null, ownerUserId)) {
                     return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.TournamentNotFound
                 }
                 val tournamentEntity = database.tournamentDao()
@@ -1254,6 +1291,9 @@ class RoomTournamentRepository @Inject constructor(
             var updatedState: RepositoryState? = null
             val result = database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentConfirmationResult.TournamentNotFound
+                }
+                if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, ownerUserId)) {
                     return@withTransaction OwnerScopedTournamentConfirmationResult.TournamentNotFound
                 }
                 val current = state.value
@@ -1466,6 +1506,11 @@ class RoomTournamentRepository @Inject constructor(
                         MatchCreationFailure.TOURNAMENT_NOT_FOUND,
                     )
                 }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, null, ownerUserId)) {
+                    return@withTransaction CreateMatchRepositoryResult.Rejected(
+                        MatchCreationFailure.TOURNAMENT_NOT_FOUND,
+                    )
+                }
                 val current = state.value
                 if (current.tournaments.none { it.id == match.tournamentId }) {
                     return@withTransaction CreateMatchRepositoryResult.Rejected(
@@ -1538,6 +1583,17 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction SaveMatchPlacementsRepositoryResult.Rejected(
                         SaveMatchPlacementsFailure.MATCH_NOT_FOUND,
                     )
+                }
+                if (ownerUserId != null) {
+                    val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+                        ?: return@withTransaction SaveMatchPlacementsRepositoryResult.Rejected(
+                            SaveMatchPlacementsFailure.MATCH_NOT_FOUND,
+                        )
+                    if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
+                        return@withTransaction SaveMatchPlacementsRepositoryResult.Rejected(
+                            SaveMatchPlacementsFailure.MATCH_NOT_FOUND,
+                        )
+                    }
                 }
                 val current = state.value
                 val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
@@ -1614,6 +1670,17 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction SaveMatchKillsRepositoryResult.Rejected(
                         SaveMatchKillsFailure.MATCH_NOT_FOUND,
                     )
+                }
+                if (ownerUserId != null) {
+                    val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+                        ?: return@withTransaction SaveMatchKillsRepositoryResult.Rejected(
+                            SaveMatchKillsFailure.MATCH_NOT_FOUND,
+                        )
+                    if (database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
+                        return@withTransaction SaveMatchKillsRepositoryResult.Rejected(
+                            SaveMatchKillsFailure.MATCH_NOT_FOUND,
+                        )
+                    }
                 }
                 val current = state.value
                 val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
@@ -1762,6 +1829,11 @@ class RoomTournamentRepository @Inject constructor(
                         ?: return@withTransaction FinalizeMatchRepositoryResult.Rejected(
                             FinalizeMatchFailure.MATCH_NOT_FOUND,
                         )
+                    if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
+                        return@withTransaction FinalizeMatchRepositoryResult.Rejected(
+                            FinalizeMatchFailure.MATCH_NOT_FOUND,
+                        )
+                    }
                     if (match.status != MatchStatus.DRAFT) {
                         return@withTransaction FinalizeMatchRepositoryResult.Rejected(
                             FinalizeMatchFailure.MATCH_NOT_DRAFT,
@@ -1881,6 +1953,9 @@ class RoomTournamentRepository @Inject constructor(
                 val current = state.value
                 val match = current.matches.values.flatten().firstOrNull { it.id == matchId }
                     ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(match.tournamentId, matchId, ownerUserId)) {
+                    return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FOUND)
+                }
                 if (match.status != MatchStatus.FINALIZED) {
                     return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
                 }
@@ -2023,6 +2098,9 @@ class RoomTournamentRepository @Inject constructor(
                 ) {
                     return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
                 }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(tournamentId, matchId, ownerUserId)) {
+                    return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
+                }
                 val current = state.value
                 val match = current.matches[tournamentId].orEmpty().firstOrNull { it.id == matchId }
                     ?: return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
@@ -2077,6 +2155,9 @@ class RoomTournamentRepository @Inject constructor(
                         ownerUserId,
                     )
                 ) {
+                    return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
+                }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(tournamentId, matchId, ownerUserId)) {
                     return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
                 }
                 val current = state.value
@@ -2136,6 +2217,9 @@ class RoomTournamentRepository @Inject constructor(
                         ownerUserId,
                     )
                 ) {
+                    return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
+                }
+                if (ownerUserId != null && database.deletionIntentDao().isLocalMutationBlocked(tournamentId, matchId, ownerUserId)) {
                     return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
                 }
                 val current = state.value

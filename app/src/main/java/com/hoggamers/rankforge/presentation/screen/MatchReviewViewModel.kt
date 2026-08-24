@@ -1218,6 +1218,7 @@ class MatchReviewViewModel @Inject constructor(
                 )
                 if (generation != screenshotIntakeGeneration) return false
                 if (assetResult !is MatchResultAssetWriteResult.Written) {
+                    localImagePreserver.delete(preservedFile)
                     matchResultScreenshotDuplicateDetector.rollback(
                         identity = identity,
                         newFingerprint = duplicateResult.fingerprint,
@@ -1970,6 +1971,7 @@ class MatchReviewViewModel @Inject constructor(
                     MetadataWriteResult.NotAttempted
                 }
                 if (metadataResult is MetadataWriteResult.Failed) {
+                    preservedFile?.let { localImagePreserver.delete(it) }
                     screenshotDuplicateDetector.rollback(
                         tournamentId = tournamentId,
                         matchId = matchId,

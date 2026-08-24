@@ -46,6 +46,12 @@ class RoomDeletionIntentRepository @Inject constructor(
 
     override suspend fun readPendingLocalCleanupByOwner(ownerUserId: String): List<DeletionIntent> =
         dao.readPendingLocalCleanupByOwner(ownerUserId).map { it.toDomain() }
+
+    override suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean = dao.hasLocalCleanupClaim(targetType.name, targetId, ownerUserId)
 }
 
 private fun DeletionIntentEntity.toDomain() = DeletionIntent(

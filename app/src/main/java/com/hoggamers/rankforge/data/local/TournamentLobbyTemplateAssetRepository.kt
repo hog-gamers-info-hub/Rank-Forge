@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.local
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
@@ -43,7 +44,12 @@ interface TournamentLobbyTemplateAssetRepository {
 @Singleton
 class RoomTournamentLobbyTemplateAssetRepository @Inject constructor(
     private val dao: TournamentLobbyTemplateAssetDao,
+    private val database: RankForgeDatabase?,
 ) : TournamentLobbyTemplateAssetRepository {
+    constructor(dao: TournamentLobbyTemplateAssetDao) : this(
+        dao = dao,
+        database = null,
+    )
     override fun observeByTournamentId(tournamentId: String): Flow<List<TournamentLobbyTemplateAssetEntity>> =
         dao.observeByTournamentId(tournamentId)
 
@@ -78,7 +84,22 @@ class RoomTournamentLobbyTemplateAssetRepository @Inject constructor(
         ownerUserId: String,
         assets: List<TournamentLobbyTemplateAssetEntity>,
     ): Boolean =
-        if (ownerUserId.isBlank()) false else dao.replaceForTournamentByOwner(tournamentId, ownerUserId, assets)
+        if (ownerUserId.isBlank()) {
+            false
+        } else {
+            val db = database ?: return false
+            db.withTransaction {
+                if (!dao.existsTournamentByOwner(tournamentId, ownerUserId) ||
+                    db.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, ownerUserId)
+                ) {
+                    false
+                } else {
+                    dao.deleteByTournamentId(tournamentId)
+                    dao.upsertAll(assets)
+                    true
+                }
+            }
+        }
 
     override suspend fun deleteByTournamentIdAndOwner(
         tournamentId: String,
