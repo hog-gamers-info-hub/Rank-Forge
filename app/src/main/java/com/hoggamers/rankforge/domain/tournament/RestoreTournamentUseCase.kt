@@ -50,6 +50,14 @@ class RestoreTournamentUseCase @Inject constructor(
         return when (val result = cloudRepository.readOwnedTournament(tournamentId)) {
             is TournamentCloudRestorationRemoteResult.Failure -> result.toDomainResult()
             is TournamentCloudRestorationRemoteResult.Success -> {
+                val snapshot = result.value
+                if (
+                    snapshot.tournament.id != tournamentId ||
+                    snapshot.tournament.ownerUserId.isNullOrBlank() ||
+                    snapshot.tournament.ownerUserId != expectedOwnerUserId
+                ) {
+                    return TournamentCloudRestorationResult.ValidationFailure
+                }
                 val cloudRevision = result.value.cloudRevision
                     ?: return TournamentCloudRestorationResult.Conflict(
                         com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
@@ -57,15 +65,23 @@ class RestoreTournamentUseCase @Inject constructor(
                 localRepository.detectTournamentDivergence(tournamentId, cloudRevision)?.let { conflict ->
                     return TournamentCloudRestorationResult.Conflict(conflict)
                 }
+                if (currentOwnerUserId() != expectedOwnerUserId) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
+                }
                 try {
-                    localRepository.restore(result.value)
+                    localRepository.restoreByOwner(snapshot, expectedOwnerUserId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
+                } catch (_: SecurityException) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
                 } catch (_: Throwable) {
                     return TournamentCloudRestorationResult.LocalTransactionFailure
                 }
+                if (currentOwnerUserId() != expectedOwnerUserId) {
+                    return TournamentCloudRestorationResult.AuthorizationFailure
+                }
                 try {
-                    matchCloudRestorationAction(tournamentId)
+                    matchCloudRestorationAction(tournamentId, expectedOwnerUserId)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {

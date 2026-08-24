@@ -634,6 +634,87 @@ class RoomTournamentRepository @Inject constructor(
         }
     }
 
+    override suspend fun restoreByOwner(
+        snapshot: TournamentCloudRestorationSnapshot,
+        expectedOwnerUserId: String,
+    ) {
+        require(expectedOwnerUserId.isNotBlank())
+        require(snapshot.tournament.ownerUserId == expectedOwnerUserId)
+        require(snapshot.slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList())
+        require(snapshot.slots.all { it.tournamentId == snapshot.tournament.id })
+        require(snapshot.players.all {
+            it.tournamentId == snapshot.tournament.id &&
+                it.slotNumber in TeamSlot.SLOT_NUMBERS &&
+                it.rosterPosition in 1..RosterPlayer.MAX_PLAYERS
+        })
+        require(
+            snapshot.players
+                .groupBy { it.slotNumber }
+                .values
+                .all { players -> players.map { it.rosterPosition }.distinct().size == players.size },
+        )
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            val next = current.copy(
+                tournaments = current.tournaments.map { tournament ->
+                    if (tournament.id == snapshot.tournament.id) snapshot.tournament else tournament
+                }.let { tournaments ->
+                    if (tournaments.any { it.id == snapshot.tournament.id }) {
+                        tournaments
+                    } else {
+                        tournaments + snapshot.tournament
+                    }
+                },
+                slots = current.slots + (snapshot.tournament.id to snapshot.slots),
+                rosters = current.rosters
+                    .filterKeys { it.tournamentId != snapshot.tournament.id }
+                    .plus(
+                        snapshot.players
+                            .groupBy { RosterKey(it.tournamentId, it.slotNumber) }
+                            .mapValues { (_, players) ->
+                                players.sortedBy { it.rosterPosition }.map { player ->
+                                    RosterPlayer(
+                                        tournamentId = player.tournamentId,
+                                        slotNumber = player.slotNumber,
+                                        displayName = player.displayName,
+                                    )
+                                }
+                            },
+                    ),
+            )
+            database.withTransaction {
+                val existingTournament = database.tournamentDao()
+                    .observeById(snapshot.tournament.id)
+                    .first()
+                if (existingTournament != null && existingTournament.ownerUserId != expectedOwnerUserId) {
+                    throw SecurityException("Tournament ownership changed during restoration.")
+                }
+                database.tournamentDao().upsert(
+                    snapshot.tournament.toEntity(
+                        creationOrder = existingTournament?.creationOrder
+                            ?: database.tournamentDao().nextCreationOrder(),
+                        lastUpdatedEpochMillis = existingTournament?.lastUpdatedEpochMillis,
+                    ),
+                )
+                database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
+                database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
+                database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
+                snapshot.cloudRevision?.let { revision ->
+                    database.syncRevisionDao().upsert(
+                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                            snapshot.tournament.id,
+                            revision.value,
+                            revision.value,
+                        ),
+                    )
+                }
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
     override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) {
         require(snapshot.matches.all { it.tournamentId == snapshot.tournamentId })
         require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
@@ -654,6 +735,46 @@ class RoomTournamentRepository @Inject constructor(
                     database.syncRevisionDao().upsert(
                         com.hoggamers.rankforge.data.local.SyncRevisionEntity(
                             snapshot.tournamentId,
+                            revision.value,
+                            revision.value,
+                        ),
+                    )
+                }
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
+    override suspend fun replaceMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ) {
+        require(expectedOwnerUserId.isNotBlank())
+        require(snapshot.tournamentId == tournamentId)
+        require(snapshot.matches.all { it.tournamentId == tournamentId })
+        require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
+        awaitState()
+        writeMutex.withLock {
+            val next = state.value.copy(matches = state.value.matches + (tournamentId to snapshot.matches))
+            database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
+                    throw SecurityException("Tournament is not owned by the expected restoration owner.")
+                }
+                database.matchDao().deleteByTournamentId(tournamentId)
+                snapshot.matches.forEach { match ->
+                    database.matchDao().upsert(match.toEntity())
+                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
+                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                    database.matchParticipantResultDao().upsertAll(
+                        match.participantResults.map { it.toEntity(match.id) },
+                    )
+                }
+                snapshot.cloudRevision?.let { revision ->
+                    database.syncRevisionDao().upsert(
+                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                            tournamentId,
                             revision.value,
                             revision.value,
                         ),

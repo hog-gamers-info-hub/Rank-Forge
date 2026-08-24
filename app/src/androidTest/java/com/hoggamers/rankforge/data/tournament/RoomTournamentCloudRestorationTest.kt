@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
@@ -22,6 +23,76 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentCloudRestorationTest {
+    @Test
+    fun ownerBoundTournamentRestoreRejectsForeignAndNullOwnersWithoutWrites() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-owner-guard.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("foreign", "Foreign", TournamentStatus.DRAFT).copy(ownerUserId = "owner-b"))
+            repository.create(tournament("legacy", "Legacy", TournamentStatus.DRAFT))
+            val foreignRevision = database.syncRevisionDao().readByTournamentId("foreign")
+            val legacyRevision = database.syncRevisionDao().readByTournamentId("legacy")
+
+            listOf("foreign", "legacy").forEach { id ->
+                assertSecurityFailure {
+                    repository.restoreByOwner(
+                        snapshot = tournamentSnapshot(id, "owner-a"),
+                        expectedOwnerUserId = "owner-a",
+                    )
+                }
+            }
+
+            assertEquals("Foreign", repository.observeById("foreign").first()!!.name)
+            assertEquals("Legacy", repository.observeById("legacy").first()!!.name)
+            assertEquals(foreignRevision, database.syncRevisionDao().readByTournamentId("foreign"))
+            assertEquals(legacyRevision, database.syncRevisionDao().readByTournamentId("legacy"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerBoundMatchRestoreRejectsForeignAndNullParentsBeforeWrites() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-match-owner-guard.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            repository.create(tournament("foreign-match", "Foreign", TournamentStatus.DRAFT).copy(ownerUserId = "owner-b"))
+            repository.create(tournament("legacy-match", "Legacy", TournamentStatus.DRAFT))
+            val foreignRevision = database.syncRevisionDao().readByTournamentId("foreign-match")
+            val legacyRevision = database.syncRevisionDao().readByTournamentId("legacy-match")
+            val foreignSnapshot = MatchCloudRestorationSnapshot(
+                tournamentId = "foreign-match",
+                matches = listOf(match("foreign-match")),
+            )
+            val legacySnapshot = foreignSnapshot.copy(
+                tournamentId = "legacy-match",
+                matches = listOf(match("legacy-match")),
+            )
+
+            assertSecurityFailure {
+                repository.replaceMatchesByOwner("foreign-match", "owner-a", foreignSnapshot)
+            }
+            assertSecurityFailure {
+                repository.replaceMatchesByOwner("legacy-match", "owner-a", legacySnapshot)
+            }
+
+            assertTrue(repository.observeMatchesByTournamentId("foreign-match").first().isEmpty())
+            assertTrue(repository.observeMatchesByTournamentId("legacy-match").first().isEmpty())
+            assertEquals(foreignRevision, database.syncRevisionDao().readByTournamentId("foreign-match"))
+            assertEquals(legacyRevision, database.syncRevisionDao().readByTournamentId("legacy-match"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun restorationRemovesStaleRosterPlayersAcrossDatabaseReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -208,6 +279,32 @@ class RoomTournamentCloudRestorationTest {
         organizerContactNumber = "123",
         status = status,
     )
+
+    private fun tournamentSnapshot(id: String, ownerUserId: String) =
+        TournamentCloudRestorationSnapshot(
+            tournament = tournament(id, "Restored", TournamentStatus.DRAFT).copy(ownerUserId = ownerUserId),
+            slots = TeamSlot.fixedSlotsForTournament(id),
+            players = emptyList(),
+        )
+
+    private fun match(tournamentId: String) = Match(
+        id = "match-$tournamentId",
+        tournamentId = tournamentId,
+        matchNumber = 1,
+        date = LocalDate.of(2026, 7, 24),
+        mapName = "Bermuda",
+        status = MatchStatus.DRAFT,
+    )
+
+    private suspend fun assertSecurityFailure(block: suspend () -> Unit) {
+        var rejected = false
+        try {
+            block()
+        } catch (_: SecurityException) {
+            rejected = true
+        }
+        assertTrue(rejected)
+    }
 
     private companion object {
         const val TARGET_ID = "11111111-1111-1111-1111-111111111111"

@@ -24,6 +24,13 @@ interface MatchCloudRestorationRepository {
 interface MatchRestorationLocalRepository {
     suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot)
 
+    /** Owner-bound restoration entry point for suspended cloud workflows. */
+    suspend fun replaceMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ): Unit = error("Expected owner is required for match restoration.")
+
     /** Replaces draft rows only; finalized rows are intentionally preserved. */
     suspend fun replaceDraftMatches(snapshot: MatchCloudRestorationSnapshot): Unit =
         error("Draft-only match replacement is not supported by this repository.")
@@ -49,6 +56,13 @@ sealed interface MatchCloudRestorationResult {
 
 fun interface MatchCloudRestorationAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult>
+
+    /** Parent restoration must pass its immutable owner through to the child. */
+    suspend operator fun invoke(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> =
+        throw SecurityException("Expected owner is required for child restoration.")
 }
 
 fun interface MatchCloudRestorationRetryAction {
