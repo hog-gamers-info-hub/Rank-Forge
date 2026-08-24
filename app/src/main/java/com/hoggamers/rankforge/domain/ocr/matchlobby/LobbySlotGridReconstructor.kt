@@ -63,6 +63,45 @@ data class LobbySlotGrid(
     }
 }
 
+/**
+ * Geometry fallback used only when exactly two OCR anchors are on the same row
+ * or the same column.
+ *
+ * columnToRowPitchRatio = horizontal column pitch / vertical row pitch.
+ *
+ * Directly observed geometry always has priority:
+ * - 4 anchors: both pitches are measured directly.
+ * - 3 anchors: both pitches are measured directly.
+ * - 2 diagonal anchors: both pitches are measured directly.
+ * - 2 same-row anchors: column pitch is measured; row pitch is inferred.
+ * - 2 same-column anchors: row pitch is measured; column pitch is inferred.
+ */
+data class LobbyGridGeometryCalibration(
+    val columnToRowPitchRatio: Double,
+) {
+    init {
+        require(columnToRowPitchRatio.isFinite() && columnToRowPitchRatio > 0.0) {
+            "Lobby grid column-to-row pitch ratio must be finite and positive."
+        }
+    }
+}
+
+object LobbyGridGeometryCalibrationProfiles {
+    /**
+     * Initial observed center-distance ratio from the verified lobby evidence:
+     *
+     * horizontal pitch = 491.0 px
+     * vertical pitch   = 204.5 px
+     * ratio            = 491.0 / 204.5 ~= 2.400978
+     *
+     * Keep this value isolated as calibration evidence so it can be replaced
+     * with a median/multi-screenshot calibration without changing reconstruction logic.
+     */
+    val InitialObservedPitchRatio = LobbyGridGeometryCalibration(
+        columnToRowPitchRatio = 491.0 / 204.5,
+    )
+}
+
 sealed interface LobbyGridReconstructionResult {
     data class Reconstructed(
         val grid: LobbySlotGrid,
@@ -74,7 +113,10 @@ sealed interface LobbyGridReconstructionResult {
     data object InvalidGeometry : LobbyGridReconstructionResult
 }
 
-class LobbySlotGridReconstructor {
+class LobbySlotGridReconstructor(
+    private val geometryCalibration: LobbyGridGeometryCalibration =
+        LobbyGridGeometryCalibrationProfiles.InitialObservedPitchRatio,
+) {
     fun reconstruct(
         screenshotIndex: Int,
         observedAnchors: List<LobbyObservedSlotAnchor>,
@@ -105,33 +147,52 @@ class LobbySlotGridReconstructor {
         if (observedByRole.size != observedAnchors.size) {
             return LobbyGridReconstructionResult.DuplicateSlot
         }
+        if (!observedByRole.hasValidObservedOrdering()) {
+            return LobbyGridReconstructionResult.InvalidGeometry
+        }
 
         /*
-         * The lobby slot grid is an axis-aligned rectangle by contract:
+         * Fixed axis-aligned lobby-grid contract:
          *
          *   TOP_LEFT  --------  TOP_RIGHT
          *      |                    |
          *      |                    |
          *   BOTTOM_LEFT ------- BOTTOM_RIGHT
          *
-         * Canonical grid axes are reconstructed from OCR center coordinates:
+         * For 3 or 4 anchors, all four canonical axes are derived directly from
+         * observed center coordinates. No pitch-ratio calibration is used.
          *
-         * leftColumnCenterX  = average X of observed TOP_LEFT/BOTTOM_LEFT
-         * rightColumnCenterX = average X of observed TOP_RIGHT/BOTTOM_RIGHT
-         * topRowCenterY      = average Y of observed TOP_LEFT/TOP_RIGHT
-         * bottomRowCenterY   = average Y of observed BOTTOM_LEFT/BOTTOM_RIGHT
+         * For exactly 2 anchors:
          *
-         * A complete grid therefore requires evidence for both columns and both rows.
-         * This is available from:
-         * - all four anchors,
-         * - any three anchors,
-         * - either diagonal two-anchor pair.
+         *   TOP_LEFT + TOP_RIGHT:
+         *     H is observed, V = H / R, bottom row is inferred.
          *
-         * Same-row and same-column two-anchor pairs remain mathematically insufficient
-         * because one complete axis is still unknown.
+         *   BOTTOM_LEFT + BOTTOM_RIGHT:
+         *     H is observed, V = H / R, top row is inferred.
+         *
+         *   TOP_LEFT + BOTTOM_LEFT:
+         *     V is observed, H = V * R, right column is inferred.
+         *
+         *   TOP_RIGHT + BOTTOM_RIGHT:
+         *     V is observed, H = V * R, left column is inferred.
+         *
+         *   TOP_LEFT + BOTTOM_RIGHT:
+         *     H and V are both observed from the diagonal; other corners are inferred.
+         *
+         *   TOP_RIGHT + BOTTOM_LEFT:
+         *     H and V are both observed from the diagonal; other corners are inferred.
+         *
+         * R = columnToRowPitchRatio.
          */
-        val axes = resolveAxes(observedByRole)
-            ?: return LobbyGridReconstructionResult.InsufficientAnchors
+        val axes = when {
+            observedByRole.size >= DIRECT_GEOMETRY_MINIMUM_ANCHORS ->
+                resolveDirectAxes(observedByRole)
+
+            observedByRole.size == MINIMUM_ANCHOR_COUNT ->
+                resolveTwoAnchorAxes(observedByRole)
+
+            else -> null
+        } ?: return LobbyGridReconstructionResult.InsufficientAnchors
 
         if (!axes.hasValidOrdering()) {
             return LobbyGridReconstructionResult.InvalidGeometry
@@ -157,7 +218,14 @@ class LobbySlotGridReconstructor {
         return validateCompleteGrid(screenshotIndex, points)
     }
 
-    private fun resolveAxes(
+    /**
+     * Three/four-anchor path.
+     *
+     * Every row and column has at least one observed center, so all four canonical
+     * axes are obtained from direct OCR evidence. Repeated evidence on one axis is
+     * averaged to smooth sub-pixel/bounding-box center variation.
+     */
+    private fun resolveDirectAxes(
         observedByRole: Map<LobbySlotGridRole, LobbyObservedSlotAnchor>,
     ): AxisCenters? {
         val leftColumnCenterX = averageOrNull(
@@ -183,6 +251,186 @@ class LobbySlotGridReconstructor {
             topRowCenterY = topRowCenterY,
             bottomRowCenterY = bottomRowCenterY,
         )
+    }
+
+    /**
+     * Exactly-two-anchor path.
+     *
+     * All six possible role relationships are handled explicitly. Diagonals use
+     * only direct center geometry. Same-row/same-column pairs use one calibrated
+     * pitch ratio to recover the single missing dimension.
+     */
+    private fun resolveTwoAnchorAxes(
+        observedByRole: Map<LobbySlotGridRole, LobbyObservedSlotAnchor>,
+    ): AxisCenters? {
+        if (observedByRole.size != MINIMUM_ANCHOR_COUNT) return null
+
+        val topLeft = observedByRole[LobbySlotGridRole.TOP_LEFT]
+        val topRight = observedByRole[LobbySlotGridRole.TOP_RIGHT]
+        val bottomLeft = observedByRole[LobbySlotGridRole.BOTTOM_LEFT]
+        val bottomRight = observedByRole[LobbySlotGridRole.BOTTOM_RIGHT]
+
+        return when {
+            topLeft != null && topRight != null ->
+                axesFromTopRow(topLeft, topRight)
+
+            bottomLeft != null && bottomRight != null ->
+                axesFromBottomRow(bottomLeft, bottomRight)
+
+            topLeft != null && bottomLeft != null ->
+                axesFromLeftColumn(topLeft, bottomLeft)
+
+            topRight != null && bottomRight != null ->
+                axesFromRightColumn(topRight, bottomRight)
+
+            topLeft != null && bottomRight != null ->
+                axesFromTopLeftBottomRightDiagonal(topLeft, bottomRight)
+
+            topRight != null && bottomLeft != null ->
+                axesFromTopRightBottomLeftDiagonal(topRight, bottomLeft)
+
+            else -> null
+        }
+    }
+
+    private fun axesFromTopRow(
+        topLeft: LobbyObservedSlotAnchor,
+        topRight: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val topRowCenterY = averageOrNull(topLeft.centerY, topRight.centerY) ?: return null
+        val columnPitch = topRight.centerX - topLeft.centerX
+        if (!columnPitch.isPositiveFinite()) return null
+
+        val rowPitch = columnPitch / geometryCalibration.columnToRowPitchRatio
+        if (!rowPitch.isPositiveFinite()) return null
+
+        return AxisCenters(
+            leftColumnCenterX = topLeft.centerX,
+            rightColumnCenterX = topRight.centerX,
+            topRowCenterY = topRowCenterY,
+            bottomRowCenterY = topRowCenterY + rowPitch,
+        )
+    }
+
+    private fun axesFromBottomRow(
+        bottomLeft: LobbyObservedSlotAnchor,
+        bottomRight: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val bottomRowCenterY =
+            averageOrNull(bottomLeft.centerY, bottomRight.centerY) ?: return null
+        val columnPitch = bottomRight.centerX - bottomLeft.centerX
+        if (!columnPitch.isPositiveFinite()) return null
+
+        val rowPitch = columnPitch / geometryCalibration.columnToRowPitchRatio
+        if (!rowPitch.isPositiveFinite()) return null
+
+        return AxisCenters(
+            leftColumnCenterX = bottomLeft.centerX,
+            rightColumnCenterX = bottomRight.centerX,
+            topRowCenterY = bottomRowCenterY - rowPitch,
+            bottomRowCenterY = bottomRowCenterY,
+        )
+    }
+
+    private fun axesFromLeftColumn(
+        topLeft: LobbyObservedSlotAnchor,
+        bottomLeft: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val leftColumnCenterX =
+            averageOrNull(topLeft.centerX, bottomLeft.centerX) ?: return null
+        val rowPitch = bottomLeft.centerY - topLeft.centerY
+        if (!rowPitch.isPositiveFinite()) return null
+
+        val columnPitch = rowPitch * geometryCalibration.columnToRowPitchRatio
+        if (!columnPitch.isPositiveFinite()) return null
+
+        return AxisCenters(
+            leftColumnCenterX = leftColumnCenterX,
+            rightColumnCenterX = leftColumnCenterX + columnPitch,
+            topRowCenterY = topLeft.centerY,
+            bottomRowCenterY = bottomLeft.centerY,
+        )
+    }
+
+    private fun axesFromRightColumn(
+        topRight: LobbyObservedSlotAnchor,
+        bottomRight: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val rightColumnCenterX =
+            averageOrNull(topRight.centerX, bottomRight.centerX) ?: return null
+        val rowPitch = bottomRight.centerY - topRight.centerY
+        if (!rowPitch.isPositiveFinite()) return null
+
+        val columnPitch = rowPitch * geometryCalibration.columnToRowPitchRatio
+        if (!columnPitch.isPositiveFinite()) return null
+
+        return AxisCenters(
+            leftColumnCenterX = rightColumnCenterX - columnPitch,
+            rightColumnCenterX = rightColumnCenterX,
+            topRowCenterY = topRight.centerY,
+            bottomRowCenterY = bottomRight.centerY,
+        )
+    }
+
+    private fun axesFromTopLeftBottomRightDiagonal(
+        topLeft: LobbyObservedSlotAnchor,
+        bottomRight: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val axes = AxisCenters(
+            leftColumnCenterX = topLeft.centerX,
+            rightColumnCenterX = bottomRight.centerX,
+            topRowCenterY = topLeft.centerY,
+            bottomRowCenterY = bottomRight.centerY,
+        )
+        return axes.takeIf { it.hasValidOrdering() }
+    }
+
+    private fun axesFromTopRightBottomLeftDiagonal(
+        topRight: LobbyObservedSlotAnchor,
+        bottomLeft: LobbyObservedSlotAnchor,
+    ): AxisCenters? {
+        val axes = AxisCenters(
+            leftColumnCenterX = bottomLeft.centerX,
+            rightColumnCenterX = topRight.centerX,
+            topRowCenterY = topRight.centerY,
+            bottomRowCenterY = bottomLeft.centerY,
+        )
+        return axes.takeIf { it.hasValidOrdering() }
+    }
+
+    /**
+     * Validate every ordering relationship that can be checked directly from the
+     * currently observed centers. Missing roles do not fail the check.
+     */
+    private fun Map<LobbySlotGridRole, LobbyObservedSlotAnchor>.hasValidObservedOrdering(): Boolean {
+        val topLeft = this[LobbySlotGridRole.TOP_LEFT]
+        val topRight = this[LobbySlotGridRole.TOP_RIGHT]
+        val bottomLeft = this[LobbySlotGridRole.BOTTOM_LEFT]
+        val bottomRight = this[LobbySlotGridRole.BOTTOM_RIGHT]
+
+        if (topLeft != null && topRight != null && topLeft.centerX >= topRight.centerX) {
+            return false
+        }
+        if (bottomLeft != null && bottomRight != null && bottomLeft.centerX >= bottomRight.centerX) {
+            return false
+        }
+        if (topLeft != null && bottomLeft != null && topLeft.centerY >= bottomLeft.centerY) {
+            return false
+        }
+        if (topRight != null && bottomRight != null && topRight.centerY >= bottomRight.centerY) {
+            return false
+        }
+        if (topLeft != null && bottomRight != null &&
+            (topLeft.centerX >= bottomRight.centerX || topLeft.centerY >= bottomRight.centerY)
+        ) {
+            return false
+        }
+        if (topRight != null && bottomLeft != null &&
+            (bottomLeft.centerX >= topRight.centerX || topRight.centerY >= bottomLeft.centerY)
+        ) {
+            return false
+        }
+        return true
     }
 
     private fun inferredPoint(
@@ -219,7 +467,7 @@ class LobbySlotGridReconstructor {
         val rightColumnCenterX = (topRight.centerX + bottomRight.centerX) / 2.0
         val rowPitch = bottomRowCenterY - topRowCenterY
         val columnPitch = rightColumnCenterX - leftColumnCenterX
-        if (!rowPitch.isFinite() || !columnPitch.isFinite() || rowPitch <= 0.0 || columnPitch <= 0.0) {
+        if (!rowPitch.isPositiveFinite() || !columnPitch.isPositiveFinite()) {
             return LobbyGridReconstructionResult.InvalidGeometry
         }
 
@@ -278,6 +526,7 @@ class LobbySlotGridReconstructor {
 
     private companion object {
         const val MINIMUM_ANCHOR_COUNT = 2
+        const val DIRECT_GEOMETRY_MINIMUM_ANCHORS = 3
         const val ROLE_INDEX_TOP_LEFT = 0
         const val ROLE_INDEX_TOP_RIGHT = 1
         const val ROLE_INDEX_BOTTOM_LEFT = 2
@@ -302,5 +551,7 @@ class LobbySlotGridReconstructor {
             val present = values.filterNotNull()
             return present.takeIf { it.isNotEmpty() }?.average()
         }
+
+        fun Double.isPositiveFinite(): Boolean = isFinite() && this > 0.0
     }
 }

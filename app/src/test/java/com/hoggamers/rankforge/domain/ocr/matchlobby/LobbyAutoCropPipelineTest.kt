@@ -13,24 +13,104 @@ class LobbyAutoCropPipelineTest {
     private val calculator = LobbyAutoCropCalculator()
 
     @Test
-    fun shotOneWithOnlyAnchorsTwoAndFourProducesNoProposal() {
+    fun shotOneWithOnlyRightColumnTwoAndFourProducesRatioAssistedProposal() {
         val observations = listOf(
-            observation("2", 1076, 232),
-            observation("4", 1076, 437),
+            observation("2", 1076, 236),
+            observation("4", 1076, 441),
         )
 
         val resolved = resolver.resolve(1, observations, dimensions)
         assertEquals(listOf(2, 4), resolved.map { it.anchor.slotNumber })
-        assertEquals(
-            LobbyGridReconstructionResult.InsufficientAnchors,
-            reconstructor.reconstruct(1, resolved.map { it.anchor }),
+
+        val grid = reconstructedGrid(1, resolved)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.TOP_LEFT).source)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT).source)
+        assertTrue(calculate(1, observations) is LobbyAutoCropCalculationResult.Proposal)
+        assertTrue(calculateContent(observations) is LobbyAutoCropCalculationResult.Proposal)
+    }
+
+    @Test
+    fun shotOneWithOnlyTopRowOneAndTwoProducesRatioAssistedProposal() {
+        val observations = listOf(
+            observation("1", 585, 236),
+            observation("2", 1076, 236),
         )
-        assertEquals(null, calculate(1, observations))
+
+        val resolved = resolver.resolve(1, observations, dimensions)
+        assertEquals(listOf(1, 2), resolved.map { it.anchor.slotNumber })
+
+        val grid = reconstructedGrid(1, resolved)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT).source)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.BOTTOM_RIGHT).source)
+        assertTrue(calculateContent(observations) is LobbyAutoCropCalculationResult.Proposal)
+    }
+
+    @Test
+    fun shotOneWithOnlyDiagonalOneAndFourProducesDirectGeometryProposal() {
+        val observations = listOf(
+            observation("1", 585, 236),
+            observation("4", 1076, 441),
+        )
+
+        val resolved = resolver.resolve(1, observations, dimensions)
+        assertEquals(listOf(1, 4), resolved.map { it.anchor.slotNumber })
+
+        val grid = reconstructedGrid(1, resolved)
+        assertEquals(491.0, grid.columnPitch, 0.0)
+        assertEquals(205.0, grid.rowPitch, 0.0)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.TOP_RIGHT).source)
+        assertEquals(LobbyGridPointSource.INFERRED, grid.pointFor(LobbySlotGridRole.BOTTOM_LEFT).source)
+        assertTrue(calculateContent(observations) is LobbyAutoCropCalculationResult.Proposal)
+    }
+
+    @Test
+    fun ambiguousPhysicalTwoAnchorPairsInsideOneGroupProduceNoProposal() {
+        val observations = listOf(
+            observation("1", 585, 236),
+            observation("1", 700, 236),
+            observation("2", 1076, 236),
+        )
+
+        assertTrue(resolver.resolve(1, observations, dimensions).isEmpty())
         assertEquals(null, calculateContent(observations))
     }
 
     @Test
-    fun shotTwoInfersSlotSixAndProducesAProposal() {
+    fun twoDifferentScreenshotGroupsWithTwoAnchorEvidenceProduceNoProposal() {
+        val observations = listOf(
+            observation("1", 585, 236),
+            observation("2", 1076, 236),
+            observation("5", 585, 236),
+            observation("6", 1076, 236),
+        )
+
+        val candidates = reconstructedCandidates(observations)
+        assertEquals(2, candidates.size)
+        assertTrue(candidates.all { it.directlyObservedAnchorCount == 2 })
+        assertEquals(null, LobbyAutoCropGroupSelector.select(candidates))
+        assertEquals(null, calculateContent(observations))
+    }
+
+    @Test
+    fun threeAnchorGroupOutranksASeparateTwoAnchorGroup() {
+        val observations = listOf(
+            observation("1", 585, 236),
+            observation("2", 1076, 236),
+            observation("5", 585, 245),
+            observation("7", 585, 451),
+            observation("8", 1076, 451),
+        )
+
+        val candidates = reconstructedCandidates(observations)
+        val selected = LobbyAutoCropGroupSelector.select(candidates)
+
+        assertEquals(2, selected?.grid?.screenshotIndex)
+        assertEquals(3, selected?.directlyObservedAnchorCount)
+        assertTrue(calculateContent(observations) is LobbyAutoCropCalculationResult.Proposal)
+    }
+
+    @Test
+    fun shotTwoInfersSlotSixFromThreeDirectAnchorsAndProducesProposal() {
         val observations = listOf(
             observation("5", 585, 245),
             observation("7", 585, 451),
@@ -46,7 +126,7 @@ class LobbyAutoCropPipelineTest {
     }
 
     @Test
-    fun shotThreeDirectAnchorsProduceAProposal() {
+    fun shotThreeDirectFourAnchorsProduceProposalWithoutRatioFallback() {
         val observations = listOf(
             observation("9", 585, 250),
             observation("10", 1075, 250),
@@ -62,38 +142,7 @@ class LobbyAutoCropPipelineTest {
     }
 
     @Test
-    fun shotThreeContentProducesTheSameProposalWithoutStorageIndexInput() {
-        val observations = listOf(
-            observation("9", 585, 250),
-            observation("10", 1075, 250),
-            observation("11", 584, 455),
-            observation("12", 1074, 456),
-        )
-
-        val proposalsForStorageButtons = (1..3).map { calculateContent(observations) }
-
-        assertTrue(proposalsForStorageButtons.all { it is LobbyAutoCropCalculationResult.Proposal })
-        assertEquals(proposalsForStorageButtons.first(), proposalsForStorageButtons[1])
-        assertEquals(proposalsForStorageButtons.first(), proposalsForStorageButtons[2])
-    }
-
-    @Test
-    fun shotTwoContentProducesAProposalWithoutStorageIndexInput() {
-        val observations = listOf(
-            observation("5", 585, 245),
-            observation("7", 585, 451),
-            observation("8", 1076, 451),
-        )
-
-        val proposalsForStorageButtons = (1..3).map { calculateContent(observations) }
-
-        assertTrue(proposalsForStorageButtons.all { it is LobbyAutoCropCalculationResult.Proposal })
-        assertEquals(proposalsForStorageButtons.first(), proposalsForStorageButtons[1])
-        assertEquals(proposalsForStorageButtons.first(), proposalsForStorageButtons[2])
-    }
-
-    @Test
-    fun falseNumberOutsideCoherentStructureDoesNotChangeProposal() {
+    fun falseNumberOutsideCoherentFourAnchorStructureDoesNotChangeProposal() {
         val trueObservations = listOf(
             observation("5", 585, 245),
             observation("7", 585, 451),
@@ -107,6 +156,7 @@ class LobbyAutoCropPipelineTest {
 
         val baseline = calculateContent(trueObservations)
         val filtered = resolver.resolve(2, withFalseCandidate, dimensions)
+
         assertEquals(listOf(5, 6, 7, 8), filtered.map { it.anchor.slotNumber })
         assertEquals(1076.0, filtered[1].anchor.centerX, 0.0)
         assertEquals(245.0, filtered[1].anchor.centerY, 0.0)
@@ -114,18 +164,7 @@ class LobbyAutoCropPipelineTest {
     }
 
     @Test
-    fun shuffledObservationsProduceIdenticalFinalCrop() {
-        val observations = listOf(
-            observation("5", 585, 245),
-            observation("7", 585, 451),
-            observation("8", 1076, 451),
-        )
-
-        assertEquals(calculateContent(observations), calculateContent(observations.reversed()))
-    }
-
-    @Test
-    fun equallyCredibleGroupsProduceNoProposal() {
+    fun equallyCredibleThreeAnchorGroupsStillProduceNoProposal() {
         val observations = listOf(
             observation("1", 585, 245),
             observation("2", 1076, 245),
@@ -138,15 +177,32 @@ class LobbyAutoCropPipelineTest {
         assertEquals(null, calculateContent(observations))
     }
 
+    @Test
+    fun shuffledStrongEvidenceProducesIdenticalFinalCrop() {
+        val observations = listOf(
+            observation("5", 585, 245),
+            observation("7", 585, 451),
+            observation("8", 1076, 451),
+        )
+
+        assertEquals(
+            calculateContent(observations),
+            calculateContent(observations.reversed()),
+        )
+    }
+
     private fun calculate(
         screenshotIndex: Int,
         observations: List<LobbyOcrAnchorObservation>,
     ): LobbyAutoCropCalculationResult? {
         val resolved = resolver.resolve(screenshotIndex, observations, dimensions)
-        val grid = (reconstructor.reconstruct(screenshotIndex, resolved.map { it.anchor })
-            as? LobbyGridReconstructionResult.Reconstructed)
+        val grid = (reconstructor.reconstruct(
+            screenshotIndex = screenshotIndex,
+            observedAnchors = resolved.map { it.anchor },
+        ) as? LobbyGridReconstructionResult.Reconstructed)
             ?.grid
             ?: return null
+
         return calculator.calculate(
             grid = grid,
             imageWidth = dimensions.width,
@@ -158,18 +214,10 @@ class LobbyAutoCropPipelineTest {
     private fun calculateContent(
         observations: List<LobbyOcrAnchorObservation>,
     ): LobbyAutoCropCalculationResult? {
-        val candidates = resolver.resolveAll(observations, dimensions).mapNotNull { resolved ->
-            val grid = (reconstructor.reconstruct(
-                screenshotIndex = resolved.screenshotIndex,
-                observedAnchors = resolved.anchors.map { it.anchor },
-            ) as? LobbyGridReconstructionResult.Reconstructed)?.grid ?: return@mapNotNull null
-            LobbyAutoCropGridCandidate(
-                grid = grid,
-                directlyObservedAnchorCount = resolved.directlyObservedAnchorCount,
-                alignmentError = resolved.alignmentError,
-            )
-        }
-        val selected = LobbyAutoCropGroupSelector.select(candidates) ?: return null
+        val selected = LobbyAutoCropGroupSelector.select(
+            reconstructedCandidates(observations),
+        ) ?: return null
+
         return calculator.calculate(
             grid = selected.grid,
             imageWidth = dimensions.width,
@@ -178,17 +226,44 @@ class LobbyAutoCropPipelineTest {
         )
     }
 
+    private fun reconstructedCandidates(
+        observations: List<LobbyOcrAnchorObservation>,
+    ): List<LobbyAutoCropGridCandidate> =
+        resolver.resolveAll(observations, dimensions).mapNotNull { resolved ->
+            val grid = (reconstructor.reconstruct(
+                screenshotIndex = resolved.screenshotIndex,
+                observedAnchors = resolved.anchors.map { it.anchor },
+            ) as? LobbyGridReconstructionResult.Reconstructed)?.grid
+                ?: return@mapNotNull null
+
+            LobbyAutoCropGridCandidate(
+                grid = grid,
+                directlyObservedAnchorCount = resolved.directlyObservedAnchorCount,
+                alignmentError = resolved.alignmentError,
+            )
+        }
+
     private fun reconstructedGrid(
         screenshotIndex: Int,
         resolved: List<LobbyResolvedOcrAnchor>,
-    ): LobbySlotGrid = (reconstructor.reconstruct(screenshotIndex, resolved.map { it.anchor })
-        as LobbyGridReconstructionResult.Reconstructed)
-        .grid
+    ): LobbySlotGrid =
+        (reconstructor.reconstruct(
+            screenshotIndex = screenshotIndex,
+            observedAnchors = resolved.map { it.anchor },
+        ) as LobbyGridReconstructionResult.Reconstructed).grid
 
-    private fun observation(text: String, centerX: Int, centerY: Int) =
-        LobbyOcrAnchorObservation(
-            text = text,
-            boundingBox = RawOcrBoundingBox(centerX - 10, centerY - 10, centerX + 10, centerY + 10),
-            level = LobbyOcrAnchorLevel.ELEMENT,
-        )
+    private fun observation(
+        text: String,
+        centerX: Int,
+        centerY: Int,
+    ) = LobbyOcrAnchorObservation(
+        text = text,
+        boundingBox = RawOcrBoundingBox(
+            centerX - 10,
+            centerY - 10,
+            centerX + 10,
+            centerY + 10,
+        ),
+        level = LobbyOcrAnchorLevel.ELEMENT,
+    )
 }
