@@ -2484,6 +2484,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             standingsViewModel = { tournamentId ->
                 TournamentStandingsViewModel(
                     observeMatches = ObserveMatchesUseCase(repository),
+                    observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     cumulativeStandings = CumulativeTournamentStandingsEngine(),
                     tieBreakRules = TieBreakRules(),
                 ).also {
