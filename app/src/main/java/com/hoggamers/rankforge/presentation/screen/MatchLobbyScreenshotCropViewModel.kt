@@ -36,6 +36,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
     private val uploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
     private val reconciliationScheduler: ScreenshotReconciliationScheduler,
     private val autoCropProposer: MatchLobbyAutoCropProposer,
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotCropUiState())
     val uiState: StateFlow<MatchLobbyScreenshotCropUiState> = _uiState.asStateFlow()
@@ -72,8 +73,10 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             lobbyScreenshotIndex = lobbyScreenshotIndex,
         )
         loadJob = viewModelScope.launch {
+            val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
             combine(
-                assetRepository.observeByIdentity(identity),
+                if (ownerUserId.isNullOrBlank()) kotlinx.coroutines.flow.flowOf(null)
+                else assetRepository.observeByIdentityAndOwner(identity, ownerUserId),
                 observeMatches(tournamentId),
             ) { asset, matches ->
                 val match = matches.firstOrNull { it.id == matchId && it.tournamentId == tournamentId }
@@ -152,7 +155,12 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             }
             val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, index)
             val result = try {
-                assetRepository.persistConfirmedCrop(identity, current.draftCrop, clock.millis())
+                assetRepository.persistConfirmedCropByOwner(
+                    identity,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    current.draftCrop,
+                    clock.millis(),
+                )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -177,6 +185,8 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                     _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.MISSING_ASSET) }
                 MatchLobbyScreenshotCropSaveResult.InvalidIdentity,
                 MatchLobbyScreenshotCropSaveResult.InvalidCrop,
+                MatchLobbyScreenshotCropSaveResult.AuthenticationRequired,
+                MatchLobbyScreenshotCropSaveResult.MatchNotFound,
                 -> _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.INVALID_CROP) }
             }
         }
@@ -186,7 +196,13 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         val key = "${identity.tournamentId}:${identity.matchId}:${identity.lobbyScreenshotIndex}"
         if (!missingMarked.add(key)) return
         viewModelScope.launch {
-            runCatching { assetRepository.markLocalMissing(identity, clock.millis()) }
+            runCatching {
+                assetRepository.markLocalMissingByOwner(
+                    identity,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    clock.millis(),
+                )
+            }
         }
     }
 
@@ -254,7 +270,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
 
         viewModelScope.launch {
             val asset = try {
-                assetRepository.getByIdentity(identity)
+                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {

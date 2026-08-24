@@ -121,6 +121,39 @@ class ScreenshotDuplicateDetector @Inject constructor(
         matchId: String,
         selectedUri: String,
         currentFingerprint: String?,
+    ): ScreenshotDuplicateLinkResult = linkInternal(
+        tournamentId = tournamentId,
+        matchId = matchId,
+        selectedUri = selectedUri,
+        currentFingerprint = currentFingerprint,
+    ) {
+        screenshotMetadataRepository.observeByTournamentId(tournamentId).first()
+    }
+
+    suspend fun linkByOwner(
+        tournamentId: String,
+        matchId: String,
+        selectedUri: String,
+        currentFingerprint: String?,
+        ownerUserId: String,
+    ): ScreenshotDuplicateLinkResult {
+        if (ownerUserId.isBlank()) return ScreenshotDuplicateLinkResult.StateConflict
+        return linkInternal(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            selectedUri = selectedUri,
+            currentFingerprint = currentFingerprint,
+        ) {
+            screenshotMetadataRepository.observeByTournamentIdAndOwner(tournamentId, ownerUserId).first()
+        }
+    }
+
+    private suspend fun linkInternal(
+        tournamentId: String,
+        matchId: String,
+        selectedUri: String,
+        currentFingerprint: String?,
+        readPersistedMetadata: suspend () -> List<com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity>,
     ): ScreenshotDuplicateLinkResult {
         val fingerprint = when (val result = fingerprintGenerator.fingerprint(selectedUri)) {
             is ImageSourceFingerprintResult.Success -> result.value
@@ -128,7 +161,7 @@ class ScreenshotDuplicateDetector @Inject constructor(
         }
 
         val persistedMetadata = try {
-            screenshotMetadataRepository.observeByTournamentId(tournamentId).first()
+            readPersistedMetadata()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

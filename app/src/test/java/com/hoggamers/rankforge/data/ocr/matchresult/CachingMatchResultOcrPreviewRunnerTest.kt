@@ -14,6 +14,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionRe
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -201,7 +202,7 @@ class CachingMatchResultOcrPreviewRunnerTest {
         val cache = FakeCacheRepository()
         cache.entries[assets.fingerprint(upper)] = processed(upper.role)
         var lowerCalls = 0
-        val runner = CachingMatchResultOcrPreviewRunner(assets, cache) { identityToProcess ->
+        val runner = CachingMatchResultOcrPreviewRunner(assets, cache, screenshotOwnerProvider = ownerProvider) { identityToProcess ->
             lowerCalls++
             processed(identityToProcess.role)
         }
@@ -277,8 +278,13 @@ class CachingMatchResultOcrPreviewRunnerTest {
     ) = CachingMatchResultOcrPreviewRunner(
         assetRepository = assets,
         cacheRepository = cache,
+        screenshotOwnerProvider = ownerProvider,
         delegate = MatchResultOcrPreviewRunner(delegate),
     )
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String = "owner-1"
+    }
 
     private fun identity(
         role: MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -354,6 +360,8 @@ class CachingMatchResultOcrPreviewRunnerTest {
             onGet?.invoke()
             return assets[identity.role.name]
         }
+        override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): MatchResultScreenshotAssetEntity? =
+            getByIdentity(identity)?.takeIf { it.ownerUserId == ownerUserId }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(emptyList())
         override suspend fun findDuplicateFingerprint(identity: MatchResultScreenshotIdentity, sha256: String): MatchResultScreenshotAssetEntity? = null
         override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult = MatchResultScreenshotAssetSaveResult.Saved
@@ -388,6 +396,22 @@ class CachingMatchResultOcrPreviewRunnerTest {
             saveCount++
             savedFingerprint = fingerprint
             entries[fingerprint] = processed
+        }
+
+        override suspend fun readByOwner(
+            fingerprint: MatchResultOcrCacheFingerprint,
+            ownerUserId: String,
+        ): MatchResultOcrPreviewProcessingResult.Processed? =
+            if (ownerUserId == "owner-1") read(fingerprint) else null
+
+        override suspend fun saveByOwner(
+            fingerprint: MatchResultOcrCacheFingerprint,
+            processed: MatchResultOcrPreviewProcessingResult.Processed,
+            ownerUserId: String,
+        ): Boolean {
+            if (ownerUserId != "owner-1") return false
+            save(fingerprint, processed)
+            return true
         }
     }
 }

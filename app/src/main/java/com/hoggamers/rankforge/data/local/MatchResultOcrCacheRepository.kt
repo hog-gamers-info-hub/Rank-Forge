@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.room.withTransaction
 
 data class MatchResultOcrCacheFingerprint(
     val tournamentId: String,
@@ -31,14 +32,31 @@ interface MatchResultOcrCacheRepository {
         fingerprint: MatchResultOcrCacheFingerprint,
         processed: MatchResultOcrPreviewProcessingResult.Processed,
     )
+
+    suspend fun readByOwner(
+        fingerprint: MatchResultOcrCacheFingerprint,
+        ownerUserId: String,
+    ): MatchResultOcrPreviewProcessingResult.Processed? = null
+
+    suspend fun saveByOwner(
+        fingerprint: MatchResultOcrCacheFingerprint,
+        processed: MatchResultOcrPreviewProcessingResult.Processed,
+        ownerUserId: String,
+    ): Boolean = false
 }
 
 @Singleton
-class RoomMatchResultOcrCacheRepository @Inject constructor(
+class RoomMatchResultOcrCacheRepository(
     private val dao: MatchResultOcrCacheDao,
     private val codec: MatchResultOcrCacheCodec,
     private val clock: Clock,
+    private val database: RankForgeDatabase?,
 ) : MatchResultOcrCacheRepository {
+    constructor(
+        dao: MatchResultOcrCacheDao,
+        codec: MatchResultOcrCacheCodec,
+        clock: Clock,
+    ) : this(dao, codec, clock, null)
     override suspend fun read(
         fingerprint: MatchResultOcrCacheFingerprint,
     ): MatchResultOcrPreviewProcessingResult.Processed? {
@@ -75,6 +93,48 @@ class RoomMatchResultOcrCacheRepository @Inject constructor(
                 cachedAt = clock.millis(),
             ),
         )
+    }
+
+    override suspend fun readByOwner(
+        fingerprint: MatchResultOcrCacheFingerprint,
+        ownerUserId: String,
+    ): MatchResultOcrPreviewProcessingResult.Processed? {
+        if (ownerUserId.isBlank()) return null
+        val cached = dao.readByMatchAndRoleAndOwner(fingerprint.matchId, fingerprint.role.name, ownerUserId) ?: return null
+        if (cached.toFingerprint() != fingerprint) return null
+        return codec.decode(cached.processedPayloadJson)?.takeIf { it.isValidFor(fingerprint) }
+    }
+
+    override suspend fun saveByOwner(
+        fingerprint: MatchResultOcrCacheFingerprint,
+        processed: MatchResultOcrPreviewProcessingResult.Processed,
+        ownerUserId: String,
+    ): Boolean {
+        if (ownerUserId.isBlank() || !processed.isValidFor(fingerprint)) return false
+        return (database ?: return false).withTransaction {
+            if (!database.matchDao().existsByIdAndTournamentAndOwner(fingerprint.matchId, fingerprint.tournamentId, ownerUserId)) {
+                return@withTransaction false
+            }
+            dao.upsert(
+                MatchResultOcrCacheEntity(
+                    tournamentId = fingerprint.tournamentId,
+                    matchId = fingerprint.matchId,
+                    screenshotRole = fingerprint.role.name,
+                    screenshotSha256 = fingerprint.screenshotSha256,
+                    originalWidth = fingerprint.originalWidth,
+                    originalHeight = fingerprint.originalHeight,
+                    cropProfileId = fingerprint.cropProfileId,
+                    cropLeft = fingerprint.cropLeft,
+                    cropTop = fingerprint.cropTop,
+                    cropRight = fingerprint.cropRight,
+                    cropBottom = fingerprint.cropBottom,
+                    ocrPipelineVersion = fingerprint.ocrPipelineVersion,
+                    processedPayloadJson = codec.encode(processed),
+                    cachedAt = clock.millis(),
+                ),
+            )
+            true
+        }
     }
 }
 

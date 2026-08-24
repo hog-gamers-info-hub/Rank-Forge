@@ -282,11 +282,38 @@ interface ScreenshotMetadataDao {
     @Query("SELECT * FROM screenshot_metadata WHERE match_id = :matchId")
     fun observeByMatchId(matchId: String): Flow<ScreenshotMetadataEntity?>
 
+    @Query(
+        "SELECT screenshot_metadata.* FROM screenshot_metadata " +
+            "INNER JOIN matches ON matches.id = screenshot_metadata.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE screenshot_metadata.match_id = :matchId " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<ScreenshotMetadataEntity?>
+
     @Query("SELECT * FROM screenshot_metadata WHERE match_id = :matchId")
     suspend fun readByMatchId(matchId: String): ScreenshotMetadataEntity?
 
+    @Query(
+        "SELECT screenshot_metadata.* FROM screenshot_metadata " +
+            "INNER JOIN matches ON matches.id = screenshot_metadata.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE screenshot_metadata.match_id = :matchId " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByMatchIdAndOwner(matchId: String, ownerUserId: String): ScreenshotMetadataEntity?
+
     @Query("SELECT * FROM screenshot_metadata WHERE tournament_id = :tournamentId ORDER BY updated_at DESC, match_id")
     fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>>
+
+    @Query(
+        "SELECT screenshot_metadata.* FROM screenshot_metadata " +
+            "INNER JOIN tournaments ON tournaments.id = screenshot_metadata.tournament_id " +
+            "WHERE screenshot_metadata.tournament_id = :tournamentId " +
+            "AND tournaments.owner_user_id = :ownerUserId " +
+            "ORDER BY updated_at DESC, match_id",
+    )
+    fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<ScreenshotMetadataEntity>>
 
     @Upsert
     suspend fun upsert(metadata: ScreenshotMetadataEntity)
@@ -472,6 +499,16 @@ interface MatchResultScreenshotAssetDao {
     fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>>
 
     @Query(
+        "SELECT assets.* FROM match_result_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND tournaments.owner_user_id = :ownerUserId " +
+            "ORDER BY CASE assets.screenshot_role WHEN 'MATCH_RESULT_UPPER' THEN 0 " +
+            "WHEN 'MATCH_RESULT_LOWER' THEN 1 ELSE 2 END, assets.screenshot_role",
+    )
+    fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchResultScreenshotAssetEntity>>
+
+    @Query(
         """
         SELECT * FROM match_result_screenshot_assets
         WHERE match_id = :matchId AND screenshot_role = :screenshotRole
@@ -483,6 +520,19 @@ interface MatchResultScreenshotAssetDao {
     ): Flow<MatchResultScreenshotAssetEntity?>
 
     @Query(
+        "SELECT assets.* FROM match_result_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.screenshot_role = :screenshotRole " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    fun observeByMatchAndRoleAndOwner(
+        matchId: String,
+        screenshotRole: String,
+        ownerUserId: String,
+    ): Flow<MatchResultScreenshotAssetEntity?>
+
+    @Query(
         """
         SELECT * FROM match_result_screenshot_assets
         WHERE match_id = :matchId AND screenshot_role = :screenshotRole
@@ -491,6 +541,19 @@ interface MatchResultScreenshotAssetDao {
     suspend fun readByMatchAndRole(
         matchId: String,
         screenshotRole: String,
+    ): MatchResultScreenshotAssetEntity?
+
+    @Query(
+        "SELECT assets.* FROM match_result_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.screenshot_role = :screenshotRole " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByMatchAndRoleAndOwner(
+        matchId: String,
+        screenshotRole: String,
+        ownerUserId: String,
     ): MatchResultScreenshotAssetEntity?
 
     @Query(
@@ -507,6 +570,14 @@ interface MatchResultScreenshotAssetDao {
         """,
     )
     fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>>
+
+    @Query(
+        "SELECT assets.* FROM match_result_screenshot_assets assets " +
+            "INNER JOIN tournaments ON tournaments.id = assets.tournament_id " +
+            "WHERE assets.tournament_id = :tournamentId AND tournaments.owner_user_id = :ownerUserId " +
+            "ORDER BY assets.match_id, assets.screenshot_role",
+    )
+    fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<MatchResultScreenshotAssetEntity>>
 
     @Query(
         """
@@ -536,6 +607,21 @@ interface MatchResultScreenshotAssetDao {
         sha256: String,
         matchId: String,
         screenshotRole: String,
+    ): MatchResultScreenshotAssetEntity?
+
+    @Query(
+        "SELECT assets.* FROM match_result_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.sha256 = :sha256 " +
+            "AND assets.screenshot_role != :screenshotRole " +
+            "AND tournaments.owner_user_id = :ownerUserId LIMIT 1",
+    )
+    suspend fun readDuplicateFingerprintAndOwner(
+        sha256: String,
+        matchId: String,
+        screenshotRole: String,
+        ownerUserId: String,
     ): MatchResultScreenshotAssetEntity?
 
     @Upsert
@@ -747,6 +833,19 @@ interface MatchResultOcrCacheDao {
         screenshotRole: String,
     ): MatchResultOcrCacheEntity?
 
+    @Query(
+        "SELECT cache.* FROM match_result_ocr_cache cache " +
+            "INNER JOIN matches ON matches.id = cache.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE cache.match_id = :matchId AND cache.screenshot_role = :screenshotRole " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByMatchAndRoleAndOwner(
+        matchId: String,
+        screenshotRole: String,
+        ownerUserId: String,
+    ): MatchResultOcrCacheEntity? = null
+
     @Upsert
     suspend fun upsert(cache: MatchResultOcrCacheEntity)
 
@@ -769,6 +868,19 @@ interface MatchLobbyOcrCacheDao {
         lobbyScreenshotIndex: Int,
     ): MatchLobbyOcrCacheEntity?
 
+    @Query(
+        "SELECT cache.* FROM match_lobby_ocr_cache cache " +
+            "INNER JOIN matches ON matches.id = cache.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE cache.match_id = :matchId AND cache.lobby_screenshot_index = :lobbyScreenshotIndex " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByMatchAndIndexAndOwner(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        ownerUserId: String,
+    ): MatchLobbyOcrCacheEntity? = null
+
     @Upsert
     suspend fun upsert(cache: MatchLobbyOcrCacheEntity)
 
@@ -790,6 +902,15 @@ interface MatchLobbyScreenshotAssetDao {
     fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
 
     @Query(
+        "SELECT assets.* FROM match_lobby_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND tournaments.owner_user_id = :ownerUserId " +
+            "ORDER BY assets.lobby_screenshot_index ASC",
+    )
+    fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
+
+    @Query(
         """
         SELECT * FROM match_lobby_screenshot_assets
         WHERE match_id = :matchId AND lobby_screenshot_index = :lobbyScreenshotIndex
@@ -798,6 +919,19 @@ interface MatchLobbyScreenshotAssetDao {
     fun observeByMatchAndIndex(
         matchId: String,
         lobbyScreenshotIndex: Int,
+    ): Flow<MatchLobbyScreenshotAssetEntity?>
+
+    @Query(
+        "SELECT assets.* FROM match_lobby_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.lobby_screenshot_index = :lobbyScreenshotIndex " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    fun observeByMatchAndIndexAndOwner(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        ownerUserId: String,
     ): Flow<MatchLobbyScreenshotAssetEntity?>
 
     @Query(
@@ -812,6 +946,19 @@ interface MatchLobbyScreenshotAssetDao {
     ): MatchLobbyScreenshotAssetEntity?
 
     @Query(
+        "SELECT assets.* FROM match_lobby_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.lobby_screenshot_index = :lobbyScreenshotIndex " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByMatchAndIndexAndOwner(
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        ownerUserId: String,
+    ): MatchLobbyScreenshotAssetEntity?
+
+    @Query(
         """
         SELECT * FROM match_lobby_screenshot_assets
         WHERE tournament_id = :tournamentId
@@ -819,6 +966,14 @@ interface MatchLobbyScreenshotAssetDao {
         """,
     )
     fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
+
+    @Query(
+        "SELECT assets.* FROM match_lobby_screenshot_assets assets " +
+            "INNER JOIN tournaments ON tournaments.id = assets.tournament_id " +
+            "WHERE assets.tournament_id = :tournamentId AND tournaments.owner_user_id = :ownerUserId " +
+            "ORDER BY assets.match_id ASC, assets.lobby_screenshot_index ASC",
+    )
+    fun observeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>>
 
     @Query(
         """
@@ -842,6 +997,21 @@ interface MatchLobbyScreenshotAssetDao {
         sha256: String,
         matchId: String,
         lobbyScreenshotIndex: Int,
+    ): MatchLobbyScreenshotAssetEntity?
+
+    @Query(
+        "SELECT assets.* FROM match_lobby_screenshot_assets assets " +
+            "INNER JOIN matches ON matches.id = assets.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE assets.match_id = :matchId AND assets.sha256 = :sha256 " +
+            "AND assets.lobby_screenshot_index != :lobbyScreenshotIndex " +
+            "AND tournaments.owner_user_id = :ownerUserId LIMIT 1",
+    )
+    suspend fun readDuplicateFingerprintAndOwner(
+        sha256: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        ownerUserId: String,
     ): MatchLobbyScreenshotAssetEntity?
 
     @Upsert
@@ -1087,11 +1257,50 @@ interface MatchOcrEvidenceDao {
     @Query("SELECT * FROM match_ocr_evidence WHERE match_id = :matchId")
     suspend fun readMatchEvidence(matchId: String): MatchOcrEvidenceEntity?
 
+    @Query(
+        "SELECT evidence.* FROM match_ocr_evidence evidence " +
+            "INNER JOIN matches ON matches.id = evidence.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE evidence.match_id = :matchId AND evidence.tournament_id = :tournamentId " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readMatchEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): MatchOcrEvidenceEntity?
+
     @Query("SELECT * FROM match_ocr_row_evidence WHERE match_id = :matchId ORDER BY row_index")
     suspend fun readRowEvidence(matchId: String): List<MatchOcrRowEvidenceEntity>
 
+    @Query(
+        "SELECT row_evidence.* FROM match_ocr_row_evidence AS row_evidence " +
+            "INNER JOIN matches ON matches.id = row_evidence.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE row_evidence.match_id = :matchId AND row_evidence.tournament_id = :tournamentId " +
+            "AND tournaments.owner_user_id = :ownerUserId ORDER BY row_evidence.row_index",
+    )
+    suspend fun readRowEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): List<MatchOcrRowEvidenceEntity>
+
     @Query("SELECT * FROM match_ocr_correction_snapshots WHERE match_id = :matchId ORDER BY row_index")
     suspend fun readCorrectionSnapshots(matchId: String): List<MatchOcrCorrectionSnapshotEntity>
+
+    @Query(
+        "SELECT snapshots.* FROM match_ocr_correction_snapshots snapshots " +
+            "INNER JOIN matches ON matches.id = snapshots.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE snapshots.match_id = :matchId AND snapshots.tournament_id = :tournamentId " +
+            "AND tournaments.owner_user_id = :ownerUserId ORDER BY snapshots.row_index",
+    )
+    suspend fun readCorrectionSnapshotsByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): List<MatchOcrCorrectionSnapshotEntity>
 
     @Transaction
     suspend fun insertSnapshot(

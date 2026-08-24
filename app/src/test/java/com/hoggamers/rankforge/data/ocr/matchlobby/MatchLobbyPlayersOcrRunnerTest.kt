@@ -45,6 +45,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 
 class MatchLobbyPlayersOcrRunnerTest {
     @Test
@@ -59,6 +60,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             extractor = extractor,
             parser = PositionParser(extractor),
             slotIdentityResolver = LobbySlotIdentityResolver(),
+            screenshotOwnerProvider = ownerProvider,
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -83,6 +85,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             extractor = PositionTrackingExtractor(),
             parser = PositionParser(PositionTrackingExtractor()),
             slotIdentityResolver = LobbySlotIdentityResolver(),
+            screenshotOwnerProvider = ownerProvider,
         )
 
         assertThrows(CancellationException::class.java) {
@@ -102,6 +105,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             extractor = extractor,
             parser = PositionParser(extractor),
             slotIdentityResolver = LobbySlotIdentityResolver(),
+            screenshotOwnerProvider = ownerProvider,
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -150,6 +154,7 @@ class MatchLobbyPlayersOcrRunnerTest {
                 ),
             ),
             slotIdentityResolver = LobbySlotIdentityResolver(),
+            screenshotOwnerProvider = ownerProvider,
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -356,7 +361,12 @@ class MatchLobbyPlayersOcrRunnerTest {
             extractor = extractor,
             parser = PositionParser(extractor, semanticSlotNumbers),
             slotIdentityResolver = LobbySlotIdentityResolver(),
+            screenshotOwnerProvider = ownerProvider,
         )
+    }
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String = "owner-1"
     }
 
     private class FakeAssetRepository(
@@ -366,6 +376,8 @@ class MatchLobbyPlayersOcrRunnerTest {
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override fun observeByIdentity(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(null)
         override suspend fun getByIdentity(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity) = assets[identity.lobbyScreenshotIndex]
+        override suspend fun getByIdentityAndOwner(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            assets[identity.lobbyScreenshotIndex]?.takeIf { it.ownerUserId == ownerUserId }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override suspend fun findDuplicateFingerprint(identity: com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity, sha256: String) = null
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.Saved
@@ -544,7 +556,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         tournamentId = "tournament-1",
         matchId = "match-1",
         lobbyScreenshotIndex = index,
-        ownerUserId = "owner",
+        ownerUserId = "owner-1",
         localRelativePath = "screenshots/tournament-1/match-1/$index.jpg",
         fileExtension = "jpg",
         mimeType = "image/jpeg",
@@ -594,6 +606,21 @@ class MatchLobbyPlayersOcrRunnerTest {
             saveFailure?.let { throw it }
             saveCount++
             entries[fingerprint] = slots
+        }
+
+        override suspend fun readByOwner(
+            fingerprint: MatchLobbyOcrCacheFingerprint,
+            ownerUserId: String,
+        ): List<MatchLobbyPlayersOcrSlot>? = if (ownerUserId == "owner-1") read(fingerprint) else null
+
+        override suspend fun saveByOwner(
+            fingerprint: MatchLobbyOcrCacheFingerprint,
+            slots: List<MatchLobbyPlayersOcrSlot>,
+            ownerUserId: String,
+        ): Boolean {
+            if (ownerUserId != "owner-1") return false
+            save(fingerprint, slots)
+            return true
         }
 
         override suspend fun deleteByMatchAndIndex(matchId: String, lobbyScreenshotIndex: Int) = Unit

@@ -518,6 +518,13 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
     ): PreservedMatchOcrEvidence? = preservedOcrEvidenceByMatch.value[matchId]
         ?.takeIf { it.tournamentId == tournamentId }
 
+    override suspend fun readPreservedMatchOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): PreservedMatchOcrEvidence? = readPreservedMatchOcrEvidence(tournamentId, matchId)
+        ?.takeIf { isOwnedMatch(matchId, tournamentId, ownerUserId) }
+
     fun readPreservedOcrEvidence(matchId: String): PreservedMatchOcrEvidence? =
         preservedOcrEvidenceByMatch.value[matchId]
 

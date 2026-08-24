@@ -31,6 +31,7 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataFailureCode
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataMutationResult
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
@@ -71,6 +72,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -528,20 +530,23 @@ class MatchReviewViewModelTest {
     fun cancellingResultBatchMidPreservationClearsOldFlagsAndKeepsReplacementState() = runTest {
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        var ownerCalls = 0
-        val ownerProvider = object : ScreenshotOwnerProvider {
-            override suspend fun currentOwnerUserId(): String? {
-                ownerCalls++
-                if (ownerCalls == 2) {
+        val ownerProvider = FixedScreenshotOwnerProvider("owner-id")
+        val gatedPreserver = LocalImagePreserver(
+            appPrivateRoot = Files.createTempDirectory("review-cancel-preservation").toFile(),
+            sourceStreamOpener = ImageSourceStreamOpener { uri ->
+                if (uri == "mid") {
                     started.complete(Unit)
                     release.await()
                 }
-                return "owner-id"
-            }
-        }
+                byteArrayOf(1, 2, 3).inputStream()
+            },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
         val viewModel = batchReviewViewModel(
             ownerProvider = ownerProvider,
             bytesByUri = mapOf("upper" to byteArrayOf(1), "mid" to byteArrayOf(2)),
+            preserver = gatedPreserver,
         )
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
@@ -946,6 +951,7 @@ class MatchReviewViewModelTest {
                     ImageSourceStreamOpener { byteArrayOf(4, 5, 6).inputStream() },
                     Dispatchers.Unconfined,
                 ),
+                screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
             ),
             localImagePreserver = preserver,
             matchResultScreenshotAssetRepository = assetRepository,
@@ -2355,6 +2361,7 @@ class MatchReviewViewModelTest {
         matchResultScreenshotDuplicateDetector: MatchResultScreenshotDuplicateDetector =
             MatchResultScreenshotDuplicateDetector(
                 ImageSourceFingerprintGenerator(ImageSourceStreamOpener { null }),
+                screenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
             ),
         localImagePreserver: LocalImagePreserver = localImagePreserver(),
         screenshotStorageUploader: ScreenshotStorageUploader =
@@ -2365,7 +2372,7 @@ class MatchReviewViewModelTest {
         googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource = RecordingGoogleSheetsMatchExport(),
         resultDownloadCoordinator: ResultDownloadCoordinator = RecordingResultDownloadCoordinator(),
         resultDocumentWriter: ResultDocumentWriter = RecordingResultDocumentWriter(),
-        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+        screenshotOwnerProvider: ScreenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
         matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
             com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository(),
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
@@ -2407,6 +2414,7 @@ class MatchReviewViewModelTest {
             "lower" to byteArrayOf(2),
         ),
         ownerProvider: ScreenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
+        preserver: LocalImagePreserver? = null,
     ): MatchReviewViewModel {
         val assetRepository = FakeMatchResultScreenshotAssetRepository()
         val fingerprintGenerator = ImageSourceFingerprintGenerator(
@@ -2420,8 +2428,9 @@ class MatchReviewViewModelTest {
             matchResultScreenshotDuplicateDetector = MatchResultScreenshotDuplicateDetector(
                 fingerprintGenerator = fingerprintGenerator,
                 assetRepository = assetRepository,
+                screenshotOwnerProvider = ownerProvider,
             ),
-            localImagePreserver = localImagePreserver(bytesByUri),
+            localImagePreserver = preserver ?: localImagePreserver(bytesByUri),
             screenshotOwnerProvider = ownerProvider,
             matchResultScreenshotAssetRepository = assetRepository,
         )
@@ -2617,13 +2626,32 @@ class MatchReviewViewModelTest {
 
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = assets
 
+        override fun observeByMatchIdAndOwner(
+            matchId: String,
+            ownerUserId: String,
+        ): Flow<List<MatchResultScreenshotAssetEntity>> =
+            assets.map { list -> list.filter { it.matchId == matchId && it.ownerUserId == ownerUserId } }
+
         override fun observeByIdentity(
             identity: MatchResultScreenshotIdentity,
         ): Flow<MatchResultScreenshotAssetEntity?> =
             MutableStateFlow(assets.value.firstOrNull { it.matches(identity) })
 
+        override fun observeByIdentityAndOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+        ): Flow<MatchResultScreenshotAssetEntity?> =
+            MutableStateFlow(assets.value.firstOrNull { it.ownerUserId == ownerUserId && it.matches(identity) })
+
         override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? =
             assets.value.firstOrNull { it.matches(identity) }
+
+        override suspend fun getByIdentityAndOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+        ): MatchResultScreenshotAssetEntity? = assets.value.firstOrNull {
+            it.ownerUserId == ownerUserId && it.matches(identity)
+        }
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             MutableStateFlow(assets.value.filter { it.tournamentId == tournamentId })
@@ -2642,9 +2670,31 @@ class MatchReviewViewModelTest {
             return MatchResultScreenshotAssetSaveResult.Saved
         }
 
+        override suspend fun saveOrReplaceByOwner(
+            asset: MatchResultScreenshotAssetEntity,
+            ownerUserId: String,
+        ): MatchResultScreenshotAssetSaveResult =
+            if (asset.ownerUserId != ownerUserId) {
+                MatchResultScreenshotAssetSaveResult.AuthenticationRequired
+            } else {
+                saveOrReplace(asset)
+            }
+
         override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
 
+        override suspend fun markLocalMissingByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            updatedAt: Long,
+        ): Boolean = getByIdentityAndOwner(identity, ownerUserId) != null
+
         override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
+
+        override suspend fun markCleanupFailureByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            updatedAt: Long,
+        ): Boolean = getByIdentityAndOwner(identity, ownerUserId) != null
 
         override suspend fun persistConfirmedCrop(
             identity: MatchResultScreenshotIdentity,
@@ -2652,13 +2702,45 @@ class MatchReviewViewModelTest {
             updatedAt: Long,
         ): MatchResultScreenshotCropSaveResult = MatchResultScreenshotCropSaveResult.Saved
 
+        override suspend fun persistConfirmedCropByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult =
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) {
+                MatchResultScreenshotCropSaveResult.MissingAsset
+            } else {
+                persistConfirmedCrop(identity, crop, updatedAt)
+            }
+
         override suspend fun clearConfirmedCrop(
             identity: MatchResultScreenshotIdentity,
             updatedAt: Long,
         ): MatchResultScreenshotCropSaveResult = MatchResultScreenshotCropSaveResult.Saved
 
+        override suspend fun clearConfirmedCropByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult =
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) {
+                MatchResultScreenshotCropSaveResult.MissingAsset
+            } else {
+                clearConfirmedCrop(identity, updatedAt)
+            }
+
         override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) {
             assets.value = assets.value.filterNot { it.matches(identity) }
+        }
+
+        override suspend fun deleteByIdentityAndOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+        ): Boolean {
+            if (getByIdentityAndOwner(identity, ownerUserId) == null) return false
+            deleteByIdentity(identity)
+            return true
         }
 
         override suspend fun deleteByMatchId(matchId: String) {
@@ -2698,14 +2780,42 @@ class MatchReviewViewModelTest {
 
         override fun observeByMatchId(matchId: String): Flow<ScreenshotMetadataEntity?> = metadata
 
+        override fun observeByMatchIdAndOwner(
+            matchId: String,
+            ownerUserId: String,
+        ): Flow<ScreenshotMetadataEntity?> =
+            metadata.map { value -> value?.takeIf { it.matchId == matchId && it.ownerUserId == ownerUserId } }
+
         override suspend fun getByMatchId(matchId: String): ScreenshotMetadataEntity? = metadata.value
+
+        override suspend fun getByMatchIdAndOwner(
+            matchId: String,
+            ownerUserId: String,
+        ): ScreenshotMetadataEntity? = metadata.value?.takeIf {
+            it.matchId == matchId && it.ownerUserId == ownerUserId
+        }
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>> =
             MutableStateFlow(metadata.value?.let(::listOf).orEmpty())
 
+        override fun observeByTournamentIdAndOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): Flow<List<ScreenshotMetadataEntity>> =
+            MutableStateFlow(metadata.value?.takeIf { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }?.let(::listOf).orEmpty())
+
         override suspend fun createOrReplace(metadata: ScreenshotMetadataEntity) {
             if (failWrites) error("room failed")
             this.metadata.value = metadata
+        }
+
+        override suspend fun createOrReplaceByOwner(
+            metadata: ScreenshotMetadataEntity,
+            ownerUserId: String,
+        ): ScreenshotMetadataMutationResult {
+            if (metadata.ownerUserId != ownerUserId) return ScreenshotMetadataMutationResult.AuthenticationRequired
+            createOrReplace(metadata)
+            return ScreenshotMetadataMutationResult.Saved
         }
 
         override suspend fun updateUploadSuccess(
@@ -2726,6 +2836,19 @@ class MatchReviewViewModelTest {
             )
         }
 
+        override suspend fun updateUploadSuccessByOwner(
+            matchId: String,
+            ownerUserId: String,
+            storageBucket: String,
+            storageObjectPath: String,
+            uploadedAt: Long,
+            updatedAt: Long,
+        ): ScreenshotMetadataMutationResult {
+            if (getByMatchIdAndOwner(matchId, ownerUserId) == null) return ScreenshotMetadataMutationResult.MatchNotFound
+            updateUploadSuccess(matchId, storageBucket, storageObjectPath, uploadedAt, updatedAt)
+            return ScreenshotMetadataMutationResult.Saved
+        }
+
         override suspend fun updateUploadFailure(
             matchId: String,
             failureCode: String,
@@ -2739,12 +2862,33 @@ class MatchReviewViewModelTest {
             )
         }
 
+        override suspend fun updateUploadFailureByOwner(
+            matchId: String,
+            ownerUserId: String,
+            failureCode: String,
+            updatedAt: Long,
+        ): ScreenshotMetadataMutationResult {
+            if (getByMatchIdAndOwner(matchId, ownerUserId) == null) return ScreenshotMetadataMutationResult.MatchNotFound
+            updateUploadFailure(matchId, failureCode, updatedAt)
+            return ScreenshotMetadataMutationResult.Saved
+        }
+
         override suspend fun markLocalMissing(matchId: String, updatedAt: Long) {
             metadata.value = metadata.value?.copy(
                 localStatus = ScreenshotLocalStatus.MISSING.name,
                 updatedAt = updatedAt,
                 revision = metadata.value!!.revision + 1,
             )
+        }
+
+        override suspend fun markLocalMissingByOwner(
+            matchId: String,
+            ownerUserId: String,
+            updatedAt: Long,
+        ): ScreenshotMetadataMutationResult {
+            if (getByMatchIdAndOwner(matchId, ownerUserId) == null) return ScreenshotMetadataMutationResult.MatchNotFound
+            markLocalMissing(matchId, updatedAt)
+            return ScreenshotMetadataMutationResult.Saved
         }
 
         override suspend fun markCleanupFailure(matchId: String, updatedAt: Long) {
@@ -2755,8 +2899,27 @@ class MatchReviewViewModelTest {
             )
         }
 
+        override suspend fun markCleanupFailureByOwner(
+            matchId: String,
+            ownerUserId: String,
+            updatedAt: Long,
+        ): ScreenshotMetadataMutationResult {
+            if (getByMatchIdAndOwner(matchId, ownerUserId) == null) return ScreenshotMetadataMutationResult.MatchNotFound
+            markCleanupFailure(matchId, updatedAt)
+            return ScreenshotMetadataMutationResult.Saved
+        }
+
         override suspend fun deleteByMatchId(matchId: String) {
             metadata.value = null
+        }
+
+        override suspend fun deleteByMatchIdAndOwner(
+            matchId: String,
+            ownerUserId: String,
+        ): ScreenshotMetadataMutationResult {
+            if (getByMatchIdAndOwner(matchId, ownerUserId) == null) return ScreenshotMetadataMutationResult.MatchNotFound
+            deleteByMatchId(matchId)
+            return ScreenshotMetadataMutationResult.Saved
         }
 
         override suspend fun deleteByTournamentId(tournamentId: String) {

@@ -3,6 +3,16 @@ package com.hoggamers.rankforge.data.local
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import androidx.room.withTransaction
+
+sealed interface ScreenshotMetadataMutationResult {
+    data object Saved : ScreenshotMetadataMutationResult
+    data object AuthenticationRequired : ScreenshotMetadataMutationResult
+    data object MatchNotFound : ScreenshotMetadataMutationResult
+}
 
 enum class ScreenshotMetadataFailureCode {
     ROOM_WRITE_FAILED,
@@ -19,6 +29,53 @@ interface ScreenshotMetadataRepository {
     suspend fun getByMatchId(matchId: String): ScreenshotMetadataEntity?
 
     fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>>
+
+    fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<ScreenshotMetadataEntity?> = flowOf(null)
+
+    suspend fun getByMatchIdAndOwner(matchId: String, ownerUserId: String): ScreenshotMetadataEntity? = null
+
+    fun observeByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<ScreenshotMetadataEntity>> = flowOf(emptyList())
+
+    suspend fun createOrReplaceByOwner(
+        metadata: ScreenshotMetadataEntity,
+        ownerUserId: String,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
+
+    suspend fun updateUploadSuccessByOwner(
+        matchId: String,
+        ownerUserId: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
+
+    suspend fun updateUploadFailureByOwner(
+        matchId: String,
+        ownerUserId: String,
+        failureCode: String,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
+
+    suspend fun markLocalMissingByOwner(
+        matchId: String,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
+
+    suspend fun markCleanupFailureByOwner(
+        matchId: String,
+        ownerUserId: String,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
+
+    suspend fun deleteByMatchIdAndOwner(
+        matchId: String,
+        ownerUserId: String,
+    ): ScreenshotMetadataMutationResult = ScreenshotMetadataMutationResult.AuthenticationRequired
 
     suspend fun createOrReplace(metadata: ScreenshotMetadataEntity)
 
@@ -48,6 +105,7 @@ interface ScreenshotMetadataRepository {
 @Singleton
 class RoomScreenshotMetadataRepository @Inject constructor(
     private val dao: ScreenshotMetadataDao,
+    private val database: RankForgeDatabase,
 ) : ScreenshotMetadataRepository {
     override fun observeByMatchId(matchId: String): Flow<ScreenshotMetadataEntity?> =
         dao.observeByMatchId(matchId)
@@ -57,6 +115,91 @@ class RoomScreenshotMetadataRepository @Inject constructor(
 
     override fun observeByTournamentId(tournamentId: String): Flow<List<ScreenshotMetadataEntity>> =
         dao.observeByTournamentId(tournamentId)
+
+    override fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<ScreenshotMetadataEntity?> =
+        if (ownerUserId.isBlank()) emptyFlow() else dao.observeByMatchIdAndOwner(matchId, ownerUserId)
+
+    override suspend fun getByMatchIdAndOwner(matchId: String, ownerUserId: String): ScreenshotMetadataEntity? =
+        if (ownerUserId.isBlank()) null else dao.readByMatchIdAndOwner(matchId, ownerUserId)
+
+    override fun observeByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<ScreenshotMetadataEntity>> =
+        if (ownerUserId.isBlank()) emptyFlow() else dao.observeByTournamentIdAndOwner(tournamentId, ownerUserId)
+
+    override suspend fun createOrReplaceByOwner(
+        metadata: ScreenshotMetadataEntity,
+        ownerUserId: String,
+    ): ScreenshotMetadataMutationResult {
+        if (ownerUserId.isBlank()) return ScreenshotMetadataMutationResult.AuthenticationRequired
+        return database.withTransaction {
+            if (!database.matchDao().existsByIdAndTournamentAndOwner(metadata.matchId, metadata.tournamentId, ownerUserId)) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            dao.upsert(metadata.copy(ownerUserId = ownerUserId))
+            ScreenshotMetadataMutationResult.Saved
+        }
+    }
+
+    override suspend fun updateUploadSuccessByOwner(
+        matchId: String,
+        ownerUserId: String,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = database.withTransaction {
+        if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
+        val match = database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first()
+            ?: return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+        dao.updateUploadSuccess(matchId, storageBucket, storageObjectPath, ScreenshotUploadStatus.UPLOADED.name, uploadedAt, updatedAt)
+        ScreenshotMetadataMutationResult.Saved
+    }
+
+    override suspend fun updateUploadFailureByOwner(
+        matchId: String,
+        ownerUserId: String,
+        failureCode: String,
+        updatedAt: Long,
+    ): ScreenshotMetadataMutationResult = database.withTransaction {
+        if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
+        if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+            return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+        }
+        dao.updateUploadFailure(matchId, ScreenshotUploadStatus.FAILED.name, failureCode, updatedAt)
+        ScreenshotMetadataMutationResult.Saved
+    }
+
+    override suspend fun markLocalMissingByOwner(matchId: String, ownerUserId: String, updatedAt: Long): ScreenshotMetadataMutationResult =
+        database.withTransaction {
+            if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
+            if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            dao.markLocalMissing(matchId, ScreenshotLocalStatus.MISSING.name, updatedAt)
+            ScreenshotMetadataMutationResult.Saved
+        }
+
+    override suspend fun markCleanupFailureByOwner(matchId: String, ownerUserId: String, updatedAt: Long): ScreenshotMetadataMutationResult =
+        database.withTransaction {
+            if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
+            if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            dao.markCleanupFailure(matchId, ScreenshotLocalStatus.CLEANUP_FAILED.name, updatedAt)
+            ScreenshotMetadataMutationResult.Saved
+        }
+
+    override suspend fun deleteByMatchIdAndOwner(matchId: String, ownerUserId: String): ScreenshotMetadataMutationResult =
+        database.withTransaction {
+            if (ownerUserId.isBlank()) return@withTransaction ScreenshotMetadataMutationResult.AuthenticationRequired
+            if (database.matchDao().observeByIdAndOwner(matchId, ownerUserId).first() == null) {
+                return@withTransaction ScreenshotMetadataMutationResult.MatchNotFound
+            }
+            dao.deleteByMatchId(matchId)
+            ScreenshotMetadataMutationResult.Saved
+        }
 
     override suspend fun createOrReplace(metadata: ScreenshotMetadataEntity) {
         dao.upsert(metadata)

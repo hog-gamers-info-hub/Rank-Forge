@@ -235,6 +235,9 @@ class MatchResultScreenshotCropValidationGateTest {
                 testOnly = true,
             ),
             autoCropProposer = autoCropProposer,
+            screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+                override suspend fun currentOwnerUserId(): String = "owner-1"
+            },
         )
     }
 
@@ -255,7 +258,7 @@ class MatchResultScreenshotCropValidationGateTest {
             matchId = GATE_MATCH_ID,
             screenshotKind = OcrScreenshotKind.MATCH_RESULT.name,
             screenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER.name,
-            ownerUserId = "owner",
+            ownerUserId = "owner-1",
             localRelativePath = "result.png",
             fileExtension = "png",
             mimeType = "image/png",
@@ -292,8 +295,20 @@ class MatchResultScreenshotCropValidationGateTest {
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             state.map { listOf(it).filter { asset -> asset.matchId == matchId } }
 
+        override fun observeByMatchIdAndOwner(
+            matchId: String,
+            ownerUserId: String,
+        ): Flow<List<MatchResultScreenshotAssetEntity>> =
+            state.map { listOf(it).filter { asset -> asset.matchId == matchId && ownerUserId == "owner-1" } }
+
         override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> =
             state.map { it.takeIf { asset -> asset.matches(identity) } }
+
+        override fun observeByIdentityAndOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+        ): Flow<MatchResultScreenshotAssetEntity?> =
+            state.map { it.takeIf { asset -> ownerUserId == "owner-1" && asset.matches(identity) } }
 
         override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? {
             val result = state.value.takeIf { it.matches(identity) }
@@ -303,6 +318,12 @@ class MatchResultScreenshotCropValidationGateTest {
             }
             return result
         }
+
+        override suspend fun getByIdentityAndOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+        ): MatchResultScreenshotAssetEntity? =
+            getByIdentity(identity).takeIf { ownerUserId == "owner-1" }
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             state.map { listOf(it).filter { asset -> asset.tournamentId == tournamentId } }
@@ -324,6 +345,18 @@ class MatchResultScreenshotCropValidationGateTest {
             updateAsset(asset.copy(cropProfileId = "match-result", cropLeft = crop.left, cropTop = crop.top, cropRight = crop.right, cropBottom = crop.bottom))
             return MatchResultScreenshotCropSaveResult.Saved
         }
+
+        override suspend fun persistConfirmedCropByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchResultScreenshotCropSaveResult =
+            if (ownerUserId != "owner-1") {
+                MatchResultScreenshotCropSaveResult.AuthenticationRequired
+            } else {
+                persistConfirmedCrop(identity, crop, updatedAt)
+            }
 
         override suspend fun clearConfirmedCrop(identity: MatchResultScreenshotIdentity, updatedAt: Long): MatchResultScreenshotCropSaveResult =
             MatchResultScreenshotCropSaveResult.Saved

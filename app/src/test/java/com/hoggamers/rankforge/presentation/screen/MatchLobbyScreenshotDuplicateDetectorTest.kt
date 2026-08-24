@@ -88,6 +88,9 @@ class MatchLobbyScreenshotDuplicateDetectorTest {
             Dispatchers.Unconfined,
         ),
         assetRepository = repository,
+        screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String = "test-owner"
+        },
     )
 
     private fun identity(tournamentId: String, matchId: String, index: Int) =
@@ -128,16 +131,22 @@ class MatchLobbyScreenshotDuplicateDetectorTest {
         private val fail: AtomicBoolean = AtomicBoolean(false),
     ) : MatchLobbyScreenshotAssetRepository {
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = emptyFlow()
+        override fun observeByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): Flow<MatchLobbyScreenshotAssetEntity?> =
+            if (ownerUserId.isBlank()) emptyFlow() else observeByIdentity(identity)
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(null)
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotAssetEntity? {
             if (fail.get()) error("repository failure")
             return assets.firstOrNull { it.tournamentId == identity.tournamentId && it.matchId == identity.matchId && it.lobbyScreenshotIndex == identity.lobbyScreenshotIndex }
         }
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else getByIdentity(identity)
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String): MatchLobbyScreenshotAssetEntity? {
             if (fail.get()) error("repository failure")
             return assets.firstOrNull { it.matchId == identity.matchId && it.sha256 == sha256 && it.lobbyScreenshotIndex != identity.lobbyScreenshotIndex }
         }
+        override suspend fun findDuplicateFingerprintAndOwner(identity: MatchLobbyScreenshotIdentity, sha256: String, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else findDuplicateFingerprint(identity, sha256)
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult = MatchLobbyScreenshotAssetSaveResult.Saved
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit

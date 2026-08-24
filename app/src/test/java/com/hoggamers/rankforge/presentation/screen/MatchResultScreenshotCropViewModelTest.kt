@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -705,6 +706,9 @@ class MatchResultScreenshotCropViewModelTest {
                 testOnly = true,
             ),
             autoCropProposer = autoCropProposer,
+            screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+                override suspend fun currentOwnerUserId(): String = "owner-1"
+            },
         )
     }
 
@@ -879,10 +883,14 @@ class MatchResultScreenshotCropViewModelTest {
             identity: MatchResultScreenshotIdentity,
         ): Flow<MatchResultScreenshotAssetEntity?> =
             assets.map { list -> list.firstOrNull { it.matches(identity) } }
+        override fun observeByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): Flow<MatchResultScreenshotAssetEntity?> =
+            if (ownerUserId.isBlank()) emptyFlow() else observeByIdentity(identity)
 
         override suspend fun getByIdentity(
             identity: MatchResultScreenshotIdentity,
         ): MatchResultScreenshotAssetEntity? = assets.value.firstOrNull { it.matches(identity) }
+        override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else getByIdentity(identity)
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             assets.map { list -> list.filter { it.tournamentId == tournamentId } }
@@ -900,6 +908,8 @@ class MatchResultScreenshotCropViewModelTest {
             } + asset
             return MatchResultScreenshotAssetSaveResult.Saved
         }
+        override suspend fun saveOrReplaceByOwner(asset: MatchResultScreenshotAssetEntity, ownerUserId: String) =
+            if (ownerUserId.isBlank()) MatchResultScreenshotAssetSaveResult.AuthenticationRequired else saveOrReplace(asset.copy(ownerUserId = ownerUserId))
 
         override suspend fun updateUploadSuccessIfFingerprintMatches(
             identity: MatchResultScreenshotIdentity,
@@ -986,6 +996,7 @@ class MatchResultScreenshotCropViewModelTest {
         }
 
         override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
+        override suspend fun markLocalMissingByOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String, updatedAt: Long) = ownerUserId.isNotBlank()
 
         override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
 
@@ -1007,6 +1018,8 @@ class MatchResultScreenshotCropViewModelTest {
             )
             return MatchResultScreenshotCropSaveResult.Saved
         }
+        override suspend fun persistConfirmedCropByOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String, crop: OcrNormalizedCropRect, updatedAt: Long) =
+            if (ownerUserId.isBlank()) MatchResultScreenshotCropSaveResult.AuthenticationRequired else persistConfirmedCrop(identity, crop, updatedAt)
 
         override suspend fun clearConfirmedCrop(
             identity: MatchResultScreenshotIdentity,

@@ -126,6 +126,9 @@ class MatchResultScreenshotDuplicateDetectorTest {
     ) = MatchResultScreenshotDuplicateDetector(
         fingerprintGenerator = fingerprintGenerator(bytesByUri),
         assetRepository = repository,
+        screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String = "test-owner"
+        },
     )
 
     private fun fingerprintGenerator(
@@ -183,6 +186,8 @@ class MatchResultScreenshotDuplicateDetectorTest {
         private val failure: Throwable? = null,
     ) : MatchResultScreenshotAssetRepository {
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = emptyFlow()
+        override fun observeByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): Flow<MatchResultScreenshotAssetEntity?> =
+            if (ownerUserId.isBlank()) emptyFlow() else observeByIdentity(identity)
 
         override fun observeByIdentity(
             identity: MatchResultScreenshotIdentity,
@@ -194,6 +199,8 @@ class MatchResultScreenshotDuplicateDetectorTest {
             failure?.let { throw it }
             return assets.firstOrNull { it.matches(identity) }
         }
+        override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else getByIdentity(identity)
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             flowOf(assets.filter { it.tournamentId == tournamentId })
@@ -209,6 +216,8 @@ class MatchResultScreenshotDuplicateDetectorTest {
                     asset.screenshotRole != identity.role.name
             }
         }
+        override suspend fun findDuplicateFingerprintAndOwner(identity: MatchResultScreenshotIdentity, sha256: String, ownerUserId: String) =
+            if (ownerUserId.isBlank()) null else findDuplicateFingerprint(identity, sha256)
 
         override suspend fun saveOrReplace(
             asset: MatchResultScreenshotAssetEntity,

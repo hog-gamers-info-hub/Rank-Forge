@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -423,6 +424,7 @@ class MatchOcrResultLobbyEndToEndTest {
                 organizerName = "Verification",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             ),
         )
         repository.saveTeamNames(
@@ -459,7 +461,12 @@ class MatchOcrResultLobbyEndToEndTest {
     ): MatchOcrReviewViewModel = MatchOcrReviewViewModel(
         finalizeOcrCorrectionMatch = FinalizeOcrCorrectionMatchUseCase(
             repository = repository,
-            finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+            finalizeMatch = FinalizeMatchUseCase(
+                repository,
+                ValidateMatchResultUseCase(),
+                SignedInTournamentTestAuthRepository(),
+            ),
+            authRepository = SignedInTournamentTestAuthRepository(),
         ),
         matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
             if (lowerResultUnavailable && identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
@@ -487,6 +494,9 @@ class MatchOcrResultLobbyEndToEndTest {
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         initialUiState = MatchOcrReviewUiState.Loading,
+        screenshotOwnerProvider = object : ScreenshotOwnerProvider {
+            override suspend fun currentOwnerUserId(): String = SignedInTournamentTestAuthRepository.OWNER_USER_ID
+        },
     )
 
     private suspend fun TestScope.loadState(

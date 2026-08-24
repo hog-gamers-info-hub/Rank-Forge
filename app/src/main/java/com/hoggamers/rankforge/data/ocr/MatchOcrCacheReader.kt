@@ -13,9 +13,12 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentit
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 enum class MatchOcrCacheAvailability {
     UNKNOWN,
@@ -40,6 +43,7 @@ class RoomMatchOcrCacheReader @Inject constructor(
     private val resultCacheRepository: MatchResultOcrCacheRepository,
     private val lobbyScreenshotAssetRepository: MatchLobbyScreenshotAssetRepository,
     private val lobbyCacheRepository: MatchLobbyOcrCacheRepository,
+    private val authRepository: AuthRepository,
 ) : MatchOcrCacheReader {
     override suspend fun read(
         tournamentId: String,
@@ -48,6 +52,9 @@ class RoomMatchOcrCacheReader @Inject constructor(
         if (tournamentId.isBlank() || matchId.isBlank()) {
             return MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
         }
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
 
         val resultRoleResults = MatchResultScreenshotRole.entries.map { role ->
             val identity = MatchResultScreenshotIdentity(
@@ -55,7 +62,7 @@ class RoomMatchOcrCacheReader @Inject constructor(
                 matchId = matchId,
                 role = role,
             )
-            val processed = readResult(identity)
+            val processed = readResult(identity, ownerUserId)
             MatchResultOcrPreviewRoleResult(
                 role = role,
                 result = processed ?: MatchResultOcrPreviewProcessingResult.MissingAsset,
@@ -65,7 +72,7 @@ class RoomMatchOcrCacheReader @Inject constructor(
         var validLobbyCacheCount = 0
         RosterScreenshotPosition.entries.forEach { position ->
             val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
-            val cached = readLobby(identity, position)
+            val cached = readLobby(identity, position, ownerUserId)
             if (cached != null) {
                 validLobbyCacheCount++
                 cached.forEach { slot ->
@@ -97,10 +104,11 @@ class RoomMatchOcrCacheReader @Inject constructor(
 
     private suspend fun readResult(
         identity: MatchResultScreenshotIdentity,
+        ownerUserId: String,
     ): MatchResultOcrPreviewProcessingResult.Processed? = try {
-        resultScreenshotAssetRepository.getByIdentity(identity)
+        resultScreenshotAssetRepository.getByIdentityAndOwner(identity, ownerUserId)
             ?.toMatchResultOcrCacheFingerprint(identity)
-            ?.let { resultCacheRepository.read(it) }
+            ?.let { resultCacheRepository.readByOwner(it, ownerUserId) }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
@@ -110,10 +118,11 @@ class RoomMatchOcrCacheReader @Inject constructor(
     private suspend fun readLobby(
         identity: MatchLobbyScreenshotIdentity,
         position: RosterScreenshotPosition,
+        ownerUserId: String,
     ) = try {
-        lobbyScreenshotAssetRepository.getByIdentity(identity)
+        lobbyScreenshotAssetRepository.getByIdentityAndOwner(identity, ownerUserId)
             ?.toMatchLobbyOcrCacheFingerprint(identity, position)
-            ?.let { lobbyCacheRepository.read(it) }
+            ?.let { lobbyCacheRepository.readByOwner(it, ownerUserId) }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {

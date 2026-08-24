@@ -19,5 +19,5 @@ class AuthStateScreenshotOwnerProvider @Inject constructor(
 }
 
 class NoOpScreenshotOwnerProvider : ScreenshotOwnerProvider {
-    override suspend fun currentOwnerUserId(): String? = "local-owner"
+    override suspend fun currentOwnerUserId(): String? = null
 }

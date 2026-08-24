@@ -31,6 +31,7 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
     private val fingerprintGenerator: ImageSourceFingerprintGenerator,
     private val assetRepository: MatchResultScreenshotAssetRepository =
         NoOpMatchResultScreenshotAssetRepository(),
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) {
     private val lock = Any()
     private val fingerprintOwnersByMatch =
@@ -47,8 +48,10 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
                 return MatchResultScreenshotDuplicateLinkResult.FingerprintFailure
         }
 
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
+            ?: return MatchResultScreenshotDuplicateLinkResult.StateConflict
         val persistedDuplicate = try {
-            assetRepository.findDuplicateFingerprint(identity, fingerprint)
+            assetRepository.findDuplicateFingerprintAndOwner(identity, fingerprint, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -61,7 +64,7 @@ class MatchResultScreenshotDuplicateDetector @Inject constructor(
         }
 
         val persistedSameIdentity = try {
-            assetRepository.getByIdentity(identity)
+            assetRepository.getByIdentityAndOwner(identity, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

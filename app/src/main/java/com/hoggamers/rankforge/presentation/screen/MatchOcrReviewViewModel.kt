@@ -62,6 +62,7 @@ class MatchOcrReviewViewModel @Inject constructor(
     private val lobbyScreenshotAssetRepository: MatchLobbyScreenshotAssetRepository =
         NoOpMatchLobbyScreenshotAssetRepository(),
     private val matchOcrCacheReader: MatchOcrCacheReader = NoOpMatchOcrCacheReader,
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
     val uiState: StateFlow<MatchOcrReviewUiState> = _uiState.asStateFlow()
@@ -86,6 +87,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction,
         initialUiState: MatchOcrReviewUiState,
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) : this(
         finalizeOcrCorrectionMatch,
         NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
@@ -93,6 +95,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
         finalizedMatchCloudSync,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     ) {
         _uiState.value = initialUiState
     }
@@ -101,12 +104,14 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
         matchResultOcrPreviewRunner: MatchResultOcrPreviewRunner,
         initialUiState: MatchOcrReviewUiState,
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) : this(
         finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     ) {
         _uiState.value = initialUiState
     }
@@ -115,6 +120,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
         matchOcrCacheReader: MatchOcrCacheReader,
         initialUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) : this(
         finalizeOcrCorrectionMatch = finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner = NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
@@ -122,6 +128,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         observeTournamentSlots = NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         observeRoster = NO_OP_OBSERVE_ROSTER,
         matchOcrCacheReader = matchOcrCacheReader,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     ) {
         _uiState.value = initialUiState
     }
@@ -132,12 +139,14 @@ class MatchOcrReviewViewModel @Inject constructor(
         observeTournamentSlots: ObserveTournamentSlotsUseCase,
         observeRoster: ObserveRosterByTournamentUseCase,
         initialUiState: MatchOcrReviewUiState,
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) : this(
         finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
         observeTournamentSlots,
         observeRoster,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     ) {
         _uiState.value = initialUiState
     }
@@ -150,6 +159,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         observeRoster: ObserveRosterByTournamentUseCase,
         initialUiState: MatchOcrReviewUiState,
         tournamentRepository: TournamentRepository = NO_OP_MATCHING_REPOSITORY,
+        screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     ) : this(
         finalizeOcrCorrectionMatch = finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner = matchResultOcrPreviewRunner,
@@ -157,6 +167,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         observeTournamentSlots = observeTournamentSlots,
         observeRoster = observeRoster,
         tournamentRepository = tournamentRepository,
+        screenshotOwnerProvider = screenshotOwnerProvider,
     ) {
         _uiState.value = initialUiState
     }
@@ -237,7 +248,13 @@ class MatchOcrReviewViewModel @Inject constructor(
                 lobbyOcrResult = lobbyResult,
             )
             val lobbyPlayers = lobbyResult.toUiState()
-                .takeIf { lobbyResult.hasLobbyOcrEvidence(matchId, lobbyScreenshotAssetRepository) }
+                .takeIf {
+                    lobbyResult.hasLobbyOcrEvidence(
+                        matchId,
+                        lobbyScreenshotAssetRepository,
+                        screenshotOwnerProvider.currentOwnerUserId(),
+                    )
+                }
                 .orEmpty()
             _uiState.update { state ->
                 val reviewState = if (
@@ -341,7 +358,13 @@ class MatchOcrReviewViewModel @Inject constructor(
             )
             val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
             val lobbyPlayers = cached.lobbyResult.toUiState()
-                .takeIf { cached.lobbyResult.hasLobbyOcrEvidence(matchId, lobbyScreenshotAssetRepository) }
+                .takeIf {
+                    cached.lobbyResult.hasLobbyOcrEvidence(
+                        matchId,
+                        lobbyScreenshotAssetRepository,
+                        screenshotOwnerProvider.currentOwnerUserId(),
+                    )
+                }
                 .orEmpty()
             _uiState.update { state ->
                 when (state) {
@@ -385,7 +408,11 @@ class MatchOcrReviewViewModel @Inject constructor(
         _uiState.value = MatchOcrReviewUiState.Loading
         viewModelScope.launch {
             val evidence = try {
-                tournamentRepository.readPreservedMatchOcrEvidence(tournamentId, matchId)
+                tournamentRepository.readPreservedMatchOcrEvidenceByOwner(
+                    tournamentId,
+                    matchId,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -909,10 +936,12 @@ private fun MatchLobbyPlayersOcrResult.toUiState(): List<MatchOcrReviewLobbySlot
 private suspend fun MatchLobbyPlayersOcrResult.hasLobbyOcrEvidence(
     matchId: String,
     lobbyScreenshotAssetRepository: MatchLobbyScreenshotAssetRepository,
+    ownerUserId: String?,
 ): Boolean {
+    if (ownerUserId.isNullOrBlank()) return false
     val hasUsableScreenshot = try {
         lobbyScreenshotAssetRepository
-            .observeByMatchId(matchId)
+            .observeByMatchIdAndOwner(matchId, ownerUserId)
             .first()
             .any { asset ->
                 asset.cropProfileId == OcrCropValidationProfiles.Lobby.id &&

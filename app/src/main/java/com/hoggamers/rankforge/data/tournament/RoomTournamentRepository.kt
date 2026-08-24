@@ -1187,6 +1187,47 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun readPreservedMatchOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): PreservedMatchOcrEvidence? {
+        if (ownerUserId.isBlank()) return null
+        awaitState()
+        val evidenceDao = database.matchOcrEvidenceDao()
+        val evidence = evidenceDao.readMatchEvidenceByOwner(tournamentId, matchId, ownerUserId) ?: return null
+        return PreservedMatchOcrEvidence(
+            tournamentId = evidence.tournamentId,
+            matchId = evidence.matchId,
+            sourceScreenshotId = evidence.sourceScreenshotId,
+            preservedAt = evidence.preservedAt,
+            provenance = evidence.provenance,
+            rows = evidenceDao.readRowEvidenceByOwner(tournamentId, matchId, ownerUserId).map { row ->
+                PreservedMatchOcrRowEvidence(
+                    rowIndex = row.rowIndex,
+                    originalOcrText = row.originalOcrText,
+                    originalPlacement = row.originalPlacement,
+                    originalKills = row.originalKills,
+                    originalSuggestedTeamSlot = row.originalSuggestedTeamSlot,
+                    confidenceSummary = row.confidenceSummary,
+                    safetySummary = row.safetySummary,
+                    manualReviewRequired = row.manualReviewRequired,
+                )
+            },
+            correctionSnapshots = evidenceDao.readCorrectionSnapshotsByOwner(tournamentId, matchId, ownerUserId).map { snapshot ->
+                PreservedMatchOcrCorrectionSnapshot(
+                    rowIndex = snapshot.rowIndex,
+                    correctedPlacement = snapshot.correctedPlacement,
+                    correctedKills = snapshot.correctedKills,
+                    correctedTeamSlot = snapshot.correctedTeamSlot,
+                    placementChanged = snapshot.placementChanged,
+                    killsChanged = snapshot.killsChanged,
+                    teamSlotChanged = snapshot.teamSlotChanged,
+                )
+            },
+        )
+    }
+
     override suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
         createDraftMatchInternal(match, ownerUserId = null)
 

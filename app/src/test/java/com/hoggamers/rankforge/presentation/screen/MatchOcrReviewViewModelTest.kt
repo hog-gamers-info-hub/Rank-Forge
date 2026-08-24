@@ -96,8 +96,10 @@ class MatchOcrReviewViewModelTest {
     @Test
     fun historicalEvidenceLoadsWithoutRunningEitherOcrRunner() = runTest(dispatcher) {
         val repository = createRepository()
-        repository.finalizeDraftMatchWithOcrEvidence(
+        repository.finalizeDraftMatchWithOcrEvidenceByOwner(
+            tournamentId = TOURNAMENT_ID,
             matchId = MATCH_ID,
+            ownerUserId = com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository.OWNER_USER_ID,
             placements = (1..12).map { MatchPlacement(teamSlotNumber = it, position = it) },
             kills = (1..12).map { MatchKill(teamSlotNumber = it, kills = it - 1) },
             evidence = preservedEvidence(),
@@ -117,6 +119,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
             tournamentRepository = repository,
         )
 
@@ -150,6 +153,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
             tournamentRepository = repository,
         )
 
@@ -299,6 +303,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
         )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
@@ -535,6 +540,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
         )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
@@ -574,6 +580,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
         )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
@@ -609,6 +616,7 @@ class MatchOcrReviewViewModelTest {
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
             initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
         )
 
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
@@ -1043,7 +1051,13 @@ class MatchOcrReviewViewModelTest {
             finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
             finalizedMatchCloudSync = finalizedMatchCloudSync,
             initialUiState = initialUiState,
+            screenshotOwnerProvider = ownerProvider,
         )
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String =
+            com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository.OWNER_USER_ID
+    }
 
     private class RecordingFinalizedMatchCloudSync(
         private val result: FinalizedMatchCloudSyncResult = FinalizedMatchCloudSyncResult.Success(1),

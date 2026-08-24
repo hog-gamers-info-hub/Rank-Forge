@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheFingerprint
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
+import com.hoggamers.rankforge.presentation.screen.NoOpScreenshotOwnerProvider
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
@@ -68,6 +70,7 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
     private val extractor: RosterRawOcrExtractor,
     private val parser: RosterCandidateParser,
     private val slotIdentityResolver: LobbySlotIdentityResolver,
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : MatchLobbyPlayersOcrRunner {
     override suspend fun process(
         tournamentId: String,
@@ -76,9 +79,11 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         if (tournamentId.isBlank() || matchId.isBlank()) {
             return MatchLobbyPlayersOcrResult.unavailable()
         }
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
+            ?: return MatchLobbyPlayersOcrResult.unavailable()
 
         val contributions = RosterScreenshotPosition.entries.mapNotNull { position ->
-            processScreenshot(tournamentId, matchId, position)
+            processScreenshot(tournamentId, matchId, position, ownerUserId)
         }
         val slots = MatchLobbyPlayersOcrResult.unavailable().slots.toMutableList()
         contributions
@@ -97,10 +102,11 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         tournamentId: String,
         matchId: String,
         position: RosterScreenshotPosition,
+        ownerUserId: String,
     ): MatchLobbyScreenshotContribution? {
         val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
         val asset = try {
-            assetRepository.getByIdentity(identity)
+            assetRepository.getByIdentityAndOwner(identity, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
@@ -115,13 +121,13 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         val fingerprint = asset.toMatchLobbyOcrCacheFingerprint(identity, position)
         if (fingerprint != null) {
             val cached = try {
-                cacheRepository.read(fingerprint)
+                cacheRepository.readByOwner(fingerprint, ownerUserId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
                 null
             }
-            if (cached != null && readFingerprint(identity, position) == fingerprint) {
+            if (cached != null && readFingerprint(identity, position, ownerUserId) == fingerprint) {
                 val cachedContribution = cached.toContribution()
                 if (cachedContribution != null) {
                     return cachedContribution
@@ -212,9 +218,9 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
                 },
             )
         }
-        if (fingerprint != null && readFingerprint(identity, position) == fingerprint) {
+        if (fingerprint != null && readFingerprint(identity, position, ownerUserId) == fingerprint) {
             try {
-                cacheRepository.save(fingerprint, slots)
+            cacheRepository.saveByOwner(fingerprint, slots, ownerUserId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -242,8 +248,9 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
     private suspend fun readFingerprint(
         identity: MatchLobbyScreenshotIdentity,
         position: RosterScreenshotPosition,
+        ownerUserId: String,
     ): MatchLobbyOcrCacheFingerprint? = try {
-        assetRepository.getByIdentity(identity)
+        assetRepository.getByIdentityAndOwner(identity, ownerUserId)
             ?.toMatchLobbyOcrCacheFingerprint(identity, position)
     } catch (cancellation: CancellationException) {
         throw cancellation

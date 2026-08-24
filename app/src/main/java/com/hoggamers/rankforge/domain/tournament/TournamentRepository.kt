@@ -212,6 +212,12 @@ interface TournamentRepository {
         matchId: String,
     ): PreservedMatchOcrEvidence? = null
 
+    suspend fun readPreservedMatchOcrEvidenceByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): PreservedMatchOcrEvidence? = null
+
     suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult =
         error("Match creation is not supported by this repository.")
 

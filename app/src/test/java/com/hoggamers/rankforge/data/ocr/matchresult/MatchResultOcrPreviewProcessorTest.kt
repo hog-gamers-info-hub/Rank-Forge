@@ -18,6 +18,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -170,7 +171,12 @@ class MatchResultOcrPreviewProcessorTest {
         localFileResolver = MatchResultOcrPreviewLocalFileResolver { file },
         recognitionSource = MatchResultOcrPreviewRecognitionSource { _, _ -> recognition },
         fieldExtractor = fieldExtractor,
+        screenshotOwnerProvider = ownerProvider,
     )
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String = "owner-id"
+    }
 
     private fun identity(
         role: MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -255,6 +261,8 @@ class MatchResultOcrPreviewProcessorTest {
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(emptyList())
         override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> = flowOf(asset)
         override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? = asset
+        override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): MatchResultScreenshotAssetEntity? =
+            asset?.takeIf { it.ownerUserId == ownerUserId && it.matchId == identity.matchId && it.tournamentId == identity.tournamentId }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(emptyList())
         override suspend fun findDuplicateFingerprint(identity: MatchResultScreenshotIdentity, sha256: String): MatchResultScreenshotAssetEntity? = null
         override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult {

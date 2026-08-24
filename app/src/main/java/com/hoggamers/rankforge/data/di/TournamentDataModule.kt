@@ -211,7 +211,8 @@ object TournamentDataProvidersModule {
         dao: MatchResultOcrCacheDao,
         codec: MatchResultOcrCacheCodec,
         clock: Clock,
-    ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock)
+        database: RankForgeDatabase,
+    ): MatchResultOcrCacheRepository = RoomMatchResultOcrCacheRepository(dao, codec, clock, database)
 
     @Provides
     @Singleton
@@ -224,7 +225,8 @@ object TournamentDataProvidersModule {
         dao: MatchLobbyOcrCacheDao,
         codec: MatchLobbyOcrCacheCodec,
         clock: Clock,
-    ): MatchLobbyOcrCacheRepository = RoomMatchLobbyOcrCacheRepository(dao, codec, clock)
+        database: RankForgeDatabase,
+    ): MatchLobbyOcrCacheRepository = RoomMatchLobbyOcrCacheRepository(dao, codec, clock, database)
 
     @Provides
     @Singleton

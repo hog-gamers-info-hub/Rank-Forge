@@ -44,6 +44,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
     private val autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
         MatchResultAutoCropResult.OcrFailed
     },
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchResultScreenshotCropUiState())
     val uiState: StateFlow<MatchResultScreenshotCropUiState> = _uiState.asStateFlow()
@@ -86,8 +87,10 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             role = role,
         )
         loadJob = viewModelScope.launch {
+            val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
             combine(
-                assetRepository.observeByIdentity(identity),
+                if (ownerUserId.isNullOrBlank()) kotlinx.coroutines.flow.flowOf(null)
+                else assetRepository.observeByIdentityAndOwner(identity, ownerUserId),
                 observeMatches(tournamentId),
             ) { asset, matches ->
                 val match = matches.firstOrNull { it.id == matchId }
@@ -202,7 +205,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             }
 
             val existing = try {
-                assetRepository.getByIdentity(identity)
+                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -238,7 +241,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             if (!isCurrentConfirmationSnapshot(current, identity, existing, existing)) return@launch
 
             val latest = try {
-                assetRepository.getByIdentity(identity)
+                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -251,8 +254,9 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
 
             _uiState.update { it.copy(isSaving = true, error = null) }
             val result = try {
-                assetRepository.persistConfirmedCrop(
+                assetRepository.persistConfirmedCropByOwner(
                     identity = identity,
+                    ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                     crop = current.draftCrop,
                     updatedAt = clock.millis(),
                 )
@@ -315,6 +319,9 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                         it.copy(isSaving = false, error = MatchResultScreenshotCropError.INVALID_CROP)
                     }
                 }
+                MatchResultScreenshotCropSaveResult.AuthenticationRequired,
+                MatchResultScreenshotCropSaveResult.MatchNotFound,
+                -> _uiState.update { it.copy(isSaving = false, error = MatchResultScreenshotCropError.SAVE_FAILED) }
             }
     }
 
@@ -396,7 +403,11 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         if (!missingMarked.add(key)) return
         viewModelScope.launch {
             runCatching {
-                assetRepository.markLocalMissing(identity, clock.millis())
+                assetRepository.markLocalMissingByOwner(
+                    identity,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    clock.millis(),
+                )
             }
         }
     }
@@ -421,7 +432,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
 
         viewModelScope.launch {
             val asset = try {
-                assetRepository.getByIdentity(identity)
+                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {

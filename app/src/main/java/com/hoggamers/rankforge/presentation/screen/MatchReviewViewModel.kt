@@ -199,6 +199,7 @@ class MatchReviewViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch {
+            val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
             val baseInputs = combine(
                 observeMatches(tournamentId),
                 observeTournamentSlots(tournamentId),
@@ -214,9 +215,11 @@ class MatchReviewViewModel @Inject constructor(
             }
             combine(
                 baseInputs,
-                runCatching { screenshotMetadataRepository.observeByMatchId(matchId) }
+                if (ownerUserId.isNullOrBlank()) flowOf(null)
+                else runCatching { screenshotMetadataRepository.observeByMatchIdAndOwner(matchId, ownerUserId) }
                     .getOrElse { flowOf(null) },
-                runCatching { matchResultScreenshotAssetRepository.observeByMatchId(matchId) }
+                if (ownerUserId.isNullOrBlank()) flowOf(emptyList())
+                else runCatching { matchResultScreenshotAssetRepository.observeByMatchIdAndOwner(matchId, ownerUserId) }
                     .getOrElse { flowOf(emptyList()) },
             ) { inputs, screenshotMetadata, resultScreenshotAssets ->
                 val matches = inputs.matches
@@ -1311,7 +1314,12 @@ class MatchReviewViewModel @Inject constructor(
             return MatchResultAssetWriteResult.Failed
         }
         val now = nowMillis()
-        val previous = runCatching { matchResultScreenshotAssetRepository.getByIdentity(identity) }.getOrNull()
+        val previous = runCatching {
+            matchResultScreenshotAssetRepository.getByIdentityAndOwner(
+                identity,
+                screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+            )
+        }.getOrNull()
         val sameBytes = previous?.sha256 == fingerprint
         val asset = MatchResultScreenshotAssetEntity(
             tournamentId = identity.tournamentId,
@@ -1346,7 +1354,12 @@ class MatchReviewViewModel @Inject constructor(
             uploadedAt = null,
             revision = previous?.revision?.plus(1) ?: 1L,
         )
-        return when (matchResultScreenshotAssetRepository.saveOrReplace(asset)) {
+        return when (
+            matchResultScreenshotAssetRepository.saveOrReplaceByOwner(
+                asset,
+                ownerUserId,
+            )
+        ) {
             MatchResultScreenshotAssetSaveResult.Saved -> MatchResultAssetWriteResult.Written(asset)
             else -> MatchResultAssetWriteResult.Failed
         }
@@ -1455,7 +1468,7 @@ class MatchReviewViewModel @Inject constructor(
             is MatchResultScreenshotStorageUploadResult.Uploaded -> {
                 val uploadedAt = nowMillis()
                 val updatedAsset = runCatching {
-                    matchResultScreenshotAssetRepository.getByIdentity(identity)?.copy(
+                    matchResultScreenshotAssetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())?.copy(
                         storageBucket = OCR_SCREENSHOTS_BUCKET,
                         storageObjectPath = result.objectPath,
                         uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
@@ -1467,7 +1480,7 @@ class MatchReviewViewModel @Inject constructor(
                     }
                 }.getOrNull()
                 if (updatedAsset == null ||
-                    matchResultScreenshotAssetRepository.saveOrReplace(updatedAsset) !is
+                    matchResultScreenshotAssetRepository.saveOrReplaceByOwner(updatedAsset, screenshotOwnerProvider.currentOwnerUserId().orEmpty()) !is
                     MatchResultScreenshotAssetSaveResult.Saved
                 ) {
                     setResultUploadError(identity, ScreenshotUploadError.UPLOAD_FAILED)
@@ -1511,14 +1524,19 @@ class MatchReviewViewModel @Inject constructor(
     ) {
         val updatedAt = nowMillis()
         val updatedAsset = runCatching {
-            matchResultScreenshotAssetRepository.getByIdentity(identity)?.copy(
+            matchResultScreenshotAssetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())?.copy(
                 uploadStatus = ScreenshotUploadStatus.FAILED.name,
                 uploadFailureCode = error.name,
                 updatedAt = updatedAt,
             )?.let { it.copy(revision = it.revision + 1) }
         }.getOrNull()
         if (updatedAsset != null) {
-            runCatching { matchResultScreenshotAssetRepository.saveOrReplace(updatedAsset) }
+            runCatching {
+                matchResultScreenshotAssetRepository.saveOrReplaceByOwner(
+                    updatedAsset,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                )
+            }
         }
         setResultUploadError(identity, error)
     }
@@ -1574,7 +1592,10 @@ class MatchReviewViewModel @Inject constructor(
             ) {
                 LocalImageCleanupResult.Cleaned -> {
                     try {
-                        matchResultScreenshotAssetRepository.deleteByIdentity(identity)
+                        matchResultScreenshotAssetRepository.deleteByIdentityAndOwner(
+                            identity,
+                            screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                        )
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (_: Throwable) {
@@ -1611,8 +1632,9 @@ class MatchReviewViewModel @Inject constructor(
 
                 LocalImageCleanupResult.Failed -> {
                     try {
-                        matchResultScreenshotAssetRepository.markCleanupFailure(
+                        matchResultScreenshotAssetRepository.markCleanupFailureByOwner(
                             identity = identity,
+                            ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                             updatedAt = nowMillis(),
                         )
                     } catch (cancellation: CancellationException) {
@@ -1823,11 +1845,13 @@ class MatchReviewViewModel @Inject constructor(
         val matchId = current.matchId ?: return
         val candidateUri = selectedUri ?: return
         duplicateDetectionJob = viewModelScope.launch {
-            val result = screenshotDuplicateDetector.link(
+            val ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty()
+            val result = screenshotDuplicateDetector.linkByOwner(
                 tournamentId = tournamentId,
                 matchId = matchId,
                 selectedUri = candidateUri,
                 currentFingerprint = current.linkedScreenshotFingerprint,
+                ownerUserId = ownerUserId,
             )
             if (result is ScreenshotDuplicateLinkResult.Linked) {
                 val previousFingerprint = current.linkedScreenshotFingerprint
@@ -2068,7 +2092,9 @@ class MatchReviewViewModel @Inject constructor(
         }
 
         val now = nowMillis()
-        val previous = runCatching { screenshotMetadataRepository.getByMatchId(matchId) }.getOrNull()
+        val previous = runCatching {
+            screenshotMetadataRepository.getByMatchIdAndOwner(matchId, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
+        }.getOrNull()
         val metadata = ScreenshotMetadataEntity(
             matchId = matchId,
             tournamentId = tournamentId,
@@ -2096,7 +2122,12 @@ class MatchReviewViewModel @Inject constructor(
             revision = previous?.revision?.plus(1) ?: 1L,
         )
         return try {
-            screenshotMetadataRepository.createOrReplace(metadata)
+            val owner = screenshotOwnerProvider.currentOwnerUserId().orEmpty()
+            if (owner.isBlank()) return MetadataWriteResult.Failed(ScreenshotPreservationError.ROOM_WRITE_FAILED)
+            when (screenshotMetadataRepository.createOrReplaceByOwner(metadata, owner)) {
+                com.hoggamers.rankforge.data.local.ScreenshotMetadataMutationResult.Saved -> Unit
+                else -> return MetadataWriteResult.Failed(ScreenshotPreservationError.ROOM_WRITE_FAILED)
+            }
             MetadataWriteResult.Written(metadata)
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -2113,8 +2144,9 @@ class MatchReviewViewModel @Inject constructor(
     ) {
         val uploadedAt = nowMillis()
         val localUpdateSucceeded = runCatching {
-            screenshotMetadataRepository.updateUploadSuccess(
+            screenshotMetadataRepository.updateUploadSuccessByOwner(
                 matchId = matchId,
+                ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                 storageBucket = MATCH_SCREENSHOTS_BUCKET,
                 storageObjectPath = objectPath,
                 uploadedAt = uploadedAt,
@@ -2125,7 +2157,9 @@ class MatchReviewViewModel @Inject constructor(
             setUploadUiState(tournamentId, matchId, selectedUri, ScreenshotUploadError.UPLOAD_FAILED)
             return
         }
-        val updatedMetadata = runCatching { screenshotMetadataRepository.getByMatchId(matchId) }
+        val updatedMetadata = runCatching {
+            screenshotMetadataRepository.getByMatchIdAndOwner(matchId, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
+        }
             .getOrNull()
         val cloudPayload = updatedMetadata?.toCloudPayload()
         val cloudResult = if (cloudPayload != null) {
@@ -2139,8 +2173,9 @@ class MatchReviewViewModel @Inject constructor(
         }
         if (cloudResult is ScreenshotMetadataCloudResult.Failed) {
             runCatching {
-                screenshotMetadataRepository.updateUploadFailure(
+                screenshotMetadataRepository.updateUploadFailureByOwner(
                     matchId = matchId,
+                    ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                     failureCode = cloudResult.failure.toFailureCode(),
                     updatedAt = nowMillis(),
                 )
@@ -2170,8 +2205,9 @@ class MatchReviewViewModel @Inject constructor(
         failure: ScreenshotStorageUploadFailure,
     ) {
         runCatching {
-            screenshotMetadataRepository.updateUploadFailure(
+            screenshotMetadataRepository.updateUploadFailureByOwner(
                 matchId = matchId,
+                ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                 failureCode = failure.name,
                 updatedAt = nowMillis(),
             )
@@ -2226,7 +2262,11 @@ class MatchReviewViewModel @Inject constructor(
         restoredMissingMarkedForMatchId = matchId
         viewModelScope.launch {
             runCatching {
-                screenshotMetadataRepository.markLocalMissing(matchId, nowMillis())
+                screenshotMetadataRepository.markLocalMissingByOwner(
+                    matchId,
+                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    nowMillis(),
+                )
             }
         }
     }
@@ -2241,12 +2281,13 @@ class MatchReviewViewModel @Inject constructor(
                 if (!restoredResultMissingMarked.add(key)) return@forEach
                 viewModelScope.launch {
                     runCatching {
-                        matchResultScreenshotAssetRepository.markLocalMissing(
+                        matchResultScreenshotAssetRepository.markLocalMissingByOwner(
                             MatchResultScreenshotIdentity(
                                 tournamentId = tournamentId,
                                 matchId = matchId,
                                 role = slot.role,
                             ),
+                            screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                             nowMillis(),
                         )
                     }
@@ -2342,7 +2383,12 @@ class MatchReviewViewModel @Inject constructor(
         preservationJob = viewModelScope.launch {
             when (localImagePreserver.cleanup(tournamentId, matchId)) {
                 LocalImageCleanupResult.Cleaned -> {
-                    runCatching { screenshotMetadataRepository.deleteByMatchId(matchId) }
+                    runCatching {
+                        screenshotMetadataRepository.deleteByMatchIdAndOwner(
+                            matchId,
+                            screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                        )
+                    }
                     val cloudMatchId = MatchCloudIdentity.matchId(
                         tournamentId = tournamentId,
                         localMatchId = matchId,
@@ -2382,7 +2428,13 @@ class MatchReviewViewModel @Inject constructor(
                     }
                 }
                 LocalImageCleanupResult.Failed -> {
-                    runCatching { screenshotMetadataRepository.markCleanupFailure(matchId, nowMillis()) }
+                    runCatching {
+                        screenshotMetadataRepository.markCleanupFailureByOwner(
+                            matchId,
+                            screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                            nowMillis(),
+                        )
+                    }
                     _uiState.update { latest ->
                         if (latest.tournamentId == tournamentId && latest.matchId == matchId) {
                             latest.copy(
