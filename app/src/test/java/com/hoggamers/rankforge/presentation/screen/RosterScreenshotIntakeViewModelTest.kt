@@ -4,7 +4,11 @@ import com.hoggamers.rankforge.data.local.RosterScreenshotAssociationSaveResult
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RosterScreenshotValidationStatus
-import com.hoggamers.rankforge.data.local.NoOpRosterScreenshotMetadataRepository
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -149,6 +154,144 @@ class RosterScreenshotIntakeViewModelTest {
             viewModel.uiState.value.intakeError,
         )
         assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+    }
+
+    @Test
+    fun signedOutMetadataIsEmptyAndSelectionDoesNotPreserveOrWrite() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository(listOf(association(1)))
+        val localStore = FakeRosterScreenshotLocalImageStore(emptyMap())
+        val viewModel = viewModel(
+            repository = repository,
+            localImageStore = localStore,
+            authRepository = FakeAuthRepository(AuthState.SignedOut),
+        )
+
+        viewModel.load("tournament-1")
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+
+        assertTrue(viewModel.uiState.value.slots.none { it.hasValidatedImage })
+        assertEquals(RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED, viewModel.uiState.value.intakeError)
+        assertEquals(0, localStore.preserveCalls)
+        assertEquals(0, repository.ownerSaveCalls)
+    }
+
+    @Test
+    fun blankSignedInIdFailsClosedBeforePreservation() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository()
+        val localStore = FakeRosterScreenshotLocalImageStore(emptyMap())
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+            repository = repository,
+            localImageStore = localStore,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("   ", "blank@example.test"))),
+        )
+
+        viewModel.load("tournament-1")
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+
+        assertEquals(RosterScreenshotIntakeError.AUTHENTICATION_REQUIRED, viewModel.uiState.value.intakeError)
+        assertEquals(0, localStore.preserveCalls)
+        assertEquals(0, repository.ownerSaveCalls)
+    }
+
+    @Test
+    fun foreignTournamentFailsBeforePreservationOrMutation() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository(authorized = false)
+        val localStore = FakeRosterScreenshotLocalImageStore(emptyMap())
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+            repository = repository,
+            localImageStore = localStore,
+        )
+
+        viewModel.load("tournament-foreign")
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://one")
+        advanceUntilIdle()
+
+        assertEquals(RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND, viewModel.uiState.value.intakeError)
+        assertEquals(0, localStore.preserveCalls)
+        assertEquals(0, repository.ownerSaveCalls)
+    }
+
+    @Test
+    fun nullOwnerTournamentFailsBeforePreservationOrMutation() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository(authorized = false)
+        val localStore = FakeRosterScreenshotLocalImageStore(emptyMap())
+        val viewModel = viewModel(
+            metadata = mapOf("content://one" to validMetadata()),
+            imageBytes = mapOf("content://one" to byteArrayOf(1)),
+            repository = repository,
+            localImageStore = localStore,
+        )
+
+        viewModel.load("tournament-legacy")
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://one")
+        advanceUntilIdle()
+
+        assertEquals(RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND, viewModel.uiState.value.intakeError)
+        assertEquals(0, localStore.preserveCalls)
+        assertEquals(0, repository.ownerSaveCalls)
+    }
+
+    @Test
+    fun foreignTournamentDeleteDoesNotMutateOrCleanLocalFile() = runTest {
+        val repository = FakeRosterScreenshotMetadataRepository(
+            initial = listOf(association(1)),
+            authorized = false,
+        )
+        val localStore = FakeRosterScreenshotLocalImageStore(emptyMap())
+        val viewModel = viewModel(
+            repository = repository,
+            localImageStore = localStore,
+        )
+
+        viewModel.load("tournament-foreign")
+        advanceUntilIdle()
+        viewModel.removeSelectedImage(1)
+        advanceUntilIdle()
+
+        assertEquals(RosterScreenshotIntakeError.TOURNAMENT_NOT_FOUND, viewModel.uiState.value.intakeError)
+        assertEquals(0, repository.ownerDeleteCalls)
+        assertTrue(localStore.cleanedIndexes.isEmpty())
+    }
+
+    @Test
+    fun authSwitchReplacesOwnerMetadataFlow() = runTest {
+        val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-a", "a@example.test")))
+        val repository = FakeRosterScreenshotMetadataRepository(
+            ownerRows = mapOf("owner-a" to listOf(association(1)), "owner-b" to listOf(association(2))),
+        )
+        val viewModel = viewModel(
+            repository = repository,
+            localImageStore = FakeRosterScreenshotLocalImageStore(
+                mapOf(
+                    "screenshots/tournament/roster/1/original.png" to "file:///one.png",
+                    "screenshots/tournament/roster/2/original.png" to "file:///two.png",
+                ),
+            ),
+            authRepository = auth,
+        )
+
+        viewModel.load("tournament-1")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.slots[0].hasValidatedImage)
+        assertFalse(viewModel.uiState.value.slots[1].hasValidatedImage)
+
+        auth.state.value = AuthState.SignedIn(AuthUser("owner-b", "b@example.test"))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.slots[0].hasValidatedImage)
+        assertTrue(viewModel.uiState.value.slots[1].hasValidatedImage)
     }
 
     @Test
@@ -455,8 +598,9 @@ class RosterScreenshotIntakeViewModelTest {
     private fun viewModel(
         metadata: Map<String, ImageCandidateReadResult> = emptyMap(),
         imageBytes: Map<String, ByteArray> = emptyMap(),
-        repository: RosterScreenshotMetadataRepository = NoOpRosterScreenshotMetadataRepository(),
+        repository: RosterScreenshotMetadataRepository = FakeRosterScreenshotMetadataRepository(),
         localImageStore: RosterScreenshotLocalImageStore = NoOpRosterScreenshotLocalImageStore(),
+        authRepository: AuthRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser("owner-a", "owner-a@example.test"))),
     ) = RosterScreenshotIntakeViewModel(
         imageCandidateValidator = ImageCandidateValidator(
             ImageCandidateMetadataReader { uri ->
@@ -469,6 +613,7 @@ class RosterScreenshotIntakeViewModelTest {
             },
             coroutineDispatcher = dispatcher,
         ),
+        authRepository = authRepository,
         rosterScreenshotMetadataRepository = repository,
         rosterScreenshotLocalImageStore = localImageStore,
     )
@@ -501,10 +646,36 @@ class RosterScreenshotIntakeViewModelTest {
 
     private class FakeRosterScreenshotMetadataRepository(
         initial: List<RosterScreenshotMetadataEntity> = emptyList(),
+        private val authorized: Boolean = true,
+        private val ownerRows: Map<String, List<RosterScreenshotMetadataEntity>> = emptyMap(),
     ) : RosterScreenshotMetadataRepository {
         private val state = MutableStateFlow(initial.sortedBy { it.rosterScreenshotIndex })
+        var ownerSaveCalls = 0
+        var ownerDeleteCalls = 0
 
         override fun observeByTournamentId(tournamentId: String): Flow<List<RosterScreenshotMetadataEntity>> = state
+
+        override fun observeByTournamentIdAndOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): Flow<List<RosterScreenshotMetadataEntity>> = flowOf(ownerRows[ownerUserId] ?: state.value)
+
+        override suspend fun existsByTournamentIdAndOwner(tournamentId: String, ownerUserId: String): Boolean = authorized
+
+        override suspend fun readByTournamentAndIndexAndOwner(
+            tournamentId: String,
+            index: Int,
+            ownerUserId: String,
+        ): RosterScreenshotMetadataEntity? = current(tournamentId, index)
+
+        override suspend fun findDuplicateFingerprintAndOwner(
+            tournamentId: String,
+            sha256: String,
+            index: Int,
+            ownerUserId: String,
+        ): RosterScreenshotMetadataEntity? = state.value.firstOrNull {
+            it.tournamentId == tournamentId && it.rosterScreenshotIndex != index && it.sha256 == sha256
+        }
 
         override suspend fun saveOrReplace(
             metadata: RosterScreenshotMetadataEntity,
@@ -530,10 +701,32 @@ class RosterScreenshotIntakeViewModelTest {
             return RosterScreenshotAssociationSaveResult.Saved
         }
 
+        override suspend fun saveOrReplaceByOwner(
+            metadata: RosterScreenshotMetadataEntity,
+            ownerUserId: String,
+        ): RosterScreenshotAssociationSaveResult {
+            ownerSaveCalls++
+            return if (authorized) saveOrReplace(metadata)
+            else RosterScreenshotAssociationSaveResult.TournamentNotFound
+        }
+
         override suspend fun deleteByTournamentAndIndex(tournamentId: String, index: Int) {
             state.value = state.value.filterNot {
                 it.tournamentId == tournamentId && it.rosterScreenshotIndex == index
             }
+        }
+
+        override suspend fun deleteByTournamentAndIndexAndOwner(
+            tournamentId: String,
+            index: Int,
+            ownerUserId: String,
+        ): com.hoggamers.rankforge.data.local.RosterScreenshotAssociationDeleteResult {
+            if (!authorized) {
+                return com.hoggamers.rankforge.data.local.RosterScreenshotAssociationDeleteResult.TournamentNotFound
+            }
+            ownerDeleteCalls++
+            deleteByTournamentAndIndex(tournamentId, index)
+            return com.hoggamers.rankforge.data.local.RosterScreenshotAssociationDeleteResult.Deleted
         }
 
         fun current(tournamentId: String, index: Int): RosterScreenshotMetadataEntity? =
@@ -542,10 +735,26 @@ class RosterScreenshotIntakeViewModelTest {
             }
     }
 
+    private class FakeAuthRepository(
+        initialState: AuthState,
+    ) : AuthRepository {
+        val state = MutableStateFlow(initialState)
+
+        override fun observeAuthState() = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) =
+            AuthOperationResult.Success(com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome.SignedIn)
+        override suspend fun login(email: String, password: String) =
+            AuthOperationResult.Success(com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome.SignedIn)
+        override suspend fun logout() =
+            AuthOperationResult.Success(com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private class FakeRosterScreenshotLocalImageStore(
         private val displayUris: Map<String, String>,
     ) : RosterScreenshotLocalImageStore {
         val cleanedIndexes = mutableListOf<Int>()
+        var preserveCalls = 0
 
         override suspend fun preserve(
             tournamentId: String,
@@ -553,8 +762,11 @@ class RosterScreenshotIntakeViewModelTest {
             selectedUri: String,
         ): RosterScreenshotLocalImageStoreResult = RosterScreenshotLocalImageStoreResult.Preserved(
             localRelativePath = "screenshots/tournament/roster/$rosterScreenshotIndex/original.png",
-            displayUri = displayUris.getValue("screenshots/tournament/roster/$rosterScreenshotIndex/original.png"),
-        )
+            displayUri = displayUris.getOrDefault(
+                "screenshots/tournament/roster/$rosterScreenshotIndex/original.png",
+                "file:///synthetic.png",
+            ),
+        ).also { preserveCalls++ }
 
         override suspend fun cleanup(tournamentId: String, rosterScreenshotIndex: Int) {
             cleanedIndexes += rosterScreenshotIndex

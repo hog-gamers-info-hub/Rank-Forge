@@ -367,11 +367,35 @@ interface RosterScreenshotMetadataDao {
     fun observeByTournamentId(tournamentId: String): Flow<List<RosterScreenshotMetadataEntity>>
 
     @Query(
+        "SELECT r.* FROM roster_screenshot_metadata r " +
+            "INNER JOIN tournaments t ON t.id = r.tournament_id " +
+            "WHERE r.tournament_id = :tournamentId AND t.owner_user_id = :ownerUserId " +
+            "ORDER BY r.roster_screenshot_index",
+    )
+    fun observeByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Flow<List<RosterScreenshotMetadataEntity>>
+
+    @Query(
         "SELECT * FROM roster_screenshot_metadata WHERE tournament_id = :tournamentId AND roster_screenshot_index = :index",
     )
     suspend fun readByTournamentAndIndex(
         tournamentId: String,
         index: Int,
+    ): RosterScreenshotMetadataEntity?
+
+    @Query(
+        "SELECT r.* FROM roster_screenshot_metadata r " +
+            "INNER JOIN tournaments t ON t.id = r.tournament_id " +
+            "WHERE r.tournament_id = :tournamentId " +
+            "AND r.roster_screenshot_index = :index " +
+            "AND t.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByTournamentAndIndexAndOwner(
+        tournamentId: String,
+        index: Int,
+        ownerUserId: String,
     ): RosterScreenshotMetadataEntity?
 
     @Query(
@@ -389,6 +413,21 @@ interface RosterScreenshotMetadataDao {
         index: Int,
     ): RosterScreenshotMetadataEntity?
 
+    @Query(
+        "SELECT r.* FROM roster_screenshot_metadata r " +
+            "INNER JOIN tournaments t ON t.id = r.tournament_id " +
+            "WHERE r.tournament_id = :tournamentId " +
+            "AND r.sha256 = :sha256 " +
+            "AND r.roster_screenshot_index != :index " +
+            "AND t.owner_user_id = :ownerUserId LIMIT 1",
+    )
+    suspend fun readDuplicateFingerprintAndOwner(
+        tournamentId: String,
+        sha256: String,
+        index: Int,
+        ownerUserId: String,
+    ): RosterScreenshotMetadataEntity?
+
     @Upsert
     suspend fun upsert(metadata: RosterScreenshotMetadataEntity)
 
@@ -398,6 +437,20 @@ interface RosterScreenshotMetadataDao {
     suspend fun deleteByTournamentAndIndex(
         tournamentId: String,
         index: Int,
+    )
+
+    @Query(
+        "DELETE FROM roster_screenshot_metadata " +
+            "WHERE tournament_id = :tournamentId " +
+            "AND roster_screenshot_index = :index " +
+            "AND EXISTS (SELECT 1 FROM tournaments t " +
+            "WHERE t.id = roster_screenshot_metadata.tournament_id " +
+            "AND t.owner_user_id = :ownerUserId)",
+    )
+    suspend fun deleteByTournamentAndIndexAndOwner(
+        tournamentId: String,
+        index: Int,
+        ownerUserId: String,
     )
 }
 

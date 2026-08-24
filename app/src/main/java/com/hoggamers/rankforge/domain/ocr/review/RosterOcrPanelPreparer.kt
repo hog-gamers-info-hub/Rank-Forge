@@ -49,7 +49,14 @@ sealed interface RosterOcrSourceProviderResult {
 }
 
 interface RosterOcrSourceProvider {
-    suspend fun load(tournamentId: String): RosterOcrSourceProviderResult
+    /** Legacy compatibility entry point; production callers must use owner-bound load. */
+    suspend fun load(tournamentId: String): RosterOcrSourceProviderResult =
+        RosterOcrSourceProviderResult.LoadingFailure
+
+    suspend fun load(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): RosterOcrSourceProviderResult
 }
 
 enum class RosterOcrPanelPreparationFailure {

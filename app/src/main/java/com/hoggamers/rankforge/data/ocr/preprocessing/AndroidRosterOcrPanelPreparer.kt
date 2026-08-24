@@ -43,13 +43,19 @@ internal fun interface RosterOcrInputStreamOpener {
 class RoomRosterOcrSourceProvider @Inject constructor(
     private val metadataRepository: RosterScreenshotMetadataRepository,
 ) : RosterOcrSourceProvider {
-    override suspend fun load(tournamentId: String): RosterOcrSourceProviderResult {
-        if (tournamentId.isBlank()) {
+    override suspend fun load(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): RosterOcrSourceProviderResult {
+        if (tournamentId.isBlank() || expectedOwnerUserId.isBlank()) {
             return RosterOcrSourceProviderResult.InvalidTournamentContext
         }
 
         val metadata = try {
-            metadataRepository.observeByTournamentId(tournamentId).first()
+            metadataRepository.observeByTournamentIdAndOwner(
+                tournamentId,
+                expectedOwnerUserId,
+            ).first()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

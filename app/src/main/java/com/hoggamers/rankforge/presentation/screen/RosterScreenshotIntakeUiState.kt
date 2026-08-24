@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 enum class RosterScreenshotIntakeError {
     MISSING_TOURNAMENT_ID,
+    AUTHENTICATION_REQUIRED,
+    TOURNAMENT_NOT_FOUND,
     PHOTO_PICKER_LAUNCH_FAILED,
 }
 

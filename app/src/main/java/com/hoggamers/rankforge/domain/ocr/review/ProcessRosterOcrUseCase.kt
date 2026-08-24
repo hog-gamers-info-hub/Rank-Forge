@@ -13,8 +13,11 @@ import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociationInput
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociationResult
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociator
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthState
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 data class ProcessRosterOcrEvidence(
     val rawExtractions: List<RosterRawOcrExtractionResult>,
@@ -69,14 +72,19 @@ class ProcessRosterOcrUseCase @Inject constructor(
     private val parser: RosterCandidateParser,
     private val associator: RosterSlotAssociator,
     private val validator: RosterOcrValidator,
+    private val authRepository: AuthRepository,
 ) {
     suspend operator fun invoke(tournamentId: String): ProcessRosterOcrResult {
         if (tournamentId.isBlank()) {
             return ProcessRosterOcrResult.Failed(ProcessRosterOcrFailure.InvalidTournamentContext)
         }
 
+        val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user?.id?.takeIf { it.isNotBlank() }
+            ?: return ProcessRosterOcrResult.Failed(ProcessRosterOcrFailure.InvalidTournamentContext)
+
         val loaded = try {
-            sourceProvider.load(tournamentId)
+            sourceProvider.load(tournamentId, ownerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

@@ -1,5 +1,11 @@
 package com.hoggamers.rankforge.domain.ocr.review
 
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrFailure
@@ -22,6 +28,7 @@ import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotAssociator
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.fail
@@ -372,7 +379,23 @@ class ProcessRosterOcrUseCaseTest {
         parser: FakeParser = FakeParser(),
         associator: FakeAssociator = FakeAssociator(),
         validator: FakeValidator = FakeValidator(),
-    ) = ProcessRosterOcrUseCase(provider, preparer, extractor, parser, associator, validator)
+    ) = ProcessRosterOcrUseCase(
+        provider,
+        preparer,
+        extractor,
+        parser,
+        associator,
+        validator,
+        FakeAuthRepository,
+    )
+
+    private object FakeAuthRepository : AuthRepository {
+        override fun observeAuthState() = flowOf(AuthState.SignedIn(AuthUser("owner-a", "owner-a@example.test")))
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun login(email: String, password: String) = AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun logout() = AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
 
     private suspend fun assertCancellation(block: suspend () -> Unit) {
         try {
@@ -439,6 +462,11 @@ class ProcessRosterOcrUseCaseTest {
             if (throwCancellation) throw CancellationException()
             return result
         }
+
+        override suspend fun load(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+        ): RosterOcrSourceProviderResult = load(tournamentId)
     }
 
     private class FakePanelPreparer(
