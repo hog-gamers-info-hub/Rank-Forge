@@ -83,11 +83,23 @@ fun interface MatchScreenshotRestorationAction {
         tournamentId: String,
         restoredMatchIds: Set<String>,
     ): MatchCloudRestorationResult
+
+    suspend operator fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
+    ): MatchCloudRestorationResult = throw SecurityException("Expected screenshot owner is required.")
 }
 
 object NoOpMatchScreenshotRestorationAction : MatchScreenshotRestorationAction {
     override suspend fun invoke(
         tournamentId: String,
         restoredMatchIds: Set<String>,
+    ): MatchCloudRestorationResult = MatchCloudRestorationResult.Success
+
+    override suspend fun invoke(
+        tournamentId: String,
+        restoredMatchIds: Set<String>,
+        expectedOwnerUserId: String,
     ): MatchCloudRestorationResult = MatchCloudRestorationResult.Success
 }

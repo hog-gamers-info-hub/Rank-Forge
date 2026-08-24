@@ -38,6 +38,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScreenshotUploadCheckpointTest {
@@ -155,7 +156,14 @@ class ScreenshotUploadCheckpointTest {
         )
         val root = newRoot()
         val preserver = localPreserver(root)
-        val repository = CheckpointResultRepository(resultAsset(identity, preserver))
+        val repository = CheckpointResultRepository(
+            resultAsset(identity, preserver).copy(
+                uploadStatus = ScreenshotUploadStatus.PENDING.name,
+                storageBucket = null,
+                storageObjectPath = null,
+                uploadedAt = null,
+            ),
+        )
         var cloudAsset: MatchResultScreenshotAssetEntity? = null
         val result = MatchResultScreenshotUploadCheckpoint(
             repository,
@@ -756,6 +764,167 @@ class ScreenshotUploadCheckpointTest {
         ).run(identity)
     }
 
+    @Test
+    fun ownerBoundLobbyCheckpointUsesCapturedOwnerAndSkipsSignedOutOrForeign() = runTest {
+        val identity = MatchLobbyScreenshotIdentity("tournament-1", "match-1", 1)
+        val root = newRoot()
+        val preserver = localPreserver(root)
+        val repository = CheckpointLobbyRepository(lobbyAsset(identity, preserver))
+        val owner = MutableScreenshotOwnerProvider("owner-1")
+        var storageCalls = 0
+        val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
+            repository,
+            preserver,
+            clock,
+            storageUploader = object : MatchLobbyScreenshotStorageUploader {
+                override suspend fun upload(tournamentId: String?, matchId: String?, lobbyScreenshotIndex: Int?, localFile: File?) =
+                    MatchLobbyScreenshotStorageUploadResult.Uploaded("owner-path.png").also { storageCalls++ }
+                override suspend fun upload(expectedOwnerUserId: String, tournamentId: String?, matchId: String?, lobbyScreenshotIndex: Int?, localFile: File?) =
+                    MatchLobbyScreenshotStorageUploadResult.Uploaded("users/$expectedOwnerUserId/path.png").also { storageCalls++ }
+            },
+            cloudDataSource = object : MatchLobbyScreenshotAssetCloudDataSource {
+                override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity) = MatchLobbyScreenshotAssetCloudResult.Success
+                override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity, expectedOwnerUserId: String) = MatchLobbyScreenshotAssetCloudResult.Success
+                override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = MatchLobbyScreenshotAssetCloudResult.Success
+            },
+            screenshotOwnerProvider = owner,
+        )
+
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Completed, checkpoint.run(identity, "owner-1"))
+        assertEquals(1, storageCalls)
+        val revisionAfterOwner = repository.asset.revision
+
+        owner.ownerId = null
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Skipped, checkpoint.run(identity, "owner-1"))
+        assertEquals(revisionAfterOwner, repository.asset.revision)
+        owner.ownerId = "owner-2"
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Skipped, checkpoint.run(identity, "owner-1"))
+        assertEquals(revisionAfterOwner, repository.asset.revision)
+    }
+
+    @Test
+    fun ownerBoundResultCheckpointUsesOwnerScopedMutationAndRejectsBlankOwner() = runTest {
+        val identity = MatchResultScreenshotIdentity(
+            "tournament-1",
+            "match-1",
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
+        val root = newRoot()
+        val preserver = localPreserver(root)
+        val repository = CheckpointResultRepository(resultAsset(identity, preserver))
+        val owner = MutableScreenshotOwnerProvider("owner-1")
+        var ownerUploads = 0
+        val checkpoint = MatchResultScreenshotUploadCheckpoint(
+            repository,
+            preserver,
+            clock,
+            storageUploader = object : MatchResultScreenshotStorageUploader {
+                override suspend fun upload(tournamentId: String?, matchId: String?, role: MatchResultScreenshotRole?, localFile: File?) =
+                    MatchResultScreenshotStorageUploadResult.Uploaded("unscoped.png")
+                override suspend fun upload(expectedOwnerUserId: String, tournamentId: String?, matchId: String?, role: MatchResultScreenshotRole?, localFile: File?) =
+                    MatchResultScreenshotStorageUploadResult.Uploaded("users/$expectedOwnerUserId/result.png").also { ownerUploads++ }
+            },
+            cloudDataSource = object : MatchResultScreenshotAssetCloudDataSource {
+                override suspend fun upsert(asset: MatchResultScreenshotAssetEntity) = MatchResultScreenshotAssetCloudResult.Success
+                override suspend fun upsert(asset: MatchResultScreenshotAssetEntity, expectedOwnerUserId: String) = MatchResultScreenshotAssetCloudResult.Success
+                override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) = MatchResultScreenshotAssetCloudResult.Success
+            },
+            screenshotOwnerProvider = owner,
+        )
+
+        assertEquals(MatchResultScreenshotUploadCheckpointResult.Completed, checkpoint.run(identity, "owner-1"))
+        assertEquals(1, ownerUploads)
+        val revisionAfterOwner = repository.asset.revision
+        assertEquals(MatchResultScreenshotUploadCheckpointResult.Skipped, checkpoint.run(identity, ""))
+        assertEquals(revisionAfterOwner, repository.asset.revision)
+        owner.ownerId = "owner-2"
+        assertEquals(MatchResultScreenshotUploadCheckpointResult.Skipped, checkpoint.run(identity, "owner-1"))
+        assertEquals(revisionAfterOwner, repository.asset.revision)
+        assertTrue(repository.asset.ownerUserId == "owner-1")
+    }
+
+    @Test
+    fun ownerBoundLobbyUploadSkipsPostUploadMutationAfterOwnerSwitch() = runTest {
+        val identity = MatchLobbyScreenshotIdentity("tournament-1", "match-1", 1)
+        val root = newRoot()
+        val preserver = localPreserver(root)
+        val repository = CheckpointLobbyRepository(lobbyAsset(identity, preserver))
+        val owner = MutableScreenshotOwnerProvider("owner-1")
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
+            repository,
+            preserver,
+            clock,
+            storageUploader = object : MatchLobbyScreenshotStorageUploader {
+                override suspend fun upload(tournamentId: String?, matchId: String?, lobbyScreenshotIndex: Int?, localFile: File?) =
+                    MatchLobbyScreenshotStorageUploadResult.Uploaded("unscoped.png")
+                override suspend fun upload(expectedOwnerUserId: String, tournamentId: String?, matchId: String?, lobbyScreenshotIndex: Int?, localFile: File?): MatchLobbyScreenshotStorageUploadResult {
+                    started.complete(Unit)
+                    finish.await()
+                    return MatchLobbyScreenshotStorageUploadResult.Uploaded("users/$expectedOwnerUserId/path.png")
+                }
+            },
+            cloudDataSource = object : MatchLobbyScreenshotAssetCloudDataSource {
+                override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity) = MatchLobbyScreenshotAssetCloudResult.Success
+                override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity, expectedOwnerUserId: String) = MatchLobbyScreenshotAssetCloudResult.Success
+                override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = MatchLobbyScreenshotAssetCloudResult.Success
+            },
+            screenshotOwnerProvider = owner,
+        )
+        val initialRevision = repository.asset.revision
+        val pending = async { checkpoint.run(identity, "owner-1") }
+        started.await()
+        owner.ownerId = "owner-2"
+        finish.complete(Unit)
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Skipped, pending.await())
+        assertEquals(initialRevision, repository.asset.revision)
+        assertTrue(repository.asset.storageObjectPath == null)
+    }
+
+    @Test
+    fun ownerBoundResultUploadSkipsPostUploadMutationAfterSignOut() = runTest {
+        val identity = MatchResultScreenshotIdentity(
+            "tournament-1",
+            "match-1",
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
+        val root = newRoot()
+        val preserver = localPreserver(root)
+        val repository = CheckpointResultRepository(resultAsset(identity, preserver))
+        val owner = MutableScreenshotOwnerProvider("owner-1")
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val checkpoint = MatchResultScreenshotUploadCheckpoint(
+            repository,
+            preserver,
+            clock,
+            storageUploader = object : MatchResultScreenshotStorageUploader {
+                override suspend fun upload(tournamentId: String?, matchId: String?, role: MatchResultScreenshotRole?, localFile: File?) =
+                    MatchResultScreenshotStorageUploadResult.Uploaded("unscoped.png")
+                override suspend fun upload(expectedOwnerUserId: String, tournamentId: String?, matchId: String?, role: MatchResultScreenshotRole?, localFile: File?): MatchResultScreenshotStorageUploadResult {
+                    started.complete(Unit)
+                    finish.await()
+                    return MatchResultScreenshotStorageUploadResult.Uploaded("users/$expectedOwnerUserId/result.png")
+                }
+            },
+            cloudDataSource = object : MatchResultScreenshotAssetCloudDataSource {
+                override suspend fun upsert(asset: MatchResultScreenshotAssetEntity) = MatchResultScreenshotAssetCloudResult.Success
+                override suspend fun upsert(asset: MatchResultScreenshotAssetEntity, expectedOwnerUserId: String) = MatchResultScreenshotAssetCloudResult.Success
+                override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) = MatchResultScreenshotAssetCloudResult.Success
+            },
+            screenshotOwnerProvider = owner,
+        )
+        val initialRevision = repository.asset.revision
+        val pending = async { checkpoint.run(identity, "owner-1") }
+        started.await()
+        owner.ownerId = null
+        finish.complete(Unit)
+        assertEquals(MatchResultScreenshotUploadCheckpointResult.Skipped, pending.await())
+        assertEquals(initialRevision, repository.asset.revision)
+        assertTrue(repository.asset.storageObjectPath == null)
+    }
+
     private fun resultStorage(
         result: MatchResultScreenshotStorageUploadResult = MatchResultScreenshotStorageUploadResult.Uploaded("path.png"),
         failure: Throwable? = null,
@@ -875,6 +1044,8 @@ private class CheckpointLobbyRepository(
     override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(listOf(asset))
     override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(asset)
     override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotAssetEntity? = asset
+    override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String): MatchLobbyScreenshotAssetEntity? =
+        asset.takeIf { it.identityOrNull() == identity && it.ownerUserId == ownerUserId }
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(listOf(asset))
     override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String) = null
     override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult {
@@ -897,6 +1068,10 @@ private class CheckpointLobbyRepository(
         if (asset.identityOrNull() != identity || asset.sha256 != sha256 || asset.revision != expectedRevision) return false
         return saveOrReplace(asset.copy(uploadStatus = ScreenshotUploadStatus.FAILED.name, uploadFailureCode = failureCode, updatedAt = updatedAt, revision = asset.revision + 1L)) is MatchLobbyScreenshotAssetSaveResult.Saved
     }
+    override suspend fun updateUploadSuccessIfGenerationMatchesByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean =
+        if (asset.ownerUserId == ownerUserId) updateUploadSuccessIfGenerationMatches(identity, sha256, expectedRevision, storageBucket, storageObjectPath, uploadedAt, updatedAt) else false
+    override suspend fun updateUploadFailureIfGenerationMatchesByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, failureCode: String, updatedAt: Long): Boolean =
+        if (asset.ownerUserId == ownerUserId) updateUploadFailureIfGenerationMatches(identity, sha256, expectedRevision, failureCode, updatedAt) else false
     override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
     override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
     override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
@@ -911,6 +1086,8 @@ private class CheckpointResultRepository(
     override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(listOf(asset))
     override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> = flowOf(asset)
     override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? = asset
+    override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): MatchResultScreenshotAssetEntity? =
+        asset.takeIf { it.identityOrNull() == identity && it.ownerUserId == ownerUserId }
     override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(listOf(asset))
     override suspend fun findDuplicateFingerprint(identity: MatchResultScreenshotIdentity, sha256: String) = null
     override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult {
@@ -933,10 +1110,18 @@ private class CheckpointResultRepository(
         if (asset.identityOrNull() != identity || asset.sha256 != sha256 || asset.revision != expectedRevision) return false
         return saveOrReplace(asset.copy(uploadStatus = ScreenshotUploadStatus.FAILED.name, uploadFailureCode = failureCode, updatedAt = updatedAt, revision = asset.revision + 1L)) is MatchResultScreenshotAssetSaveResult.Saved
     }
+    override suspend fun updateUploadSuccessIfGenerationMatchesByOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, storageBucket: String, storageObjectPath: String, uploadedAt: Long, updatedAt: Long): Boolean =
+        if (asset.ownerUserId == ownerUserId) updateUploadSuccessIfGenerationMatches(identity, sha256, expectedRevision, storageBucket, storageObjectPath, uploadedAt, updatedAt) else false
+    override suspend fun updateUploadFailureIfGenerationMatchesByOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String, sha256: String, expectedRevision: Long, failureCode: String, updatedAt: Long): Boolean =
+        if (asset.ownerUserId == ownerUserId) updateUploadFailureIfGenerationMatches(identity, sha256, expectedRevision, failureCode, updatedAt) else false
     override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
     override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
     override suspend fun persistConfirmedCrop(identity: MatchResultScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchResultScreenshotCropSaveResult.Saved
     override suspend fun clearConfirmedCrop(identity: MatchResultScreenshotIdentity, updatedAt: Long) = MatchResultScreenshotCropSaveResult.Saved
     override suspend fun deleteByIdentity(identity: MatchResultScreenshotIdentity) = Unit
     override suspend fun deleteByMatchId(matchId: String) = Unit
+}
+
+private class MutableScreenshotOwnerProvider(var ownerId: String?) : ScreenshotOwnerProvider {
+    override suspend fun currentOwnerUserId(): String? = ownerId
 }

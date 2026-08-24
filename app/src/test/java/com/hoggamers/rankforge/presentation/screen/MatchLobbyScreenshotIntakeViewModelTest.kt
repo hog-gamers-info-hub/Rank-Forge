@@ -1330,6 +1330,15 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             return result.await()
         }
 
+        override suspend fun upsert(
+            asset: MatchLobbyScreenshotAssetEntity,
+            expectedOwnerUserId: String,
+        ): MatchLobbyScreenshotAssetCloudResult {
+            upserts += asset
+            started.complete(Unit)
+            return result.await()
+        }
+
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
             MatchLobbyScreenshotAssetCloudResult.Success
     }

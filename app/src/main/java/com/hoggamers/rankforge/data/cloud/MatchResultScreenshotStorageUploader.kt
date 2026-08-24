@@ -45,6 +45,15 @@ interface MatchResultScreenshotStorageUploader {
         role: MatchResultScreenshotRole?,
         localFile: File?,
     ): MatchResultScreenshotStorageUploadResult
+
+    suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        role: MatchResultScreenshotRole?,
+        localFile: File?,
+    ): MatchResultScreenshotStorageUploadResult =
+        throw SecurityException("Expected screenshot owner is required.")
 }
 
 @Singleton
@@ -76,6 +85,36 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
         role: MatchResultScreenshotRole?,
         localFile: File?,
     ): MatchResultScreenshotStorageUploadResult {
+        return uploadInternal(
+            expectedOwnerUserId = null,
+            tournamentId = tournamentId,
+            matchId = matchId,
+            role = role,
+            localFile = localFile,
+        )
+    }
+
+    override suspend fun upload(
+        expectedOwnerUserId: String,
+        tournamentId: String?,
+        matchId: String?,
+        role: MatchResultScreenshotRole?,
+        localFile: File?,
+    ): MatchResultScreenshotStorageUploadResult = uploadInternal(
+        expectedOwnerUserId,
+        tournamentId,
+        matchId,
+        role,
+        localFile,
+    )
+
+    private suspend fun uploadInternal(
+        expectedOwnerUserId: String?,
+        tournamentId: String?,
+        matchId: String?,
+        role: MatchResultScreenshotRole?,
+        localFile: File?,
+    ): MatchResultScreenshotStorageUploadResult {
         val normalizedTournamentId = tournamentId?.takeIf { it.isNotBlank() }
             ?: return MatchResultScreenshotStorageUploadResult.Failed(
                 MatchResultScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID,
@@ -96,6 +135,11 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
             ?: return MatchResultScreenshotStorageUploadResult.Failed(
                 MatchResultScreenshotStorageUploadFailure.MISSING_AUTH_SESSION,
             )
+        if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || userId != expectedOwnerUserId)) {
+            return MatchResultScreenshotStorageUploadResult.Failed(
+                MatchResultScreenshotStorageUploadFailure.AUTHORIZATION,
+            )
+        }
         val file = localFile ?: return MatchResultScreenshotStorageUploadResult.Failed(
             MatchResultScreenshotStorageUploadFailure.MISSING_LOCAL_FILE,
         )

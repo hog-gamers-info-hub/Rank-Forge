@@ -58,6 +58,11 @@ data class ScreenshotMetadataCloudPayload(
 interface ScreenshotMetadataCloudDataSource {
     suspend fun upsert(payload: ScreenshotMetadataCloudPayload): ScreenshotMetadataCloudResult
 
+    suspend fun upsert(
+        payload: ScreenshotMetadataCloudPayload,
+        expectedOwnerUserId: String,
+    ): ScreenshotMetadataCloudResult = throw SecurityException("Expected screenshot owner is required.")
+
     suspend fun deleteByMatchId(matchId: String): ScreenshotMetadataCloudResult
 
     suspend fun readByTournamentAndMatchIds(
@@ -73,15 +78,37 @@ class SupabaseScreenshotMetadataCloudDataSource @Inject constructor(
 ) : ScreenshotMetadataCloudDataSource {
     override suspend fun upsert(
         payload: ScreenshotMetadataCloudPayload,
+    ): ScreenshotMetadataCloudResult = upsertInternal(payload, expectedOwnerUserId = null)
+
+    override suspend fun upsert(
+        payload: ScreenshotMetadataCloudPayload,
+        expectedOwnerUserId: String,
+    ): ScreenshotMetadataCloudResult = upsertInternal(payload, expectedOwnerUserId)
+
+    private suspend fun upsertInternal(
+        payload: ScreenshotMetadataCloudPayload,
+        expectedOwnerUserId: String?,
     ): ScreenshotMetadataCloudResult = withContext(Dispatchers.IO) {
         if (!config.isConfigured) {
             return@withContext ScreenshotMetadataCloudResult.Failed(
                 ScreenshotMetadataCloudFailure.WRITE_FAILED,
             )
         }
-        if (clientProvider.client.auth.currentSessionOrNull() == null) {
+        val session = clientProvider.client.auth.currentSessionOrNull()
+        if (session == null) {
             return@withContext ScreenshotMetadataCloudResult.Failed(
                 ScreenshotMetadataCloudFailure.MISSING_AUTH_SESSION,
+            )
+        }
+        val currentOwner = session.user?.id?.takeIf { it.isNotBlank() }
+            ?: return@withContext ScreenshotMetadataCloudResult.Failed(
+                ScreenshotMetadataCloudFailure.MISSING_AUTH_SESSION,
+            )
+        if (expectedOwnerUserId != null &&
+            (expectedOwnerUserId.isBlank() || currentOwner != expectedOwnerUserId || payload.ownerId != expectedOwnerUserId)
+        ) {
+            return@withContext ScreenshotMetadataCloudResult.Failed(
+                ScreenshotMetadataCloudFailure.AUTHORIZATION,
             )
         }
         try {
@@ -156,6 +183,11 @@ class SupabaseScreenshotMetadataCloudDataSource @Inject constructor(
 class NoOpScreenshotMetadataCloudDataSource : ScreenshotMetadataCloudDataSource {
     override suspend fun upsert(payload: ScreenshotMetadataCloudPayload): ScreenshotMetadataCloudResult =
         ScreenshotMetadataCloudResult.Success
+
+    override suspend fun upsert(
+        payload: ScreenshotMetadataCloudPayload,
+        expectedOwnerUserId: String,
+    ): ScreenshotMetadataCloudResult = ScreenshotMetadataCloudResult.Success
 
     override suspend fun deleteByMatchId(matchId: String): ScreenshotMetadataCloudResult =
         ScreenshotMetadataCloudResult.Success

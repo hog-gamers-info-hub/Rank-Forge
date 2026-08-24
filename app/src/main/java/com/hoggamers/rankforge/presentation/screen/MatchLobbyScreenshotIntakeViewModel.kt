@@ -705,7 +705,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
                 }
                 if (retainCloudState) {
-                    syncRetainedCloudMetadata(identity, fingerprint)
+                    syncRetainedCloudMetadata(identity, fingerprint, ownerId)
                 }
                 true
             }
@@ -731,11 +731,19 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private suspend fun syncRetainedCloudMetadata(
         identity: MatchLobbyScreenshotIdentity,
         uploadSha256: String,
+        expectedOwnerUserId: String,
     ) {
-        val latest = readLatestAsset(identity) ?: return
+        if (screenshotOwnerProvider.currentOwnerUserId() != expectedOwnerUserId) return
+        val latest = try {
+            assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return
         if (latest.identityOrNull() != identity || latest.sha256 != uploadSha256) return
         val result = try {
-            cloudDataSource.upsert(latest)
+            cloudDataSource.upsert(latest, expectedOwnerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -744,7 +752,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             )
         }
         if (result is MatchLobbyScreenshotAssetCloudResult.Failed) {
-            markCloudFailure(identity, uploadSha256, result.failure.name)
+            if (screenshotOwnerProvider.currentOwnerUserId() == expectedOwnerUserId) {
+                markCloudFailure(identity, uploadSha256, result.failure.name, expectedOwnerUserId)
+            }
         }
     }
 
@@ -752,8 +762,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         identity: MatchLobbyScreenshotIdentity,
         uploadSha256: String,
         failureCode: String,
+        expectedOwnerUserId: String,
     ) {
-        val latest = readLatestAsset(identity) ?: return
+        if (screenshotOwnerProvider.currentOwnerUserId() != expectedOwnerUserId) return
+        val latest = assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId) ?: return
         if (latest.sha256 != uploadSha256) return
         val failedAt = clock.millis()
         val failed = latest.copy(
@@ -762,7 +774,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             updatedAt = failedAt,
             revision = latest.revision + 1L,
         )
-        assetRepository.saveOrReplaceByOwner(failed, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
+        if (screenshotOwnerProvider.currentOwnerUserId() == expectedOwnerUserId) {
+            assetRepository.saveOrReplaceByOwner(failed, expectedOwnerUserId)
+        }
     }
 
     private suspend fun readLatestAsset(
@@ -832,12 +846,16 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val key = "$tournamentId:$matchId:$index"
         if (!missingMarked.add(key)) return
         viewModelScope.launch {
-            runCatching {
+            try {
                 assetRepository.markLocalMissingByOwner(
                     MatchLobbyScreenshotIdentity(tournamentId, matchId, index),
                     screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
                     clock.millis(),
                 )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Missing-state reconciliation remains retryable.
             }
         }
     }

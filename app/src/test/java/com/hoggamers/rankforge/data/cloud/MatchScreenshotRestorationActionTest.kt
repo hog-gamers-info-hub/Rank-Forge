@@ -22,6 +22,8 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -190,20 +192,99 @@ class MatchScreenshotRestorationActionTest {
         assertTrue(propagated)
     }
 
+    @Test
+    fun ownerBoundRestorationRejectsSignedOutOrForeignBeforeDownload() = runTest {
+        val bytes = byteArrayOf(1, 2, 3)
+        val storage = RecordingStorage(bytes)
+        val ownerProvider = TestOwnerProvider("owner-a")
+        val action = action(
+            storage,
+            RecordingLobbyRepository(),
+            RecordingResultRepository(),
+            lobbyPayloads = listOf(lobbyPayload(MATCH_1, bytes)),
+            ownerProvider = ownerProvider,
+        )
+
+        assertEquals(
+            MatchCloudRestorationResult.AuthorizationFailure,
+            action(TOURNAMENT_ID, setOf(MATCH_1), "owner-b"),
+        )
+        assertTrue(storage.requests.isEmpty())
+        ownerProvider.ownerId = null
+        assertEquals(MatchCloudRestorationResult.AuthorizationFailure, action(TOURNAMENT_ID, setOf(MATCH_1), "owner-a"))
+    }
+
+    @Test
+    fun ownerSwitchDuringMetadataFetchSkipsDownloadAndRestore() = runTest {
+        val bytes = byteArrayOf(1, 2, 3)
+        val ownerProvider = TestOwnerProvider(OWNER_ID)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val storage = RecordingStorage(bytes)
+        val repository = RecordingLobbyRepository()
+        val pending = async {
+            action(
+                storage,
+                repository,
+                RecordingResultRepository(),
+                lobbyCloud = SuspendingLobbyCloud(started, finish, listOf(lobbyPayload(MATCH_1, bytes))),
+                ownerProvider = ownerProvider,
+            )(TOURNAMENT_ID, setOf(MATCH_1), OWNER_ID)
+        }
+        started.await()
+        ownerProvider.ownerId = "other-owner"
+        finish.complete(Unit)
+
+        assertEquals(MatchCloudRestorationResult.AuthorizationFailure, pending.await())
+        assertTrue(storage.requests.isEmpty())
+        assertTrue(repository.saved.isEmpty())
+    }
+
+    @Test
+    fun ownerSwitchDuringDownloadCleansAttemptAndSkipsRestore() = runTest {
+        val bytes = byteArrayOf(1, 2, 3)
+        val ownerProvider = TestOwnerProvider(OWNER_ID)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val preserver = localPreserver()
+        val repository = RecordingLobbyRepository()
+        val pending = async {
+            action(
+                SuspendingStorage(started, finish, bytes),
+                repository,
+                RecordingResultRepository(),
+                preserver = preserver,
+                lobbyPayloads = listOf(lobbyPayload(MATCH_1, bytes)),
+                ownerProvider = ownerProvider,
+            )(TOURNAMENT_ID, setOf(MATCH_1), OWNER_ID)
+        }
+        started.await()
+        ownerProvider.ownerId = null
+        finish.complete(Unit)
+
+        assertEquals(MatchCloudRestorationResult.AuthorizationFailure, pending.await())
+        assertTrue(repository.saved.isEmpty())
+        assertFalse(preserver.lobbyPreservedFile(TOURNAMENT_ID, MATCH_1, 1, "png").exists())
+    }
+
     private fun action(
-        storage: RecordingStorage,
+        storage: AuthenticatedScreenshotStorageDownloader,
         lobbyRepository: RecordingLobbyRepository,
         resultRepository: RecordingResultRepository,
         preserver: LocalImagePreserver = localPreserver(),
         lobbyPayloads: List<MatchLobbyScreenshotAssetCloudPayload> = emptyList(),
         resultPayloads: List<MatchResultScreenshotAssetCloudPayload> = emptyList(),
+        lobbyCloud: MatchLobbyScreenshotAssetCloudDataSource = FakeLobbyCloud(lobbyPayloads),
+        resultCloud: MatchResultScreenshotAssetCloudDataSource = FakeResultCloud(resultPayloads),
+        ownerProvider: TestOwnerProvider = TestOwnerProvider(OWNER_ID),
     ) = SupabaseMatchScreenshotRestorationAction(
-        lobbyCloud = FakeLobbyCloud(lobbyPayloads),
-        resultCloud = FakeResultCloud(resultPayloads),
+        lobbyCloud = lobbyCloud,
+        resultCloud = resultCloud,
         storage = storage,
         localImagePreserver = preserver,
         lobbyAssets = lobbyRepository,
         resultAssets = resultRepository,
+        ownerProvider = ownerProvider,
     )
 
     private fun localPreserver() = LocalImagePreserver(
@@ -305,6 +386,42 @@ class MatchScreenshotRestorationActionTest {
             failure?.let { throw it }
             return bytes
         }
+        override suspend fun download(expectedOwnerUserId: String, bucket: String, objectPath: String): ByteArray {
+            requests += bucket to objectPath
+            failure?.let { throw it }
+            return bytes
+        }
+    }
+
+    private class SuspendingStorage(
+        private val started: CompletableDeferred<Unit>,
+        private val finish: CompletableDeferred<Unit>,
+        private val bytes: ByteArray,
+    ) : AuthenticatedScreenshotStorageDownloader {
+        override suspend fun download(bucket: String, objectPath: String): ByteArray = bytes
+        override suspend fun download(expectedOwnerUserId: String, bucket: String, objectPath: String): ByteArray {
+            started.complete(Unit)
+            finish.await()
+            return bytes
+        }
+    }
+
+    private class SuspendingLobbyCloud(
+        private val started: CompletableDeferred<Unit>,
+        private val finish: CompletableDeferred<Unit>,
+        private val assets: List<MatchLobbyScreenshotAssetCloudPayload>,
+    ) : MatchLobbyScreenshotAssetCloudDataSource {
+        override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity) = MatchLobbyScreenshotAssetCloudResult.Success
+        override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = MatchLobbyScreenshotAssetCloudResult.Success
+        override suspend fun readByTournamentAndMatchIds(tournamentId: String, matchIds: Set<String>): MatchLobbyScreenshotAssetCloudReadResult {
+            started.complete(Unit)
+            finish.await()
+            return MatchLobbyScreenshotAssetCloudReadResult.Success(assets)
+        }
+    }
+
+    private class TestOwnerProvider(var ownerId: String?) : com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String? = ownerId
     }
 
     private class IOExceptionForTest : java.io.IOException("network")
@@ -315,6 +432,8 @@ class MatchScreenshotRestorationActionTest {
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(emptyList())
         override fun observeByIdentity(identity: MatchLobbyScreenshotIdentity): Flow<MatchLobbyScreenshotAssetEntity?> = flowOf(getByIdentitySync(identity))
         override suspend fun getByIdentity(identity: MatchLobbyScreenshotIdentity) = getByIdentitySync(identity)
+        override suspend fun getByIdentityAndOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String) =
+            getByIdentitySync(identity)?.takeIf { it.ownerUserId == ownerUserId }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> = flowOf(saved)
         override suspend fun findDuplicateFingerprint(identity: MatchLobbyScreenshotIdentity, sha256: String): MatchLobbyScreenshotAssetEntity? = null
         override suspend fun saveOrReplace(asset: MatchLobbyScreenshotAssetEntity): MatchLobbyScreenshotAssetSaveResult {
@@ -322,6 +441,8 @@ class MatchScreenshotRestorationActionTest {
             saved += asset
             return MatchLobbyScreenshotAssetSaveResult.Saved
         }
+        override suspend fun restoreOrReplaceByOwner(asset: MatchLobbyScreenshotAssetEntity, ownerUserId: String): MatchLobbyScreenshotAssetSaveResult =
+            if (asset.ownerUserId == ownerUserId) saveOrReplace(asset) else MatchLobbyScreenshotAssetSaveResult.AuthenticationRequired
         override suspend fun markLocalMissing(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun markCleanupFailure(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) = Unit
@@ -337,6 +458,8 @@ class MatchScreenshotRestorationActionTest {
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(emptyList())
         override fun observeByIdentity(identity: MatchResultScreenshotIdentity): Flow<MatchResultScreenshotAssetEntity?> = flowOf(null)
         override suspend fun getByIdentity(identity: MatchResultScreenshotIdentity): MatchResultScreenshotAssetEntity? = null
+        override suspend fun getByIdentityAndOwner(identity: MatchResultScreenshotIdentity, ownerUserId: String): MatchResultScreenshotAssetEntity? =
+            saved.firstOrNull { it.matchId == identity.matchId && it.screenshotRole == identity.role.name && it.ownerUserId == ownerUserId }
         override fun observeByTournamentId(tournamentId: String): Flow<List<MatchResultScreenshotAssetEntity>> = flowOf(saved)
         override suspend fun findDuplicateFingerprint(identity: MatchResultScreenshotIdentity, sha256: String): MatchResultScreenshotAssetEntity? = null
         override suspend fun saveOrReplace(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetSaveResult {
@@ -344,6 +467,8 @@ class MatchScreenshotRestorationActionTest {
             saved += asset
             return MatchResultScreenshotAssetSaveResult.Saved
         }
+        override suspend fun restoreOrReplaceByOwner(asset: MatchResultScreenshotAssetEntity, ownerUserId: String): MatchResultScreenshotAssetSaveResult =
+            if (asset.ownerUserId == ownerUserId) saveOrReplace(asset) else MatchResultScreenshotAssetSaveResult.AuthenticationRequired
         override suspend fun markLocalMissing(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun markCleanupFailure(identity: MatchResultScreenshotIdentity, updatedAt: Long) = Unit
         override suspend fun persistConfirmedCrop(identity: MatchResultScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchResultScreenshotCropSaveResult.Saved

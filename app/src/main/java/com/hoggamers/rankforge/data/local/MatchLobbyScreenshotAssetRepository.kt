@@ -116,8 +116,28 @@ interface MatchLobbyScreenshotAssetRepository {
         updatedAt: Long,
     ): Boolean = false
 
+    suspend fun updateUploadSuccessIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun updateUploadFailureIfGenerationMatches(
         identity: MatchLobbyScreenshotIdentity,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = false
+
+    suspend fun updateUploadFailureIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
         sha256: String,
         expectedRevision: Long,
         failureCode: String,
@@ -444,6 +464,40 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
             uploadStatus = ScreenshotUploadStatus.FAILED.name,
             uploadFailureCode = failureCode,
             updatedAt = updatedAt,
+        ) > 0
+    }
+
+    override suspend fun updateUploadSuccessIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+        if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
+        dao.updateUploadSuccessIfGenerationMatches(
+            identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
+            storageBucket, storageObjectPath, ScreenshotUploadStatus.UPLOADED.name, uploadedAt, updatedAt,
+        ) > 0
+    }
+
+    override suspend fun updateUploadFailureIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        failureCode: String,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else database.withTransaction {
+        if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) return@withTransaction false
+        if (dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId) == null) return@withTransaction false
+        dao.updateUploadFailureIfGenerationMatches(
+            identity.tournamentId, identity.matchId, identity.lobbyScreenshotIndex, sha256, expectedRevision,
+            ScreenshotUploadStatus.FAILED.name, failureCode, updatedAt,
         ) > 0
     }
 

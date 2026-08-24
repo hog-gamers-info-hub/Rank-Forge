@@ -70,6 +70,8 @@ class LocalImagePreserver(
     private val fileOperations: LocalImageFileOperations = DefaultLocalImageFileOperations,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    fun delete(file: File): Boolean = fileOperations.delete(file)
+
     @Inject
     constructor(
         @ApplicationContext context: Context,

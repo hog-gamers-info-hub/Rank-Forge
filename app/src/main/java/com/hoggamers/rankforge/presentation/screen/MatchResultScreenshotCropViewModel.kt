@@ -174,6 +174,9 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         )
         confirmJob = viewModelScope.launch {
             try {
+                val expectedOwnerUserId = screenshotOwnerProvider.currentOwnerUserId()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@launch
                 val match = try {
                     observeMatches(tournamentId)
                         .first()
@@ -205,7 +208,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             }
 
             val existing = try {
-                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
+                    assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -241,7 +244,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             if (!isCurrentConfirmationSnapshot(current, identity, existing, existing)) return@launch
 
             val latest = try {
-                assetRepository.getByIdentityAndOwner(identity, screenshotOwnerProvider.currentOwnerUserId().orEmpty())
+                assetRepository.getByIdentityAndOwner(identity, expectedOwnerUserId)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -256,7 +259,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             val result = try {
                 assetRepository.persistConfirmedCropByOwner(
                     identity = identity,
-                    ownerUserId = screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    ownerUserId = expectedOwnerUserId,
                     crop = current.draftCrop,
                     updatedAt = clock.millis(),
                 )
@@ -265,7 +268,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
             } catch (_: Throwable) {
                 MatchResultScreenshotCropSaveResult.InvalidCrop
             }
-            handleSaveResult(result, identity, current.draftCrop, onConfirmed)
+            handleSaveResult(result, identity, current.draftCrop, onConfirmed, expectedOwnerUserId)
             } catch (cancellation: CancellationException) {
                 clearConfirmationIfCurrent(identity)
                 throw cancellation
@@ -280,6 +283,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
         identity: MatchResultScreenshotIdentity,
         crop: OcrNormalizedCropRect,
         onConfirmed: () -> Unit,
+        expectedOwnerUserId: String,
     ) {
         when (result) {
                 MatchResultScreenshotCropSaveResult.Saved -> {
@@ -290,8 +294,8 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    reconciliationScheduler.schedule {
-                        uploadCheckpoint.run(identity)
+                    reconciliationScheduler.schedule(expectedOwnerUserId, screenshotOwnerProvider) {
+                        uploadCheckpoint.run(identity, expectedOwnerUserId)
                     }
                     viewModelScope.launch {
                         AndroidMatchResultOcrPreviewProcessor(

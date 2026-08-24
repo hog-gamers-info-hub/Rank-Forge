@@ -33,6 +33,12 @@ sealed interface MatchResultScreenshotUploadCheckpointResult {
 
 fun interface MatchResultScreenshotUploadCheckpointAction {
     suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult
+
+    suspend fun run(
+        identity: MatchResultScreenshotIdentity,
+        expectedOwnerUserId: String,
+    ): MatchResultScreenshotUploadCheckpointResult =
+        throw SecurityException("Expected screenshot owner is required.")
 }
 
 class MatchResultScreenshotUploadCheckpoint @Inject constructor(
@@ -42,6 +48,7 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
     private val storageUploader: MatchResultScreenshotStorageUploader = NoOpMatchResultScreenshotStorageUploader(),
     private val cloudDataSource: MatchResultScreenshotAssetCloudDataSource =
         NoOpMatchResultScreenshotAssetCloudDataSource(),
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : MatchResultScreenshotUploadCheckpointAction {
     override suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult =
         ScreenshotCloudReconciliationCoordinator.withLock(
@@ -50,16 +57,34 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
             reconcile(identity)
         }
 
+    override suspend fun run(
+        identity: MatchResultScreenshotIdentity,
+        expectedOwnerUserId: String,
+    ): MatchResultScreenshotUploadCheckpointResult {
+        if (expectedOwnerUserId.isBlank() || !isCurrentOwner(expectedOwnerUserId)) {
+            return MatchResultScreenshotUploadCheckpointResult.Skipped
+        }
+        return ScreenshotCloudReconciliationCoordinator.withLock(
+            ScreenshotCloudReconciliationCoordinator.key(identity),
+        ) {
+            reconcile(identity, expectedOwnerUserId)
+        }
+    }
+
     private suspend fun reconcile(
         identity: MatchResultScreenshotIdentity,
+        expectedOwnerUserId: String? = null,
     ): MatchResultScreenshotUploadCheckpointResult {
         for (pass in 0 until MAX_RECONCILIATION_PASSES) {
-            val current = readLatestAsset(identity) ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
+            val current = readLatestAsset(identity, expectedOwnerUserId) ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (current.identityOrNull() != identity || !current.hasConfirmedCrop()) {
                 return MatchResultScreenshotUploadCheckpointResult.Skipped
             }
             val localFile = localImagePreserver.resolveRelativePath(current.localRelativePath)
             if (!isReadable(localFile)) {
+                if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                    return MatchResultScreenshotUploadCheckpointResult.Skipped
+                }
                 if (!markUploadFailure(
                         identity,
                         current.sha256,
@@ -74,8 +99,9 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
                 if (current.uploadStatus != ScreenshotUploadStatus.UPLOADED.name ||
                     current.uploadFailureCode != null
                 ) {
-                    if (!assetRepository.updateUploadSuccessIfGenerationMatches(
+                    if (!updateUploadSuccess(
                             identity = identity,
+                            ownerUserId = expectedOwnerUserId,
                             sha256 = current.sha256,
                             expectedRevision = current.revision,
                             storageBucket = current.storageBucket!!,
@@ -87,19 +113,29 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
                 }
                 null
             } else {
-                upload(identity, localFile!!)
+                if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                    return MatchResultScreenshotUploadCheckpointResult.Skipped
+                }
+                upload(identity, localFile!!, expectedOwnerUserId)
             }
             when (storageResult) {
                 is MatchResultScreenshotStorageUploadResult.Failed -> {
-                    if (!markUploadFailure(identity, current.sha256, current.revision, storageResult.failure.name)) {
+                    if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                        return MatchResultScreenshotUploadCheckpointResult.Skipped
+                    }
+                    if (!markUploadFailure(identity, current.sha256, current.revision, storageResult.failure.name, expectedOwnerUserId)) {
                         continue
                     }
                     return MatchResultScreenshotUploadCheckpointResult.Failed
                 }
 
                 is MatchResultScreenshotStorageUploadResult.Uploaded -> {
-                    if (!assetRepository.updateUploadSuccessIfGenerationMatches(
+                    if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                        return MatchResultScreenshotUploadCheckpointResult.Skipped
+                    }
+                    if (!updateUploadSuccess(
                             identity = identity,
+                            ownerUserId = expectedOwnerUserId,
                             sha256 = current.sha256,
                             expectedRevision = current.revision,
                             storageBucket = OCR_SCREENSHOTS_BUCKET,
@@ -113,7 +149,7 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
                 null -> Unit
             }
 
-            val beforeCloud = readLatestAsset(identity)
+            val beforeCloud = readLatestAsset(identity, expectedOwnerUserId)
                 ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (beforeCloud.identityOrNull() != identity || !beforeCloud.hasConfirmedCrop()) {
                 return MatchResultScreenshotUploadCheckpointResult.Skipped
@@ -121,9 +157,12 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
             if (beforeCloud.uploadStatus != ScreenshotUploadStatus.UPLOADED.name ||
                 beforeCloud.uploadFailureCode != null
             ) continue
-            when (val cloudResult = upsert(beforeCloud)) {
+            when (val cloudResult = upsert(beforeCloud, expectedOwnerUserId)) {
                 is MatchResultScreenshotAssetCloudResult.Failed -> {
-                    if (!markUploadFailure(identity, beforeCloud.sha256, beforeCloud.revision, cloudResult.failure.name)) {
+                    if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                        return MatchResultScreenshotUploadCheckpointResult.Skipped
+                    }
+                    if (!markUploadFailure(identity, beforeCloud.sha256, beforeCloud.revision, cloudResult.failure.name, expectedOwnerUserId)) {
                         continue
                     }
                     return MatchResultScreenshotUploadCheckpointResult.Failed
@@ -132,7 +171,10 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
                 MatchResultScreenshotAssetCloudResult.Success -> Unit
             }
 
-            val afterCloud = readLatestAsset(identity)
+            if (expectedOwnerUserId != null && !isCurrentOwner(expectedOwnerUserId)) {
+                return MatchResultScreenshotUploadCheckpointResult.Skipped
+            }
+            val afterCloud = readLatestAsset(identity, expectedOwnerUserId)
                 ?: return MatchResultScreenshotUploadCheckpointResult.Skipped
             if (afterCloud.identityOrNull() != identity || !afterCloud.hasConfirmedCrop()) {
                 return MatchResultScreenshotUploadCheckpointResult.Skipped
@@ -147,27 +189,17 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
     private suspend fun upload(
         identity: MatchResultScreenshotIdentity,
         localFile: File,
+        expectedOwnerUserId: String? = null,
     ): MatchResultScreenshotStorageUploadResult = try {
-        storageUploader.upload(
-            tournamentId = identity.tournamentId,
-            matchId = identity.matchId,
-            role = identity.role,
-            localFile = localFile,
-        )
+        if (expectedOwnerUserId == null) {
+            storageUploader.upload(identity.tournamentId, identity.matchId, identity.role, localFile)
+        } else {
+            storageUploader.upload(expectedOwnerUserId, identity.tournamentId, identity.matchId, identity.role, localFile)
+        }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
         MatchResultScreenshotStorageUploadResult.Failed(MatchResultScreenshotStorageUploadFailure.UPLOAD_FAILED)
-    }
-
-    private suspend fun upsert(
-        asset: MatchResultScreenshotAssetEntity,
-    ): MatchResultScreenshotAssetCloudResult = try {
-        cloudDataSource.upsert(asset)
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (_: Throwable) {
-        MatchResultScreenshotAssetCloudResult.Failed(MatchResultScreenshotAssetCloudFailure.WRITE_FAILED)
     }
 
     private suspend fun markUploadFailure(
@@ -175,9 +207,18 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
         sha256: String,
         expectedRevision: Long,
         failureCode: String,
+        ownerUserId: String? = null,
     ): Boolean = try {
-        assetRepository.updateUploadFailureIfGenerationMatches(
+        if (ownerUserId != null && !isCurrentOwner(ownerUserId)) return false
+        if (ownerUserId == null) assetRepository.updateUploadFailureIfGenerationMatches(
             identity = identity,
+            sha256 = sha256,
+            expectedRevision = expectedRevision,
+            failureCode = failureCode,
+            updatedAt = clock.millis(),
+        ) else assetRepository.updateUploadFailureIfGenerationMatchesByOwner(
+            identity = identity,
+            ownerUserId = ownerUserId,
             sha256 = sha256,
             expectedRevision = expectedRevision,
             failureCode = failureCode,
@@ -191,12 +232,52 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
 
     private suspend fun readLatestAsset(
         identity: MatchResultScreenshotIdentity,
+        ownerUserId: String? = null,
     ): MatchResultScreenshotAssetEntity? = try {
-        assetRepository.getByIdentity(identity)
+        if (ownerUserId == null) assetRepository.getByIdentity(identity)
+        else assetRepository.getByIdentityAndOwner(identity, ownerUserId)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
         null
+    }
+
+    private suspend fun updateUploadSuccess(
+        identity: MatchResultScreenshotIdentity,
+        ownerUserId: String?,
+        sha256: String,
+        expectedRevision: Long,
+        storageBucket: String,
+        storageObjectPath: String,
+        uploadedAt: Long,
+        updatedAt: Long,
+    ): Boolean {
+        if (ownerUserId != null && !isCurrentOwner(ownerUserId)) return false
+        return if (ownerUserId == null) {
+            assetRepository.updateUploadSuccessIfGenerationMatches(identity, sha256, expectedRevision, storageBucket, storageObjectPath, uploadedAt, updatedAt)
+        } else {
+            assetRepository.updateUploadSuccessIfGenerationMatchesByOwner(identity, ownerUserId, sha256, expectedRevision, storageBucket, storageObjectPath, uploadedAt, updatedAt)
+        }
+    }
+
+    private suspend fun upsert(
+        asset: MatchResultScreenshotAssetEntity,
+        ownerUserId: String?,
+    ): MatchResultScreenshotAssetCloudResult = try {
+        if (ownerUserId == null) cloudDataSource.upsert(asset)
+        else cloudDataSource.upsert(asset, ownerUserId)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        MatchResultScreenshotAssetCloudResult.Failed(MatchResultScreenshotAssetCloudFailure.WRITE_FAILED)
+    }
+
+    private suspend fun isCurrentOwner(expectedOwnerUserId: String): Boolean = try {
+        screenshotOwnerProvider.currentOwnerUserId() == expectedOwnerUserId
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        false
     }
 
     private fun MatchResultScreenshotAssetEntity.hasConfirmedCrop(): Boolean =

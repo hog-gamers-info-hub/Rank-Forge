@@ -92,6 +92,7 @@ class RestoreMatchesUseCase @Inject constructor(
                         val screenshotResult = matchScreenshotRestorationAction(
                             tournamentId = tournamentId,
                             restoredMatchIds = result.value.matches.map { it.id }.toSet(),
+                            expectedOwnerUserId = expectedOwnerUserId,
                         )
                     ) {
                         MatchCloudRestorationResult.Success,

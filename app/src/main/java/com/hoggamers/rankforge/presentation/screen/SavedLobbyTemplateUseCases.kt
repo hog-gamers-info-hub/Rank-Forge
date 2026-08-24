@@ -52,6 +52,13 @@ fun interface ApplyLobbyTemplateAction {
 
 fun interface MatchLobbyScreenshotUploadCheckpointAction {
     suspend fun run(identity: MatchLobbyScreenshotIdentity): MatchLobbyScreenshotUploadCheckpointResult
+
+    suspend fun run(
+        identity: MatchLobbyScreenshotIdentity,
+        expectedOwnerUserId: String,
+    ): MatchLobbyScreenshotUploadCheckpointResult = throw SecurityException(
+        "Expected screenshot owner is required.",
+    )
 }
 
 class SaveLobbyTemplateUseCase @Inject constructor(

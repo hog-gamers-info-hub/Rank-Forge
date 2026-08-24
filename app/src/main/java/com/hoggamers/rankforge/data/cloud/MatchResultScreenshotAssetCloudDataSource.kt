@@ -72,6 +72,11 @@ data class MatchResultScreenshotAssetCloudPayload(
 interface MatchResultScreenshotAssetCloudDataSource {
     suspend fun upsert(asset: MatchResultScreenshotAssetEntity): MatchResultScreenshotAssetCloudResult
 
+    suspend fun upsert(
+        asset: MatchResultScreenshotAssetEntity,
+        expectedOwnerUserId: String,
+    ): MatchResultScreenshotAssetCloudResult = throw SecurityException("Expected screenshot owner is required.")
+
     suspend fun deleteByIdentity(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultScreenshotAssetCloudResult
@@ -141,30 +146,44 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
 
     override suspend fun upsert(
         asset: MatchResultScreenshotAssetEntity,
-    ): MatchResultScreenshotAssetCloudResult = withContext(Dispatchers.IO) {
+    ): MatchResultScreenshotAssetCloudResult = upsertInternal(asset, expectedOwnerUserId = null)
+
+    override suspend fun upsert(
+        asset: MatchResultScreenshotAssetEntity,
+        expectedOwnerUserId: String,
+    ): MatchResultScreenshotAssetCloudResult = upsertInternal(asset, expectedOwnerUserId)
+
+    private suspend fun upsertInternal(
+        asset: MatchResultScreenshotAssetEntity,
+        expectedOwnerUserId: String?,
+    ): MatchResultScreenshotAssetCloudResult {
         if (!isConfigured()) {
-            return@withContext MatchResultScreenshotAssetCloudResult.Failed(
+            return MatchResultScreenshotAssetCloudResult.Failed(
                 MatchResultScreenshotAssetCloudFailure.WRITE_FAILED,
             )
         }
         val ownerId = currentUserId()
-            ?: return@withContext MatchResultScreenshotAssetCloudResult.Failed(
+            ?: return MatchResultScreenshotAssetCloudResult.Failed(
                 MatchResultScreenshotAssetCloudFailure.MISSING_AUTH_SESSION,
             )
-        val payload = when (val result = asset.toMatchResultScreenshotAssetCloudPayload(ownerId)) {
+        if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || ownerId != expectedOwnerUserId)) {
+            return MatchResultScreenshotAssetCloudResult.Failed(MatchResultScreenshotAssetCloudFailure.AUTHORIZATION)
+        }
+        val payload = when (val result = asset.copy(ownerUserId = expectedOwnerUserId ?: asset.ownerUserId)
+            .toMatchResultScreenshotAssetCloudPayload(expectedOwnerUserId ?: ownerId)) {
             is MatchResultScreenshotAssetCloudPayloadMappingResult.Success -> result.payload
             MatchResultScreenshotAssetCloudPayloadMappingResult.InvalidIdentity ->
-                return@withContext MatchResultScreenshotAssetCloudResult.Failed(
+                return MatchResultScreenshotAssetCloudResult.Failed(
                     MatchResultScreenshotAssetCloudFailure.INVALID_IDENTITY,
                 )
 
             MatchResultScreenshotAssetCloudPayloadMappingResult.CloudMatchIdUnavailable ->
-                return@withContext MatchResultScreenshotAssetCloudResult.Failed(
+                return MatchResultScreenshotAssetCloudResult.Failed(
                     MatchResultScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE,
                 )
         }
 
-        try {
+        return try {
             upsertPayload(payload)
             MatchResultScreenshotAssetCloudResult.Success
         } catch (cancellation: CancellationException) {

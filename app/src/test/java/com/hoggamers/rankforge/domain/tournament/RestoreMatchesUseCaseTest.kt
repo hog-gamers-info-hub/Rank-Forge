@@ -264,6 +264,11 @@ class RestoreMatchesUseCaseTest {
             if (result is Throwable) throw result
             return result as MatchCloudRestorationResult
         }
+        override suspend fun invoke(
+            tournamentId: String,
+            restoredMatchIds: Set<String>,
+            expectedOwnerUserId: String,
+        ): MatchCloudRestorationResult = invoke(tournamentId, restoredMatchIds)
     }
 
     private class FakeAuthRepository(

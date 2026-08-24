@@ -2588,6 +2588,16 @@ class MatchReviewViewModelTest {
             localFile?.let(calls::add)
             return result
         }
+
+        override suspend fun upload(
+            expectedOwnerUserId: String,
+            tournamentId: String?,
+            matchId: String?,
+            localFile: File?,
+        ): ScreenshotStorageUploadResult {
+            localFile?.let(calls::add)
+            return result
+        }
     }
 
     private fun duplicateDetector(
@@ -2765,6 +2775,14 @@ class MatchReviewViewModelTest {
         val upserts = mutableListOf<ScreenshotMetadataCloudPayload>()
 
         override suspend fun upsert(payload: ScreenshotMetadataCloudPayload): ScreenshotMetadataCloudResult {
+            upserts += payload
+            return upsertResult
+        }
+
+        override suspend fun upsert(
+            payload: ScreenshotMetadataCloudPayload,
+            expectedOwnerUserId: String,
+        ): ScreenshotMetadataCloudResult {
             upserts += payload
             return upsertResult
         }

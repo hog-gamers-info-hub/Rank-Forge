@@ -138,6 +138,12 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         }
         _uiState.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
+            val expectedOwnerUserId = screenshotOwnerProvider.currentOwnerUserId()
+                ?.takeIf { it.isNotBlank() }
+                ?: run {
+                    _uiState.update { it.copy(isSaving = false, error = MatchLobbyScreenshotCropError.SAVE_FAILED) }
+                    return@launch
+                }
             val match = try {
                 observeMatches(tournamentId).first().firstOrNull { it.id == matchId }
             } catch (cancellation: CancellationException) {
@@ -157,7 +163,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             val result = try {
                 assetRepository.persistConfirmedCropByOwner(
                     identity,
-                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    expectedOwnerUserId,
                     current.draftCrop,
                     clock.millis(),
                 )
@@ -175,8 +181,8 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    reconciliationScheduler.schedule {
-                        uploadCheckpoint.run(identity)
+                    reconciliationScheduler.schedule(expectedOwnerUserId, screenshotOwnerProvider) {
+                        uploadCheckpoint.run(identity, expectedOwnerUserId)
                     }
                     _uiState.update { it.copy(isSaving = false) }
                     onConfirmed()
@@ -196,12 +202,19 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
         val key = "${identity.tournamentId}:${identity.matchId}:${identity.lobbyScreenshotIndex}"
         if (!missingMarked.add(key)) return
         viewModelScope.launch {
-            runCatching {
+            try {
+                val expectedOwnerUserId = screenshotOwnerProvider.currentOwnerUserId()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@launch
                 assetRepository.markLocalMissingByOwner(
                     identity,
-                    screenshotOwnerProvider.currentOwnerUserId().orEmpty(),
+                    expectedOwnerUserId,
                     clock.millis(),
                 )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                Unit
             }
         }
     }

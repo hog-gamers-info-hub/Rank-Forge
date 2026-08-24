@@ -36,9 +36,14 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCase @Inject constructor
         } catch (_: Throwable) {
             return
         } ?: return
+        recoverAfterParentQueue(ownerId)
+    }
+
+    override suspend fun recoverAfterParentQueue(expectedOwnerUserId: String) {
+        if (expectedOwnerUserId.isBlank() || !isCurrentOwner(expectedOwnerUserId)) return
 
         val tournaments = try {
-            observeTournaments().first()
+            observeTournaments().first().filter { it.ownerUserId == expectedOwnerUserId }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -56,37 +61,40 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCase @Inject constructor
             if (matchIds.isEmpty()) return@forEach
 
             val lobby = try {
-                lobbyAssets.observeByTournamentId(tournament.id).first()
+                lobbyAssets.observeByTournamentIdAndOwner(tournament.id, expectedOwnerUserId).first()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
                 emptyList()
             }
-            lobby.filter { asset ->
-                asset.ownerUserId == ownerId && asset.matchId in matchIds && asset.hasConfirmedLobbyCrop()
-            }.forEach { asset ->
-                retryLobby(asset)
+            for (asset in lobby.filter { asset ->
+                asset.ownerUserId == expectedOwnerUserId && asset.matchId in matchIds && asset.hasConfirmedLobbyCrop()
+            }) {
+                if (!isCurrentOwner(expectedOwnerUserId)) return
+                retryLobby(asset, expectedOwnerUserId)
             }
+            if (!isCurrentOwner(expectedOwnerUserId)) return
 
             val result = try {
-                resultAssets.observeByTournamentId(tournament.id).first()
+                resultAssets.observeByTournamentIdAndOwner(tournament.id, expectedOwnerUserId).first()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
                 emptyList()
             }
-            result.filter { asset ->
-                asset.ownerUserId == ownerId && asset.matchId in matchIds && asset.hasConfirmedResultCrop()
-            }.forEach { asset ->
-                retryResult(asset)
+            for (asset in result.filter { asset ->
+                asset.ownerUserId == expectedOwnerUserId && asset.matchId in matchIds && asset.hasConfirmedResultCrop()
+            }) {
+                if (!isCurrentOwner(expectedOwnerUserId)) return
+                retryResult(asset, expectedOwnerUserId)
             }
         }
     }
 
-    private suspend fun retryLobby(asset: MatchLobbyScreenshotAssetEntity) {
+    private suspend fun retryLobby(asset: MatchLobbyScreenshotAssetEntity, expectedOwnerUserId: String) {
         val identity = asset.identityOrNull() ?: return
         try {
-            lobbyCheckpoint.run(identity)
+            lobbyCheckpoint.run(identity, expectedOwnerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -94,16 +102,25 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCase @Inject constructor
         }
     }
 
-    private suspend fun retryResult(asset: MatchResultScreenshotAssetEntity) {
+    private suspend fun retryResult(asset: MatchResultScreenshotAssetEntity, expectedOwnerUserId: String) {
         val identity = asset.identityOrNull() ?: return
         try {
-            resultCheckpoint.run(identity)
+            resultCheckpoint.run(identity, expectedOwnerUserId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
             // Keep the local asset retryable without affecting foreground navigation.
         }
     }
+
+    private suspend fun isCurrentOwner(expectedOwnerUserId: String): Boolean =
+        try {
+            ownerProvider.currentOwnerUserId() == expectedOwnerUserId
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            false
+        }
 }
 
 private fun MatchLobbyScreenshotAssetEntity.hasConfirmedLobbyCrop(): Boolean =
