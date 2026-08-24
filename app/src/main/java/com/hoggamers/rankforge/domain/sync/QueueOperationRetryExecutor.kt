@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.sync
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
@@ -37,7 +38,7 @@ class QueueOperationRetryExecutor(
             status = SyncQueueStatus.FAILED_VALIDATION,
             failureCategory = SyncQueueStatus.FAILED_VALIDATION.name,
         )
-        return when (entry.operationType) {
+        val outcome = when (entry.operationType) {
             SyncQueueOperationType.TOURNAMENT_UPLOAD -> tournamentUpload.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
             SyncQueueOperationType.TOURNAMENT_RESTORATION -> tournamentRestoration.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
             SyncQueueOperationType.DRAFT_MATCH_SYNC -> draftMatchSync.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
@@ -45,6 +46,7 @@ class QueueOperationRetryExecutor(
             SyncQueueOperationType.MATCH_RESTORATION -> matchRestoration.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
             SyncQueueOperationType.ROSTER_REPLACEMENT -> rosterReplacement.executeForRetry(tournamentId, ownerUserId).toRetryOutcome()
         }
+        return if (authRepository.isSignedInAs(ownerUserId)) outcome else SyncQueueRetryOutcome.Skipped
     }
 }
 

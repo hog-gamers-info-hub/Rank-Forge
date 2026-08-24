@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
@@ -30,7 +31,11 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         if (!hasOwnedTournament(tournamentId, ownerUserId)) {
             return QueueAwareActionResult(TournamentRosterCloudReplacementResult.ValidationFailure, QueueRecordingResult.NOT_REQUIRED)
         }
-        return record(executeForRetry(tournamentId, ownerUserId), tournamentId, ownerUserId)
+        val result = executeForRetry(tournamentId, ownerUserId)
+        if (!authRepository.isSignedInAs(ownerUserId)) {
+            return QueueAwareActionResult(result, QueueRecordingResult.NOT_REQUIRED)
+        }
+        return record(result, tournamentId, ownerUserId)
     }
 
     override suspend fun executeForRetry(
@@ -77,8 +82,19 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         } catch (_: Throwable) {
             TournamentRosterCloudReplacementResult.UnknownFailure
         }
+        if (!authRepository.isSignedInAs(expectedOwnerUserId)) {
+            return TournamentRosterCloudReplacementResult.AuthorizationFailure
+        }
         if (result is TournamentRosterCloudReplacementResult.Success) {
-            tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, result.newCloudRevision)
+            if (
+                tournamentRepository.confirmCloudRevisionByOwner(
+                    tournamentId,
+                    expectedOwnerUserId,
+                    result.newCloudRevision,
+                ) != OwnerScopedTournamentMutationResult.Saved
+            ) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
         }
         return result
     }
@@ -90,11 +106,28 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         val cloud = cloudRestorationRepository.readOwnedTournament(snapshot.tournament.id)
     ) {
         is TournamentCloudRestorationRemoteResult.Success -> {
+            if (
+                cloud.value.tournament.id != snapshot.tournament.id ||
+                cloud.value.tournament.ownerUserId != ownerId
+            ) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
             val cloudRevision = cloud.value.cloudRevision?.value
                 ?: return TournamentRosterCloudReplacementResult.Conflict(
                     com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
                 )
-            tournamentRepository.establishCloudBaseline(snapshot.tournament.id, cloudRevision)
+            if (!authRepository.isSignedInAs(ownerId)) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
+            if (
+                tournamentRepository.establishCloudBaselineByOwner(
+                    snapshot.tournament.id,
+                    ownerId,
+                    cloudRevision,
+                ) != OwnerScopedTournamentMutationResult.Saved
+            ) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
             cloudReplacementRepository.replace(
                 snapshot.copy(expectedCloudRevision = cloudRevision),
                 ownerId,

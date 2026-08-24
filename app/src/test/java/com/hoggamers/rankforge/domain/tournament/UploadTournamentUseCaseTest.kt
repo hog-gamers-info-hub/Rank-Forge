@@ -11,8 +11,11 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -21,6 +24,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UploadTournamentUseCaseTest {
+    @Test
+    fun cloudResponseAfterOwnerSwitchDoesNotConfirmRevisionOrRecordQueue() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val cloud = SuspendingCloudRepository()
+        val repository = CountingRevisionRepository(localRepository())
+        val queue = RecordingTestQueueRepository()
+        val useCase = UploadTournamentUseCase(repository, auth, cloud, queue.recorder())
+
+        val job = launch { assertEquals(TournamentCloudUploadResult.AuthorizationFailure, useCase(TOURNAMENT_ID).primaryResult) }
+        cloud.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+        cloud.resume.complete(Unit)
+        job.join()
+
+        assertEquals(0, repository.revisionWrites)
+        assertEquals(0, repository.baselineWrites)
+        assertTrue(queue.entries.isEmpty())
+    }
+
     @Test
     fun authenticationFailureIsRecordedAndDoesNotCallCloudOrChangeLocalData() = runTest {
         val repository = localRepository()
@@ -177,6 +199,58 @@ class UploadTournamentUseCaseTest {
         }
     }
 
+    private class SuspendingCloudRepository : TournamentCloudUploadRepository {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun upload(
+            snapshot: TournamentCloudUploadSnapshot,
+            ownerId: String,
+        ): TournamentCloudUploadResult {
+            started.complete(Unit)
+            resume.await()
+            return TournamentCloudUploadResult.Success(7)
+        }
+    }
+
+    private class CountingRevisionRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository by delegate {
+        var revisionWrites = 0
+        var baselineWrites = 0
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            revisionWrites += 1
+            return delegate.confirmCloudRevisionByOwner(tournamentId, ownerUserId, cloudRevision)
+        }
+
+        override suspend fun establishCloudBaselineByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): OwnerScopedTournamentMutationResult {
+            baselineWrites += 1
+            return delegate.establishCloudBaselineByOwner(tournamentId, ownerUserId, cloudRevision)
+        }
+    }
+
+    private class SwitchingAuthRepository(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+
+        override fun observeAuthState(): Flow<AuthState> = state
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated)
+        override suspend fun login(email: String, password: String): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+    }
+
     private class FakeAuthRepository(
         private val state: AuthState,
     ) : AuthRepository {
@@ -197,5 +271,6 @@ class UploadTournamentUseCaseTest {
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
         const val OWNER_ID = "22222222-2222-2222-2222-222222222222"
+        const val OTHER_OWNER_ID = "33333333-3333-3333-3333-333333333333"
     }
 }

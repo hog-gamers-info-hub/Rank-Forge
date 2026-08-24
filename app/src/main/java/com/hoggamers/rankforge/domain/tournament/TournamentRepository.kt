@@ -22,6 +22,13 @@ interface TournamentRepository {
     ): OwnerScopedTournamentMutationResult =
         error("Owner-scoped cloud revision confirmation is not supported by this repository.")
 
+    suspend fun establishCloudBaselineByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult =
+        error("Owner-scoped cloud baseline establishment is not supported by this repository.")
+
     /** Records an authoritative cloud baseline without discarding local unsynchronized changes. */
     suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) = Unit
 
@@ -30,6 +37,13 @@ interface TournamentRepository {
         tournamentId: String,
         cloudRevision: Int,
     ) = Unit
+
+    suspend fun rebaseCloudRevisionForConflictResolutionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult =
+        error("Owner-scoped cloud revision rebase is not supported by this repository.")
 
     suspend fun create(tournament: Tournament)
 

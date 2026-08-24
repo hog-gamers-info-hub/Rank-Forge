@@ -19,8 +19,11 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRetryAction
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +31,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QueueOperationRetryExecutorTest {
+    @Test fun ownerSwitchAfterDownstreamActionReturnsSkippedOutcome() = runTest {
+        val auth = SwitchingAuth(AuthState.SignedIn(AuthUser(OWNER_A, null)))
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+        val upload = object : TournamentCloudUploadRetryAction {
+            override suspend fun executeForRetry(tournamentId: String) = error("expected owner is required")
+            override suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): TournamentCloudUploadResult {
+                started.complete(Unit)
+                resume.await()
+                return TournamentCloudUploadResult.Success(1)
+            }
+        }
+        val executor = QueueOperationRetryExecutor(
+            authRepository = auth,
+            tournamentUpload = upload,
+            tournamentRestoration = ownerBound(TournamentCloudRestorationRetryAction { TournamentCloudRestorationResult.Success("Tournament") }),
+            draftMatchSync = ownerBound(DraftMatchCloudSyncRetryAction { DraftMatchCloudSyncResult.Success }),
+            finalizedMatchSync = ownerBound(FinalizedMatchCloudSyncRetryAction { FinalizedMatchCloudSyncResult.Success(1) }),
+            matchRestoration = ownerBound(MatchCloudRestorationRetryAction { MatchCloudRestorationResult.Success }),
+            rosterReplacement = ownerBound(TournamentRosterCloudReplacementRetryAction { TournamentRosterCloudReplacementResult.Success(1) }),
+        )
+
+        var result: SyncQueueRetryOutcome? = null
+        val job = launch { result = executor.execute(entry(SyncQueueOperationType.TOURNAMENT_UPLOAD)) }
+        started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OWNER_B, null))
+        resume.complete(Unit)
+        job.join()
+
+        assertEquals(SyncQueueRetryOutcome.Skipped, result)
+    }
+
     @Test fun dispatchesEveryOperationTypeToItsNoRecordRetryAction() = runTest {
         val calls = mutableListOf<String>()
         val executor = executor(
@@ -360,5 +395,18 @@ class QueueOperationRetryExecutorTest {
         private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
     }
 
-    private companion object { const val OWNER_A = "owner-a" }
+    private class SwitchingAuth(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+        override fun observeAuthState() = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = failure()
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private companion object {
+        const val OWNER_A = "owner-a"
+        const val OWNER_B = "owner-b"
+    }
 }

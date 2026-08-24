@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.util.concurrent.CancellationException
@@ -34,6 +35,9 @@ class UploadTournamentUseCase @Inject constructor(
                 primaryResult = result,
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
+        }
+        if (!authRepository.isSignedInAs(ownerUserId)) {
+            return QueueAwareActionResult(result, QueueRecordingResult.NOT_REQUIRED)
         }
         return record(result = result, tournamentId = tournamentId, ownerUserId = ownerUserId)
     }
@@ -74,8 +78,19 @@ class UploadTournamentUseCase @Inject constructor(
 
         if (currentOwnerUserId() != expectedOwnerUserId) return TournamentCloudUploadResult.AuthorizationFailure
         val result = cloudUploadRepository.upload(snapshot, expectedOwnerUserId)
+        if (!authRepository.isSignedInAs(expectedOwnerUserId)) {
+            return TournamentCloudUploadResult.AuthorizationFailure
+        }
         if (result is TournamentCloudUploadResult.Success) {
-            tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, result.confirmedCloudRevision)
+            if (
+                tournamentRepository.confirmCloudRevisionByOwner(
+                    tournamentId,
+                    expectedOwnerUserId,
+                    result.confirmedCloudRevision,
+                ) != OwnerScopedTournamentMutationResult.Saved
+            ) {
+                return TournamentCloudUploadResult.AuthorizationFailure
+            }
         }
         return result
     }

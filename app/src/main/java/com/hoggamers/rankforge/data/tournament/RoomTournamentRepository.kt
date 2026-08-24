@@ -369,6 +369,32 @@ class RoomTournamentRepository @Inject constructor(
         }
     }
 
+    override suspend fun establishCloudBaselineByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult {
+        require(ownerUserId.isNotBlank())
+        require(cloudRevision > 0)
+        awaitState()
+        return writeMutex.withLock {
+            database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val existing = database.syncRevisionDao().readByTournamentId(tournamentId)
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        tournamentId = tournamentId,
+                        localRevision = existing?.localRevision ?: 1,
+                        baseCloudRevision = cloudRevision,
+                    ),
+                )
+                OwnerScopedTournamentMutationResult.Saved
+            }
+        }
+    }
+
     override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
         require(cloudRevision > 0)
         awaitState()
@@ -396,6 +422,32 @@ class RoomTournamentRepository @Inject constructor(
                 baseCloudRevision = cloudRevision,
             ),
         )
+    }
+
+    override suspend fun rebaseCloudRevisionForConflictResolutionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): OwnerScopedTournamentMutationResult {
+        require(ownerUserId.isNotBlank())
+        require(cloudRevision > 0)
+        awaitState()
+        return writeMutex.withLock {
+            database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
+                    return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
+                }
+                val existing = database.syncRevisionDao().readByTournamentId(tournamentId)
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        tournamentId = tournamentId,
+                        localRevision = existing?.localRevision ?: 1,
+                        baseCloudRevision = cloudRevision,
+                    ),
+                )
+                OwnerScopedTournamentMutationResult.Saved
+            }
+        }
     }
 
     override suspend fun detectTournamentDivergence(
@@ -813,6 +865,47 @@ class RoomTournamentRepository @Inject constructor(
                         ),
                     )
                 }
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
+    override suspend fun replaceDraftMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ) {
+        require(expectedOwnerUserId.isNotBlank())
+        require(snapshot.tournamentId == tournamentId)
+        require(snapshot.matches.all { it.tournamentId == tournamentId && it.status == MatchStatus.DRAFT })
+        require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
+        require(snapshot.cloudRevision != null && snapshot.cloudRevision.value > 0)
+        awaitState()
+        writeMutex.withLock {
+            val finalized = state.value.matches[tournamentId].orEmpty()
+                .filter { it.status == MatchStatus.FINALIZED }
+            val next = state.value.copy(matches = state.value.matches + (tournamentId to (finalized + snapshot.matches)))
+            database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
+                    throw SecurityException("Tournament is not owned by the expected draft owner.")
+                }
+                database.matchDao().deleteDraftByTournamentId(tournamentId)
+                snapshot.matches.forEach { match ->
+                    database.matchDao().upsert(match.toEntity())
+                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
+                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
+                    database.matchParticipantResultDao().upsertAll(
+                        match.participantResults.map { it.toEntity(match.id) },
+                    )
+                }
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        tournamentId,
+                        snapshot.cloudRevision.value,
+                        snapshot.cloudRevision.value,
+                    ),
+                )
                 saveLegacyState(next)
             }
             state.value = next

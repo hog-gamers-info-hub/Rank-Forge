@@ -7,8 +7,11 @@ import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -153,6 +156,46 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(0, repository.enqueueCalls)
     }
 
+    @Test fun ownerSwitchDuringDispatchLeavesQueueRowAndAttemptUnchanged() = runTest {
+        val entry = entry(SyncQueueOperationType.DRAFT_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingRepository(listOf(entry))
+        val auth = SwitchingAuth(AuthState.SignedIn(AuthUser(OWNER_A, null)))
+        val executor = SuspendingExecutor()
+        val job = launch {
+            ForegroundSyncQueueRetryCoordinator(repository, executor, auth)
+                .retryEligible(listOf(entry), ownerUserId = OWNER_A)
+        }
+
+        executor.started.await()
+        auth.state.value = AuthState.SignedIn(AuthUser(OWNER_B, null))
+        executor.resume.complete(Unit)
+        job.join()
+
+        assertEquals(entry, repository.entries.single())
+        assertTrue(repository.incrementedIds.isEmpty())
+        assertTrue(repository.completedIds.isEmpty())
+    }
+
+    @Test fun signOutDuringDispatchLeavesQueueRowAndAttemptUnchanged() = runTest {
+        val entry = entry(SyncQueueOperationType.DRAFT_MATCH_SYNC, SyncQueueStatus.BLOCKED_NETWORK)
+        val repository = RecordingRepository(listOf(entry))
+        val auth = SwitchingAuth(AuthState.SignedIn(AuthUser(OWNER_A, null)))
+        val executor = SuspendingExecutor()
+        val job = launch {
+            ForegroundSyncQueueRetryCoordinator(repository, executor, auth)
+                .retryEligible(listOf(entry), ownerUserId = OWNER_A)
+        }
+
+        executor.started.await()
+        auth.state.value = AuthState.SignedOut
+        executor.resume.complete(Unit)
+        job.join()
+
+        assertEquals(entry, repository.entries.single())
+        assertTrue(repository.incrementedIds.isEmpty())
+        assertTrue(repository.completedIds.isEmpty())
+    }
+
     private fun entry(
         operationType: SyncQueueOperationType,
         status: SyncQueueStatus,
@@ -183,6 +226,17 @@ class ForegroundSyncQueueRetryCoordinatorTest {
             executedEntries += entry
             executionCount += 1
             if (executionCount == 1) throw IllegalStateException("retry interrupted")
+            return SyncQueueRetryOutcome.Success
+        }
+    }
+
+    private class SuspendingExecutor : SyncQueueEntryRetryExecutor {
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+
+        override suspend fun execute(entry: SyncQueueEntry): SyncQueueRetryOutcome {
+            started.complete(Unit)
+            resume.await()
             return SyncQueueRetryOutcome.Success
         }
     }
@@ -244,5 +298,18 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
     }
 
-    private companion object { const val OWNER_A = "owner-a" }
+    private class SwitchingAuth(initial: AuthState) : AuthRepository {
+        val state = MutableStateFlow(initial)
+        override fun observeAuthState() = state
+        override suspend fun restoreSession() = AuthRestorationResult.NoSavedSession
+        override suspend fun signUp(email: String, password: String) = failure()
+        override suspend fun login(email: String, password: String) = failure()
+        override suspend fun logout() = failure()
+        private fun failure() = AuthOperationResult.Failure(AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure))
+    }
+
+    private companion object {
+        const val OWNER_A = "owner-a"
+        const val OWNER_B = "owner-b"
+    }
 }

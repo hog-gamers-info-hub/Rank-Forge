@@ -34,6 +34,12 @@ interface DraftMatchCloudSyncRepository {
 
 fun interface DraftMatchCloudSyncAction {
     suspend operator fun invoke(tournamentId: String): QueueAwareActionResult<DraftMatchCloudSyncResult>
+
+    suspend operator fun invoke(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): QueueAwareActionResult<DraftMatchCloudSyncResult> =
+        throw SecurityException("Expected owner is required for draft synchronization.")
 }
 
 fun interface DraftMatchCloudSyncRetryAction {

@@ -137,6 +137,35 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.TournamentNotFound
     }
 
+    override suspend fun establishCloudBaselineByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult = if (
+        tournaments.value.any { it.id == tournamentId && it.ownerUserId == ownerUserId }
+    ) {
+        establishCloudBaseline(tournamentId, cloudRevision)
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.Saved
+    } else {
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.TournamentNotFound
+    }
+
+    override suspend fun rebaseCloudRevisionForConflictResolutionByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+        cloudRevision: Int,
+    ): com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult = if (
+        tournaments.value.any { it.id == tournamentId && it.ownerUserId == ownerUserId }
+    ) {
+        require(cloudRevision > 0)
+        val localRevision = cloudRevisions.value[tournamentId] ?: 1
+        cloudRevisions.update { it + (tournamentId to localRevision) }
+        baseCloudRevisions.update { it + (tournamentId to cloudRevision) }
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.Saved
+    } else {
+        com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.TournamentNotFound
+    }
+
     override suspend fun establishCloudBaseline(tournamentId: String, cloudRevision: Int) {
         require(cloudRevision > 0)
         if (cloudRevisions.value[tournamentId] == null) {

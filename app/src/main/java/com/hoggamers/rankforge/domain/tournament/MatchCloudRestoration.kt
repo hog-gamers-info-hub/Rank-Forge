@@ -31,6 +31,13 @@ interface MatchRestorationLocalRepository {
         snapshot: MatchCloudRestorationSnapshot,
     ): Unit = error("Expected owner is required for match restoration.")
 
+    /** Owner-bound draft replacement for conflict-resolution cloud continuations. */
+    suspend fun replaceDraftMatchesByOwner(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+    ): Unit = error("Expected owner is required for draft replacement.")
+
     /** Replaces draft rows only; finalized rows are intentionally preserved. */
     suspend fun replaceDraftMatches(snapshot: MatchCloudRestorationSnapshot): Unit =
         error("Draft-only match replacement is not supported by this repository.")

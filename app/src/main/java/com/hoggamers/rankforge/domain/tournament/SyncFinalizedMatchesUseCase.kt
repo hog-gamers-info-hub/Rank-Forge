@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -28,6 +29,12 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
             return QueueAwareActionResult(FinalizedMatchCloudSyncResult.ValidationFailure, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
         }
         val result = executeForRetry(tournamentId, ownerUserId)
+        if (!authRepository.isSignedInAs(ownerUserId)) {
+            return QueueAwareActionResult(
+                result,
+                com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
         return record(result, tournamentId, ownerUserId)
     }
 
@@ -65,8 +72,19 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
 
         if (currentOwnerUserId() != expectedOwnerUserId) return FinalizedMatchCloudSyncResult.AuthorizationFailure
         val result = cloudSyncRepository.sync(snapshot)
+        if (!authRepository.isSignedInAs(expectedOwnerUserId)) {
+            return FinalizedMatchCloudSyncResult.AuthorizationFailure
+        }
         result.confirmedCloudRevision()?.let { cloudRevision ->
-            tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, cloudRevision)
+            if (
+                tournamentRepository.confirmCloudRevisionByOwner(
+                    tournamentId,
+                    expectedOwnerUserId,
+                    cloudRevision,
+                ) != OwnerScopedTournamentMutationResult.Saved
+            ) {
+                return FinalizedMatchCloudSyncResult.AuthorizationFailure
+            }
         }
         return result
     }

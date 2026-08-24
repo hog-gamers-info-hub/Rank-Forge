@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.isSignedInAs
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -21,6 +22,20 @@ class SyncDraftMatchesUseCase @Inject constructor(
 ) : DraftMatchCloudSyncAction, DraftMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
+        expectedOwnerUserId: String,
+    ): QueueAwareActionResult<DraftMatchCloudSyncResult> {
+        val result = executeForRetry(tournamentId, expectedOwnerUserId)
+        if (!authRepository.isSignedInAs(expectedOwnerUserId)) {
+            return QueueAwareActionResult(
+                result,
+                com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
+        return record(result, tournamentId, expectedOwnerUserId)
+    }
+
+    override suspend operator fun invoke(
+        tournamentId: String,
     ): QueueAwareActionResult<DraftMatchCloudSyncResult> {
         val ownerUserId = currentOwnerUserId()
             ?: return QueueAwareActionResult(DraftMatchCloudSyncResult.AuthenticationRequired, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
@@ -28,6 +43,12 @@ class SyncDraftMatchesUseCase @Inject constructor(
             return QueueAwareActionResult(DraftMatchCloudSyncResult.ValidationFailure, com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED)
         }
         val result = executeForRetry(tournamentId, ownerUserId)
+        if (!authRepository.isSignedInAs(ownerUserId)) {
+            return QueueAwareActionResult(
+                result,
+                com.hoggamers.rankforge.domain.sync.QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
         return record(result, tournamentId, ownerUserId)
     }
 
@@ -64,9 +85,20 @@ class SyncDraftMatchesUseCase @Inject constructor(
 
         if (currentOwnerUserId() != expectedOwnerUserId) return DraftMatchCloudSyncResult.AuthorizationFailure
         val result = cloudSyncRepository.sync(snapshot).withConflictContext(snapshot)
+        if (!authRepository.isSignedInAs(expectedOwnerUserId)) {
+            return DraftMatchCloudSyncResult.AuthorizationFailure
+        }
         if (result == DraftMatchCloudSyncResult.Success) {
             snapshot.expectedCloudRevision?.let { expected ->
-                tournamentRepository.confirmCloudRevisionByOwner(tournamentId, expectedOwnerUserId, expected + 1)
+                if (
+                    tournamentRepository.confirmCloudRevisionByOwner(
+                        tournamentId,
+                        expectedOwnerUserId,
+                        expected + 1,
+                    ) != OwnerScopedTournamentMutationResult.Saved
+                ) {
+                    return DraftMatchCloudSyncResult.AuthorizationFailure
+                }
             }
         }
         return result
