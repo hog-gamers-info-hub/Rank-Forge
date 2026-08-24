@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.data.ocr.matchresult
 
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
-import com.hoggamers.rankforge.presentation.screen.NoOpScreenshotOwnerProvider
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
@@ -80,7 +79,7 @@ class MatchResultOcrPreviewProcessor(
     private val localFileResolver: MatchResultOcrPreviewLocalFileResolver,
     private val recognitionSource: MatchResultOcrPreviewRecognitionSource,
     private val fieldExtractor: MatchResultOcrPreviewFieldExtractor,
-    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider,
 ) {
     suspend fun process(
         identity: MatchResultScreenshotIdentity,

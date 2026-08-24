@@ -13,6 +13,7 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldExtractor
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
+import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import java.io.File
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ private const val MATCH_RESULT_OCR_PREVIEW_TAG = "RF_MATCH_RESULT_OCR_PREVIEW"
 class AndroidMatchResultOcrPreviewProcessor(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localFileResolver: MatchResultOcrPreviewLocalFileResolver,
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider,
 ) : MatchResultOcrPreviewRunner {
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -40,6 +42,7 @@ class AndroidMatchResultOcrPreviewProcessor(
                     role, cropWidth, cropHeight, blocks ->
                     MatchResultOcrFieldExtractor().extract(role, cropWidth, cropHeight, blocks)
                 },
+                screenshotOwnerProvider = screenshotOwnerProvider,
             ).process(identity)
         } catch (cancellation: CancellationException) {
             throw cancellation

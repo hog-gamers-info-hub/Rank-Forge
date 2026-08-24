@@ -11,9 +11,9 @@ class SaveTeamSlotNamesUseCaseTest {
     @Test
     fun trimsWhitespaceOnSaveOnly() = runTest {
         val repository = InMemoryTournamentRepository()
-        repository.create(tournament())
+        repository.create(tournament().copy(ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID))
 
-        SaveTeamSlotNamesUseCase(repository)(
+        SaveTeamSlotNamesUseCase(repository, SignedInTournamentTestAuthRepository())(
             tournamentId = "stable-id",
             teamNamesBySlotNumber = mapOf(1 to "  Alpha Team  "),
         )

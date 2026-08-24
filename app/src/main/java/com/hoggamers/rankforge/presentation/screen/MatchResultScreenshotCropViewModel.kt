@@ -303,6 +303,7 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                             localFileResolver = MatchResultOcrPreviewLocalFileResolver(
                                 localImagePreserver::resolveRelativePath,
                             ),
+                            screenshotOwnerProvider = screenshotOwnerProvider,
                         ).processAndLog(identity)
                     }
                     draftEdited = false

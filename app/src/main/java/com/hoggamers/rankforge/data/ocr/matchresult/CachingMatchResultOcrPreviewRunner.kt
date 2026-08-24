@@ -5,7 +5,6 @@ import com.hoggamers.rankforge.data.local.MatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
-import com.hoggamers.rankforge.presentation.screen.NoOpScreenshotOwnerProvider
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import kotlinx.coroutines.CancellationException
@@ -20,7 +19,7 @@ const val MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION = 1
 class CachingMatchResultOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val cacheRepository: MatchResultOcrCacheRepository,
-    private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+    private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val delegate: MatchResultOcrPreviewRunner,
 ) : MatchResultOcrPreviewRunner {
     override suspend fun process(
