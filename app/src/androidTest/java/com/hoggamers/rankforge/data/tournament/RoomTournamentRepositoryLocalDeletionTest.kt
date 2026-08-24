@@ -18,6 +18,7 @@ import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.DeletionIntent
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
+import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
@@ -217,8 +218,20 @@ class RoomTournamentRepositoryLocalDeletionTest {
             val nullOwnerTournament = tournament("null-owner").copy(ownerUserId = null)
             repository.create(foreignTournament)
             repository.create(nullOwnerTournament)
-            repository.createDraftMatch(match("foreign-match", foreignTournament.id))
-            repository.createDraftMatch(match("null-owner-match", nullOwnerTournament.id))
+            repository.saveTeamNames(foreignTournament.id, mapOf(1 to "Foreign Team"))
+            repository.saveTeamNames(nullOwnerTournament.id, mapOf(1 to "Legacy Team"))
+            assertEquals(
+                CreateMatchRepositoryResult.Created,
+                repository.createDraftMatch(match("foreign-match", foreignTournament.id)),
+            )
+            assertEquals(
+                CreateMatchRepositoryResult.Created,
+                repository.createDraftMatch(match("null-owner-match", nullOwnerTournament.id)),
+            )
+            assertTrue(database.tournamentDao().observeById("foreign").first() != null)
+            assertTrue(database.tournamentDao().observeById("null-owner").first() != null)
+            assertTrue(database.matchDao().observeById("foreign-match").first() != null)
+            assertTrue(database.matchDao().observeById("null-owner-match").first() != null)
 
             assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("foreign", "owner-a"))
             assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("null-owner", "owner-a"))
@@ -227,6 +240,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             assertTrue(database.tournamentDao().observeById("foreign").first() != null)
             assertTrue(database.tournamentDao().observeById("null-owner").first() != null)
             assertTrue(database.matchDao().observeById("foreign-match").first() != null)
+            assertTrue(database.matchDao().observeById("null-owner-match").first() != null)
         } finally {
             if (database.isOpen) database.close()
             context.deleteDatabase(databaseName)
@@ -358,8 +372,9 @@ class RoomTournamentRepositoryLocalDeletionTest {
             val repository = repository(database, preserver)
             val tournament = tournament("match-claim-race-tournament")
             repository.create(tournament)
+            repository.saveTeamNames(tournament.id, mapOf(1 to "Team One"))
             val match = match("match-claim-race", tournament.id)
-            repository.createDraftMatch(match)
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(match))
             database.syncRevisionDao().upsert(SyncRevisionEntity(tournament.id, 6, 5))
             database.syncQueueDao().insert(queueEntry("match-claim-race-queue", tournament.id))
             val file = preserver.preservedFile(tournament.id, match.id, "png")
