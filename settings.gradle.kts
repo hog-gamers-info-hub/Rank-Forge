@@ -18,3 +18,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Rank-Forge"
 include(":app")
+include(":ppocr-sdk")
