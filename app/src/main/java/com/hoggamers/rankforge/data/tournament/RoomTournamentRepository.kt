@@ -526,7 +526,7 @@ class RoomTournamentRepository @Inject constructor(
                     ownerUserId,
                 )
             ) {
-                return@withLock LocalDeletionResult.NotFound
+                return@withLock LocalDeletionResult.CleanupClaimLost
             }
             val referencedPaths = buildList {
                 database.screenshotMetadataDao().readByMatchId(matchId)?.localRelativePath?.let(::add)
@@ -554,6 +554,14 @@ class RoomTournamentRepository @Inject constructor(
                 if (!database.matchDao().existsByIdAndOwner(matchId, ownerUserId)) {
                     return@withTransaction LocalDeletionResult.NotFound
                 }
+                if (!database.deletionIntentDao().hasLocalCleanupClaim(
+                        DeletionTargetType.MATCH.name,
+                        matchId,
+                        ownerUserId,
+                    )
+                ) {
+                    return@withTransaction LocalDeletionResult.CleanupClaimLost
+                }
                 database.matchDao().deleteById(matchId)
                 // The queue stores tournamentId only, so purge the full tournament scope.
                 database.syncQueueDao().deleteByTournamentIdAndOwner(match.tournamentId, ownerUserId)
@@ -580,7 +588,7 @@ class RoomTournamentRepository @Inject constructor(
                     ownerUserId,
                 )
             ) {
-                return@withLock LocalDeletionResult.NotFound
+                return@withLock LocalDeletionResult.CleanupClaimLost
             }
             val matches = database.matchDao().observeByTournamentId(tournamentId).first()
             val templates = database.tournamentLobbyTemplateAssetDao().readByTournamentId(tournamentId)
@@ -621,6 +629,14 @@ class RoomTournamentRepository @Inject constructor(
             database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
                     return@withTransaction LocalDeletionResult.NotFound
+                }
+                if (!database.deletionIntentDao().hasLocalCleanupClaim(
+                        DeletionTargetType.TOURNAMENT.name,
+                        tournamentId,
+                        ownerUserId,
+                    )
+                ) {
+                    return@withTransaction LocalDeletionResult.CleanupClaimLost
                 }
                 database.syncRevisionDao().deleteByTournamentId(tournamentId)
                 database.syncQueueDao().deleteByTournamentIdAndOwner(tournamentId, ownerUserId)

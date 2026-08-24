@@ -5,6 +5,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
@@ -107,6 +108,81 @@ class LocalImagePreserverTest {
             LocalImageCleanupResult.Failed,
             preserver.cleanup("tournament", "match"),
         )
+    }
+
+    @Test
+    fun cleanupMissingDirectoryIsIdempotentlyCleaned() = runTest {
+        assertEquals(
+            LocalImageCleanupResult.Cleaned,
+            preserver(byteArrayOf(1), "image/png").cleanup("missing-tournament", "missing-match"),
+        )
+    }
+
+    @Test
+    fun partialCleanupFailureLeavesRemainingFileForRetry() = runTest {
+        val operations = TestFileOperations().apply { failDeleteAfter = 1 }
+        val preserver = preserver(byteArrayOf(1), "image/png", operations)
+        val first = preserver.preservedFile("tournament", "match", "png")
+        val second = preserver.preservedFile("tournament", "match", "jpg")
+        writeFile(first)
+        writeFile(second)
+
+        assertEquals(LocalImageCleanupResult.Failed, preserver.cleanup("tournament", "match"))
+        assertTrue(first.exists() xor second.exists())
+
+        operations.failDeleteAfter = null
+        operations.deleteCount = 0
+        assertEquals(LocalImageCleanupResult.Cleaned, preserver.cleanup("tournament", "match"))
+        assertFalse(first.exists())
+        assertFalse(second.exists())
+    }
+
+    @Test
+    fun cleanupCancellationPropagatesAndRetryCanFinish() = runTest {
+        val operations = TestFileOperations().apply { cancellationAfterDelete = 1 }
+        val preserver = preserver(byteArrayOf(1), "image/png", operations)
+        val first = preserver.preservedFile("tournament", "match", "png")
+        val second = preserver.preservedFile("tournament", "match", "jpg")
+        writeFile(first)
+        writeFile(second)
+
+        try {
+            preserver.cleanup("tournament", "match")
+            throw AssertionError("Expected cleanup cancellation")
+        } catch (_: CancellationException) {
+            // Cancellation must escape the cleanup boundary so the caller can retry.
+        }
+        assertTrue(first.exists() xor second.exists())
+
+        operations.cancellationAfterDelete = null
+        operations.deleteCount = 0
+        assertEquals(LocalImageCleanupResult.Cleaned, preserver.cleanup("tournament", "match"))
+        assertFalse(first.exists())
+        assertFalse(second.exists())
+    }
+
+    @Test
+    fun templateCleanupCancellationPropagatesAndRetryCanFinish() = runTest {
+        val operations = TestFileOperations().apply { cancellationAfterDelete = 0 }
+        val preserver = preserver(byteArrayOf(1), "image/png", operations)
+        val file = preserver.lobbyTemplatePreservedFile("tournament", "generation", 1, "png")
+        writeFile(file)
+
+        try {
+            preserver.cleanupLobbyTemplateGeneration("tournament", "generation")
+            throw AssertionError("Expected template cleanup cancellation")
+        } catch (_: CancellationException) {
+            // Cancellation must escape template cleanup as well.
+        }
+        assertTrue(file.exists())
+
+        operations.cancellationAfterDelete = null
+        operations.deleteCount = 0
+        assertEquals(
+            LocalImageCleanupResult.Cleaned,
+            preserver.cleanupLobbyTemplateGeneration("tournament", "generation"),
+        )
+        assertFalse(file.exists())
     }
 
     @Test
@@ -271,6 +347,9 @@ class LocalImagePreserverTest {
         private val failDelete: Boolean = false,
     ) : LocalImageFileOperations {
         val createdFiles = mutableListOf<File>()
+        var failDeleteAfter: Int? = null
+        var cancellationAfterDelete: Int? = null
+        var deleteCount: Int = 0
 
         override fun ensureDirectory(directory: File): Boolean =
             directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
@@ -289,6 +368,21 @@ class LocalImagePreserverTest {
         override fun listFiles(directory: File): List<File>? =
             if (!directory.exists()) emptyList() else directory.listFiles()?.toList()
 
-        override fun delete(file: File): Boolean = if (failDelete) false else !file.exists() || file.delete()
+        override fun delete(file: File): Boolean {
+            if (cancellationAfterDelete?.let { deleteCount >= it } == true) {
+                throw CancellationException("cleanup cancelled")
+            }
+            if (failDeleteAfter?.let { deleteCount >= it } == true) {
+                deleteCount++
+                return false
+            }
+            deleteCount++
+            return if (failDelete) false else !file.exists() || file.delete()
+        }
+    }
+
+    private fun writeFile(file: File) {
+        file.parentFile?.mkdirs()
+        file.writeText("test")
     }
 }

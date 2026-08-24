@@ -51,6 +51,17 @@ class RecoverPendingLocalDeletionCleanupUseCaseTest {
     }
 
     @Test
+    fun lostCleanupClaimPreservesIntentForARecoveryRetry() = runTest {
+        val intents = RecordingIntents().apply { pending += intent("match-a", "owner-a") }
+        val local = RecordingLocal().apply { matchResult = LocalDeletionResult.CleanupClaimLost }
+
+        RecoverPendingLocalDeletionCleanupUseCase(FakeAuth("owner-a"), intents, local)("owner-a")
+
+        assertTrue(intents.clears.isEmpty())
+        assertEquals(1, intents.pending.size)
+    }
+
+    @Test
     fun signedOutBlankAndDifferentOwnerDoNotQueryPendingCleanup() = runTest {
         listOf<AuthState>(
             AuthState.SignedOut,

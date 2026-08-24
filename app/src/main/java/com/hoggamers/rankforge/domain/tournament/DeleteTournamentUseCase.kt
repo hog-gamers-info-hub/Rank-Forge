@@ -187,6 +187,7 @@ class DeleteTournamentUseCase @Inject constructor(
     private fun localResult(result: LocalDeletionResult, missingIsSuccess: Boolean = false): DeleteTournamentResult = when (result) {
         LocalDeletionResult.Deleted -> DeleteTournamentResult.Success
         LocalDeletionResult.NotFound -> if (missingIsSuccess) DeleteTournamentResult.Success else DeleteTournamentResult.TargetNotFound
+        LocalDeletionResult.CleanupClaimLost -> DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
         LocalDeletionResult.FileCleanupFailed -> DeleteTournamentResult.RemoteDeletedLocalCleanupFailed
     }
 }

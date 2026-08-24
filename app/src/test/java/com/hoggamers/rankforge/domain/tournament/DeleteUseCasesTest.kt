@@ -399,6 +399,35 @@ class DeleteUseCasesTest {
     }
 
     @Test
+    fun lostCleanupClaimIsReportedAndPendingIntentRemainsForRetry() = runTest {
+        val events = mutableListOf<String>()
+        val intents = RecordingDeletionIntentRepository().apply {
+            put(intentFor(
+                targetType = DeletionTargetType.MATCH,
+                targetId = "match-1",
+                ownerUserId = "owner-1",
+                phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+            ))
+        }
+        val local = RecordingLocal(events).apply { matchResults += LocalDeletionResult.CleanupClaimLost }
+        val useCase = DeleteMatchUseCase(
+            testRepository(withMatch = true),
+            signedInAuth(),
+            RecordingQueue(events),
+            RecordingCloud(events),
+            local,
+            intents,
+        )
+
+        assertEquals(DeleteMatchResult.RemoteDeletedLocalCleanupFailed, useCase("match-1"))
+        assertEquals(
+            DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+            intents.read(DeletionTargetType.MATCH, "match-1")?.phase,
+        )
+        assertEquals(listOf("local-match:match-1"), events)
+    }
+
+    @Test
     fun sameOwnerPendingTournamentIntentResumesLocalOnlyCleanup() = runTest {
         val events = mutableListOf<String>()
         val intents = RecordingDeletionIntentRepository().apply {

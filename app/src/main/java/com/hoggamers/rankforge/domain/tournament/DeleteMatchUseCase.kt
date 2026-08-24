@@ -167,6 +167,7 @@ class DeleteMatchUseCase @Inject constructor(
     private fun localResult(result: LocalDeletionResult, missingIsSuccess: Boolean = false): DeleteMatchResult = when (result) {
         LocalDeletionResult.Deleted -> DeleteMatchResult.Success
         LocalDeletionResult.NotFound -> if (missingIsSuccess) DeleteMatchResult.Success else DeleteMatchResult.TargetNotFound
+        LocalDeletionResult.CleanupClaimLost -> DeleteMatchResult.RemoteDeletedLocalCleanupFailed
         LocalDeletionResult.FileCleanupFailed -> DeleteMatchResult.RemoteDeletedLocalCleanupFailed
     }
 }

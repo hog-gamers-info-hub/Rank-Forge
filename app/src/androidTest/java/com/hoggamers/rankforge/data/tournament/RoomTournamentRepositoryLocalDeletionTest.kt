@@ -29,9 +29,14 @@ import com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader
 import com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
 import java.time.LocalDate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -213,13 +218,175 @@ class RoomTournamentRepositoryLocalDeletionTest {
             repository.create(foreignTournament)
             repository.create(nullOwnerTournament)
             repository.createDraftMatch(match("foreign-match", foreignTournament.id))
+            repository.createDraftMatch(match("null-owner-match", nullOwnerTournament.id))
 
             assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("foreign", "owner-a"))
             assertEquals(LocalDeletionResult.NotFound, repository.deleteTournamentLocallyByOwner("null-owner", "owner-a"))
             assertEquals(LocalDeletionResult.NotFound, repository.deleteMatchLocallyByOwner("foreign-match", "owner-a"))
+            assertEquals(LocalDeletionResult.NotFound, repository.deleteMatchLocallyByOwner("null-owner-match", "owner-a"))
             assertTrue(database.tournamentDao().observeById("foreign").first() != null)
             assertTrue(database.tournamentDao().observeById("null-owner").first() != null)
             assertTrue(database.matchDao().observeById("foreign-match").first() != null)
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingOrWrongPhaseClaimIsReportedWithoutChangingLocalState() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-claim-loss-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-claim-loss-${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        try {
+            val repository = repository(database, preserver(root))
+            val tournament = tournament("claim-loss-tournament")
+            repository.create(tournament)
+            repository.saveTeamNames(tournament.id, mapOf(1 to "Before"))
+            repository.saveRoster(tournament.id, 1, listOf(RosterPlayer(tournament.id, 1, "Before Player")))
+            repository.createDraftMatch(match("claim-loss-match", tournament.id))
+            database.syncRevisionDao().upsert(SyncRevisionEntity(tournament.id, 4, 3))
+            database.syncQueueDao().insert(queueEntry("claim-loss-queue", tournament.id))
+            val beforeTournament = database.tournamentDao().observeById(tournament.id).first()
+            val beforeTeam = database.teamSlotDao().observeByTournamentId(tournament.id).first()
+            val beforeRoster = database.rosterPlayerDao().observeByTournamentId(tournament.id).first()
+            val beforeMatches = database.matchDao().observeByTournamentId(tournament.id).first()
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+
+            assertEquals(
+                LocalDeletionResult.CleanupClaimLost,
+                repository.deleteTournamentLocallyByOwner(tournament.id, "owner-a"),
+            )
+            assertEquals(
+                LocalDeletionResult.CleanupClaimLost,
+                repository.deleteMatchLocallyByOwner("claim-loss-match", "owner-a"),
+            )
+            claim(
+                database,
+                DeletionTargetType.MATCH,
+                "claim-loss-match",
+                tournament.id,
+                ownerUserId = "owner-b",
+            )
+            assertEquals(
+                LocalDeletionResult.CleanupClaimLost,
+                repository.deleteMatchLocallyByOwner("claim-loss-match", "owner-a"),
+            )
+            database.deletionIntentDao().insertIfAbsent(
+                DeletionIntentEntity(
+                    targetType = DeletionTargetType.TOURNAMENT.name,
+                    targetId = tournament.id,
+                    tournamentId = tournament.id,
+                    ownerUserId = "owner-a",
+                    phase = DeletionIntentPhase.DELETE_STARTED.name,
+                    updatedAtEpochMillis = 2,
+                ),
+            )
+            assertEquals(
+                LocalDeletionResult.CleanupClaimLost,
+                repository.deleteTournamentLocallyByOwner(tournament.id, "owner-a"),
+            )
+
+            assertEquals(beforeTournament, database.tournamentDao().observeById(tournament.id).first())
+            assertEquals(beforeTeam, database.teamSlotDao().observeByTournamentId(tournament.id).first())
+            assertEquals(beforeRoster, database.rosterPlayerDao().observeByTournamentId(tournament.id).first())
+            assertEquals(beforeMatches, database.matchDao().observeByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+            assertTrue(database.syncQueueDao().observeAll().first().any { it.id == "claim-loss-queue" })
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun tournamentClaimRemovedDuringCleanupDoesNotFinalizeDbDeletion() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-tournament-claim-race-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-tournament-claim-race-${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        try {
+            val operations = PausingFileOperations()
+            val preserver = preserver(root, operations)
+            val repository = repository(database, preserver)
+            val tournament = tournament("tournament-claim-race")
+            repository.create(tournament)
+            database.syncRevisionDao().upsert(SyncRevisionEntity(tournament.id, 5, 4))
+            database.syncQueueDao().insert(queueEntry("claim-race-queue", tournament.id))
+            val file = preserver.resolveRelativePath(preserver.rosterRelativePath(tournament.id, 1, "png"))!!
+            writeFile(file)
+            claim(database, DeletionTargetType.TOURNAMENT, tournament.id, tournament.id)
+            val beforeTournament = database.tournamentDao().observeById(tournament.id).first()
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val beforeQueue = database.syncQueueDao().observeAll().first()
+
+            val deletion = async(Dispatchers.IO) {
+                repository.deleteTournamentLocallyByOwner(tournament.id, "owner-a")
+            }
+            assertTrue(operations.started.await(5, TimeUnit.SECONDS))
+            database.deletionIntentDao().deleteByTargetAndOwner(
+                DeletionTargetType.TOURNAMENT.name,
+                tournament.id,
+                "owner-a",
+            )
+            operations.release.countDown()
+
+            assertEquals(LocalDeletionResult.CleanupClaimLost, deletion.await())
+            assertEquals(beforeTournament, database.tournamentDao().observeById(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+            assertEquals(beforeQueue, database.syncQueueDao().observeAll().first())
+            assertFalse(file.exists())
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun matchClaimRemovedDuringCleanupDoesNotFinalizeDbDeletion() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-match-claim-race-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-match-claim-race-${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        try {
+            val operations = PausingFileOperations()
+            val preserver = preserver(root, operations)
+            val repository = repository(database, preserver)
+            val tournament = tournament("match-claim-race-tournament")
+            repository.create(tournament)
+            val match = match("match-claim-race", tournament.id)
+            repository.createDraftMatch(match)
+            database.syncRevisionDao().upsert(SyncRevisionEntity(tournament.id, 6, 5))
+            database.syncQueueDao().insert(queueEntry("match-claim-race-queue", tournament.id))
+            val file = preserver.preservedFile(tournament.id, match.id, "png")
+            writeFile(file)
+            claim(database, DeletionTargetType.MATCH, match.id, tournament.id)
+            val beforeMatch = database.matchDao().observeById(match.id).first()
+            val beforeTournament = database.tournamentDao().observeById(tournament.id).first()
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val beforeQueue = database.syncQueueDao().observeAll().first()
+
+            val deletion = async(Dispatchers.IO) {
+                repository.deleteMatchLocallyByOwner(match.id, "owner-a")
+            }
+            assertTrue(operations.started.await(5, TimeUnit.SECONDS))
+            database.deletionIntentDao().deleteByTargetAndOwner(
+                DeletionTargetType.MATCH.name,
+                match.id,
+                "owner-a",
+            )
+            operations.release.countDown()
+
+            assertEquals(LocalDeletionResult.CleanupClaimLost, deletion.await())
+            assertEquals(beforeMatch, database.matchDao().observeById(match.id).first())
+            assertEquals(beforeTournament, database.tournamentDao().observeById(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+            assertEquals(beforeQueue, database.syncQueueDao().observeAll().first())
+            assertFalse(file.exists())
         } finally {
             if (database.isOpen) database.close()
             context.deleteDatabase(databaseName)
@@ -280,6 +447,17 @@ class RoomTournamentRepositoryLocalDeletionTest {
         appPrivateRoot = root,
         sourceStreamOpener = ImageSourceStreamOpener { null },
         mimeTypeReader = ImageSourceMimeTypeReader { null },
+        ioDispatcher = Dispatchers.Unconfined,
+    )
+
+    private fun preserver(
+        root: File,
+        fileOperations: com.hoggamers.rankforge.presentation.screen.LocalImageFileOperations,
+    ): LocalImagePreserver = LocalImagePreserver(
+        appPrivateRoot = root,
+        sourceStreamOpener = ImageSourceStreamOpener { null },
+        mimeTypeReader = ImageSourceMimeTypeReader { null },
+        fileOperations = fileOperations,
         ioDispatcher = Dispatchers.Unconfined,
     )
 
@@ -355,6 +533,33 @@ class RoomTournamentRepositoryLocalDeletionTest {
     private fun writeFile(file: File) {
         file.parentFile?.mkdirs()
         file.writeText("test")
+    }
+
+    private class PausingFileOperations : com.hoggamers.rankforge.presentation.screen.LocalImageFileOperations {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        override fun ensureDirectory(directory: File): Boolean =
+            directory.isDirectory || (directory.mkdirs() && directory.isDirectory)
+
+        override fun createTempFile(directory: File): File =
+            File.createTempFile("original-", ".tmp", directory)
+
+        override fun openOutput(file: File): OutputStream = FileOutputStream(file)
+
+        override fun atomicMove(source: File, target: File): Boolean {
+            if (target.exists()) target.delete()
+            return source.renameTo(target)
+        }
+
+        override fun listFiles(directory: File): List<File>? =
+            if (!directory.exists()) emptyList() else directory.listFiles()?.toList()
+
+        override fun delete(file: File): Boolean {
+            started.countDown()
+            check(release.await(5, TimeUnit.SECONDS)) { "timed out waiting to release cleanup" }
+            return !file.exists() || file.delete()
+        }
     }
 
 }
