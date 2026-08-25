@@ -573,6 +573,8 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithText("Lobby Players").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1))
+            .assertTextEquals("Slot - 1 | Team Name - ABC ESPORTS")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 1))
             .assertTextEquals("1. Player One")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 3))
@@ -581,6 +583,10 @@ class MatchOcrReviewScreenTest {
             .assertTextEquals("2. Player Two")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 4))
             .assertTextEquals("4. Not detected")
+        composeTestRule.onAllNodesWithText("PP_PRIMARY:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("ML_FALLBACK:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Resolved:").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Status:").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
     }
 
@@ -605,9 +611,9 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1))
-            .assertTextContains("Slot - 1 | Team name - ETR ESPORTS")
+            .assertTextContains("Slot - 1 | Team Name - ETR ESPORTS")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
-            .assertTextContains("Slot - 2 | Team name - Not named")
+            .assertTextContains("Slot - 2 | Team Name - Not named")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
     }
 

@@ -57,13 +57,20 @@ data class RosterRawOcrRegionEvidence(
     val rawEvidence: List<RosterRawOcrEvidence>,
     val regionWidth: Int = 0,
     val regionHeight: Int = 0,
+    val panelPixelRect: OcrPixelRect? = null,
 )
 
 data class RosterRawOcrExtractionInput(
     val croppedPanelImage: OcrPreprocessingImage?,
     val croppedPanelInput: CroppedRosterPanelInput,
     val layout: CroppedRosterPanelLayout = FreeFireMaxCroppedRosterPanelLayout.definition,
+    val regionSelection: RosterRawOcrRegionSelection = RosterRawOcrRegionSelection.FULL,
 )
+
+enum class RosterRawOcrRegionSelection {
+    FULL,
+    SLOT_CONTENT_ONLY,
+}
 
 data class RosterRawOcrRegionInput(
     val croppedPanelImage: OcrPreprocessingImage,
@@ -146,7 +153,7 @@ class DefaultRosterRawOcrExtractor(
                 ),
             )
 
-        return input.layout.regionRequests(screenshotPosition).map { request ->
+        return input.layout.regionRequests(screenshotPosition, input.regionSelection).map { request ->
             val pixelRect = request.normalizedRect.toPixelRectOrNull(imageWidth, imageHeight)
             val result = if (pixelRect == null) {
                 RosterRawOcrExtractionResult.Failed(
@@ -214,6 +221,7 @@ class DefaultRosterRawOcrExtractor(
 
     private fun CroppedRosterPanelLayout.regionRequests(
         screenshotPosition: RosterScreenshotPosition,
+        regionSelection: RosterRawOcrRegionSelection,
     ): List<RosterRawOcrRegionRequest> = slots.flatMap { slot ->
         buildList {
             add(
@@ -225,17 +233,19 @@ class DefaultRosterRawOcrExtractor(
                     normalizedRect = slot.contentRect,
                 ),
             )
-            slot.playerRowRegions.forEach { row ->
-                add(
-                    RosterRawOcrRegionRequest(
-                        regionIdentity = slot.regionIdentity(
-                            screenshotPosition,
-                            RosterRawOcrRegionType.PLAYER_ROW,
-                            row,
+            if (regionSelection == RosterRawOcrRegionSelection.FULL) {
+                slot.playerRowRegions.forEach { row ->
+                    add(
+                        RosterRawOcrRegionRequest(
+                            regionIdentity = slot.regionIdentity(
+                                screenshotPosition,
+                                RosterRawOcrRegionType.PLAYER_ROW,
+                                row,
+                            ),
+                            normalizedRect = row.rect,
                         ),
-                        normalizedRect = row.rect,
-                    ),
-                )
+                    )
+                }
             }
         }
     }
@@ -280,6 +290,7 @@ class DefaultRosterRawOcrExtractor(
         },
         regionWidth = pixelRect.width,
         regionHeight = pixelRect.height,
+        panelPixelRect = pixelRect,
     )
 
     private fun RawOcrBlock.toRosterEvidence(): RosterRawOcrEvidence = RosterRawOcrEvidence(

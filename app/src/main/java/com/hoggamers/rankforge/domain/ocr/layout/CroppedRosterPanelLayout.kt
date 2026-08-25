@@ -55,6 +55,7 @@ data class CroppedRosterPanelLayout(
  */
 object FreeFireMaxCroppedRosterPanelLayout {
     const val ID = "free-fire-max-cropped-roster-panel-four-slots"
+    const val PLAYER_CONTENT_START_FRACTION = 0.15
 
     val definition = CroppedRosterPanelLayout(
         id = ID,

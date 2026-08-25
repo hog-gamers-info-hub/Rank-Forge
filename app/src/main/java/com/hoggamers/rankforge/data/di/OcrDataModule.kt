@@ -7,6 +7,11 @@ import com.hoggamers.rankforge.data.ocr.MlKitOcrTextRecognizer
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.extraction.MlKitRosterRawOcrExtractor
 import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyAutoCropProposer
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidLobbyPlayerDualOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidLobbyPlayerPpOcrRuntime
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidLobbyPlayerRowCropPipeline
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerDualOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerPpOcrRuntime
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultAutoCropProposer
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidRosterOcrPanelPreparer
 import com.hoggamers.rankforge.data.ocr.preprocessing.RoomRosterOcrSourceProvider
@@ -61,6 +66,24 @@ abstract class OcrDataBindingsModule {
     abstract fun bindMatchLobbyAutoCropProposer(
         proposer: AndroidMatchLobbyAutoCropProposer,
     ): MatchLobbyAutoCropProposer
+
+    @Binds
+    @Singleton
+    abstract fun bindLobbyPlayerRowCropPipeline(
+        pipeline: AndroidLobbyPlayerRowCropPipeline,
+    ): com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerRowCropPipeline
+
+    @Binds
+    @Singleton
+    abstract fun bindLobbyPlayerDualOcrRunner(
+        runner: AndroidLobbyPlayerDualOcrRunner,
+    ): LobbyPlayerDualOcrRunner
+
+    @Binds
+    @Singleton
+    abstract fun bindLobbyPlayerPpOcrRuntime(
+        runtime: AndroidLobbyPlayerPpOcrRuntime,
+    ): LobbyPlayerPpOcrRuntime
 
     @Binds
     @Singleton

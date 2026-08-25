@@ -4,6 +4,17 @@ import kotlin.math.max
 import kotlin.math.min
 
 object PlayerNameSimilarityMatcher {
+    fun similarityScoreForComparison(first: String, second: String): Int {
+        val firstCodePoints = first.toCodePoints()
+        val secondCodePoints = second.toCodePoints()
+        val maximumLength = max(firstCodePoints.size, secondCodePoints.size)
+        if (maximumLength == 0) return 100
+        return similarityScore(
+            maximumLength,
+            unrestrictedDamerauLevenshteinDistance(firstCodePoints, secondCodePoints),
+        )
+    }
+
     fun compare(
         detectedName: String?,
         rosterName: String?,

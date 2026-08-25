@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +68,7 @@ import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
@@ -420,6 +422,7 @@ fun MatchReviewRoute(
                     tournamentId = tournamentId,
                     matchId = matchId,
                     allowIncompleteEvidence = true,
+                    useSlotNumberOnlyLobbyOcr = true,
                 )
             }
         },
@@ -618,13 +621,28 @@ private fun MatchReviewContent(
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
+    val hasLobbyPlayerOcrEvidence = shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()
+    val lobbyTeamCropPreviewsByScreenshotIndex = (ocrUiState as? MatchOcrReviewUiState.Ready)
+        ?.phase1LobbySlotNumberOcr
+        ?.screenshots
+        ?.filterIsInstance<com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult.Processed>()
+        ?.associate { screenshot ->
+            screenshot.screenshotPosition.index to screenshot.teamCropPreviews
+        }
+        .orEmpty()
+    val hasProcessedLobbyOcrData = lobbyTeamCropPreviewsByScreenshotIndex.values.any { result ->
+        (result as? MatchLobbyTeamCropPreviewResult.Available)
+            ?.previews
+            ?.any { preview -> preview.playerRowPreviews.isNotEmpty() } == true
+    }
     val hasLobbyScreenshotSelection = lobbyUiState.slots.any { slot ->
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
     val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
     val isEmptyScreenshotUi = !showLegacyManualReviewContent &&
         !hasLobbyScreenshotSelection &&
-        !hasResultScreenshotSelection
+        !hasResultScreenshotSelection &&
+        !hasProcessedLobbyOcrData
 
     Column(
         modifier = Modifier
@@ -740,7 +758,14 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
                 emphasizedSurface = true,
             ) {
-                matchLobbyScreenshotIntake()
+                CompositionLocalProvider(
+                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                    LocalMatchLobbyTeamNames provides uiState.rows
+                        .associate { row -> row.teamSlotNumber to row.teamName },
+                    LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                ) {
+                    matchLobbyScreenshotIntake()
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
@@ -776,8 +801,15 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
                 contentSpacing = 4.dp,
             ) {
-                matchLobbyScreenshotIntake()
-                if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
+                CompositionLocalProvider(
+                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                    LocalMatchLobbyTeamNames provides uiState.rows
+                        .associate { row -> row.teamSlotNumber to row.teamName },
+                    LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                ) {
+                    matchLobbyScreenshotIntake()
+                }
+                if (hasLobbyPlayerOcrEvidence) {
                     MatchReviewLobbyPlayerDetailsContent(ocrUiState)
                 }
             }
@@ -899,9 +931,12 @@ private fun MatchReviewContent(
         if (uiState.isEditable) {
             Button(
                 onClick = {
-                    if (showLegacyManualReviewContent || ocrPreflightItems.isEmpty()) {
+                    if (showLegacyManualReviewContent) {
                         ocrReviewOpened = true
                         onOpenOcrReview()
+                    } else if (ocrPreflightItems.isEmpty()) {
+                        ocrReviewOpened = true
+                        onCalculatePoints()
                     } else {
                         showOcrPreflight = true
                     }
@@ -1630,7 +1665,7 @@ private fun MatchReviewLobbyPlayersPager(
                 .testTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG),
             ) { page ->
                 orderedSlots.getOrNull(page)?.let { slot ->
-                    MatchReviewOcrPagerItem {
+                    OcrReviewContainer {
                         MatchOcrReviewLobbySlotContent(
                             slot = slot,
                             teamNamesBySlot = teamNamesBySlot,
@@ -1745,7 +1780,7 @@ private fun MatchReviewResultPreviewPager(
                     .testTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG),
             ) { page ->
                 rows.getOrNull(page)?.let { previewRow ->
-                    MatchReviewOcrPagerItem {
+                    OcrReviewContainer {
                         MatchOcrReviewCompactRow(
                             previewRow = previewRow,
                             reviewRow = reviewRowsByPosition[previewRow.position],
@@ -1820,7 +1855,7 @@ private fun MatchReviewResultRowsPagerContent(
                     .testTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG),
             ) { page ->
                 rows.getOrNull(page)?.let { row ->
-                    MatchReviewOcrPagerItem {
+                    OcrReviewContainer {
                         MatchOcrReviewRow(
                             row = row,
                             previewRow = previewRowsByPosition[row.rowIndex + 1],
@@ -1856,25 +1891,6 @@ private fun MatchReviewResultRowsPagerContent(
             onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
-    }
-}
-
-@Composable
-private fun MatchReviewOcrPagerItem(
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.small,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(RankForgeSpacing.Small),
-        ) {
-            content()
-        }
     }
 }
 

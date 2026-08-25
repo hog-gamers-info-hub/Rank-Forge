@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.graphics.Bitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -19,16 +20,33 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyTeamCropPreviewImage
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerRowCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrSlot
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
@@ -277,6 +295,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
+        var opened = 0
+        var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -284,6 +304,8 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
                 )
             }
         }
@@ -293,6 +315,10 @@ class MatchReviewScreenTest {
             .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
             .assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(0, calculated)
+        }
         listOf(
             "Lobby Screenshot 1 is not available.",
             "Lobby Screenshot 2 is not available.",
@@ -305,8 +331,9 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun completeEvidenceBypassesPreflightAndStartsOcr() {
+    fun completeNonLegacyEvidenceBypassesPreflightAndCalculatesPoints() {
         var opened = 0
+        var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -316,16 +343,54 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.runOnIdle { assertEquals(1, opened) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(1, calculated)
+        }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun completeLegacyEvidenceOpensOcrReviewWithoutCalculatingPoints() {
+        var opened = 0
+        var calculated = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(1, opened)
+            assertEquals(0, calculated)
+        }
     }
 
     @Test
@@ -475,6 +540,7 @@ class MatchReviewScreenTest {
 
     @Test
     fun calculatePointsAcceptsIncompleteEvidenceAndOpensInlineOcr() {
+        var opened = 0
         var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -483,6 +549,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
                     onCalculatePoints = { calculated++ },
                 )
             }
@@ -491,8 +558,12 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
             .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, calculated) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(1, calculated)
+        }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -548,7 +619,7 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.LOBBY_PLAYERS)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slot - 11 | Team name - Team 11").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slot - 11 | Team Name - Team 11").assertIsDisplayed()
         composeTestRule.onNodeWithText("1. Lobby One").assertIsDisplayed()
         composeTestRule.onNodeWithText("2. Not detected").assertIsDisplayed()
         composeTestRule.onNodeWithText("3. Lobby Three").assertIsDisplayed()
@@ -593,6 +664,103 @@ class MatchReviewScreenTest {
         assertTrue(lobbyScreenshotsY < lobbyDetailsY)
         assertTrue(lobbyDetailsY < resultScreenshotsY)
         assertTrue(resultScreenshotsY < resultDetailsY)
+    }
+
+    @Test
+    fun lobbySourceIntakeCollapsesTogetherWhenLobbyPlayerEvidenceAppears() {
+        var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(
+            MatchOcrReviewUiState.Empty(lobbyPlayers = emptyList()),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrUiState,
+                    matchLobbyScreenshotIntake = {
+                        Text(
+                            text = "Lobby Details",
+                            modifier = Modifier.testTag("lobby_details_title"),
+                        )
+                        Text(
+                            text = "Lobby details description",
+                            modifier = Modifier.testTag("lobby_details_description"),
+                        )
+                        Text(
+                            text = "Save Lobby",
+                            modifier = Modifier.testTag("save_lobby"),
+                        )
+                        Text(
+                            text = "Save Lobby switch",
+                            modifier = Modifier.testTag("save_lobby_switch"),
+                        )
+                        if (LocalMatchLobbySourceSectionVisible.current) {
+                            Column {
+                                (1..3).forEach { index ->
+                                    Text(
+                                        text = "Source screenshot $index",
+                                        modifier = Modifier.testTag("source_screenshot_$index"),
+                                    )
+                                    Text(
+                                        text = "Replace $index",
+                                        modifier = Modifier.testTag("source_replace_$index"),
+                                    )
+                                    Text(
+                                        text = "Edit $index",
+                                        modifier = Modifier.testTag("source_edit_$index"),
+                                    )
+                                    Text(
+                                        text = "Remove $index",
+                                        modifier = Modifier.testTag("source_remove_$index"),
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Canonical team crop",
+                            modifier = Modifier.testTag("canonical_team_crop"),
+                        )
+                    },
+                )
+            }
+        }
+
+        (1..3).forEach { index ->
+            composeTestRule.onNodeWithTag("source_screenshot_$index").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("source_replace_$index").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("source_edit_$index").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("source_remove_$index").assertIsDisplayed()
+        }
+        composeTestRule.onNodeWithTag("canonical_team_crop").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("lobby_details_title").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("lobby_details_description").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("save_lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("save_lobby_switch").assertIsDisplayed()
+
+        composeTestRule.runOnIdle {
+            ocrUiState = inlineOcrState().copy(
+                phase1LobbySlotNumberOcr = processedLobbySlotNumberOcrWithPlayerRows(),
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        (1..3).forEach { index ->
+            composeTestRule.onAllNodesWithTag("source_screenshot_$index").assertCountEquals(0)
+            composeTestRule.onAllNodesWithTag("source_replace_$index").assertCountEquals(0)
+            composeTestRule.onAllNodesWithTag("source_edit_$index").assertCountEquals(0)
+            composeTestRule.onAllNodesWithTag("source_remove_$index").assertCountEquals(0)
+        }
+        composeTestRule.onNodeWithTag("canonical_team_crop").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("lobby_details_title").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("lobby_details_description").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("save_lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("save_lobby_switch").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slot - 11 | Team Name - Team 11").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Lobby One").assertIsDisplayed()
     }
 
     @Test
@@ -963,8 +1131,9 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun simplifiedReviewOcrActionInvokesCallbackWhenEligible() {
+    fun simplifiedReviewCalculateActionInvokesCalculateCallbackWhenEligible() {
         var ocrReviewCount = 0
+        var calculateCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -989,6 +1158,7 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     onOpenOcrReview = { ocrReviewCount++ },
+                    onCalculatePoints = { calculateCount++ },
                     showLegacyManualReviewContent = false,
                 )
             }
@@ -997,8 +1167,12 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
             .assertIsDisplayed()
             .assertIsEnabled()
+            .performScrollTo()
             .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, ocrReviewCount) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, ocrReviewCount)
+            assertEquals(1, calculateCount)
+        }
     }
 
     @Test
@@ -3022,6 +3196,44 @@ class MatchReviewScreenTest {
             cropProfileId = "match-result",
         ),
     )
+
+    private fun processedLobbySlotNumberOcrWithPlayerRows(): MatchLobbySlotNumberOcrResult {
+        val image = AndroidMatchLobbyTeamCropPreviewImage(
+            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888),
+        )
+        val rowPreview = LobbyPlayerRowCropPreview(
+            row = LobbyPlayerRow.ROW_1,
+            boundsInTeamCrop = LobbyPlayerRowCropBounds(0, 0, 4, 2),
+            slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+            slotAnchorY = 4.0,
+            structuralEvidence = null,
+            image = image,
+        )
+        val teamCrops = MatchLobbyTeamCropPreviewResult.Available(
+            RosterVisibleSlotPosition.entries.mapIndexed { index, position ->
+                MatchLobbyTeamCropPreview(
+                    visibleSlotPosition = position,
+                    detectedSlotNumber = index + 1,
+                    image = image,
+                    playerRowPreviews = if (index == 0) listOf(rowPreview) else emptyList(),
+                )
+            },
+        )
+        return MatchLobbySlotNumberOcrResult(
+            RosterScreenshotPosition.entries.map { screenshotPosition ->
+                MatchLobbySlotNumberOcrScreenshotResult.Processed(
+                    screenshotPosition = screenshotPosition,
+                    slots = RosterVisibleSlotPosition.entries.map { visiblePosition ->
+                        MatchLobbySlotNumberOcrSlot(
+                            visibleSlotPosition = visiblePosition,
+                            candidate = RosterSlotNumberCandidate.unavailable(),
+                        )
+                    },
+                    teamCropPreviews = teamCrops,
+                )
+            },
+        )
+    }
 
     private fun inlineOcrState(): MatchOcrReviewUiState.Ready {
         val row = MatchOcrReviewRowUiState(

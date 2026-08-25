@@ -127,7 +127,7 @@ fun MatchOcrReviewRoute(
     viewModel: MatchOcrReviewViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
-        viewModel.load(tournamentId, matchId)
+        viewModel.load(tournamentId, matchId, useSlotNumberOnlyLobbyOcr = true)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
@@ -358,29 +358,88 @@ internal fun MatchOcrReviewLobbySlotContent(
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.match_ocr_review_compact_not_named)
+    LobbyPlayerNamePresentation(
+        slotNumber = slot.slotNumber,
+        teamName = teamName,
+        playerNames = slot.players.associate { it.playerNumber to it.playerName },
+        slotTestTag = MatchOcrReviewTestTags.lobbySlot(slot.slotNumber),
+        playerTestTag = { playerNumber ->
+            MatchOcrReviewTestTags.lobbyPlayer(slot.slotNumber, playerNumber)
+        },
+    )
+}
+
+@Composable
+internal fun LobbyPlayerNamePresentation(
+    slotNumber: Int,
+    teamName: String,
+    playerNames: Map<Int, String?>,
+    slotTestTag: String? = null,
+    playerTestTag: ((Int) -> String)? = null,
+) {
+    val notDetected = stringResource(R.string.match_ocr_review_compact_not_detected)
     Column(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {}
-                .testTag(MatchOcrReviewTestTags.lobbySlot(slot.slotNumber)),
+                .then(slotTestTag?.let { Modifier.testTag(it) } ?: Modifier),
         ) {
             Text(
-                text = stringResource(
-                    R.string.match_ocr_review_compact_team,
-                    slot.slotNumber,
-                    teamName,
-                ),
+                text = stringResource(R.string.match_ocr_review_lobby_team, slotNumber, teamName),
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        LobbyPlayerRow(slot, leftPlayer = 1, rightPlayer = 3)
-        LobbyPlayerRow(slot, leftPlayer = 2, rightPlayer = 4)
+        LobbyPlayerNamePresentationRow(
+            playerNumbers = listOf(1, 3),
+            playerNames = playerNames,
+            notDetected = notDetected,
+            playerTestTag = playerTestTag,
+        )
+        LobbyPlayerNamePresentationRow(
+            playerNumbers = listOf(2, 4),
+            playerNames = playerNames,
+            notDetected = notDetected,
+            playerTestTag = playerTestTag,
+        )
+    }
+}
+
+@Composable
+private fun LobbyPlayerNamePresentationRow(
+    playerNumbers: List<Int>,
+    playerNames: Map<Int, String?>,
+    notDetected: String,
+    playerTestTag: ((Int) -> String)?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        playerNumbers.forEach { playerNumber ->
+            Text(
+                text = stringResource(
+                    R.string.match_ocr_review_lobby_player,
+                    playerNumber,
+                    playerNames[playerNumber]?.trim()?.takeIf { it.isNotBlank() } ?: notDetected,
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .then(playerTestTag?.invoke(playerNumber)?.let { Modifier.testTag(it) } ?: Modifier),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -486,42 +545,6 @@ internal fun MatchOcrReviewRemainingTeamSlotsSection(
             },
         )
     }
-}
-
-@Composable
-private fun LobbyPlayerRow(
-    slot: MatchOcrReviewLobbySlotUiState,
-    leftPlayer: Int,
-    rightPlayer: Int,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-    ) {
-        LobbyPlayerCell(slot, leftPlayer, Modifier.weight(1f))
-        LobbyPlayerCell(slot, rightPlayer, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun LobbyPlayerCell(
-    slot: MatchOcrReviewLobbySlotUiState,
-    playerNumber: Int,
-    modifier: Modifier,
-) {
-    val playerName = slot.players.firstOrNull { it.playerNumber == playerNumber }
-        ?.playerName
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.match_ocr_review_compact_not_detected)
-    Text(
-        text = stringResource(R.string.match_ocr_review_lobby_player, playerNumber, playerName),
-        modifier = modifier.testTag(MatchOcrReviewTestTags.lobbyPlayer(slot.slotNumber, playerNumber)),
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable

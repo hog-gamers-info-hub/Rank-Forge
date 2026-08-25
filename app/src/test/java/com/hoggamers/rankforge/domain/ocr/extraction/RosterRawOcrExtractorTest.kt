@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.ocr.layout.CroppedRosterPanelInput
 import com.hoggamers.rankforge.domain.ocr.layout.FreeFireMaxCroppedRosterPanelLayout
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotContentSlotNumberExtractor
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -116,6 +117,87 @@ class RosterRawOcrExtractorTest {
     }
 
     @Test
+    fun slotContentOnlyExtractionUsesEachVisibleContentRegionOnceAndPreservesRawEvidence() = runTest {
+        val numbersByPosition = mapOf(
+            RosterVisibleSlotPosition.TOP_LEFT to 5,
+            RosterVisibleSlotPosition.TOP_RIGHT to 6,
+            RosterVisibleSlotPosition.BOTTOM_LEFT to 7,
+            RosterVisibleSlotPosition.BOTTOM_RIGHT to 8,
+        )
+        val engine = RecordingEngine { input ->
+            val number = numbersByPosition.getValue(input.regionIdentity.visibleSlotPosition)
+            RawOcrEngineOutput(
+                fullText = "slot $number",
+                blocks = listOf(
+                    RawOcrBlock(
+                        text = number.toString(),
+                        geometry = RawOcrGeometry(
+                            boundingBox = RawOcrBoundingBox(5, 10, 10, 20),
+                            cornerPoints = listOf(RawOcrPoint(5, 10)),
+                        ),
+                        recognizedLanguage = "en",
+                        confidence = RawOcrConfidence.Unavailable,
+                        lines = listOf(
+                            RawOcrLine(
+                                text = number.toString(),
+                                geometry = RawOcrGeometry(
+                                    boundingBox = RawOcrBoundingBox(5, 10, 10, 20),
+                                    cornerPoints = null,
+                                ),
+                                recognizedLanguage = "en",
+                                confidence = RawOcrConfidence.Unavailable,
+                                elements = listOf(
+                                    RawOcrElement(
+                                        text = number.toString(),
+                                        geometry = RawOcrGeometry(
+                                            boundingBox = RawOcrBoundingBox(5, 10, 10, 20),
+                                            cornerPoints = null,
+                                        ),
+                                        recognizedLanguage = "en",
+                                        confidence = RawOcrConfidence.Unavailable,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        val results = DefaultRosterRawOcrExtractor(engine).extract(
+            validInput(regionSelection = RosterRawOcrRegionSelection.SLOT_CONTENT_ONLY),
+        )
+
+        assertEquals(4, engine.inputs.size)
+        assertEquals(RosterVisibleSlotPosition.entries, engine.inputs.map { it.regionIdentity.visibleSlotPosition })
+        assertTrue(engine.inputs.all { input ->
+            input.regionIdentity.regionType == RosterRawOcrRegionType.SLOT_CONTENT &&
+                input.regionIdentity.playerRowIndex == null
+        })
+        layout.slots.forEach { slot ->
+            assertEquals(
+                slot.contentRect.toPixelRect(800, 600),
+                engine.inputs.single { it.regionIdentity.visibleSlotPosition == slot.visiblePosition }.pixelRect,
+            )
+        }
+
+        val extracted = results.map { it as RosterRawOcrExtractionResult.Extracted }
+        assertEquals(4, extracted.size)
+        extracted.forEach { result ->
+            val number = numbersByPosition.getValue(result.evidence.regionIdentity.visibleSlotPosition)
+            assertEquals("slot $number", result.evidence.rawText)
+            assertEquals(number.toString(), result.evidence.blocks.single().text)
+            assertEquals(
+                RawOcrBoundingBox(5, 10, 10, 20),
+                result.evidence.blocks.single().lines.single().elements.single().geometry?.boundingBox,
+            )
+        }
+        assertEquals(numbersByPosition, LobbySlotContentSlotNumberExtractor.derive(results).mapValues {
+            it.value.detectedSlotNumber
+        })
+    }
+
+    @Test
     fun emptyRecognizerOutputBecomesTypedEmptyResultsForEveryRosterRegion() = runTest {
         val results = DefaultRosterRawOcrExtractor(
             FakeEngine(output = RawOcrEngineOutput("", emptyList())),
@@ -123,6 +205,19 @@ class RosterRawOcrExtractorTest {
 
         assertEquals(20, results.size)
         assertTrue(results.all { it is RosterRawOcrExtractionResult.Empty })
+    }
+
+    @Test
+    fun slotContentOnlyEmptyRecognizerOutputBecomesTypedEmptyResults() = runTest {
+        val results = DefaultRosterRawOcrExtractor(
+            FakeEngine(output = RawOcrEngineOutput("", emptyList())),
+        ).extract(validInput(regionSelection = RosterRawOcrRegionSelection.SLOT_CONTENT_ONLY))
+
+        assertEquals(4, results.size)
+        assertTrue(results.all {
+            it is RosterRawOcrExtractionResult.Empty &&
+                it.regionIdentity.regionType == RosterRawOcrRegionType.SLOT_CONTENT
+        })
     }
 
     @Test
@@ -213,11 +308,26 @@ class RosterRawOcrExtractorTest {
     }
 
     @Test
+    fun slotContentOnlyRecognizerFailuresRetainSlotContentRegionIdentity() = runTest {
+        val results = DefaultRosterRawOcrExtractor(
+            FakeEngine(failure = IllegalStateException()),
+        ).extract(validInput(regionSelection = RosterRawOcrRegionSelection.SLOT_CONTENT_ONLY))
+
+        assertEquals(4, results.size)
+        assertTrue(results.all {
+            it is RosterRawOcrExtractionResult.Failed &&
+                it.failure == RosterRawOcrFailure.RECOGNIZER_FAILED &&
+                it.regionIdentity?.regionType == RosterRawOcrRegionType.SLOT_CONTENT &&
+                it.regionIdentity.playerRowIndex == null
+        })
+    }
+
+    @Test
     fun cancellationPropagatesWithoutCreatingEvidenceOrFailureResults() = runTest {
         val extractor = DefaultRosterRawOcrExtractor(FakeEngine(failure = CancellationException("cancelled")))
 
         try {
-            extractor.extract(validInput())
+            extractor.extract(validInput(regionSelection = RosterRawOcrRegionSelection.SLOT_CONTENT_ONLY))
             fail("Expected cancellation to propagate.")
         } catch (cancellation: CancellationException) {
             assertEquals("cancelled", cancellation.message)
@@ -234,10 +344,12 @@ class RosterRawOcrExtractorTest {
             imageHeight = 600,
         ),
         layout: com.hoggamers.rankforge.domain.ocr.layout.CroppedRosterPanelLayout = this.layout,
+        regionSelection: RosterRawOcrRegionSelection = RosterRawOcrRegionSelection.FULL,
     ): RosterRawOcrExtractionInput = RosterRawOcrExtractionInput(
         croppedPanelImage = image,
         croppedPanelInput = panelInput,
         layout = layout,
+        regionSelection = regionSelection,
     )
 
     private class FakeImage : OcrPreprocessingImage {
@@ -255,12 +367,16 @@ class RosterRawOcrExtractorTest {
         }
     }
 
-    private class RecordingEngine : RosterRawOcrEngine {
+    private class RecordingEngine(
+        private val output: (RosterRawOcrRegionInput) -> RawOcrEngineOutput = {
+            RawOcrEngineOutput("raw", emptyList())
+        },
+    ) : RosterRawOcrEngine {
         val inputs = mutableListOf<RosterRawOcrRegionInput>()
 
         override suspend fun recognize(input: RosterRawOcrRegionInput): RawOcrEngineOutput {
             inputs += input
-            return RawOcrEngineOutput("raw", emptyList())
+            return output(input)
         }
     }
 }

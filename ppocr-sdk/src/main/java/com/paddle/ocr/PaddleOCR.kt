@@ -72,11 +72,14 @@ class PaddleOCR private constructor(
         }
     }
 
-    suspend fun recognize(bitmap: Bitmap): OCRRunResult {
+    suspend fun recognize(
+        bitmap: Bitmap,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): OCRRunResult {
         if (bitmap.width == 0 || bitmap.height == 0) {
             throw OCRError.InvalidImage()
         }
-        return recognizeResult { engine.run(bitmap) }
+        return recognizeResult { engine.run(bitmap, diagnosticsListener) }
     }
 
     suspend fun recognize(imageBytes: ByteArray): OCRRunResult {
@@ -113,6 +116,19 @@ class PaddleOCR private constructor(
     suspend fun release() {
         withContext(Dispatchers.IO) {
             engine.release()
+        }
+    }
+
+    /** Diagnostic-only direct recognition probe; normal recognition never uses this path. */
+    suspend fun diagnosticRecognizeDirect(
+        bitmap: Bitmap,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): List<Pair<String, Float>> {
+        if (bitmap.width == 0 || bitmap.height == 0) {
+            throw OCRError.InvalidImage()
+        }
+        return withContext(Dispatchers.IO) {
+            engine.diagnosticRecognizeDirect(bitmap, diagnosticsListener)
         }
     }
 }
