@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
 import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyReason
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
@@ -94,6 +95,7 @@ sealed interface MatchOcrReviewUiState {
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
+        val phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
     ) : MatchOcrReviewUiState
 
     data class Empty(

@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
@@ -13,6 +14,9 @@ import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleRes
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchResult
@@ -49,6 +53,7 @@ class MatchOcrReviewViewModel @Inject constructor(
     private val finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
     private val matchResultOcrPreviewRunner: MatchResultOcrPreviewRunner,
     private val matchLobbyPlayersOcrRunner: MatchLobbyPlayersOcrRunner,
+    private val matchLobbySlotNumberOcrRunner: MatchLobbySlotNumberOcrRunner,
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val observeRoster: ObserveRosterByTournamentUseCase,
     private val finalizedMatchCloudSync: FinalizedMatchCloudSyncAction =
@@ -79,6 +84,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch,
         NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
     )
@@ -92,6 +98,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch,
         NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
         finalizedMatchCloudSync,
@@ -109,6 +116,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         NO_OP_OBSERVE_ROSTER,
         screenshotOwnerProvider = screenshotOwnerProvider,
@@ -125,6 +133,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch = finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner = NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
         matchLobbyPlayersOcrRunner = NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        matchLobbySlotNumberOcrRunner = NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         observeTournamentSlots = NO_OP_OBSERVE_TOURNAMENT_SLOTS,
         observeRoster = NO_OP_OBSERVE_ROSTER,
         matchOcrCacheReader = matchOcrCacheReader,
@@ -144,6 +153,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner,
         NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER,
+        NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         observeTournamentSlots,
         observeRoster,
         screenshotOwnerProvider = screenshotOwnerProvider,
@@ -155,6 +165,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch: FinalizeOcrCorrectionMatchUseCase,
         matchResultOcrPreviewRunner: MatchResultOcrPreviewRunner,
         matchLobbyPlayersOcrRunner: MatchLobbyPlayersOcrRunner,
+        matchLobbySlotNumberOcrRunner: MatchLobbySlotNumberOcrRunner = NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER,
         observeTournamentSlots: ObserveTournamentSlotsUseCase,
         observeRoster: ObserveRosterByTournamentUseCase,
         initialUiState: MatchOcrReviewUiState,
@@ -164,6 +175,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizeOcrCorrectionMatch = finalizeOcrCorrectionMatch,
         matchResultOcrPreviewRunner = matchResultOcrPreviewRunner,
         matchLobbyPlayersOcrRunner = matchLobbyPlayersOcrRunner,
+        matchLobbySlotNumberOcrRunner = matchLobbySlotNumberOcrRunner,
         observeTournamentSlots = observeTournamentSlots,
         observeRoster = observeRoster,
         tournamentRepository = tournamentRepository,
@@ -172,7 +184,11 @@ class MatchOcrReviewViewModel @Inject constructor(
         _uiState.value = initialUiState
     }
 
-    fun load(tournamentId: String, matchId: String) {
+    fun load(
+        tournamentId: String,
+        matchId: String,
+        useSlotNumberOnlyLobbyOcr: Boolean = false,
+    ) {
         val matchKey = "$tournamentId:$matchId"
         if (loadedMatchKey == matchKey) return
         loadedMatchKey = matchKey
@@ -180,6 +196,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             tournamentId = tournamentId,
             matchId = matchId,
             allowIncompleteEvidence = false,
+            useSlotNumberOnlyLobbyOcr = useSlotNumberOnlyLobbyOcr,
         )
     }
 
@@ -188,12 +205,17 @@ class MatchOcrReviewViewModel @Inject constructor(
         tournamentId: String,
         matchId: String,
         allowIncompleteEvidence: Boolean,
+        useSlotNumberOnlyLobbyOcr: Boolean = false,
     ) {
+        logPhase1LobbySlotNumber(
+            "reprocessEntered useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
+        )
         loadedMatchKey = "$tournamentId:$matchId"
         startOcrProcessing(
             tournamentId = tournamentId,
             matchId = matchId,
             allowIncompleteEvidence = allowIncompleteEvidence,
+            useSlotNumberOnlyLobbyOcr = useSlotNumberOnlyLobbyOcr,
         )
     }
 
@@ -201,7 +223,11 @@ class MatchOcrReviewViewModel @Inject constructor(
         tournamentId: String,
         matchId: String,
         allowIncompleteEvidence: Boolean,
+        useSlotNumberOnlyLobbyOcr: Boolean,
     ) {
+        logPhase1LobbySlotNumber(
+            "startOcrProcessing useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
+        )
         cacheLoadJob?.cancel()
 
         _uiState.update {
@@ -214,7 +240,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
-            val (roleResults, lobbyResult) = coroutineScope {
+            val (roleResults, lobbyOutcome) = coroutineScope {
                 val resultOcr = async {
                     MatchResultScreenshotRole.entries.map { role ->
                         MatchResultOcrPreviewRoleResult(
@@ -230,31 +256,48 @@ class MatchOcrReviewViewModel @Inject constructor(
                     }
                 }
                 val lobbyOcr = async {
-                    try {
-                        matchLobbyPlayersOcrRunner.process(tournamentId, matchId)
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Throwable) {
-                        MatchLobbyPlayersOcrResult.unavailable()
+                    logPhase1LobbySlotNumber(
+                        "lobbyAsyncEntered useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
+                    )
+                    if (useSlotNumberOnlyLobbyOcr) {
+                        logPhase1LobbySlotNumber("slotOnlyBranchSelected")
+                        SlotNumberOnlyLobbyOutcome(
+                            processSlotNumberOnlyLobbyOcr(tournamentId, matchId),
+                        )
+                    } else {
+                        PlayerLobbyOutcome(
+                            try {
+                                matchLobbyPlayersOcrRunner.process(tournamentId, matchId)
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Throwable) {
+                                MatchLobbyPlayersOcrResult.unavailable()
+                            },
+                        )
                     }
                 }
                 resultOcr.await() to lobbyOcr.await()
             }
             val preview = mapPreviewResults(roleResults)
             val teamContext = loadTeamContext(tournamentId)
-            val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
-                preview = preview,
-                resultRows = roleResults.processedResultRows(),
-                lobbyOcrResult = lobbyResult,
-            )
-            val lobbyPlayers = lobbyResult.toUiState()
-                .takeIf {
+            val slotNumberResult = (lobbyOutcome as? SlotNumberOnlyLobbyOutcome)?.result
+            val playerLobbyResult = (lobbyOutcome as? PlayerLobbyOutcome)?.result
+            val matchedRows = playerLobbyResult?.let { lobbyResult ->
+                MatchResultOcrPreviewTeamSuggestionMapper.map(
+                    preview = preview,
+                    resultRows = roleResults.processedResultRows(),
+                    lobbyOcrResult = lobbyResult,
+                )
+            }
+            val lobbyPlayers = playerLobbyResult
+                ?.takeIf { lobbyResult ->
                     lobbyResult.hasLobbyOcrEvidence(
                         matchId,
                         lobbyScreenshotAssetRepository,
                         screenshotOwnerProvider.currentOwnerUserId(),
                     )
                 }
+                ?.toUiState()
                 .orEmpty()
             _uiState.update { state ->
                 val reviewState = if (
@@ -269,6 +312,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         reviewRows = matchedRows,
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
+                        phase1LobbySlotNumberOcr = slotNumberResult,
                     )
                 } else {
                     null
@@ -279,6 +323,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         preview = preview,
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
+                        phase1LobbySlotNumberOcr = slotNumberResult,
                     )
                 } else {
                     null
@@ -303,6 +348,56 @@ class MatchOcrReviewViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun processSlotNumberOnlyLobbyOcr(
+        tournamentId: String,
+        matchId: String,
+    ): MatchLobbySlotNumberOcrResult = try {
+        logPhase1LobbySlotNumber(
+            "slotWrapperEntered runnerClass=${matchLobbySlotNumberOcrRunner.javaClass.simpleName}",
+        )
+        logPhase1LobbySlotNumber("slotRunnerInvoke")
+        matchLobbySlotNumberOcrRunner.process(tournamentId, matchId).also {
+            logPhase1LobbySlotNumber("slotRunnerReturned")
+        }
+    } catch (cancellation: CancellationException) {
+        logPhase1LobbySlotNumber("slotWrapperCancelled")
+        throw cancellation
+    } catch (failure: Throwable) {
+        logPhase1LobbySlotNumber("slotWrapperFailed exceptionType=${failure.javaClass.simpleName}")
+        MatchLobbySlotNumberOcrResult(
+            com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition.entries.map { position ->
+                MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                    screenshotPosition = position,
+                    reason = com.hoggamers.rankforge.data.ocr.matchlobby
+                        .MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED,
+                )
+            },
+        )
+    }.also(::logPhase1LobbySlotNumberOcr)
+
+    private fun logPhase1LobbySlotNumberOcr(result: MatchLobbySlotNumberOcrResult) {
+        result.screenshots.forEach { screenshot ->
+            when (screenshot) {
+                is MatchLobbySlotNumberOcrScreenshotResult.Processed -> screenshot.slots.forEach { slot ->
+                    logPhase1LobbySlotNumber(
+                        "screenshotIndex=${screenshot.screenshotPosition.index} " +
+                            "visiblePosition=${slot.visibleSlotPosition.name} " +
+                            "status=${slot.candidate.status.name} " +
+                            "detectedNumber=${slot.candidate.detectedSlotNumber}",
+                    )
+                }
+                is MatchLobbySlotNumberOcrScreenshotResult.Unavailable -> logPhase1LobbySlotNumber(
+                    "screenshotIndex=${screenshot.screenshotPosition.index} " +
+                        "unavailableReason=${screenshot.reason.name}",
+                )
+            }
+        }
+    }
+
+    private fun logPhase1LobbySlotNumber(message: String) {
+        runCatching { Log.w(TEMP_LOBBY_SLOT_PHASE1_TAG, message) }
     }
 
     fun loadCached(tournamentId: String, matchId: String) {
@@ -731,6 +826,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         reviewRows: List<MatchOcrReviewRowUiState>?,
         teamNamesBySlot: Map<Int, String>,
         lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
+        phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
     ): MatchOcrReviewUiState.Ready? {
         val rows = reviewRows ?: MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
@@ -772,6 +868,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             matchResultOcrPreview = preview,
             teamNamesBySlot = teamNamesBySlot,
             lobbyPlayers = lobbyPlayers,
+            phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
         )
     }
 
@@ -781,6 +878,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         preview: MatchResultOcrPreviewUiState,
         teamNamesBySlot: Map<Int, String>,
         lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
+        phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
     ): MatchOcrReviewUiState.Ready {
         val rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
@@ -803,6 +901,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             matchResultOcrPreview = preview,
             teamNamesBySlot = teamNamesBySlot,
             lobbyPlayers = lobbyPlayers,
+            phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
         )
     }
 
@@ -919,6 +1018,30 @@ private val NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER = MatchResultOcrPreviewRunner 
 private val NO_OP_MATCH_LOBBY_PLAYERS_OCR_RUNNER = MatchLobbyPlayersOcrRunner { _, _ ->
     MatchLobbyPlayersOcrResult.unavailable()
 }
+
+private val NO_OP_MATCH_LOBBY_SLOT_NUMBER_OCR_RUNNER = MatchLobbySlotNumberOcrRunner { _, _ ->
+    MatchLobbySlotNumberOcrResult(
+        com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition.entries.map { position ->
+            MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                screenshotPosition = position,
+                reason = com.hoggamers.rankforge.data.ocr.matchlobby
+                    .MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED,
+            )
+        },
+    )
+}
+
+private sealed interface MatchLobbyOcrOutcome
+
+private data class PlayerLobbyOutcome(
+    val result: MatchLobbyPlayersOcrResult,
+) : MatchLobbyOcrOutcome
+
+private data class SlotNumberOnlyLobbyOutcome(
+    val result: MatchLobbySlotNumberOcrResult,
+) : MatchLobbyOcrOutcome
+
+private const val TEMP_LOBBY_SLOT_PHASE1_TAG = "TEMP_LOBBY_SLOT_PHASE1"
 
 private fun MatchLobbyPlayersOcrResult.toUiState(): List<MatchOcrReviewLobbySlotUiState> =
     slots.sortedBy { it.slotNumber }.map { slot ->

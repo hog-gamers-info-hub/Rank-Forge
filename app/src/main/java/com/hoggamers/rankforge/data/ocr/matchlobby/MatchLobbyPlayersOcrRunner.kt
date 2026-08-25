@@ -10,7 +10,6 @@ import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
-import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyResolvedSlotGroup
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotIdentityResolutionResult
@@ -20,10 +19,8 @@ import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseInput
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParser
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotCandidate
-import com.hoggamers.rankforge.domain.ocr.review.RosterOcrLocalRelativePath
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
-import com.hoggamers.rankforge.domain.ocr.review.RosterOcrScreenshotSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -115,7 +112,7 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
             return null
         }
 
-        val source = asset.toRosterSource(position, identity) ?: run {
+        val source = asset.toRosterOcrScreenshotSource(position, identity) ?: run {
             return null
         }
         val fingerprint = asset.toMatchLobbyOcrCacheFingerprint(identity, position)
@@ -256,29 +253,6 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         throw cancellation
     } catch (_: Throwable) {
         null
-    }
-
-    private fun MatchLobbyScreenshotAssetEntity.toRosterSource(
-        position: RosterScreenshotPosition,
-        identity: MatchLobbyScreenshotIdentity,
-    ): RosterOcrScreenshotSource? {
-        if (identity.tournamentId != tournamentId || identity.matchId != matchId ||
-            identity.lobbyScreenshotIndex != lobbyScreenshotIndex ||
-            cropProfileId != OcrCropValidationProfiles.Lobby.id ||
-            cropLeft == null || cropTop == null || cropRight == null || cropBottom == null
-        ) return null
-        return RosterOcrScreenshotSource(
-            tournamentId = tournamentId,
-            rosterScreenshotIndex = lobbyScreenshotIndex,
-            screenshotPosition = position,
-            localRelativePath = RosterOcrLocalRelativePath(localRelativePath),
-            sourceWidth = originalWidth,
-            sourceHeight = originalHeight,
-            cropLeft = cropLeft,
-            cropTop = cropTop,
-            cropRight = cropRight,
-            cropBottom = cropBottom,
-        )
     }
 
     private object ExtractionFailure : Throwable()

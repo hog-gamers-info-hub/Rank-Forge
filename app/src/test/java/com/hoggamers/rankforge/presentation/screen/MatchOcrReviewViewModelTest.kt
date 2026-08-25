@@ -6,6 +6,11 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrSlot
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrSlot
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrUnavailableReason
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.matching.RowTeamAssignmentSafetyResult
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
@@ -16,6 +21,12 @@ import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestion
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseFailure
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
+import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
@@ -237,6 +248,102 @@ class MatchOcrReviewViewModelTest {
         assertEquals("2", (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
             .rows.first().detectedPlacementDisplayValue)
     }
+
+    @Test
+    fun calculatePointsUsesSlotOnlyLobbyOcrWithoutPlayerMatchingOrFakeLobbyData() = runTest(dispatcher) {
+        var oldLobbyRunnerCalls = 0
+        var slotRunnerCalls = 0
+        val resultRoles = mutableListOf<MatchResultScreenshotRole>()
+        val slotNumberResult = phase1SlotNumberResult()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                resultRoles += identity.role
+                completePreviewRunner().process(identity)
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                oldLobbyRunnerCalls++
+                MatchLobbyPlayersOcrResult.unavailable()
+            },
+            matchLobbySlotNumberOcrRunner = MatchLobbySlotNumberOcrRunner { _, _ ->
+                slotRunnerCalls++
+                slotNumberResult
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(InMemoryTournamentRepository()),
+            observeRoster = ObserveRosterByTournamentUseCase(InMemoryTournamentRepository()),
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            allowIncompleteEvidence = true,
+            useSlotNumberOnlyLobbyOcr = true,
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(MatchResultScreenshotRole.entries, resultRoles)
+        assertEquals(1, slotRunnerCalls)
+        assertEquals(0, oldLobbyRunnerCalls)
+        assertEquals(slotNumberResult, state.phase1LobbySlotNumberOcr)
+        assertTrue(state.lobbyPlayers.isEmpty())
+        assertTrue(state.rows.none { it.resultLobbyVoteEvidencePresent })
+        assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
+        assertEquals("1", state.rows.first().detectedPlacementDisplayValue)
+
+        val firstScreenshot = state.phase1LobbySlotNumberOcr!!.screenshots.first()
+            as MatchLobbySlotNumberOcrScreenshotResult.Processed
+        assertEquals(listOf(4, 1, 3, 2), firstScreenshot.slots.map { it.candidate.detectedSlotNumber })
+        assertEquals(
+            listOf(
+                RosterCandidateParseStatus.MISSING,
+                RosterCandidateParseStatus.AMBIGUOUS,
+                RosterCandidateParseStatus.MISSING,
+                RosterCandidateParseStatus.PARSED,
+            ),
+            (state.phase1LobbySlotNumberOcr!!.screenshots[1]
+                as MatchLobbySlotNumberOcrScreenshotResult.Processed)
+                .slots.map { it.candidate.status },
+        )
+        assertEquals(
+            MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE,
+            (state.phase1LobbySlotNumberOcr!!.screenshots[2]
+                as MatchLobbySlotNumberOcrScreenshotResult.Unavailable).reason,
+        )
+    }
+
+    @Test
+    fun calculatePointsPropagatesSlotOnlyLobbyOcrCancellationWithoutFallingBackToPlayerOcr() =
+        runTest(dispatcher) {
+            var oldLobbyRunnerCalls = 0
+            val viewModel = MatchOcrReviewViewModel(
+                finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+                matchResultOcrPreviewRunner = completePreviewRunner(),
+                matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                    oldLobbyRunnerCalls++
+                    MatchLobbyPlayersOcrResult.unavailable()
+                },
+                matchLobbySlotNumberOcrRunner = MatchLobbySlotNumberOcrRunner { _, _ ->
+                    throw java.util.concurrent.CancellationException("test cancellation")
+                },
+                observeTournamentSlots = ObserveTournamentSlotsUseCase(InMemoryTournamentRepository()),
+                observeRoster = ObserveRosterByTournamentUseCase(InMemoryTournamentRepository()),
+                initialUiState = MatchOcrReviewUiState.Loading,
+            )
+
+            viewModel.reprocess(
+                tournamentId = TOURNAMENT_ID,
+                matchId = MATCH_ID,
+                allowIncompleteEvidence = true,
+                useSlotNumberOnlyLobbyOcr = true,
+            )
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
+            assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Processing)
+            assertEquals(0, oldLobbyRunnerCalls)
+        }
 
     @Test
     fun resultAndLobbyCompletionOrderProducesTheSameLobbyDrivenAssignment() = runTest(dispatcher) {
@@ -1268,6 +1375,69 @@ class MatchOcrReviewViewModelTest {
                 )
             },
         )
+
+    private fun phase1SlotNumberResult(): MatchLobbySlotNumberOcrResult =
+        MatchLobbySlotNumberOcrResult(
+            listOf(
+                processedSlotNumberScreenshot(
+                    position = RosterScreenshotPosition.ONE,
+                    candidates = listOf(
+                        parsedSlotNumber(4),
+                        parsedSlotNumber(1),
+                        parsedSlotNumber(3),
+                        parsedSlotNumber(2),
+                    ),
+                ),
+                processedSlotNumberScreenshot(
+                    position = RosterScreenshotPosition.TWO,
+                    candidates = listOf(
+                        missingSlotNumber(),
+                        ambiguousSlotNumber(),
+                        missingSlotNumber(),
+                        parsedSlotNumber(12),
+                    ),
+                ),
+                MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                    screenshotPosition = RosterScreenshotPosition.THREE,
+                    reason = MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE,
+                ),
+            ),
+        )
+
+    private fun processedSlotNumberScreenshot(
+        position: RosterScreenshotPosition,
+        candidates: List<RosterSlotNumberCandidate>,
+    ): MatchLobbySlotNumberOcrScreenshotResult.Processed =
+        MatchLobbySlotNumberOcrScreenshotResult.Processed(
+            screenshotPosition = position,
+            slots = RosterVisibleSlotPosition.entries.mapIndexed { index, visiblePosition ->
+                MatchLobbySlotNumberOcrSlot(visiblePosition, candidates[index])
+            },
+        )
+
+    private fun parsedSlotNumber(number: Int): RosterSlotNumberCandidate = RosterSlotNumberCandidate(
+        status = RosterCandidateParseStatus.PARSED,
+        detectedSlotNumber = number,
+        failure = null,
+        rawSourceResults = emptyList(),
+        confidence = RawOcrConfidence.Unavailable,
+    )
+
+    private fun missingSlotNumber(): RosterSlotNumberCandidate = RosterSlotNumberCandidate(
+        status = RosterCandidateParseStatus.MISSING,
+        detectedSlotNumber = null,
+        failure = RosterCandidateParseFailure.MISSING_EVIDENCE,
+        rawSourceResults = emptyList(),
+        confidence = RawOcrConfidence.Unavailable,
+    )
+
+    private fun ambiguousSlotNumber(): RosterSlotNumberCandidate = RosterSlotNumberCandidate(
+        status = RosterCandidateParseStatus.AMBIGUOUS,
+        detectedSlotNumber = null,
+        failure = RosterCandidateParseFailure.MULTIPLE_FRAGMENTS,
+        rawSourceResults = emptyList(),
+        confidence = RawOcrConfidence.Unavailable,
+    )
 
     private fun completePreviewRunner(): MatchResultOcrPreviewRunner =
         MatchResultOcrPreviewRunner { identity ->

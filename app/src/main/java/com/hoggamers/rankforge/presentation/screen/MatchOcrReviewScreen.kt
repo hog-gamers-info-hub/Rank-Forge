@@ -127,7 +127,7 @@ fun MatchOcrReviewRoute(
     viewModel: MatchOcrReviewViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId, matchId) {
-        viewModel.load(tournamentId, matchId)
+        viewModel.load(tournamentId, matchId, useSlotNumberOnlyLobbyOcr = true)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)

@@ -277,6 +277,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
+        var opened = 0
+        var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -284,6 +286,8 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
                 )
             }
         }
@@ -293,6 +297,10 @@ class MatchReviewScreenTest {
             .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
             .assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(0, calculated)
+        }
         listOf(
             "Lobby Screenshot 1 is not available.",
             "Lobby Screenshot 2 is not available.",
@@ -305,8 +313,9 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun completeEvidenceBypassesPreflightAndStartsOcr() {
+    fun completeNonLegacyEvidenceBypassesPreflightAndCalculatesPoints() {
         var opened = 0
+        var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -316,16 +325,54 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.runOnIdle { assertEquals(1, opened) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(1, calculated)
+        }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun completeLegacyEvidenceOpensOcrReviewWithoutCalculatingPoints() {
+        var opened = 0
+        var calculated = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
+                    onCalculatePoints = { calculated++ },
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(1, opened)
+            assertEquals(0, calculated)
+        }
     }
 
     @Test
@@ -475,6 +522,7 @@ class MatchReviewScreenTest {
 
     @Test
     fun calculatePointsAcceptsIncompleteEvidenceAndOpensInlineOcr() {
+        var opened = 0
         var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -483,6 +531,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    onOpenOcrReview = { opened++ },
                     onCalculatePoints = { calculated++ },
                 )
             }
@@ -491,8 +540,12 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
             .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, calculated) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(1, calculated)
+        }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -963,8 +1016,9 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun simplifiedReviewOcrActionInvokesCallbackWhenEligible() {
+    fun simplifiedReviewCalculateActionInvokesCalculateCallbackWhenEligible() {
         var ocrReviewCount = 0
+        var calculateCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -989,6 +1043,7 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     onOpenOcrReview = { ocrReviewCount++ },
+                    onCalculatePoints = { calculateCount++ },
                     showLegacyManualReviewContent = false,
                 )
             }
@@ -997,8 +1052,12 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
             .assertIsDisplayed()
             .assertIsEnabled()
+            .performScrollTo()
             .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, ocrReviewCount) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, ocrReviewCount)
+            assertEquals(1, calculateCount)
+        }
     }
 
     @Test

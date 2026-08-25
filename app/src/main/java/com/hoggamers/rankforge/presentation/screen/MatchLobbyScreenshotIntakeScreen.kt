@@ -4,13 +4,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.offset
@@ -20,10 +24,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
@@ -32,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -52,6 +61,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyTeamCropPreviewImage
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -69,6 +81,23 @@ const val MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX = "match_lobby_s
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX = "match_lobby_screenshot_slot_"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG = "match_lobby_screenshot_intake_pager"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG = "match_lobby_screenshot_save_template"
+const val MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX = "match_lobby_team_crop_previews_"
+const val MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX = "match_lobby_team_crop_card_"
+
+internal data class TeamCropBitmapDimensions(
+    val width: Int,
+    val height: Int,
+)
+
+internal fun calculateMaxTeamCropHeightRatio(
+    dimensions: List<TeamCropBitmapDimensions>,
+): Float = dimensions.maxOf { dimensionsForCrop ->
+    dimensionsForCrop.height.toFloat() / dimensionsForCrop.width.toFloat()
+}
+
+val LocalMatchLobbyTeamCropPreviews = staticCompositionLocalOf<Map<Int, MatchLobbyTeamCropPreviewResult>> {
+    emptyMap()
+}
 
 @Composable
 fun MatchLobbyScreenshotIntakeRoute(
@@ -144,6 +173,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     compactSelectors: Boolean = false,
     compactActions: Boolean = false,
 ) {
+    val teamCropPreviewsByScreenshotIndex = LocalMatchLobbyTeamCropPreviews.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -169,6 +199,16 @@ fun MatchLobbyScreenshotIntakeScreen(
             val selectedSlots = uiState.slots.filter { slot ->
                 slot.hasScreenshotSelection()
             }
+            val globallyOrderedTeamCropPreviews = teamCropPreviewsByScreenshotIndex.values
+                .asSequence()
+                .flatMap { result ->
+                    (result as? MatchLobbyTeamCropPreviewResult.Available)
+                        ?.previews
+                        .orEmpty()
+                        .asSequence()
+                }
+                .sortedBy { it.detectedSlotNumber }
+                .toList()
             val selectedSlotIndices = selectedSlots.map { it.index }
             val pagerState = rememberPagerState(pageCount = { selectedSlots.size })
             val scope = rememberCoroutineScope()
@@ -292,6 +332,10 @@ fun MatchLobbyScreenshotIntakeScreen(
                         )
                     }
                 }
+            }
+
+            if (globallyOrderedTeamCropPreviews.isNotEmpty()) {
+                LobbyTeamCropPreviewPager(previews = globallyOrderedTeamCropPreviews)
             }
 
             if (compactSelectors) {
@@ -585,6 +629,78 @@ private fun LobbyScreenshotDetail(
                 onRemove = onRemove,
                 compactActions = true,
             )
+        }
+    }
+}
+
+@Composable
+private fun LobbyTeamCropPreviewPager(
+    previews: List<MatchLobbyTeamCropPreview>,
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX + "global"),
+    ) {
+        val displayWidth = maxWidth
+        val maxDisplayHeight = displayWidth * calculateMaxTeamCropHeightRatio(
+            previews.map { preview ->
+                when (val image = preview.image) {
+                    is AndroidMatchLobbyTeamCropPreviewImage -> TeamCropBitmapDimensions(
+                        width = image.bitmap.width,
+                        height = image.bitmap.height,
+                    )
+                    else -> TeamCropBitmapDimensions(width = 1, height = 1)
+                }
+            },
+        )
+        val pagerState = rememberPagerState(pageCount = { previews.size })
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                pageSize = PageSize.Fill,
+                pageSpacing = RankForgeSpacing.ExtraSmall,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                val preview = previews[it]
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(maxDisplayHeight)
+                        .testTag(
+                            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX +
+                                "slot_" + preview.detectedSlotNumber,
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        when (val image = preview.image) {
+                            is AndroidMatchLobbyTeamCropPreviewImage -> {
+                                val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+                                Image(
+                                    bitmap = image.bitmap.asImageBitmap(),
+                                    contentDescription = "Slot ${preview.detectedSlotNumber}",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(aspectRatio),
+                                )
+                            }
+                            else -> Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

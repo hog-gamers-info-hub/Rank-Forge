@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -420,6 +421,7 @@ fun MatchReviewRoute(
                     tournamentId = tournamentId,
                     matchId = matchId,
                     allowIncompleteEvidence = true,
+                    useSlotNumberOnlyLobbyOcr = true,
                 )
             }
         },
@@ -618,6 +620,18 @@ private fun MatchReviewContent(
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
+    val lobbyTeamCropPreviewsByScreenshotIndex = if (shouldShowInlineOcrDetails) {
+        (ocrUiState as? MatchOcrReviewUiState.Ready)
+            ?.phase1LobbySlotNumberOcr
+            ?.screenshots
+            ?.filterIsInstance<com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult.Processed>()
+            ?.associate { screenshot ->
+                screenshot.screenshotPosition.index to screenshot.teamCropPreviews
+            }
+            .orEmpty()
+    } else {
+        emptyMap()
+    }
     val hasLobbyScreenshotSelection = lobbyUiState.slots.any { slot ->
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
@@ -740,7 +754,11 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
                 emphasizedSurface = true,
             ) {
-                matchLobbyScreenshotIntake()
+                CompositionLocalProvider(
+                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                ) {
+                    matchLobbyScreenshotIntake()
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
@@ -776,7 +794,11 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
                 contentSpacing = 4.dp,
             ) {
-                matchLobbyScreenshotIntake()
+                CompositionLocalProvider(
+                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                ) {
+                    matchLobbyScreenshotIntake()
+                }
                 if (shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()) {
                     MatchReviewLobbyPlayerDetailsContent(ocrUiState)
                 }
@@ -899,9 +921,12 @@ private fun MatchReviewContent(
         if (uiState.isEditable) {
             Button(
                 onClick = {
-                    if (showLegacyManualReviewContent || ocrPreflightItems.isEmpty()) {
+                    if (showLegacyManualReviewContent) {
                         ocrReviewOpened = true
                         onOpenOcrReview()
+                    } else if (ocrPreflightItems.isEmpty()) {
+                        ocrReviewOpened = true
+                        onCalculatePoints()
                     } else {
                         showOcrPreflight = true
                     }

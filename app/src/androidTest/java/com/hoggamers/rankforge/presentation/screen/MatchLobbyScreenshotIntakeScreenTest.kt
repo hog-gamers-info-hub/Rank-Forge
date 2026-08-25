@@ -18,13 +18,20 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.R
+import android.graphics.Bitmap
+import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyTeamCropPreviewImage
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
@@ -36,6 +43,160 @@ import org.junit.runner.RunWith
 class MatchLobbyScreenshotIntakeScreenTest {
     @get:Rule
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun globalTeamCropPagerSortsByDetectedSlotWithoutVisibleLabels() {
+        val shuffledSlotNumbers = listOf(9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)
+        val previewsByScreenshot = shuffledSlotNumbers
+            .chunked(RosterVisibleSlotPosition.entries.size)
+            .mapIndexed { screenshotOffset, screenshotSlots ->
+                (screenshotOffset + 1) to MatchLobbyTeamCropPreviewResult.Available(
+                    RosterVisibleSlotPosition.entries.mapIndexed { index, position ->
+                        val detectedSlot = screenshotSlots[index]
+                        val height = when (detectedSlot % 3) {
+                            0 -> 320
+                            1 -> 300
+                            else -> 360
+                        }
+                        MatchLobbyTeamCropPreview(
+                            position,
+                            detectedSlot,
+                            AndroidMatchLobbyTeamCropPreviewImage(
+                                Bitmap.createBitmap(1000, height, Bitmap.Config.ARGB_8888),
+                            ),
+                        )
+                    },
+                )
+            }
+            .toMap()
+        val selectedSlots = defaultMatchLobbyScreenshotSlots().map { slot ->
+            slot.copy(
+                hasLinkedAsset = true,
+                selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                selectedScreenshotWidth = 1920,
+                selectedScreenshotHeight = 1080,
+                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                cropProfileId = "lobby",
+            )
+        }
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CompositionLocalProvider(LocalMatchLobbyTeamCropPreviews provides previewsByScreenshot) {
+                    MatchLobbyScreenshotIntakeScreen(
+                        uiState = MatchLobbyScreenshotIntakeUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            slots = selectedSlots,
+                        ),
+                        onSelect = {},
+                        onCrop = {},
+                        onRemove = {},
+                        compactActions = true,
+                    )
+                }
+            }
+        }
+
+        val pager = composeTestRule.onNodeWithTag(MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX + "global")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_1")
+            .assertIsDisplayed()
+        val pagerBounds = pager.getUnclippedBoundsInRoot()
+        val firstCardBounds = composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_1",
+        ).getUnclippedBoundsInRoot()
+        val pagerWidth = (pagerBounds.right - pagerBounds.left).value
+        val firstCardWidth = (firstCardBounds.right - firstCardBounds.left).value
+        val firstCardHeight = (firstCardBounds.bottom - firstCardBounds.top).value
+        assertEquals(pagerWidth, firstCardWidth, 1f)
+        val firstImageBounds = composeTestRule.onNodeWithContentDescription("Slot 1")
+            .getUnclippedBoundsInRoot()
+        val firstImageHeight = (firstImageBounds.bottom - firstImageBounds.top).value
+        assertEquals(300f / 1000f * firstCardWidth, firstImageHeight, 1f)
+        assertEquals(
+            firstCardBounds.top.value + (firstCardHeight - firstImageHeight) / 2f,
+            firstImageBounds.top.value,
+            1f,
+        )
+        val fixedPagerHeight = firstCardHeight
+        composeTestRule.onNodeWithContentDescription("Slot 1").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Slot 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("1 / 4").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("1 / 12").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(
+            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_2",
+        ).assertCountEquals(0)
+
+        (2..12).forEach { expectedSlot ->
+            composeTestRule.onNodeWithTag(MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX + "global")
+                .performTouchInput { swipeLeft() }
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag(
+                MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_" + expectedSlot,
+            ).assertIsDisplayed()
+            assertEquals(
+                fixedPagerHeight,
+                composeTestRule.onNodeWithTag(
+                    MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_" + expectedSlot,
+                ).getUnclippedBoundsInRoot().let { bounds ->
+                    (bounds.bottom - bounds.top).value
+                },
+                1f,
+            )
+            composeTestRule.onNodeWithContentDescription("Slot $expectedSlot").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun globalTeamCropPagerDoesNotSynthesizeMissingDetectedSlots() {
+        val selected = defaultMatchLobbyScreenshotSlots().first().copy(
+            hasLinkedAsset = true,
+            selectedScreenshotUri = "file:///private/lobby-1.png",
+            selectedScreenshotWidth = 1920,
+            selectedScreenshotHeight = 1080,
+            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+            cropProfileId = "lobby",
+        )
+        val previewImage = AndroidMatchLobbyTeamCropPreviewImage(
+            Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888),
+        )
+        val detectedSlots = listOf(1, 2, 4, 5)
+        val previews = MatchLobbyTeamCropPreviewResult.Available(
+            RosterVisibleSlotPosition.entries.mapIndexed { index, position ->
+                MatchLobbyTeamCropPreview(position, detectedSlots[index], previewImage)
+            },
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CompositionLocalProvider(LocalMatchLobbyTeamCropPreviews provides mapOf(1 to previews)) {
+                    MatchLobbyScreenshotIntakeScreen(
+                        uiState = MatchLobbyScreenshotIntakeUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            slots = listOf(selected) + defaultMatchLobbyScreenshotSlots().drop(1),
+                        ),
+                        onSelect = {},
+                        onCrop = {},
+                        onRemove = {},
+                        compactActions = true,
+                    )
+                }
+            }
+        }
+
+        val pagerTag = MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX + "global"
+        composeTestRule.onNodeWithContentDescription("Slot 1").assertIsDisplayed()
+        detectedSlots.drop(1).forEach { expectedSlot ->
+            composeTestRule.onNodeWithTag(pagerTag).performTouchInput { swipeLeft() }
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithContentDescription("Slot $expectedSlot").assertIsDisplayed()
+        }
+        composeTestRule.onAllNodesWithTag(
+            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_3",
+        ).assertCountEquals(0)
+    }
 
     @Test
     fun emptySlotsShowOneSequentialCompactSelectorAndSelectionCallback() {
