@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,6 +70,7 @@ import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
@@ -175,6 +177,8 @@ const val MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG = "match_review_lob
 const val MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG = "match_review_lobby_players_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG = "match_review_result_screenshots_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG = "match_review_result_screenshots_section"
+const val MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG = "match_review_result_details_header"
+const val MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG = "match_review_result_details_step"
 const val MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG = "match_review_result_ocr_details_section"
 const val MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG = "match_review_result_ocr_preview_pager"
 const val MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG = "match_review_result_ocr_rows_pager"
@@ -643,6 +647,22 @@ private fun MatchReviewContent(
         !hasLobbyScreenshotSelection &&
         !hasResultScreenshotSelection &&
         !hasProcessedLobbyOcrData
+    val resultOcrDetailsContent: @Composable () -> Unit = {
+        if (shouldShowInlineOcrDetails) {
+            MatchReviewResultOcrDetailsContent(
+                uiState = ocrUiState,
+                onPlacementChanged = onOcrPlacementChanged,
+                onKillsChanged = onOcrKillsChanged,
+                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                onExcludeOcrRow = onExcludeOcrRow,
+                onResetRowCorrection = onOcrResetRowCorrection,
+                onResetAllCorrections = onOcrResetAllCorrections,
+                onFinalizeOcrCorrection = onOcrFinalize,
+                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -772,11 +792,22 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
                 emphasizedSurface = true,
             ) {
-                Text(
-                    text = stringResource(R.string.match_review_result_screenshots_title),
-                    color = PointIqMatchReviewNavy,
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Row(
+                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
+                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ReviewStepBadge(
+                        number = 2,
+                        backgroundColor = PointIqMatchReviewNavy,
+                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
+                    )
+                    Text(
+                        text = stringResource(R.string.match_review_result_screenshots_title),
+                        color = PointIqMatchReviewNavy,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
                 if (!hasResultScreenshotSelection) {
                     Text(
                         text = stringResource(R.string.pointiq_match_review_result_description),
@@ -792,6 +823,7 @@ private fun MatchReviewContent(
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    ocrDetailsContent = resultOcrDetailsContent,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -822,11 +854,22 @@ private fun MatchReviewContent(
                     RankForgeSpacing.Small
                 },
             ) {
-                Text(
-                    text = stringResource(R.string.match_review_result_screenshots_title),
-                    color = PointIqMatchReviewNavy,
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Row(
+                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
+                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ReviewStepBadge(
+                        number = 2,
+                        backgroundColor = PointIqMatchReviewNavy,
+                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
+                    )
+                    Text(
+                        text = stringResource(R.string.match_review_result_screenshots_title),
+                        color = PointIqMatchReviewNavy,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
                 if (!hasResultScreenshotSelection) {
                     Text(
                         text = stringResource(R.string.pointiq_match_review_result_description),
@@ -842,21 +885,8 @@ private fun MatchReviewContent(
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    ocrDetailsContent = resultOcrDetailsContent,
                 )
-                if (shouldShowInlineOcrDetails) {
-                    MatchReviewResultOcrDetailsContent(
-                        uiState = ocrUiState,
-                        onPlacementChanged = onOcrPlacementChanged,
-                        onKillsChanged = onOcrKillsChanged,
-                        onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-                        onExcludeOcrRow = onExcludeOcrRow,
-                        onResetRowCorrection = onOcrResetRowCorrection,
-                        onResetAllCorrections = onOcrResetAllCorrections,
-                        onFinalizeOcrCorrection = onOcrFinalize,
-                        onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-                        onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-                    )
-                }
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -1902,6 +1932,7 @@ private fun ResultScreenshotSelector(
     onSelectBatch: (() -> Unit)?,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+    ocrDetailsContent: @Composable () -> Unit = {},
 ) {
     val roles = listOf(
         MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -1950,23 +1981,38 @@ private fun ResultScreenshotSelector(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         if (selectedPages.isNotEmpty()) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
-            ) { page ->
-                selectedPages.getOrNull(page)?.let { (role, slot) ->
-                    ResultScreenshotPage(
-                        screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
-                        slot = slot,
-                        isEditable = isEditable,
-                        onSelectScreenshot = onSelectScreenshot,
-                        onOpenCrop = onOpenCrop,
-                        onRemoveScreenshot = onRemoveScreenshot,
-                    )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val maxResultScreenshotHeight = maxWidth * (
+                    selectedPages
+                        .mapNotNull { (_, slot) -> slot.resultScreenshotHeightRatio() }
+                        .maxOrNull()
+                        ?: 1f
+                )
+                HorizontalPager(
+                    state = pagerState,
+                    pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+                    pageSpacing = RankForgeSpacing.ExtraSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
+                ) { page ->
+                    selectedPages.getOrNull(page)?.let { (role, slot) ->
+                        ResultScreenshotPage(
+                            screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
+                            slot = slot,
+                            imageAreaHeight = maxResultScreenshotHeight,
+                            isEditable = isEditable,
+                            showOcrDetails = pagerState.currentPage == page,
+                            ocrDetailsContent = ocrDetailsContent,
+                            onSelectScreenshot = onSelectScreenshot,
+                            onOpenCrop = onOpenCrop,
+                            onRemoveScreenshot = onRemoveScreenshot,
+                        )
+                    }
                 }
             }
+        } else {
+            ocrDetailsContent()
         }
         nextEmptyRole?.let { role ->
             val slot = resultScreenshots.slot(role)
@@ -1993,11 +2039,24 @@ private fun ResultScreenshotSelector(
 private fun MatchResultScreenshotSlotUiState.hasSelection(): Boolean =
     hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
 
+private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Float? {
+    val dimensions = OcrImageDimensions.from(
+        width = originalWidth ?: selectedScreenshotWidth ?: return null,
+        height = originalHeight ?: selectedScreenshotHeight ?: return null,
+    ) ?: return null
+    val crop = confirmedCrop ?: return null
+    val pixelCrop = crop.toPixelRectOrNull(dimensions) ?: return null
+    return pixelCrop.height.toFloat() / pixelCrop.width.toFloat()
+}
+
 @Composable
 private fun ResultScreenshotPage(
     screenshotNumber: Int,
     slot: MatchResultScreenshotSlotUiState,
+    imageAreaHeight: Dp,
     isEditable: Boolean,
+    showOcrDetails: Boolean,
+    ocrDetailsContent: @Composable () -> Unit,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
@@ -2033,7 +2092,9 @@ private fun ResultScreenshotPage(
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
                 Box(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(imageAreaHeight),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -2148,6 +2209,9 @@ private fun ResultScreenshotPage(
                 onOpenCrop = onOpenCrop,
                 onRemoveScreenshot = onRemoveScreenshot,
             )
+        }
+        if (showOcrDetails) {
+            ocrDetailsContent()
         }
     }
 }
