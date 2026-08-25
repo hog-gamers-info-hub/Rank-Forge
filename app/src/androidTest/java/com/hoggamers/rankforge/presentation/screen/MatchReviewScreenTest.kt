@@ -224,6 +224,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Select Screenshot 1").assertIsDisplayed()

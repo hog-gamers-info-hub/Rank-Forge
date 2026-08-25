@@ -56,9 +56,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.PlatformTextStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
@@ -280,27 +277,11 @@ fun MatchLobbyScreenshotIntakeScreen(
                             horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(PointIqMatchReviewNavy)
-                                    .testTag(MATCH_LOBBY_DETAILS_STEP_TEST_TAG),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "1",
-                                    color = Color.White,
-                                    style = TextStyle(
-                                        fontSize = 11.sp,
-                                        lineHeight = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        platformStyle = PlatformTextStyle(
-                                            includeFontPadding = false,
-                                        ),
-                                    ),
-                                )
-                            }
+                            ReviewStepBadge(
+                                number = 1,
+                                backgroundColor = PointIqMatchReviewNavy,
+                                modifier = Modifier.testTag(MATCH_LOBBY_DETAILS_STEP_TEST_TAG),
+                            )
                             Text(
                                 text = stringResource(R.string.match_review_lobby_screenshots_title),
                                 style = MaterialTheme.typography.titleMedium,
