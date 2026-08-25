@@ -21,6 +21,9 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
@@ -249,11 +252,33 @@ class MatchLobbySlotNumberOcrRunnerTest {
 
         val processed = runner.process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
 
+        assertTrue("${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
         val previews = processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available
         assertEquals(4, copiedCount)
         assertEquals(1, preparer.releaseCount)
         assertEquals(RosterVisibleSlotPosition.entries, previews.previews.map { it.visibleSlotPosition })
         assertEquals(listOf(4, 10, 3, 2), previews.previews.map { it.detectedSlotNumber })
+    }
+
+    @Test
+    fun validCanonicalTeamCropsGenerateFourTransientPlayerRowsPerTeam() = runTest {
+        val pipeline = RecordingRowCropPipeline()
+        val processed = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            preparer = FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
+            extractor = FakeExtractor(
+                mapOf(RosterScreenshotPosition.ONE to geometricExtractionResults(RosterScreenshotPosition.ONE)),
+            ),
+            previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
+            rowCropPipeline = pipeline,
+        ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
+
+        assertEquals(listOf(4, 10, 3, 2), pipeline.authoritativeSlots)
+        assertTrue("${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
+        val previews = processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available
+        assertEquals(4, previews.previews.size)
+        assertEquals(listOf(4, 10, 3, 2), previews.previews.map { it.detectedSlotNumber })
+        assertTrue(previews.previews.all { it.playerRowPreviews.map { row -> row.row } == LobbyPlayerRow.entries })
     }
 
     @Test
@@ -307,6 +332,7 @@ class MatchLobbySlotNumberOcrRunnerTest {
         extractor: FakeExtractor,
         ownerId: String? = "owner-1",
         previewFactory: MatchLobbyTeamCropPreviewFactory? = null,
+        rowCropPipeline: LobbyPlayerRowCropPipeline = NoOpLobbyPlayerRowCropPipeline,
     ) = AndroidMatchLobbySlotNumberOcrRunner(
         assetRepository = assets,
         panelPreparer = preparer,
@@ -314,6 +340,7 @@ class MatchLobbySlotNumberOcrRunnerTest {
         screenshotOwnerProvider = object : ScreenshotOwnerProvider {
             override suspend fun currentOwnerUserId(): String? = ownerId
         },
+        playerRowCropPipeline = rowCropPipeline,
     ).also { runner ->
         previewFactory?.let { runner.teamCropPreviewFactory = it }
     }
@@ -569,4 +596,27 @@ class MatchLobbySlotNumberOcrRunnerTest {
     ) : OcrPreprocessingImage
 
     private data object FakeTeamCropPreviewImage : MatchLobbyTeamCropPreviewImage
+
+    private class RecordingRowCropPipeline : LobbyPlayerRowCropPipeline {
+        val authoritativeSlots = mutableListOf<Int>()
+
+        override suspend fun generate(
+            authoritativeTeamSlotNumber: Int,
+            teamCropImage: MatchLobbyTeamCropPreviewImage,
+        ): LobbyPlayerRowCropGenerationResult {
+            authoritativeSlots += authoritativeTeamSlotNumber
+            return LobbyPlayerRowCropGenerationResult.Generated(
+                rows = LobbyPlayerRow.entries.map { row ->
+                    LobbyPlayerRowCropPreview(
+                        row = row,
+                        boundsInTeamCrop = LobbyPlayerRowCropBounds(0, row.ordinal, 10, row.ordinal + 1),
+                        slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                        slotAnchorY = 5.0,
+                        structuralEvidence = null,
+                        image = FakeTeamCropPreviewImage,
+                    )
+                },
+            )
+        }
+    }
 }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
@@ -33,7 +34,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,14 +56,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyTeamCropPreviewImage
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -83,11 +88,30 @@ const val MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG = "match_lobby_screenshot
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG = "match_lobby_screenshot_save_template"
 const val MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX = "match_lobby_team_crop_previews_"
 const val MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX = "match_lobby_team_crop_card_"
+const val MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX = "match_lobby_team_crop_data_"
+const val MATCH_LOBBY_TEAM_CROP_ROW_LABEL_TEST_TAG_PREFIX = "match_lobby_team_crop_row_label_"
+const val MATCH_LOBBY_TEAM_CROP_ROW_IMAGE_TEST_TAG_PREFIX = "match_lobby_team_crop_row_image_"
+const val MATCH_LOBBY_TEAM_CROP_ROW_EVIDENCE_TEST_TAG_PREFIX = "match_lobby_team_crop_row_evidence_"
+const val MATCH_LOBBY_TEAM_CROP_TEAM_SLOT_LABEL_TEST_TAG_PREFIX = "match_lobby_team_crop_team_slot_label_"
+const val MATCH_LOBBY_TEAM_CROP_ROW_PP_NAME_TEST_TAG_PREFIX = "match_lobby_team_crop_row_pp_name_"
+const val MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX = "match_lobby_team_crop_player_name_"
+const val MATCH_LOBBY_DETAILS_HEADER_TEST_TAG = "match_lobby_details_header"
+const val MATCH_LOBBY_DETAILS_STEP_TEST_TAG = "match_lobby_details_step"
 
 internal data class TeamCropBitmapDimensions(
     val width: Int,
     val height: Int,
 )
+
+private fun MatchLobbyScreenshotSlotUiState.lobbyScreenshotHeightRatio(): Float? {
+    val dimensions = OcrImageDimensions.from(
+        width = selectedScreenshotWidth ?: return null,
+        height = selectedScreenshotHeight ?: return null,
+    ) ?: return null
+    val crop = confirmedCrop ?: return null
+    val pixelCrop = crop.toPixelRectOrNull(dimensions) ?: return null
+    return pixelCrop.height.toFloat() / pixelCrop.width.toFloat()
+}
 
 internal fun calculateMaxTeamCropHeightRatio(
     dimensions: List<TeamCropBitmapDimensions>,
@@ -98,6 +122,12 @@ internal fun calculateMaxTeamCropHeightRatio(
 val LocalMatchLobbyTeamCropPreviews = staticCompositionLocalOf<Map<Int, MatchLobbyTeamCropPreviewResult>> {
     emptyMap()
 }
+
+val LocalMatchLobbyTeamNames = staticCompositionLocalOf<Map<Int, String>> {
+    emptyMap()
+}
+
+val LocalMatchLobbySourceSectionVisible = staticCompositionLocalOf { true }
 
 @Composable
 fun MatchLobbyScreenshotIntakeRoute(
@@ -174,6 +204,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     compactActions: Boolean = false,
 ) {
     val teamCropPreviewsByScreenshotIndex = LocalMatchLobbyTeamCropPreviews.current
+    val sourceSectionVisible = LocalMatchLobbySourceSectionVisible.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,15 +275,42 @@ fun MatchLobbyScreenshotIntakeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top,
                     ) {
-                        Text(
-                            text = stringResource(R.string.match_review_lobby_screenshots_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = if (selectedSlots.isEmpty()) {
-                                PointIqMatchReviewNavy
-                            } else {
-                                Color.Unspecified
-                            },
-                        )
+                        Row(
+                            modifier = Modifier.testTag(MATCH_LOBBY_DETAILS_HEADER_TEST_TAG),
+                            horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(PointIqMatchReviewNavy)
+                                    .testTag(MATCH_LOBBY_DETAILS_STEP_TEST_TAG),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "1",
+                                    color = Color.White,
+                                    style = TextStyle(
+                                        fontSize = 11.sp,
+                                        lineHeight = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        platformStyle = PlatformTextStyle(
+                                            includeFontPadding = false,
+                                        ),
+                                    ),
+                                )
+                            }
+                            Text(
+                                text = stringResource(R.string.match_review_lobby_screenshots_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (selectedSlots.isEmpty()) {
+                                    PointIqMatchReviewNavy
+                                } else {
+                                    Color.Unspecified
+                                },
+                            )
+                        }
                         LobbyTemplateToggle(
                             uiState = uiState,
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
@@ -271,14 +329,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
 
-            if (!compactSelectors || (compactActions && showTitle)) {
+            if ((sourceSectionVisible && !compactSelectors) || (compactActions && showTitle)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                if (!compactSelectors) {
+                if (sourceSectionVisible && !compactSelectors) {
                     uiState.slots.forEach { slot ->
                         val hasSelection = slot.hasScreenshotSelection()
                         val targetPage = selectedSlotIndices.indexOf(slot.index)
@@ -312,33 +370,40 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
 
-            if (selectedSlots.isNotEmpty()) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
-                ) { page ->
-                    selectedSlots.getOrNull(page)?.let { slot ->
-                        LobbyScreenshotDetail(
-                            slot = slot,
-                            compactActions = compactActions,
-                            isFinalized = uiState.isFinalized,
-                            isAvailable = uiState.isAvailable,
-                            onSelect = onSelect,
-                            onSelectBatch = onSelectBatch,
-                            onCrop = onCrop,
-                            onRemove = onRemove,
-                        )
+            if (sourceSectionVisible && selectedSlots.isNotEmpty()) {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val maxLobbyScreenshotHeight = maxWidth * (
+                        selectedSlots
+                            .mapNotNull(MatchLobbyScreenshotSlotUiState::lobbyScreenshotHeightRatio)
+                            .maxOrNull()
+                            ?: 1f
+                    )
+                    HorizontalPager(
+                        state = pagerState,
+                        pageSize = PageSize.Fill,
+                        pageSpacing = RankForgeSpacing.ExtraSmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
+                    ) { page ->
+                        selectedSlots.getOrNull(page)?.let { slot ->
+                            LobbyScreenshotDetail(
+                                slot = slot,
+                                imageAreaHeight = maxLobbyScreenshotHeight,
+                                compactActions = compactActions,
+                                isFinalized = uiState.isFinalized,
+                                isAvailable = uiState.isAvailable,
+                                onSelect = onSelect,
+                                onSelectBatch = onSelectBatch,
+                                onCrop = onCrop,
+                                onRemove = onRemove,
+                            )
+                        }
                     }
                 }
             }
 
-            if (globallyOrderedTeamCropPreviews.isNotEmpty()) {
-                LobbyTeamCropPreviewPager(previews = globallyOrderedTeamCropPreviews)
-            }
-
-            if (compactSelectors) {
+            if (sourceSectionVisible && compactSelectors) {
                 uiState.slots
                     .filterNot { it.hasScreenshotSelection() }
                     .minByOrNull { it.index }
@@ -367,7 +432,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         }
                     }
             }
-            if (!compactActions) activeSlotIndex?.let { activeIndex ->
+            if (sourceSectionVisible && !compactActions) activeSlotIndex?.let { activeIndex ->
                 selectedSlots.firstOrNull { it.index == activeIndex }?.let { slot ->
                     LobbyScreenshotActions(
                         slot = slot,
@@ -394,6 +459,9 @@ fun MatchLobbyScreenshotIntakeScreen(
                     text = stringResource(R.string.match_lobby_screenshot_template_mutation_failed),
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            if (globallyOrderedTeamCropPreviews.isNotEmpty()) {
+                LobbyTeamCropPreviewPager(previews = globallyOrderedTeamCropPreviews)
             }
         }
     }
@@ -531,6 +599,7 @@ private fun RowScope.LobbyScreenshotSelectorButton(
 @Composable
 private fun LobbyScreenshotDetail(
     slot: MatchLobbyScreenshotSlotUiState,
+    imageAreaHeight: Dp,
     compactActions: Boolean,
     isFinalized: Boolean,
     isAvailable: Boolean,
@@ -565,7 +634,10 @@ private fun LobbyScreenshotDetail(
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
             ) {
                 Box(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(imageAreaHeight)
+                        .clip(MaterialTheme.shapes.medium),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -667,42 +739,82 @@ private fun LobbyTeamCropPreviewPager(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 val preview = previews[it]
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(maxDisplayHeight)
-                        .testTag(
-                            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX +
-                                "slot_" + preview.detectedSlotNumber,
-                        ),
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(maxDisplayHeight)
+                            .testTag(
+                                MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX +
+                                    "slot_" + preview.detectedSlotNumber,
+                            ),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
-                        when (val image = preview.image) {
-                            is AndroidMatchLobbyTeamCropPreviewImage -> {
-                                val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
-                                Image(
-                                    bitmap = image.bitmap.asImageBitmap(),
-                                    contentDescription = "Slot ${preview.detectedSlotNumber}",
-                                    contentScale = ContentScale.Fit,
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            when (val image = preview.image) {
+                                is AndroidMatchLobbyTeamCropPreviewImage -> {
+                                    val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+                                    Image(
+                                        bitmap = image.bitmap.asImageBitmap(),
+                                        contentDescription = "Slot ${preview.detectedSlotNumber}",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(aspectRatio),
+                                    )
+                                }
+                                else -> Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .aspectRatio(aspectRatio),
+                                        .aspectRatio(1f),
                                 )
                             }
-                            else -> Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f),
-                            )
+                        }
+                    }
+                    if (preview.playerRowPreviews.isNotEmpty()) {
+                        OcrReviewContainer(
+                            modifier = Modifier.testTag(
+                                MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX +
+                                    "slot_" + preview.detectedSlotNumber,
+                            ),
+                        ) {
+                            LobbyPlayerRowPreviewColumn(preview = preview)
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun LobbyPlayerRowPreviewColumn(
+    preview: MatchLobbyTeamCropPreview,
+) {
+    if (preview.playerRowPreviews.isEmpty()) return
+    val teamName = LocalMatchLobbyTeamNames.current[preview.detectedSlotNumber]
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.match_ocr_review_compact_not_named)
+    LobbyPlayerNamePresentation(
+        slotNumber = preview.detectedSlotNumber,
+        teamName = teamName,
+        playerNames = preview.playerRowPreviews.associate { rowPreview ->
+            rowPreview.row.ordinal + 1 to rowPreview.dualOcrResult?.finalText
+        },
+        slotTestTag = MATCH_LOBBY_TEAM_CROP_TEAM_SLOT_LABEL_TEST_TAG_PREFIX + preview.detectedSlotNumber,
+        playerTestTag = { playerNumber ->
+            MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX +
+                "slot_${preview.detectedSlotNumber}_row_$playerNumber"
+        },
+    )
 }
 
 @Composable

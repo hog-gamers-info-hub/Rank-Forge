@@ -17,6 +17,8 @@ package com.paddle.ocr.engine
 import android.content.Context
 import android.graphics.Bitmap
 import com.paddle.ocr.EngineConfig
+import com.paddle.ocr.PaddleOcrDiagnosticsListener
+import com.paddle.ocr.PaddleOcrDetectionBox
 import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.ModelConfig
 import com.paddle.ocr.model.OCRError
@@ -24,6 +26,7 @@ import com.paddle.ocr.model.OCRResult
 import com.paddle.ocr.postprocess.BoxSorter
 import com.paddle.ocr.postprocess.QuadTextCrop
 import com.paddle.ocr.util.BitmapUtils
+import com.paddle.ocr.util.OpenCvNativeLoader
 
 class OCREngine(
     context: Context,
@@ -33,12 +36,14 @@ class OCREngine(
     recModelAsset: String = "models/rec/inference.onnx",
     recConfigAsset: String = "models/rec/inference.yml",
 ) {
-    private val ortManager = ORTSessionManager(context, engineConfig)
+    private val ortManager: ORTSessionManager
     private val detectionEngine: DetectionEngine
     private val recognitionEngine: RecognitionEngine
     val coldLoadTimeMs: Long get() = ortManager.coldLoadTimeMs
 
     init {
+        OpenCvNativeLoader.ensureLoaded()
+        ortManager = ORTSessionManager(context, engineConfig)
         val configured = try {
             ortManager.loadModels(detModelAsset, recModelAsset)
             val recModelConfig = ModelConfig.parse(context, recConfigAsset)
@@ -51,9 +56,13 @@ class OCREngine(
         recognitionEngine = RecognitionEngine(ortManager, configured.characterList)
     }
 
-    fun run(bitmap: Bitmap): OCREngineResult {
+    fun run(
+        bitmap: Bitmap,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): OCREngineResult {
+        diagnosticsListener?.onInvocationEntered(bitmap.width, bitmap.height)
         val srcMat = BitmapUtils.bitmapToBGRMat(bitmap)
-        return runWithOwnedMat(srcMat)
+        return runWithOwnedMat(srcMat, diagnosticsListener)
     }
 
     fun run(imageBytes: ByteArray): OCREngineResult {
@@ -65,20 +74,34 @@ class OCREngine(
         return runWithOwnedMat(srcMat)
     }
 
-    private fun runWithOwnedMat(srcMat: org.opencv.core.Mat): OCREngineResult {
+    private fun runWithOwnedMat(
+        srcMat: org.opencv.core.Mat,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): OCREngineResult {
         return try {
-            run(srcMat)
+            run(srcMat, diagnosticsListener)
         } finally {
             srcMat.release()
         }
     }
 
-    private fun run(srcMat: org.opencv.core.Mat): OCREngineResult {
+    private fun run(
+        srcMat: org.opencv.core.Mat,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): OCREngineResult {
         val totalStart = System.currentTimeMillis()
         val detResult = detectionEngine.detect(srcMat)
         val boxes = detResult.boxes
+        val sortedBoxes = BoxSorter.sortInReadingOrder(boxes)
+        diagnosticsListener?.onDetectionComplete(
+            inputWidth = detResult.inputShape.getOrNull(3) ?: 0,
+            inputHeight = detResult.inputShape.getOrNull(2) ?: 0,
+            boxes = sortedBoxes.mapIndexed { index, box ->
+                PaddleOcrDetectionBox(index = index, points = box.points)
+            },
+        )
 
-        if (boxes.isEmpty()) {
+        if (sortedBoxes.isEmpty()) {
             val elapsed = System.currentTimeMillis() - totalStart
             return OCREngineResult(
                 results = emptyList(),
@@ -94,10 +117,8 @@ class OCREngine(
             )
         }
 
-        // 2. Sort boxes
-        val sortedBoxes = BoxSorter.sortInReadingOrder(boxes)
-
-        // 3. Crop and recognize text regions
+        // 2. Crop and recognize text regions. The crop order is the same
+        // deterministic reading order exposed by the diagnostics callback.
         var totalRecPreMs = 0L
         var totalRecInfMs = 0L
         var totalRecPostMs = 0L
@@ -117,6 +138,11 @@ class OCREngine(
                 if (crop.rows() > 0 && crop.cols() > 0) {
                     batchCrops.add(crop)
                     batchBoxIndices.add(next)
+                    diagnosticsListener?.onDetectionCropPrepared(
+                        boxIndex = next,
+                        cropWidth = crop.cols(),
+                        cropHeight = crop.rows(),
+                    )
                 } else {
                     crop.release()
                 }
@@ -125,6 +151,12 @@ class OCREngine(
 
             try {
                 if (batchCrops.isNotEmpty()) {
+                    diagnosticsListener?.onRecognitionInvocation(
+                        cropWidths = batchCrops.map { it.cols() },
+                        cropHeights = batchCrops.map { it.rows() },
+                        inputWidth = 0,
+                        inputHeight = 0,
+                    )
                     val batchResult = recognitionEngine.recognize(batchCrops)
                     totalRecPreMs += batchResult.preprocessMs
                     totalRecInfMs += batchResult.inferenceMs
@@ -138,6 +170,7 @@ class OCREngine(
                     for (j in batchResult.texts.indices) {
                         val boxIdx = batchBoxIndices[j]
                         val (text, confidence) = batchResult.texts[j]
+                        diagnosticsListener?.onDecodedText(boxIdx, text, confidence)
                         if (confidence >= config.recScoreThresh) {
                             allResults.add(
                                 OCRResult(
@@ -180,5 +213,26 @@ class OCREngine(
 
     fun release() {
         ortManager.release()
+    }
+
+    fun diagnosticRecognizeDirect(
+        bitmap: Bitmap,
+        diagnosticsListener: PaddleOcrDiagnosticsListener? = null,
+    ): List<Pair<String, Float>> {
+        diagnosticsListener?.onDirectRecognitionInvocation(bitmap.width, bitmap.height)
+        val srcMat = BitmapUtils.bitmapToBGRMat(bitmap)
+        return try {
+            val result = recognitionEngine.recognize(listOf(srcMat))
+            diagnosticsListener?.onDirectRecognitionInput(
+                inputWidth = result.inputShape.getOrNull(3) ?: 0,
+                inputHeight = result.inputShape.getOrNull(2) ?: 0,
+            )
+            result.texts.forEach { (text, confidence) ->
+                diagnosticsListener?.onDirectDecodedText(text, confidence)
+            }
+            result.texts
+        } finally {
+            srcMat.release()
+        }
     }
 }

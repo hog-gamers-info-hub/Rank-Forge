@@ -344,6 +344,7 @@
     <string name="match_ocr_preflight_crop_action_result">Crop Result Screenshot %1$d</string>
     <string name="match_ocr_review_lobby_players_title">Lobby Players</string>
     <string name="match_ocr_review_lobby_player">%1$d. %2$s</string>
+    <string name="match_ocr_review_lobby_team">Slot - %1$s | Team Name - %2$s</string>
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_empty_title">No OCR evidence</string>
     <string name="match_ocr_review_empty_message">No OCR review evidence is available for this match.</string>

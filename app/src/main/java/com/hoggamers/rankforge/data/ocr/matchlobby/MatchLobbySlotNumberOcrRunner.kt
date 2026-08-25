@@ -49,6 +49,7 @@ data class MatchLobbyTeamCropPreview(
     val visibleSlotPosition: RosterVisibleSlotPosition,
     val detectedSlotNumber: Int,
     val image: MatchLobbyTeamCropPreviewImage,
+    val playerRowPreviews: List<LobbyPlayerRowCropPreview> = emptyList(),
 )
 
 enum class MatchLobbyTeamCropPreviewUnavailableReason {
@@ -128,6 +129,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
     private val panelPreparer: RosterOcrPanelPreparer,
     private val extractor: RosterRawOcrExtractor,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+    private val playerRowCropPipeline: LobbyPlayerRowCropPipeline = NoOpLobbyPlayerRowCropPipeline,
 ) : MatchLobbySlotNumberOcrRunner {
     internal var teamCropPreviewFactory: MatchLobbyTeamCropPreviewFactory =
         AndroidMatchLobbyTeamCropPreviewFactory
@@ -265,7 +267,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         failure
     }
 
-    private fun createTeamCropPreviews(
+    private suspend fun createTeamCropPreviews(
         panelImage: OcrPreprocessingImage,
         slots: List<MatchLobbySlotNumberOcrSlot>,
     ): MatchLobbyTeamCropPreviewResult {
@@ -298,10 +300,21 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             ?: return unavailableTeamCrops(geometry.toPreviewUnavailableReason())
         return try {
             val previews = available.crops.map { crop ->
+                val image = teamCropPreviewFactory.create(panelImage, crop)
+                val rowPreviews = when (
+                    val generated = playerRowCropPipeline.generate(
+                        authoritativeTeamSlotNumber = crop.detectedSlotNumber,
+                        teamCropImage = image,
+                    )
+                ) {
+                    is LobbyPlayerRowCropGenerationResult.Generated -> generated.rows
+                    LobbyPlayerRowCropGenerationResult.NotAvailable -> emptyList()
+                }
                 MatchLobbyTeamCropPreview(
                     visibleSlotPosition = crop.visibleSlotPosition,
                     detectedSlotNumber = crop.detectedSlotNumber,
-                    image = teamCropPreviewFactory.create(panelImage, crop),
+                    image = image,
+                    playerRowPreviews = rowPreviews,
                 )
             }
             MatchLobbyTeamCropPreviewResult.Available(previews)

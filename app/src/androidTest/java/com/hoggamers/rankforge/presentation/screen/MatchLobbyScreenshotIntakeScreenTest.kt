@@ -28,13 +28,21 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.R
 import android.graphics.Bitmap
 import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidMatchLobbyTeamCropPreviewImage
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerRowCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -112,8 +120,9 @@ class MatchLobbyScreenshotIntakeScreenTest {
         assertEquals(pagerWidth, firstCardWidth, 1f)
         val firstImageBounds = composeTestRule.onNodeWithContentDescription("Slot 1")
             .getUnclippedBoundsInRoot()
+        val firstImageWidth = (firstImageBounds.right - firstImageBounds.left).value
         val firstImageHeight = (firstImageBounds.bottom - firstImageBounds.top).value
-        assertEquals(300f / 1000f * firstCardWidth, firstImageHeight, 1f)
+        assertEquals(300f / 1000f * firstImageWidth, firstImageHeight, 1f)
         assertEquals(
             firstCardBounds.top.value + (firstCardHeight - firstImageHeight) / 2f,
             firstImageBounds.top.value,
@@ -195,6 +204,88 @@ class MatchLobbyScreenshotIntakeScreenTest {
         }
         composeTestRule.onAllNodesWithTag(
             MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_3",
+        ).assertCountEquals(0)
+    }
+
+    @Test
+    fun currentTeamPageShowsOnlyItsOwnFourGeneratedRowsInOrder() {
+        val selectedSlots = defaultMatchLobbyScreenshotSlots().map { slot ->
+            slot.copy(
+                hasLinkedAsset = true,
+                selectedScreenshotUri = "file:///private/lobby-${slot.index}.png",
+                selectedScreenshotWidth = 1920,
+                selectedScreenshotHeight = 1080,
+                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                cropProfileId = "lobby",
+            )
+        }
+        val previews = RosterVisibleSlotPosition.entries.mapIndexed { index, visibleSlotPosition ->
+            val slotNumber = index + 1
+            MatchLobbyTeamCropPreview(
+                visibleSlotPosition = visibleSlotPosition,
+                detectedSlotNumber = slotNumber,
+                image = AndroidMatchLobbyTeamCropPreviewImage(
+                    Bitmap.createBitmap(1000, 300, Bitmap.Config.ARGB_8888),
+                ),
+                playerRowPreviews = generatedRows(slotNumber),
+            )
+        }
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CompositionLocalProvider(
+                    LocalMatchLobbyTeamCropPreviews provides mapOf(
+                        1 to MatchLobbyTeamCropPreviewResult.Available(previews),
+                    ),
+                    LocalMatchLobbyTeamNames provides mapOf(1 to "APX"),
+                ) {
+                    MatchLobbyScreenshotIntakeScreen(
+                        uiState = MatchLobbyScreenshotIntakeUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            slots = selectedSlots,
+                        ),
+                        onSelect = {},
+                        onCrop = {},
+                        onRemove = {},
+                        compactActions = true,
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_TEAM_SLOT_LABEL_TEST_TAG_PREFIX + "1",
+        ).assertIsDisplayed()
+        val cropBounds = composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX + "slot_1",
+        ).getUnclippedBoundsInRoot()
+        val dataBounds = composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX + "slot_1",
+        ).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(dataBounds.top > cropBounds.bottom)
+        composeTestRule.onNodeWithText("Slot - 1 | Team Name - APX").assertExists()
+        LobbyPlayerRow.entries.forEach { row ->
+            composeTestRule.onNodeWithTag(
+                MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX +
+                    "slot_1_row_${row.ordinal + 1}",
+            ).assertExists()
+        }
+        composeTestRule.onNodeWithText("1. PP Row 1").assertExists()
+        composeTestRule.onNodeWithText("2. ML fallback row 2").assertExists()
+        composeTestRule.onAllNodesWithText("Resolved: Resolved Row 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("ML: ML Row 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("PP: PP Row 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Status: SIMILAR_PP_SELECTED").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_PREVIEWS_TEST_TAG_PREFIX + "global",
+        ).performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(
+            MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX + "slot_2_row_1",
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(
+            MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX + "slot_1_row_1",
         ).assertCountEquals(0)
     }
 
@@ -1105,6 +1196,58 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertCountEquals(0)
     }
 
+    @Test
+    fun processedLobbyOcrHidesOnlyScreenshotPreviewsAndActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CompositionLocalProvider(LocalMatchLobbySourceSectionVisible provides false) {
+                    MatchLobbyScreenshotIntakeScreen(
+                        uiState = MatchLobbyScreenshotIntakeUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            status = MatchStatus.DRAFT,
+                            slots = completeLobbySlots(),
+                        ),
+                        onSelect = {},
+                        onCrop = {},
+                        onRemove = {},
+                        showTitle = false,
+                        compactSelectors = true,
+                        compactActions = true,
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("Lobby Details").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_DETAILS_HEADER_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_DETAILS_STEP_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(
+            composeTestRule.activity.getString(R.string.match_lobby_screenshot_replace_action),
+        ).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(
+            composeTestRule.activity.getString(R.string.match_review_screenshot_edit_action),
+        ).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(
+            composeTestRule.activity.getString(R.string.match_lobby_screenshot_remove_action),
+        ).assertCountEquals(0)
+    }
+
     private fun completeLobbySlots() = defaultMatchLobbyScreenshotSlots().map { slot ->
         slot.copy(
             hasLinkedAsset = true,
@@ -1115,4 +1258,56 @@ class MatchLobbyScreenshotIntakeScreenTest {
             cropProfileId = "lobby",
         )
     }
+
+    private fun generatedRows(slotNumber: Int): List<LobbyPlayerRowCropPreview> =
+        LobbyPlayerRow.entries.map { row ->
+            val height = 90 + row.ordinal * 10
+            val bounds = LobbyPlayerRowCropBounds(150, row.ordinal * 100, 1000, row.ordinal * 100 + height)
+            LobbyPlayerRowCropPreview(
+                row = row,
+                boundsInTeamCrop = bounds,
+                slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                slotAnchorY = 150.0,
+                structuralEvidence = null,
+                image = AndroidMatchLobbyTeamCropPreviewImage(
+                    Bitmap.createBitmap(850, height, Bitmap.Config.ARGB_8888),
+                ),
+                dualOcrResult = LobbyPlayerDualOcrResult(
+                    teamSlotNumber = slotNumber,
+                    row = row,
+                    rowBounds = bounds,
+                    slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                    slotAnchorY = 150.0,
+                    mlEvidence = if (row.ordinal == 1) {
+                        LobbyPlayerOcrEngineEvidence(
+                            engine = LobbyPlayerOcrEngine.ML_KIT,
+                            rawText = "ML fallback row 2",
+                            candidateText = "ML fallback row 2",
+                        )
+                    } else {
+                        null
+                    },
+                    ppEvidence = LobbyPlayerOcrEngineEvidence(
+                        engine = LobbyPlayerOcrEngine.PP_OCRV6,
+                        rawText = if (row.ordinal == 1) "" else "PP Row ${row.ordinal + 1}",
+                        candidateText = if (row.ordinal == 1) null else "PP Row ${row.ordinal + 1}",
+                    ),
+                    resolvedText = if (row.ordinal == 1) {
+                        "ML fallback row 2"
+                    } else {
+                        "PP Row ${row.ordinal + 1}"
+                    },
+                    selectedSource = if (row.ordinal == 1) {
+                        com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerNameOcrSource.ML_FALLBACK
+                    } else {
+                        com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerNameOcrSource.PP_PRIMARY
+                    },
+                    finalText = if (row.ordinal == 1) {
+                        "ML fallback row 2"
+                    } else {
+                        "PP Row ${row.ordinal + 1}"
+                    },
+                ),
+            )
+        }
 }
