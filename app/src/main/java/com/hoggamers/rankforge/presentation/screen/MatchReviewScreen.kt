@@ -176,11 +176,7 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_r
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
-const val MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG = "match_review_result_position_crops_upper"
-const val MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG = "match_review_result_position_crops_lower"
 const val MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX = "match_review_result_position_crop_"
-const val MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX = "match_review_result_position_row_crops_"
-const val MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX = "match_review_result_position_row_crop_"
 const val MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG =
     "match_review_result_position_crops_upper_pager"
 const val MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG =
@@ -2061,7 +2057,6 @@ private fun ResultScreenshotSelector(
                                 ?: MatchResultPositionCropPreviewState.Unavailable(
                                     MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
                                 ),
-                            positionRowCropPreviewStates = resultPositionRowCropPreviews[role].orEmpty(),
                             imageAreaHeight = maxResultScreenshotHeight,
                             isEditable = isEditable,
                             showOcrDetails = pagerState.currentPage == page,
@@ -2116,7 +2111,6 @@ private fun ResultScreenshotPage(
     screenshotNumber: Int,
     slot: MatchResultScreenshotSlotUiState,
     positionCropPreviewState: MatchResultPositionCropPreviewState,
-    positionRowCropPreviewStates: Map<Int, MatchResultPositionRowCropPreviewState>,
     imageAreaHeight: Dp,
     isEditable: Boolean,
     showOcrDetails: Boolean,
@@ -2182,7 +2176,6 @@ private fun ResultScreenshotPage(
                 ResultPositionCropPreviews(
                     role = role,
                     state = positionCropPreviewState,
-                    rowStates = positionRowCropPreviewStates,
                 )
                 if (isEditable) {
                     MatchReviewScreenshotActionRow(
@@ -2289,52 +2282,8 @@ private fun ResultScreenshotPage(
 private fun ResultPositionCropPreviews(
     role: MatchResultScreenshotRole,
     state: MatchResultPositionCropPreviewState,
-    rowStates: Map<Int, MatchResultPositionRowCropPreviewState>,
 ) {
-    if (state is MatchResultPositionCropPreviewState.Unavailable &&
-        state.reason == MatchResultPositionCropPreviewUnavailableReason.NOT_READY
-    ) return
-    val sectionTag = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
-        MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG
-    } else {
-        MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(sectionTag),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-    ) {
-        Text(
-            text = stringResource(R.string.match_review_result_position_crops_title),
-            style = MaterialTheme.typography.labelLarge,
-        )
-        when (state) {
-            MatchResultPositionCropPreviewState.Loading -> Text(
-                text = stringResource(R.string.match_review_result_position_crops_loading),
-                color = PointIqMatchReviewBody,
-            )
-
-            is MatchResultPositionCropPreviewState.Available -> ResultPositionCropPreviewPager(
-                role = role,
-                previews = state.sortedCrops(),
-                rowStates = rowStates,
-            )
-
-            is MatchResultPositionCropPreviewState.Unavailable -> Text(
-                text = stringResource(R.string.match_review_result_position_crops_unavailable),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ResultPositionCropPreviewPager(
-    role: MatchResultScreenshotRole,
-    previews: List<MatchResultPositionCropPreview>,
-    rowStates: Map<Int, MatchResultPositionRowCropPreviewState>,
-) {
+    val previews = state.sortedCrops()
     if (previews.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { previews.size })
     LaunchedEffect(previews) {
@@ -2367,122 +2316,28 @@ private fun ResultPositionCropPreviewPager(
                 .testTag(pagerTag),
         ) { page ->
             val preview = previews[page]
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            val image = preview.image as? AndroidMatchResultPositionCropPreviewImage ?: return@HorizontalPager
+            val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(maxDisplayHeight)
+                    .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
             ) {
-                Text(
-                    text = stringResource(
-                        R.string.match_review_result_position_crop_label,
-                        preview.position,
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                when (val image = preview.image) {
-                    is AndroidMatchResultPositionCropPreviewImage -> {
-                        val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(maxDisplayHeight)
-                                .testTag(
-                                    MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position,
-                                ),
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Image(
-                                    bitmap = image.bitmap.asImageBitmap(),
-                                    contentDescription = stringResource(
-                                        R.string.match_review_result_position_crop_label,
-                                        preview.position,
-                                    ),
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(aspectRatio),
-                                )
-                            }
-                        }
-                    }
-
-                    else -> Text(
-                        text = stringResource(R.string.match_review_result_position_crops_unavailable),
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.testTag(
-                            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position,
-                        ),
-                    )
-                }
-                ResultPositionRowCropPreviews(
-                    position = preview.position,
-                    state = rowStates[preview.position]
-                        ?: MatchResultPositionRowCropPreviewState.Unavailable(
-                            MatchResultPositionRowCropPreviewUnavailableReason.NOT_READY,
-                        ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultPositionRowCropPreviews(
-    position: Int,
-    state: MatchResultPositionRowCropPreviewState,
-) {
-    if (state is MatchResultPositionRowCropPreviewState.Unavailable &&
-        state.reason == MatchResultPositionRowCropPreviewUnavailableReason.NOT_READY
-    ) return
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + position),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-    ) {
-        Text(
-            text = stringResource(R.string.match_review_result_position_rows_title),
-            style = MaterialTheme.typography.labelMedium,
-        )
-        when (state) {
-            MatchResultPositionRowCropPreviewState.Loading -> Text(
-                text = stringResource(R.string.match_review_result_position_rows_loading),
-                color = PointIqMatchReviewBody,
-            )
-
-            is MatchResultPositionRowCropPreviewState.Available -> state.sortedRows().forEach { row ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + position + "_" + row.rowIndex),
-                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = stringResource(R.string.match_review_result_position_row_label, row.rowIndex),
-                        style = MaterialTheme.typography.labelSmall,
+                    Image(
+                        bitmap = image.bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(aspectRatio),
                     )
-                    when (val image = row.image) {
-                        is AndroidMatchResultPositionRowCropPreviewImage -> Image(
-                            bitmap = image.bitmap.asImageBitmap(),
-                            contentDescription = stringResource(
-                                R.string.match_review_result_position_row_label,
-                                row.rowIndex,
-                            ),
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-
-                        else -> Unit
-                    }
                 }
             }
-
-            is MatchResultPositionRowCropPreviewState.Unavailable -> Text(
-                text = stringResource(R.string.match_review_result_position_rows_unavailable),
-                color = MaterialTheme.colorScheme.error,
-            )
         }
     }
 }

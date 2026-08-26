@@ -1789,7 +1789,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun resultPositionCropPreviewsRenderUnderTheirCorrespondingResultScreenshots() {
+    fun resultPositionRectanglesRenderWithoutCropOrRowLabels() {
         val upperImage = AndroidMatchResultPositionCropPreviewImage(
             Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
         )
@@ -1864,116 +1864,52 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "1")
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "1_1")
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "2")
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "2_2")
+        composeTestRule.onAllNodesWithText("Position crops").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Position 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Row 1").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Row 2").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crops_1")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crop_1_1")
+            .assertCountEquals(0)
+        repeat(5) {
+            composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+                .performTouchInput { swipeLeft() }
+            composeTestRule.waitForIdle()
+        }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "6")
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "11")
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
-            .assertIsDisplayed()
-    }
-
-    @Test
-    fun upperPositionCropUnavailableStateIsVisible() {
-        composeTestRule.setContent {
-            RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState(
-                        resultScreenshots = listOf(
-                            resultSlot(
-                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                                hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
-                                originalWidth = 1920,
-                                originalHeight = 1080,
-                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
-                                cropProfileId = "match-result",
-                            ),
-                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-                        ),
-                        resultPositionCropPreviews = mapOf(
-                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
-                                MatchResultPositionCropPreviewState.Unavailable(
-                                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
-                                ),
-                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to
-                                MatchResultPositionCropPreviewState.Unavailable(
-                                    MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
-                                ),
-                        ),
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    showLegacyManualReviewContent = false,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Position crops are unavailable.")
-            .assertIsDisplayed()
-    }
-
-    @Test
-    fun notReadyPositionCropStateDoesNotRenderASectionOrUnavailableMessage() {
-        composeTestRule.setContent {
-            RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState(
-                        resultScreenshots = listOf(
-                            resultSlot(
-                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                                hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
-                                originalWidth = 1920,
-                                originalHeight = 1080,
-                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
-                                cropProfileId = "match-result",
-                            ),
-                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-                        ),
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    showLegacyManualReviewContent = false,
-                )
-            }
-        }
-
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
+        composeTestRule.onAllNodesWithText("Position 11").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crops_11")
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithText("Position crops are unavailable.")
+        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crop_11_1")
             .assertCountEquals(0)
     }
 
