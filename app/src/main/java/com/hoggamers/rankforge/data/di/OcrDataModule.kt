@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.AndroidLobbyPlayerRowCropPipe
 import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerDualOcrRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerPpOcrRuntime
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultAutoCropProposer
+import com.hoggamers.rankforge.presentation.screen.AndroidMatchResultPositionCropPreviewGenerator
+import com.hoggamers.rankforge.presentation.screen.MatchResultPositionCropPreviewGenerator
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidRosterOcrPanelPreparer
 import com.hoggamers.rankforge.data.ocr.preprocessing.RoomRosterOcrSourceProvider
 import com.hoggamers.rankforge.domain.ocr.OcrTextRecognizer
@@ -60,6 +62,12 @@ abstract class OcrDataBindingsModule {
     abstract fun bindMatchResultAutoCropProposer(
         proposer: AndroidMatchResultAutoCropProposer,
     ): MatchResultAutoCropProposer
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchResultPositionCropPreviewGenerator(
+        generator: AndroidMatchResultPositionCropPreviewGenerator,
+    ): MatchResultPositionCropPreviewGenerator
 
     @Binds
     @Singleton

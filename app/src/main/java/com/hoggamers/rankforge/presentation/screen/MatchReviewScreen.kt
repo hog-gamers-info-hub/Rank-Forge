@@ -5,7 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,6 +53,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -171,6 +176,13 @@ const val MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_READY_TEST_TAG = "match_review_r
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_READY_TEST_TAG = "match_review_result_screenshot_2_crop_ready"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG = "match_review_result_screenshot_1_preview"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG = "match_review_result_screenshot_2_preview"
+const val MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG = "match_review_result_position_crops_upper"
+const val MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG = "match_review_result_position_crops_lower"
+const val MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX = "match_review_result_position_crop_"
+const val MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG =
+    "match_review_result_position_crops_upper_pager"
+const val MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG =
+    "match_review_result_position_crops_lower_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG = "match_review_result_screenshot_next_select"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
 const val MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG = "match_review_lobby_player_details_section"
@@ -419,6 +431,7 @@ fun MatchReviewRoute(
             }
         },
         onCalculatePoints = {
+            viewModel.calculateResultPositionCrops()
             if (showLegacyManualReviewContent) {
                 viewModel.openOcrReview()
             } else {
@@ -449,6 +462,7 @@ fun MatchReviewRoute(
         onRetryScreenshotUpload = viewModel::retryScreenshotUpload,
         onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
+        onResultPositionCropPreviewsDisposed = viewModel::releaseResultPositionCropPreviewsIfStale,
         matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
         onSelectLobbyScreenshot = lobbyScreenshotIntakeViewModel?.let { intakeViewModel ->
             { index -> intakeViewModel.requestPhotoPicker(index) }
@@ -496,6 +510,9 @@ fun MatchReviewScreen(
     onRetryScreenshotUpload: () -> Unit = {},
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit = {},
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    onResultPositionCropPreviewsDisposed: (
+        Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
+    ) -> Unit = {},
     onSelectLobbyScreenshot: (Int) -> Unit = {},
     onOpenLobbyScreenshotCrop: (Int) -> Unit = {},
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
@@ -543,6 +560,7 @@ fun MatchReviewScreen(
             onRetryScreenshotUpload = onRetryScreenshotUpload,
             onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
             onRemoveResultScreenshot = onRemoveResultScreenshot,
+            onResultPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
             onSelectLobbyScreenshot = onSelectLobbyScreenshot,
             onOpenLobbyScreenshotCrop = onOpenLobbyScreenshotCrop,
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
@@ -587,6 +605,9 @@ private fun MatchReviewContent(
     onRetryScreenshotUpload: () -> Unit,
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit,
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onResultPositionCropPreviewsDisposed: (
+        Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
+    ) -> Unit,
     onSelectLobbyScreenshot: (Int) -> Unit,
     onOpenLobbyScreenshotCrop: (Int) -> Unit,
     matchLobbyScreenshotIntake: @Composable () -> Unit,
@@ -818,11 +839,13 @@ private fun MatchReviewContent(
                 }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
+                    resultPositionCropPreviews = uiState.resultPositionCropPreviews,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     ocrDetailsContent = resultOcrDetailsContent,
                 )
             }
@@ -880,11 +903,13 @@ private fun MatchReviewContent(
                 }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
+                    resultPositionCropPreviews = uiState.resultPositionCropPreviews,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     ocrDetailsContent = resultOcrDetailsContent,
                 )
             }
@@ -893,11 +918,13 @@ private fun MatchReviewContent(
         if (showLegacyManualReviewContent) {
             ResultScreenshotSelector(
                 resultScreenshots = uiState.resultScreenshots,
+                resultPositionCropPreviews = uiState.resultPositionCropPreviews,
                 isEditable = uiState.isEditable,
                 onSelectScreenshot = onSelectResultScreenshot,
                 onSelectBatch = onSelectResultScreenshotBatch,
                 onOpenCrop = onOpenResultScreenshotCrop,
                 onRemoveScreenshot = onRemoveResultScreenshot,
+                onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
             )
         }
         if (showOcrPreflight) {
@@ -1927,13 +1954,20 @@ private fun MatchReviewResultRowsPagerContent(
 @Composable
 private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
+    resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onSelectBatch: (() -> Unit)?,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onPositionCropPreviewsDisposed: (
+        Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
+    ) -> Unit,
     ocrDetailsContent: @Composable () -> Unit = {},
 ) {
+    DisposableEffect(resultPositionCropPreviews) {
+        onDispose { onPositionCropPreviewsDisposed(resultPositionCropPreviews) }
+    }
     val roles = listOf(
         MatchResultScreenshotRole.MATCH_RESULT_UPPER,
         MatchResultScreenshotRole.MATCH_RESULT_LOWER,
@@ -2000,6 +2034,10 @@ private fun ResultScreenshotSelector(
                         ResultScreenshotPage(
                             screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
                             slot = slot,
+                            positionCropPreviewState = resultPositionCropPreviews[role]
+                                ?: MatchResultPositionCropPreviewState.Unavailable(
+                                    MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+                                ),
                             imageAreaHeight = maxResultScreenshotHeight,
                             isEditable = isEditable,
                             showOcrDetails = pagerState.currentPage == page,
@@ -2053,6 +2091,7 @@ private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Floa
 private fun ResultScreenshotPage(
     screenshotNumber: Int,
     slot: MatchResultScreenshotSlotUiState,
+    positionCropPreviewState: MatchResultPositionCropPreviewState,
     imageAreaHeight: Dp,
     isEditable: Boolean,
     showOcrDetails: Boolean,
@@ -2115,6 +2154,10 @@ private fun ResultScreenshotPage(
                         },
                     )
                 }
+                ResultPositionCropPreviews(
+                    role = role,
+                    state = positionCropPreviewState,
+                )
                 if (isEditable) {
                     MatchReviewScreenshotActionRow(
                         replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
@@ -2212,6 +2255,139 @@ private fun ResultScreenshotPage(
         }
         if (showOcrDetails) {
             ocrDetailsContent()
+        }
+    }
+}
+
+@Composable
+private fun ResultPositionCropPreviews(
+    role: MatchResultScreenshotRole,
+    state: MatchResultPositionCropPreviewState,
+) {
+    if (state is MatchResultPositionCropPreviewState.Unavailable &&
+        state.reason == MatchResultPositionCropPreviewUnavailableReason.NOT_READY
+    ) return
+    val sectionTag = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+        MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG
+    } else {
+        MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(sectionTag),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.match_review_result_position_crops_title),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        when (state) {
+            MatchResultPositionCropPreviewState.Loading -> Text(
+                text = stringResource(R.string.match_review_result_position_crops_loading),
+                color = PointIqMatchReviewBody,
+            )
+
+            is MatchResultPositionCropPreviewState.Available -> ResultPositionCropPreviewPager(
+                role = role,
+                previews = state.sortedCrops(),
+            )
+
+            is MatchResultPositionCropPreviewState.Unavailable -> Text(
+                text = stringResource(R.string.match_review_result_position_crops_unavailable),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultPositionCropPreviewPager(
+    role: MatchResultScreenshotRole,
+    previews: List<MatchResultPositionCropPreview>,
+) {
+    if (previews.isEmpty()) return
+    val pagerState = rememberPagerState(pageCount = { previews.size })
+    LaunchedEffect(previews) {
+        pagerState.scrollToPage(0)
+    }
+    val pagerTag = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+        MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG
+    } else {
+        MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val maxDisplayHeight = maxWidth * (
+            previews
+                .mapNotNull { preview ->
+                    (preview.image as? AndroidMatchResultPositionCropPreviewImage)
+                        ?.bitmap
+                        ?.takeIf { bitmap -> bitmap.height > 0 }
+                        ?.let { bitmap -> bitmap.height.toFloat() / bitmap.width.toFloat() }
+                }
+                .maxOrNull()
+                ?.coerceAtMost(1f)
+                ?: 1f
+            )
+        HorizontalPager(
+            state = pagerState,
+            pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+            pageSpacing = RankForgeSpacing.ExtraSmall,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(pagerTag),
+        ) { page ->
+            val preview = previews[page]
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.match_review_result_position_crop_label,
+                        preview.position,
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                when (val image = preview.image) {
+                    is AndroidMatchResultPositionCropPreviewImage -> {
+                        val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(maxDisplayHeight)
+                                .testTag(
+                                    MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position,
+                                ),
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    bitmap = image.bitmap.asImageBitmap(),
+                                    contentDescription = stringResource(
+                                        R.string.match_review_result_position_crop_label,
+                                        preview.position,
+                                    ),
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(aspectRatio),
+                                )
+                            }
+                        }
+                    }
+
+                    else -> Text(
+                        text = stringResource(R.string.match_review_result_position_crops_unavailable),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(
+                            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position,
+                        ),
+                    )
+                }
+            }
         }
     }
 }

@@ -549,6 +549,10 @@
     <string name="match_review_result_screenshot_replace_action">Replace screenshot %1$d</string>
     <string name="match_review_result_screenshot_ready">Screenshot ready.</string>
     <string name="match_review_result_screenshot_preview_description">Result Screenshot %1$d preview</string>
+    <string name="match_review_result_position_crops_title">Position crops</string>
+    <string name="match_review_result_position_crop_label">Position %1$d</string>
+    <string name="match_review_result_position_crops_loading">Preparing position crops.</string>
+    <string name="match_review_result_position_crops_unavailable">Position crops are unavailable.</string>
     <string name="match_review_result_screenshot_crop_required">Crop required.</string>
     <string name="match_review_result_screenshot_crop_ready">Crop ready.</string>
     <string name="match_review_result_screenshot_crop_action">Crop screenshot</string>

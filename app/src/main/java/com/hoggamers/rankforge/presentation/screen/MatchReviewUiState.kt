@@ -202,6 +202,8 @@ data class MatchReviewUiState(
     val screenshotUploadObjectPath: String? = null,
     val screenshotUploadError: ScreenshotUploadError? = null,
     val resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
+    val resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState> =
+        defaultMatchResultPositionCropPreviewStates(),
     val pendingResultScreenshotCropBatch: MatchResultScreenshotCropBatch? = null,
     val resultScreenshotMultiPhotoPickerRequest: MatchResultScreenshotMultiPhotoPickerRequest? = null,
 ) {
@@ -286,6 +288,15 @@ fun defaultMatchResultScreenshotSlots(): List<MatchResultScreenshotSlotUiState> 
     MatchResultScreenshotSlotUiState(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
     MatchResultScreenshotSlotUiState(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
 )
+
+fun defaultMatchResultPositionCropPreviewStates(): Map<
+    MatchResultScreenshotRole,
+    MatchResultPositionCropPreviewState,
+> = MatchResultScreenshotRole.entries.associateWith {
+    MatchResultPositionCropPreviewState.Unavailable(
+        MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+    )
+}
 
 fun List<MatchResultScreenshotSlotUiState>.slot(
     role: MatchResultScreenshotRole,

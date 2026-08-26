@@ -822,6 +822,270 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun loadingReadyResultScreenshotsDoesNotGeneratePositionCropPreviews() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator()
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            generator = generator,
+        )
+
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertTrue(generator.requests.isEmpty())
+        MatchResultScreenshotRole.entries.forEach { role ->
+            assertEquals(
+                MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+                (scenario.viewModel.uiState.value.resultPositionCropPreviews.getValue(role)
+                    as MatchResultPositionCropPreviewState.Unavailable).reason,
+            )
+        }
+    }
+
+    @Test
+    fun calculateResultPositionCropsGeneratesBothReadyRoles() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..10),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to availablePositionCropPreviews(11..12),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER, MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            generator.requests.map(RecordingMatchResultPositionCropPreviewGenerator.Request::role),
+        )
+        assertTrue(generator.requests.none(RecordingMatchResultPositionCropPreviewGenerator.Request::allowUpperPositionElevenFallback))
+        assertEquals(
+            (1..10).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+        assertEquals(
+            (11..12).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+    }
+
+    @Test
+    fun calculateResultPositionCropsEnablesUpperPositionElevenFallbackWithoutLowerInput() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..11),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), generator.requests.map { it.role })
+        assertTrue(generator.requests.single().allowUpperPositionElevenFallback)
+        assertEquals(
+            (1..11).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+    }
+
+    @Test
+    fun linkedLowerWithoutConfirmedCropDoesNotSuppressUpperPositionElevenFallback() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..11),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        scenario.assets.assets.value = scenario.assets.assets.value.map { asset ->
+            if (asset.screenshotRole == MatchResultScreenshotRole.MATCH_RESULT_LOWER.name) {
+                asset.copy(
+                    cropLeft = null,
+                    cropTop = null,
+                    cropRight = null,
+                    cropBottom = null,
+                )
+            } else {
+                asset
+            }
+        }
+        advanceUntilIdle()
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), generator.requests.map { it.role })
+        assertTrue(generator.requests.single().allowUpperPositionElevenFallback)
+    }
+
+    @Test
+    fun failedPositionCropGenerationIsShownOnlyAfterCalculatePoints() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to MatchResultPositionCropPreviewState.Unavailable(
+                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                ),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Unavailable).reason,
+        )
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(1, generator.requests.size)
+        assertEquals(
+            MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Unavailable).reason,
+        )
+    }
+
+    @Test
+    fun changedResultInputsClearOnlyTheirPreviewUntilCalculatePointsRunsAgain() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..10),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to availablePositionCropPreviews(11..12),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        scenario.assets.assets.value = scenario.assets.assets.value.map { asset ->
+            if (asset.screenshotRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER.name) {
+                asset.copy(cropLeft = 0.2)
+            } else {
+                asset
+            }
+        }
+        advanceUntilIdle()
+
+        assertEquals(2, generator.requests.size)
+        assertEquals(
+            MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Unavailable).reason,
+        )
+        assertEquals(
+            (11..12).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(4, generator.requests.size)
+        assertEquals(0.2, generator.requests.last { request ->
+            request.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        }.confirmedCrop.left, 0.0)
+
+        scenario.assets.assets.value = scenario.assets.assets.value.map { asset ->
+            if (asset.screenshotRole == MatchResultScreenshotRole.MATCH_RESULT_LOWER.name) {
+                asset.copy(cropTop = 0.2)
+            } else {
+                asset
+            }
+        }
+        advanceUntilIdle()
+
+        assertEquals(4, generator.requests.size)
+        assertEquals(
+            MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                as MatchResultPositionCropPreviewState.Unavailable).reason,
+        )
+    }
+
+    @Test
+    fun removingProcessedResultScreenshotClearsPreviewWithoutRegeneration() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..10),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        scenario.assets.assets.value = emptyList()
+        advanceUntilIdle()
+
+        assertEquals(1, generator.requests.size)
+        assertEquals(
+            MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Unavailable).reason,
+        )
+    }
+
+    @Test
     fun invalidScreenshotDoesNotBlockOcrReviewNavigationBeforePreflight() = runTest {
         val viewModel = reviewViewModel(
             imageCandidateValidator = ImageCandidateValidator(
@@ -2375,6 +2639,8 @@ class MatchReviewViewModelTest {
         screenshotOwnerProvider: ScreenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
         matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
             com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository(),
+        matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
+            NoOpMatchResultPositionCropPreviewGenerator,
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
@@ -2400,6 +2666,7 @@ class MatchReviewViewModelTest {
         resultDocumentWriter = resultDocumentWriter,
         screenshotOwnerProvider = screenshotOwnerProvider,
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
+        matchResultPositionCropPreviewGenerator = matchResultPositionCropPreviewGenerator,
         finalizedMatchCloudSync = finalizedMatchCloudSync,
         )
 
@@ -2520,7 +2787,13 @@ class MatchReviewViewModelTest {
 
     private fun reviewViewModelWithReadyResultRoles(
         vararg roles: MatchResultScreenshotRole,
-    ): MatchReviewViewModel {
+    ): MatchReviewViewModel = readyResultPreviewScenario(roles = roles).viewModel
+
+    private fun readyResultPreviewScenario(
+        roles: Array<out MatchResultScreenshotRole>,
+        generator: RecordingMatchResultPositionCropPreviewGenerator =
+            RecordingMatchResultPositionCropPreviewGenerator(),
+    ): ReadyResultPreviewScenario {
         val preserver = localImagePreserver()
         val assets = roles.map { role ->
             val relativePath = "screenshots/$TOURNAMENT_ID/$matchId/result/${role.name}/original.png"
@@ -2536,10 +2809,58 @@ class MatchReviewViewModelTest {
                 cropBottom = 0.9,
             )
         }
-        return reviewViewModel(
+        val assetRepository = FakeMatchResultScreenshotAssetRepository(assets)
+        return ReadyResultPreviewScenario(
+            viewModel = reviewViewModel(
             localImagePreserver = preserver,
-            matchResultScreenshotAssetRepository = FakeMatchResultScreenshotAssetRepository(assets),
+            matchResultScreenshotAssetRepository = assetRepository,
+            matchResultPositionCropPreviewGenerator = generator,
+            ),
+            assets = assetRepository,
         )
+    }
+
+    private data class ReadyResultPreviewScenario(
+        val viewModel: MatchReviewViewModel,
+        val assets: FakeMatchResultScreenshotAssetRepository,
+    )
+
+    private fun availablePositionCropPreviews(
+        positions: IntRange,
+    ): MatchResultPositionCropPreviewState.Available = MatchResultPositionCropPreviewState.Available(
+        positions.map { position ->
+            MatchResultPositionCropPreview(position, FakeMatchResultPositionCropPreviewImage)
+        },
+    )
+
+    private data object FakeMatchResultPositionCropPreviewImage : MatchResultPositionCropPreviewImage
+
+    private class RecordingMatchResultPositionCropPreviewGenerator(
+        private val statesByRole: Map<
+            MatchResultScreenshotRole,
+            MatchResultPositionCropPreviewState,
+        > = emptyMap(),
+    ) : MatchResultPositionCropPreviewGenerator {
+        data class Request(
+            val localFile: File,
+            val confirmedCrop: OcrNormalizedCropRect,
+            val role: MatchResultScreenshotRole,
+            val allowUpperPositionElevenFallback: Boolean,
+        )
+
+        val requests = mutableListOf<Request>()
+
+        override suspend fun generate(
+            localFile: File,
+            confirmedCrop: OcrNormalizedCropRect,
+            role: MatchResultScreenshotRole,
+            allowUpperPositionElevenFallback: Boolean,
+        ): MatchResultPositionCropPreviewState {
+            requests += Request(localFile, confirmedCrop, role, allowUpperPositionElevenFallback)
+            return statesByRole[role] ?: MatchResultPositionCropPreviewState.Unavailable(
+                MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+            )
+        }
     }
 
     private fun resultScreenshotAsset(
