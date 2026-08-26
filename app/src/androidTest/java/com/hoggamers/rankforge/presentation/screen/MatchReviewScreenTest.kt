@@ -1789,6 +1789,195 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun resultPositionCropPreviewsRenderUnderTheirCorrespondingResultScreenshots() {
+        val upperImage = AndroidMatchResultPositionCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        )
+        val lowerImage = AndroidMatchResultPositionCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-2.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    (1..10).map { position ->
+                                        MatchResultPositionCropPreview(position, upperImage)
+                                    },
+                                ),
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    (11..12).map { position ->
+                                        MatchResultPositionCropPreview(position, lowerImage)
+                                    },
+                                ),
+                        ),
+                        resultPositionRowCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to mapOf(
+                                1 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                                2 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(
+                                        resultRowPreview(1),
+                                        resultRowPreview(2),
+                                    ),
+                                ),
+                            ),
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to mapOf(
+                                11 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                                12 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                            ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "1_1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "2_2")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "11")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun upperPositionCropUnavailableStateIsVisible() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Unavailable(
+                                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                                ),
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to
+                                MatchResultPositionCropPreviewState.Unavailable(
+                                    MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Position crops are unavailable.")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun notReadyPositionCropStateDoesNotRenderASectionOrUnavailableMessage() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                localPreviewUri = "file:///private/result-1.png",
+                                originalWidth = 1920,
+                                originalHeight = 1080,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Position crops are unavailable.")
+            .assertCountEquals(0)
+    }
+
+    @Test
     fun linkedResultSlotWithoutConfirmedCropDoesNotShowPreview() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -3144,6 +3333,14 @@ class MatchReviewScreenTest {
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),
         resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
+        resultPositionCropPreviews: Map<
+            MatchResultScreenshotRole,
+            MatchResultPositionCropPreviewState,
+        > = defaultMatchResultPositionCropPreviewStates(),
+        resultPositionRowCropPreviews: Map<
+            MatchResultScreenshotRole,
+            Map<Int, MatchResultPositionRowCropPreviewState>,
+        > = defaultMatchResultPositionRowCropPreviewStates(),
     ) = MatchReviewUiState(
         isLoading = false,
         isAvailable = true,
@@ -3166,6 +3363,15 @@ class MatchReviewScreenTest {
         },
         validationErrors = validationErrors,
         resultScreenshots = resultScreenshots,
+        resultPositionCropPreviews = resultPositionCropPreviews,
+        resultPositionRowCropPreviews = resultPositionRowCropPreviews,
+    )
+
+    private fun resultRowPreview(rowIndex: Int) = MatchResultPositionRowCropPreview(
+        rowIndex = rowIndex,
+        image = AndroidMatchResultPositionRowCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        ),
     )
 
     private fun allLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(

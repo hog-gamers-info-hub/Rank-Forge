@@ -21,6 +21,7 @@ sealed interface MatchResultOcrPreviewProcessingResult {
         val pixelCrop: OcrPixelCropRect,
         val cropWidth: Int,
         val cropHeight: Int,
+        val source: MatchResultOcrPreviewSource = MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT,
     ) : MatchResultOcrPreviewProcessingResult
 
     data object MissingAsset : MatchResultOcrPreviewProcessingResult
@@ -29,6 +30,11 @@ sealed interface MatchResultOcrPreviewProcessingResult {
     data object InvalidCrop : MatchResultOcrPreviewProcessingResult
     data object DecodeFailed : MatchResultOcrPreviewProcessingResult
     data object RecognitionFailed : MatchResultOcrPreviewProcessingResult
+}
+
+enum class MatchResultOcrPreviewSource {
+    NEW_PP_POSITION,
+    LEGACY_FULL_SCREENSHOT,
 }
 
 data class MatchResultOcrPreviewRoleResult(

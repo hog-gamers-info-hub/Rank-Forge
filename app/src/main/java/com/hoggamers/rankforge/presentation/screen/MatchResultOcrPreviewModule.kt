@@ -6,6 +6,11 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchResultLobbyOcrSlotRanker
 import com.hoggamers.rankforge.data.ocr.matchresult.CachingMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionOcrPreviewRunner
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleOcrRecognizer
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionRowCropGenerator
+import com.hoggamers.rankforge.data.ocr.matchresult.HybridMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotAssignmentEvaluator
@@ -31,19 +36,35 @@ object MatchResultOcrPreviewModule {
         cacheRepository: MatchResultOcrCacheRepository,
         localImagePreserver: LocalImagePreserver,
         screenshotOwnerProvider: ScreenshotOwnerProvider,
+        positionCropGenerator: AndroidMatchResultPositionCropGenerator,
+        rowCropGenerator: AndroidMatchResultPositionRowCropGenerator,
+        paddleRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
     ): MatchResultOcrPreviewRunner {
-        val delegate = AndroidMatchResultOcrPreviewProcessor(
+        val legacyRunner = CachingMatchResultOcrPreviewRunner(
+            assetRepository = assetRepository,
+            cacheRepository = cacheRepository,
+            screenshotOwnerProvider = screenshotOwnerProvider,
+            delegate = AndroidMatchResultOcrPreviewProcessor(
+                assetRepository = assetRepository,
+                localFileResolver = MatchResultOcrPreviewLocalFileResolver(
+                    localImagePreserver::resolveRelativePath,
+                ),
+                screenshotOwnerProvider = screenshotOwnerProvider,
+            ),
+        )
+        val newPositionRunner = AndroidMatchResultPositionOcrPreviewRunner(
             assetRepository = assetRepository,
             localFileResolver = MatchResultOcrPreviewLocalFileResolver(
                 localImagePreserver::resolveRelativePath,
             ),
             screenshotOwnerProvider = screenshotOwnerProvider,
+            positionCropGenerator = positionCropGenerator,
+            rowCropGenerator = rowCropGenerator,
+            paddleRecognizer = paddleRecognizer,
         )
-        return CachingMatchResultOcrPreviewRunner(
-            assetRepository = assetRepository,
-            cacheRepository = cacheRepository,
-            screenshotOwnerProvider = screenshotOwnerProvider,
-            delegate = delegate,
+        return HybridMatchResultOcrPreviewRunner(
+            newRoute = newPositionRunner,
+            legacyRoute = legacyRunner,
         )
     }
 }

@@ -138,6 +138,10 @@ class MatchReviewViewModel @Inject constructor(
         NoOpScreenshotMetadataCloudDataSource(),
     private val matchResultScreenshotAssetCloudDataSource: MatchResultScreenshotAssetCloudDataSource =
         NoOpMatchResultScreenshotAssetCloudDataSource(),
+    private val matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
+        NoOpMatchResultPositionCropPreviewGenerator,
+    private val matchResultPositionRowCropPreviewGenerator: MatchResultPositionRowCropPreviewGenerator =
+        NoOpMatchResultPositionRowCropPreviewGenerator,
     private val googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource =
         NoOpGoogleSheetsMatchExportRemoteDataSource(),
     private val resultDownloadCoordinator: ResultDownloadCoordinator =
@@ -162,6 +166,9 @@ class MatchReviewViewModel @Inject constructor(
     private var preservationJob: Job? = null
     private var uploadJob: Job? = null
     private val resultScreenshotJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
+    private val resultPositionCropJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
+    private val resultPositionCropInputs = mutableMapOf<MatchResultScreenshotRole, String>()
+    private val resultPositionRowCropJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
     private var exportJob: Job? = null
     private var resultDownloadJob: Job? = null
     private var pendingResultDocument: PendingResultDocument? = null
@@ -186,6 +193,7 @@ class MatchReviewViewModel @Inject constructor(
         uploadJob?.cancel()
         resultScreenshotJobs.values.forEach { it.cancel() }
         resultScreenshotJobs.clear()
+        clearAllResultPositionCropPreviews()
         cancelActiveResultBatchAndClearTransientState()
         screenshotIntakeGeneration++
         exportJob?.cancel()
@@ -346,10 +354,13 @@ class MatchReviewViewModel @Inject constructor(
                             restored = state.resultScreenshots,
                             current = current.resultScreenshots,
                         ),
+                        resultPositionCropPreviews = current.resultPositionCropPreviews,
+                        resultPositionRowCropPreviews = current.resultPositionRowCropPreviews,
                         pendingResultScreenshotCropBatch = current.pendingResultScreenshotCropBatch,
                         resultScreenshotMultiPhotoPickerRequest = current.resultScreenshotMultiPhotoPickerRequest,
                     )
                 }
+                clearStaleResultPositionCropPreviews()
             }
         }
     }
@@ -376,6 +387,21 @@ class MatchReviewViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isEditable && !state.tournamentId.isNullOrBlank() && !state.matchId.isNullOrBlank()) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.OCR_REVIEW) }
+        }
+    }
+
+    /** Runs the preview-only Result position crop pipeline from the explicit Calculate Points action. */
+    fun calculateResultPositionCrops() {
+        if (!_uiState.value.isAvailable) return
+        val lowerAvailable = _uiState.value.resultScreenshots
+            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            .resultPositionCropPreviewInputKey() != null
+        MatchResultScreenshotRole.entries.forEach { role ->
+            generateResultPositionCropPreviews(
+                role = role,
+                allowUpperPositionElevenFallback =
+                    role == MatchResultScreenshotRole.MATCH_RESULT_UPPER && !lowerAvailable,
+            )
         }
     }
 
@@ -950,6 +976,7 @@ class MatchReviewViewModel @Inject constructor(
         cancelActiveResultBatchAndClearTransientState()
         val generation = ++screenshotIntakeGeneration
         resultScreenshotJobs.remove(role)?.cancel()
+        clearResultPositionCropPreviews(role)
         _uiState.update { it.copy(pendingResultScreenshotCropBatch = null) }
         if (selectedUri.isBlank()) {
             resultScreenshotJobs[role] = viewModelScope.launch {
@@ -966,6 +993,7 @@ class MatchReviewViewModel @Inject constructor(
         val request = _uiState.value.resultScreenshotMultiPhotoPickerRequest ?: return
         val generation = ++screenshotIntakeGeneration
         cancelActiveResultBatchAndClearTransientState()
+        request.targetRoles.take(selectedUris.size).forEach(::clearResultPositionCropPreviews)
         _uiState.update { state ->
             if (state.resultScreenshotMultiPhotoPickerRequest?.requestId != request.requestId) {
                 state
@@ -1620,6 +1648,7 @@ class MatchReviewViewModel @Inject constructor(
         )
         val fingerprint = slot.fingerprint
         val activeJob = resultScreenshotJobs.remove(role)
+        clearResultPositionCropPreviews(role)
 
         _uiState.updateSlot(role) {
             it.copy(
@@ -2646,6 +2675,201 @@ class MatchReviewViewModel @Inject constructor(
             }
         }
     }
+
+    private fun clearStaleResultPositionCropPreviews() {
+        val lowerAvailable = _uiState.value.resultScreenshots
+            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+            .resultPositionCropPreviewInputKey() != null
+        MatchResultScreenshotRole.entries.forEach { role ->
+            val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
+                allowUpperPositionElevenFallback =
+                    role == MatchResultScreenshotRole.MATCH_RESULT_UPPER && !lowerAvailable,
+            )
+            if (resultPositionCropInputs[role] != inputKey) {
+                clearResultPositionCropPreviews(role)
+            }
+        }
+    }
+
+    private fun generateResultPositionCropPreviews(
+        role: MatchResultScreenshotRole,
+        allowUpperPositionElevenFallback: Boolean,
+    ) {
+        val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
+            allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+        )
+            ?: run {
+                clearResultPositionCropPreviews(role)
+                return
+            }
+        if (resultPositionCropJobs[role]?.isActive == true && resultPositionCropInputs[role] == inputKey) return
+
+        resultPositionCropJobs.remove(role)?.cancel()
+        resultPositionCropInputs[role] = inputKey
+        _uiState.update { state ->
+            state.copy(
+                resultPositionCropPreviews = state.resultPositionCropPreviews.replace(role) {
+                    MatchResultPositionCropPreviewState.Loading
+                },
+            )
+        }
+        resultPositionCropJobs[role] = viewModelScope.launch {
+            val result = try {
+                val current = _uiState.value.resultScreenshots.slot(role)
+                val relativePath = current.localRelativePath
+                val crop = current.confirmedCrop
+                val localFile = relativePath?.let(localImagePreserver::resolveRelativePath)
+                if (crop == null || localFile == null) {
+                    MatchResultPositionCropPreviewState.Unavailable(
+                        MatchResultPositionCropPreviewUnavailableReason.SOURCE_UNAVAILABLE,
+                    )
+                } else {
+                    matchResultPositionCropPreviewGenerator.generate(
+                        localFile = localFile,
+                        confirmedCrop = crop,
+                        role = role,
+                        allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                MatchResultPositionCropPreviewState.Unavailable(
+                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                )
+            }
+            if (resultPositionCropInputs[role] != inputKey) {
+                result.release()
+                return@launch
+            }
+            _uiState.update { state ->
+                state.copy(
+                    resultPositionCropPreviews = state.resultPositionCropPreviews.replace(role) { result },
+                )
+            }
+            if (result is MatchResultPositionCropPreviewState.Available) {
+                generateResultPositionRowCropPreviews(role, inputKey, result)
+            }
+        }
+    }
+
+    private fun generateResultPositionRowCropPreviews(
+        role: MatchResultScreenshotRole,
+        inputKey: String,
+        positionPreviews: MatchResultPositionCropPreviewState.Available,
+    ) {
+        resultPositionRowCropJobs.remove(role)?.cancel()
+        val initial = positionPreviews.sortedCrops().associate { preview ->
+            preview.position to MatchResultPositionRowCropPreviewState.Loading
+        }
+        _uiState.update { state ->
+            state.copy(
+                resultPositionRowCropPreviews = state.resultPositionRowCropPreviews
+                    .toMutableMap()
+                    .apply { this[role] = initial },
+            )
+        }
+        resultPositionRowCropJobs[role] = viewModelScope.launch {
+            positionPreviews.sortedCrops().forEach { positionPreview ->
+                val rowState = try {
+                    matchResultPositionRowCropPreviewGenerator.generate(positionPreview)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    MatchResultPositionRowCropPreviewState.Unavailable(
+                        MatchResultPositionRowCropPreviewUnavailableReason.OCR_UNAVAILABLE,
+                    )
+                }
+                if (
+                    resultPositionCropInputs[role] != inputKey ||
+                    _uiState.value.resultPositionCropPreviews[role] !== positionPreviews
+                ) {
+                    rowState.release()
+                    return@launch
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        resultPositionRowCropPreviews = state.resultPositionRowCropPreviews
+                            .toMutableMap()
+                            .apply {
+                                this[role] = (this[role].orEmpty() + (positionPreview.position to rowState))
+                            },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun clearAllResultPositionCropPreviews() {
+        resultPositionCropJobs.values.forEach { it.cancel() }
+        resultPositionCropJobs.clear()
+        resultPositionCropInputs.clear()
+        resultPositionRowCropJobs.values.forEach { it.cancel() }
+        resultPositionRowCropJobs.clear()
+        _uiState.update { state ->
+            state.copy(
+                resultPositionCropPreviews = defaultMatchResultPositionCropPreviewStates(),
+                resultPositionRowCropPreviews = defaultMatchResultPositionRowCropPreviewStates(),
+            )
+        }
+    }
+
+    private fun clearResultPositionCropPreviews(role: MatchResultScreenshotRole) {
+        val hadInput = resultPositionCropInputs.remove(role) != null
+        val activeJob = resultPositionCropJobs.remove(role)
+        val rowJob = resultPositionRowCropJobs.remove(role)
+        val rowStates = _uiState.value.resultPositionRowCropPreviews[role].orEmpty()
+        if (!hadInput && activeJob == null && rowJob == null && rowStates.isEmpty()) return
+        activeJob?.cancel()
+        rowJob?.cancel()
+        rowStates.values.forEach(MatchResultPositionRowCropPreviewState::release)
+        _uiState.update { state ->
+            state.copy(
+                resultPositionCropPreviews = state.resultPositionCropPreviews.replace(role) {
+                    MatchResultPositionCropPreviewState.Unavailable(
+                        MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+                    )
+                },
+                resultPositionRowCropPreviews = state.resultPositionRowCropPreviews.toMutableMap().apply {
+                    this[role] = emptyMap()
+                },
+            )
+        }
+    }
+
+    fun releaseResultPositionCropPreviewsIfStale(
+        previews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
+    ) {
+        val current = _uiState.value.resultPositionCropPreviews
+        if (current !== previews) {
+            releaseReplacedResultPositionCropPreviewStates(
+                previous = previews,
+                current = current,
+            )
+        }
+    }
+
+    fun releaseResultPositionRowCropPreviewsIfStale(
+        previews: Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
+    ) {
+        val current = _uiState.value.resultPositionRowCropPreviews
+        previews.forEach { (role, previousStates) ->
+            releaseReplacedResultPositionRowCropPreviewStates(
+                previous = previousStates,
+                current = current[role].orEmpty(),
+            )
+        }
+    }
+
+    override fun onCleared() {
+        resultPositionCropJobs.values.forEach { it.cancel() }
+        resultPositionRowCropJobs.values.forEach { it.cancel() }
+        _uiState.value.resultPositionCropPreviews.values.forEach(MatchResultPositionCropPreviewState::release)
+        _uiState.value.resultPositionRowCropPreviews.values
+            .flatMap { it.values }
+            .forEach(MatchResultPositionRowCropPreviewState::release)
+        super.onCleared()
+    }
 }
 
 private data class MatchReviewLoadInputs(
@@ -2669,6 +2893,38 @@ private fun MutableStateFlow<MatchReviewUiState>.updateSlot(
             resultScreenshots = state.resultScreenshots.replaceSlot(role, transform),
         )
     }
+}
+
+private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewInputKey(
+    allowUpperPositionElevenFallback: Boolean = false,
+): String? {
+    val crop = confirmedCrop
+    val path = localRelativePath
+    val hash = fingerprint
+    if (!hasLinkedAsset || !hasConfirmedCrop || isLocalFileMissing || crop == null || path.isNullOrBlank() || hash.isNullOrBlank()) {
+        return null
+    }
+    return listOf(
+        role.name,
+        hash,
+        path,
+        crop.left,
+        crop.top,
+        crop.right,
+        crop.bottom,
+        allowUpperPositionElevenFallback,
+    ).joinToString(":")
+}
+
+private fun Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>.replace(
+    role: MatchResultScreenshotRole,
+    transform: (MatchResultPositionCropPreviewState) -> MatchResultPositionCropPreviewState,
+): Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState> = toMutableMap().apply {
+    this[role] = transform(
+        this[role] ?: MatchResultPositionCropPreviewState.Unavailable(
+            MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+        ),
+    )
 }
 
 private fun MutableStateFlow<MatchReviewUiState>.updateSlotIfCurrent(
