@@ -2,12 +2,21 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleOcrRecognizer
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropGenerationResult
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrFailure
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrEvidence
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrResult
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.io.File
+import java.util.Locale
+import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +38,12 @@ data class AndroidMatchResultPositionCropPreviewImage(
 data class MatchResultPositionCropPreview(
     val position: Int,
     val image: MatchResultPositionCropPreviewImage,
+    // TEMPORARY Phase 2 semantic verification diagnostic. REMOVE BEFORE COMMIT.
+    val role: MatchResultScreenshotRole? = null,
+    // TEMPORARY Phase 2 semantic verification diagnostic. REMOVE BEFORE COMMIT.
+    val allowUpperPositionElevenFallback: Boolean = false,
+    // TEMPORARY Phase 2 semantic verification diagnostic. REMOVE BEFORE COMMIT.
+    val temporaryPpEvidence: MatchResultPositionPaddleOcrEvidence? = null,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -97,6 +112,7 @@ fun interface MatchResultPositionCropPreviewGenerator {
 @Singleton
 class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
+    private val positionPaddleOcrRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
 ) : MatchResultPositionCropPreviewGenerator {
     override suspend fun generate(
         localFile: File,
@@ -109,11 +125,14 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                 MatchResultPositionCropPreviewUnavailableReason.SOURCE_UNAVAILABLE,
             )
         try {
-            positionCropGenerator.generate(
+            val generated = positionCropGenerator.generate(
                 source = source,
                 role = role,
                 allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
-            ).toPreviewState(role, allowUpperPositionElevenFallback)
+            )
+            // TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+            val temporaryPpEvidence = generated.traceTemporaryPpRaw(role, positionPaddleOcrRecognizer)
+            generated.toPreviewState(role, allowUpperPositionElevenFallback, temporaryPpEvidence)
         } finally {
             if (!source.isRecycled) source.recycle()
         }
@@ -152,6 +171,7 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
     private fun MatchResultPositionCropGenerationResult.toPreviewState(
         role: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        temporaryPpEvidence: Map<Int, MatchResultPositionPaddleOcrEvidence> = emptyMap(),
     ): MatchResultPositionCropPreviewState = when (this) {
         is MatchResultPositionCropGenerationResult.Generated -> {
             val previews = crops
@@ -160,6 +180,9 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                     MatchResultPositionCropPreview(
                         position = crop.geometry.position,
                         image = AndroidMatchResultPositionCropPreviewImage(crop.bitmap),
+                        role = role,
+                        allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+                        temporaryPpEvidence = temporaryPpEvidence[crop.geometry.position],
                     )
                 }
             val positions = previews.map(MatchResultPositionCropPreview::position)
@@ -184,6 +207,100 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
             MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
         )
     }
+}
+
+// TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+private const val RESULT_POSITION_PP_RAW_LOG_TAG = "RESULT_POSITION_PP_RAW"
+
+// TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+private suspend fun MatchResultPositionCropGenerationResult.traceTemporaryPpRaw(
+    role: MatchResultScreenshotRole,
+    recognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
+) : Map<Int, MatchResultPositionPaddleOcrEvidence> {
+    val generated = this as? MatchResultPositionCropGenerationResult.Generated ?: return emptyMap()
+    val evidenceByPosition = linkedMapOf<Int, MatchResultPositionPaddleOcrEvidence>()
+    generated.crops
+        .sortedBy { it.geometry.position }
+        .forEach { crop ->
+            val position = crop.geometry.position
+            val dimensions = crop.bitmap.safeTemporaryPpDimensions()
+            try {
+                when (val result = recognizer.recognize(crop, role)) {
+                    is MatchResultPositionPaddleOcrResult.Success -> {
+                        val lines = result.evidence.blocks.flatMap { it.lines }
+                        evidenceByPosition[position] = result.evidence
+                        Log.i(
+                            RESULT_POSITION_PP_RAW_LOG_TAG,
+                            "role=$role position=$position crop=${dimensions.first}x${dimensions.second} " +
+                                "resultCount=${lines.size} status=SUCCESS",
+                        )
+                        lines.forEachIndexed { index, line ->
+                            logTemporaryPpLine(role, position, dimensions, index, line)
+                        }
+                    }
+
+                    is MatchResultPositionPaddleOcrResult.Failed -> {
+                        Log.i(
+                            RESULT_POSITION_PP_RAW_LOG_TAG,
+                            "role=$role position=$position crop=${dimensions.first}x${dimensions.second} " +
+                                "resultCount=0 status=${result.reason.name}",
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                Log.i(
+                    RESULT_POSITION_PP_RAW_LOG_TAG,
+                    "role=$role position=$position crop=${dimensions.first}x${dimensions.second} " +
+                        "resultCount=0 status=${MatchResultPositionPaddleOcrFailure.OCR_RECOGNITION_FAILED.name}",
+                )
+            }
+        }
+    return evidenceByPosition
+}
+
+// TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+private fun logTemporaryPpLine(
+    role: MatchResultScreenshotRole,
+    position: Int,
+    dimensions: Pair<Int, Int>,
+    index: Int,
+    line: RawOcrLine,
+) {
+    val geometry = line.geometry ?: return
+    val box = geometry.boundingBox ?: return
+    val centerX = (box.left + box.right) / 2.0
+    val centerY = (box.top + box.bottom) / 2.0
+    val confidence = (line.confidence as? RawOcrConfidence.Available)
+        ?.value
+        ?.let { String.format(Locale.US, "%.4f", it) }
+        ?: "na"
+    val points = geometry.cornerPoints.orEmpty().joinToString(",", prefix = "[", postfix = "]") {
+        "(${it.x},${it.y})"
+    }
+    Log.i(
+        RESULT_POSITION_PP_RAW_LOG_TAG,
+        "role=$role position=$position crop=${dimensions.first}x${dimensions.second} i=$index " +
+            "text=\"${line.text.escapeTemporaryPpText()}\" confidence=$confidence " +
+            "box=[${box.left},${box.top},${box.right},${box.bottom}] " +
+            "center=[${String.format(Locale.US, "%.1f", centerX)},${String.format(Locale.US, "%.1f", centerY)}] " +
+            "points=$points",
+    )
+}
+
+// TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+private fun String.escapeTemporaryPpText(): String =
+    replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+
+// TEMPORARY Phase 2 PP raw segmentation diagnostic. REMOVE BEFORE COMMIT.
+private fun Bitmap.safeTemporaryPpDimensions(): Pair<Int, Int> = try {
+    if (isRecycled || width <= 0 || height <= 0) 0 to 0 else width to height
+} catch (_: Throwable) {
+    0 to 0
 }
 
 object NoOpMatchResultPositionCropPreviewGenerator : MatchResultPositionCropPreviewGenerator {
