@@ -553,6 +553,10 @@
     <string name="match_review_result_position_crop_label">Position %1$d</string>
     <string name="match_review_result_position_crops_loading">Preparing position crops.</string>
     <string name="match_review_result_position_crops_unavailable">Position crops are unavailable.</string>
+    <string name="match_review_result_position_rows_title">Detected rows</string>
+    <string name="match_review_result_position_rows_loading">Preparing detected rows.</string>
+    <string name="match_review_result_position_rows_unavailable">Rows are unavailable.</string>
+    <string name="match_review_result_position_row_label">Row %1$d</string>
     <string name="match_review_result_screenshot_crop_required">Crop required.</string>
     <string name="match_review_result_screenshot_crop_ready">Crop ready.</string>
     <string name="match_review_result_screenshot_crop_action">Crop screenshot</string>

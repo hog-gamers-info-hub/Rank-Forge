@@ -1834,6 +1834,27 @@ class MatchReviewScreenTest {
                                     },
                                 ),
                         ),
+                        resultPositionRowCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to mapOf(
+                                1 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                                2 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(
+                                        resultRowPreview(1),
+                                        resultRowPreview(2),
+                                    ),
+                                ),
+                            ),
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to mapOf(
+                                11 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                                12 to MatchResultPositionRowCropPreviewState.Available(
+                                    listOf(resultRowPreview(1)),
+                                ),
+                            ),
+                        ),
                     ),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -1849,10 +1870,18 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
             .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "1_1")
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROP_TEST_TAG_PREFIX + "2_2")
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
@@ -1862,6 +1891,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_ROW_CROPS_TEST_TAG_PREFIX + "11")
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
@@ -3306,6 +3337,10 @@ class MatchReviewScreenTest {
             MatchResultScreenshotRole,
             MatchResultPositionCropPreviewState,
         > = defaultMatchResultPositionCropPreviewStates(),
+        resultPositionRowCropPreviews: Map<
+            MatchResultScreenshotRole,
+            Map<Int, MatchResultPositionRowCropPreviewState>,
+        > = defaultMatchResultPositionRowCropPreviewStates(),
     ) = MatchReviewUiState(
         isLoading = false,
         isAvailable = true,
@@ -3329,6 +3364,14 @@ class MatchReviewScreenTest {
         validationErrors = validationErrors,
         resultScreenshots = resultScreenshots,
         resultPositionCropPreviews = resultPositionCropPreviews,
+        resultPositionRowCropPreviews = resultPositionRowCropPreviews,
+    )
+
+    private fun resultRowPreview(rowIndex: Int) = MatchResultPositionRowCropPreview(
+        rowIndex = rowIndex,
+        image = AndroidMatchResultPositionRowCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        ),
     )
 
     private fun allLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
