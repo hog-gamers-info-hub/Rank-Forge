@@ -700,7 +700,11 @@ class RoomTournamentRepository @Inject constructor(
                     snapshot.tournament.toEntity(
                         creationOrder = existingTournament?.creationOrder
                             ?: database.tournamentDao().nextCreationOrder(),
-                        lastUpdatedEpochMillis = existingTournament?.lastUpdatedEpochMillis,
+                        lastUpdatedEpochMillis = if (existingTournament == null) {
+                            clock.millis()
+                        } else {
+                            existingTournament.lastUpdatedEpochMillis
+                        },
                     ),
                 )
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
@@ -784,7 +788,11 @@ class RoomTournamentRepository @Inject constructor(
                     snapshot.tournament.toEntity(
                         creationOrder = existingTournament?.creationOrder
                             ?: database.tournamentDao().nextCreationOrder(),
-                        lastUpdatedEpochMillis = existingTournament?.lastUpdatedEpochMillis,
+                        lastUpdatedEpochMillis = if (existingTournament == null) {
+                            clock.millis()
+                        } else {
+                            existingTournament.lastUpdatedEpochMillis
+                        },
                     ),
                 )
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
@@ -1146,6 +1154,11 @@ class RoomTournamentRepository @Inject constructor(
                 if (current.tournaments.none { it.id == tournamentId }) {
                     return@withTransaction OwnerScopedTournamentMutationResult.TournamentNotFound
                 }
+                val existingRoster = database.rosterPlayerDao()
+                    .observeByTournamentAndSlot(tournamentId, slotNumber)
+                    .first()
+                    .map { it.toDomain() }
+                val rosterChanged = existingRoster != players
                 val next = current.copy(
                     tournaments = current.tournaments.map { tournament ->
                         if (tournament.id == tournamentId && tournament.status == TournamentStatus.CONFIRMED) {
@@ -1160,7 +1173,7 @@ class RoomTournamentRepository @Inject constructor(
                 database.rosterPlayerDao().deleteByTournamentAndSlot(tournamentId, slotNumber)
                 database.rosterPlayerDao().upsertAll(players.toEntities())
                 persistTournamentStatusChanges(current, next)
-                if (tournamentStatusChanged) {
+                if (tournamentStatusChanged || rosterChanged) {
                     touchTournament(tournamentId)
                 }
                 saveLegacyState(next)
@@ -1225,6 +1238,16 @@ class RoomTournamentRepository @Inject constructor(
                 val existingSlots = database.teamSlotDao()
                     .observeByTournamentId(candidate.tournamentId)
                     .first()
+                val existingRosters = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                    database.rosterPlayerDao()
+                        .observeByTournamentAndSlot(candidate.tournamentId, slotNumber)
+                        .first()
+                        .map { it.toDomain() }
+                }
+                val rosterChanged = TeamSlot.SLOT_NUMBERS.any { slotNumber ->
+                    existingRosters.getValue(slotNumber) !=
+                        candidate.rosterPlayersBySlotNumber.getValue(slotNumber)
+                }
                 val confirmedTournament = tournamentEntity.toDomain().copy(status = TournamentStatus.CONFIRMED)
                 val replacementSlots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
                     TeamSlot(
@@ -1269,7 +1292,7 @@ class RoomTournamentRepository @Inject constructor(
                     },
                 )
                 persistTournamentStatusChanges(state.value, next)
-                if (teamNamesChanged || tournamentStatusChanged) {
+                if (teamNamesChanged || tournamentStatusChanged || rosterChanged) {
                     touchTournament(candidate.tournamentId)
                 }
                 saveLegacyState(next)

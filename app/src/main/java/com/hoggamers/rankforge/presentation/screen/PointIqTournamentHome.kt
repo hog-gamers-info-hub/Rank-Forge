@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -263,7 +264,7 @@ internal fun PointIqTournamentSummaryCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp)
+            .height(132.dp)
             .shadow(
                 elevation = 5.dp,
                 shape = shape,
@@ -290,7 +291,22 @@ internal fun PointIqTournamentSummaryCard(
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(
+                modifier = Modifier
+                    .fillMaxWidth(0.90f)
+                    .padding(start = 4.dp),
+                thickness = 1.dp,
+                color = PointIqHomeBorder,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Free Fire MAX  •  Squad",
+                color = PointIqHomeBody,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(
                     R.string.pointiq_home_summary_line,
@@ -303,7 +319,7 @@ internal fun PointIqTournamentSummaryCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.pointiq_home_last_updated, lastUpdated),
+                text = stringResource(R.string.pointiq_home_last_updated, "— $lastUpdated"),
                 color = PointIqHomeMuted,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,

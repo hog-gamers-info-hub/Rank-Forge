@@ -97,18 +97,19 @@ class TournamentSummaryRepositoryTest {
     }
 
     @Test
-    fun rosterOnlyAndRejectedMutationsDoNotAdvanceLastUpdated() = runBlocking {
+    fun realRosterChangesAdvanceButIdenticalRosterSavesDoNot() = runBlocking {
         withRepository { repository, database, clock ->
             repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to "Alpha"))
-            val beforeRoster = lastUpdated(database)
-            repository.saveRoster(
-                TOURNAMENT_ID,
-                1,
-                listOf(com.hoggamers.rankforge.domain.tournament.RosterPlayer(TOURNAMENT_ID, 1, "Player")),
-            )
-            assertEquals(beforeRoster, lastUpdated(database))
+            clock.setMillis(8_000L)
+            val player = com.hoggamers.rankforge.domain.tournament.RosterPlayer(TOURNAMENT_ID, 1, "Player")
+            repository.saveRoster(TOURNAMENT_ID, 1, listOf(player))
+            assertEquals(8_000L, lastUpdated(database))
 
             clock.setMillis(9_000L)
+            repository.saveRoster(TOURNAMENT_ID, 1, listOf(player))
+            assertEquals(8_000L, lastUpdated(database))
+
+            clock.setMillis(10_000L)
             repository.createDraftMatch(match("match-1", 1))
             val beforeRejected = lastUpdated(database)
             repository.saveDraftMatchPlacements("match-1", listOf(MatchPlacement(1, 0)))
@@ -173,23 +174,30 @@ class TournamentSummaryRepositoryTest {
     }
 
     @Test
-    fun confirmedRosterReplacementWithOnlyRosterChangesDoesNotAdvanceTimestamp() = runBlocking {
+    fun confirmedRosterReplacementWithOnlyRosterChangesAdvancesTimestamp() = runBlocking {
         withRepository { repository, database, clock ->
             val names = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "Team $slotNumber" }
             clock.setMillis(2_000L)
             repository.saveTeamNames(TOURNAMENT_ID, names)
             clock.setMillis(3_000L)
             assertEquals(true, repository.confirmTournament(TOURNAMENT_ID))
-            val beforeReplacement = lastUpdated(database)
 
             clock.setMillis(4_000L)
             val result = repository.replaceConfirmedTournamentRoster(
-                replacementCandidate("Team", names = names),
+                replacementCandidate("Team", names = names).copy(
+                    rosterPlayersBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                        if (slotNumber == 1) {
+                            listOf(com.hoggamers.rankforge.domain.tournament.RosterPlayer(TOURNAMENT_ID, 1, "Player 1"))
+                        } else {
+                            emptyList()
+                        }
+                    },
+                ),
             )
 
             assertEquals(com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterRepositoryResult.Replaced, result)
             assertEquals(TournamentStatus.CONFIRMED, repository.observeById(TOURNAMENT_ID).first()!!.status)
-            assertEquals(beforeReplacement, lastUpdated(database))
+            assertEquals(4_000L, lastUpdated(database))
         }
     }
 
@@ -208,13 +216,14 @@ class TournamentSummaryRepositoryTest {
     }
 
     @Test
-    fun cloudRestoreOfNewTournamentDoesNotFabricateLocalTimestamp() = runBlocking {
-        withRepository { repository, database, _ ->
+    fun cloudRestoreOfNewTournamentInitializesLocalTimestamp() = runBlocking {
+        withRepository { repository, database, clock ->
             val cloudId = "cloud-only"
+            clock.setMillis(9_000L)
 
             repository.restore(cloudSnapshot(cloudId, "Cloud only"))
 
-            assertNull(database.tournamentDao().observeById(cloudId).first()!!.lastUpdatedEpochMillis)
+            assertEquals(9_000L, database.tournamentDao().observeById(cloudId).first()!!.lastUpdatedEpochMillis)
         }
     }
 
