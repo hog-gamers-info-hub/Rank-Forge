@@ -6,6 +6,10 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrSlot
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerRowCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewImage
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult
@@ -36,6 +40,13 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrConsensusStatus
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
@@ -72,6 +83,7 @@ import kotlinx.coroutines.test.runCurrent
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -250,17 +262,14 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun calculatePointsUsesSlotOnlyLobbyOcrWithoutPlayerMatchingOrFakeLobbyData() = runTest(dispatcher) {
+    fun calculatePointsUsesSlotOnlyLobbyOcrAndPopulatesAutomaticTeamAssignment() = runTest(dispatcher) {
         var oldLobbyRunnerCalls = 0
         var slotRunnerCalls = 0
         val resultRoles = mutableListOf<MatchResultScreenshotRole>()
         val slotNumberResult = phase1SlotNumberResult()
         val viewModel = MatchOcrReviewViewModel(
             finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
-            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
-                resultRoles += identity.role
-                completePreviewRunner().process(identity)
-            },
+            matchResultOcrPreviewRunner = slotOnlyResultPreviewRunner(resultRoles),
             matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
                 oldLobbyRunnerCalls++
                 MatchLobbyPlayersOcrResult.unavailable()
@@ -288,8 +297,11 @@ class MatchOcrReviewViewModelTest {
         assertEquals(0, oldLobbyRunnerCalls)
         assertEquals(slotNumberResult, state.phase1LobbySlotNumberOcr)
         assertTrue(state.lobbyPlayers.isEmpty())
-        assertTrue(state.rows.none { it.resultLobbyVoteEvidencePresent })
-        assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
+        assertTrue(state.rows.first().resultLobbyVoteEvidencePresent)
+        assertEquals(4, state.rows.first().originalSuggestedTeamSlot)
+        assertEquals("4", state.correctionDraft!!.rows.first().assignedTeamSlotDraftValue)
+        assertNull(state.rows[1].originalSuggestedTeamSlot)
+        assertEquals("", state.correctionDraft.rows[1].assignedTeamSlotDraftValue)
         assertEquals("1", state.rows.first().detectedPlacementDisplayValue)
 
         val firstScreenshot = state.phase1LobbySlotNumberOcr!!.screenshots.first()
@@ -1535,6 +1547,20 @@ class MatchOcrReviewViewModelTest {
                         parsedSlotNumber(3),
                         parsedSlotNumber(2),
                     ),
+                ).copy(
+                    teamCropPreviews = MatchLobbyTeamCropPreviewResult.Available(
+                        previews = listOf(
+                            slotOnlyTeamCropPreview(RosterVisibleSlotPosition.TOP_LEFT, 4, listOf(
+                                "Alpha",
+                                "Bravo",
+                                "Charlie",
+                                "Delta",
+                            )),
+                            slotOnlyTeamCropPreview(RosterVisibleSlotPosition.TOP_RIGHT, 1, emptyList()),
+                            slotOnlyTeamCropPreview(RosterVisibleSlotPosition.BOTTOM_LEFT, 3, emptyList()),
+                            slotOnlyTeamCropPreview(RosterVisibleSlotPosition.BOTTOM_RIGHT, 2, emptyList()),
+                        ),
+                    ),
                 ),
                 processedSlotNumberScreenshot(
                     position = RosterScreenshotPosition.TWO,
@@ -1551,6 +1577,74 @@ class MatchOcrReviewViewModelTest {
                 ),
             ),
         )
+
+    private fun slotOnlyTeamCropPreview(
+        visibleSlotPosition: RosterVisibleSlotPosition,
+        slotNumber: Int,
+        playerNames: List<String>,
+    ): MatchLobbyTeamCropPreview = MatchLobbyTeamCropPreview(
+        visibleSlotPosition = visibleSlotPosition,
+        detectedSlotNumber = slotNumber,
+        image = SlotOnlyTeamCropPreviewImage,
+        playerRowPreviews = playerNames.mapIndexed { index, playerName ->
+            val row = LobbyPlayerRow.entries[index]
+            LobbyPlayerRowCropPreview(
+                row = row,
+                boundsInTeamCrop = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
+                slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                slotAnchorY = 5.0,
+                structuralEvidence = null,
+                image = SlotOnlyTeamCropPreviewImage,
+                dualOcrResult = LobbyPlayerDualOcrResult(
+                    teamSlotNumber = slotNumber,
+                    row = row,
+                    rowBounds = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
+                    slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                    slotAnchorY = 5.0,
+                    ppEvidence = LobbyPlayerOcrEngineEvidence(
+                        engine = LobbyPlayerOcrEngine.PP_OCRV6,
+                        rawText = playerName,
+                        candidateText = playerName,
+                    ),
+                    resolvedText = playerName,
+                    consensusStatus = LobbyPlayerOcrConsensusStatus.PP_ONLY,
+                    finalText = playerName,
+                ),
+            )
+        },
+    )
+
+    private data object SlotOnlyTeamCropPreviewImage : MatchLobbyTeamCropPreviewImage
+
+    private fun slotOnlyResultPreviewRunner(
+        resultRoles: MutableList<MatchResultScreenshotRole>,
+    ): MatchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+        resultRoles += identity.role
+        when (val result = completePreviewRunner().process(identity)) {
+            is MatchResultOcrPreviewProcessingResult.Processed -> result.copy(
+                extraction = result.extraction.copy(
+                    rows = result.extraction.rows.map { row ->
+                        if (row.position != 1) {
+                            row
+                        } else {
+                            row.copy(
+                                playerSlots = row.playerSlots.mapIndexed { index, playerSlot ->
+                                    val playerName = listOf("Alpha", "Bravo", "Charlie", "Delta")[index]
+                                    playerSlot.copy(
+                                        player = playerSlot.player.copy(
+                                            ocrText = playerName,
+                                            resolvedText = playerName,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                    },
+                ),
+            )
+            else -> result
+        }
+    }
 
     private fun processedSlotNumberScreenshot(
         position: RosterScreenshotPosition,
