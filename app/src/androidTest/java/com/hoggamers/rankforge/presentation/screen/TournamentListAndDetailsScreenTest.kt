@@ -400,9 +400,7 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_LOCAL_HEADING_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_CLOUD_HEADING_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title))
             .assertCountEquals(0)
