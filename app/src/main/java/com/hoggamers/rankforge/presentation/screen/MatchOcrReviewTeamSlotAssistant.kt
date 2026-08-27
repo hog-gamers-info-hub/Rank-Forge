@@ -38,11 +38,7 @@ object MatchOcrReviewTeamSlotAssistant {
             .sortedBy { it.rowIndex }
 
         val availableOptionsByRow = unresolvedRows.associate { row ->
-            val ownSlot = row.assignedTeamSlotDraftValue.validTeamSlotOrNull()
-            val availableSlots = (remainingTeamSlots + ownSlot)
-                .filterNotNull()
-                .distinct()
-                .sorted()
+            val availableSlots = remainingTeamSlots
             val candidatesBySlot = evidenceByRow[row.rowIndex].orEmpty()
                 .filter { it.teamSlot in availableSlots && it.teamSlot in TeamSlot.SLOT_NUMBERS }
                 .groupBy { it.teamSlot }
