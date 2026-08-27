@@ -157,12 +157,10 @@ set local request.jwt.claim.sub = 'c1000000-0000-0000-0000-000000000001';
 select lives_ok($$
     insert into public.tournament_standings_shares (
         tournament_id,
-        share_token,
         standings
     )
     values (
         'c2000000-0000-0000-0000-000000000001',
-        'c3000000-0000-0000-0000-000000000001',
         '[]'::jsonb
     )
 $$, 'owner can insert an empty standings snapshot');
