@@ -13,10 +13,13 @@ import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcess
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrSlot
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrRunner
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchFailure
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchResult
@@ -29,9 +32,11 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -282,7 +287,9 @@ class MatchOcrReviewViewModel @Inject constructor(
             val teamContext = loadTeamContext(tournamentId)
             val slotNumberResult = (lobbyOutcome as? SlotNumberOnlyLobbyOutcome)?.result
             val playerLobbyResult = (lobbyOutcome as? PlayerLobbyOutcome)?.result
-            val matchedRows = playerLobbyResult?.let { lobbyResult ->
+            val lobbyResultForMatching = playerLobbyResult
+                ?: slotNumberResult?.toMatchLobbyPlayersOcrResult()
+            val matchedRows = lobbyResultForMatching?.let { lobbyResult ->
                 MatchResultOcrPreviewTeamSuggestionMapper.map(
                     preview = preview,
                     resultRows = roleResults.processedResultRows(),
@@ -1051,6 +1058,34 @@ private data class PlayerLobbyOutcome(
 private data class SlotNumberOnlyLobbyOutcome(
     val result: MatchLobbySlotNumberOcrResult,
 ) : MatchLobbyOcrOutcome
+
+private fun MatchLobbySlotNumberOcrResult.toMatchLobbyPlayersOcrResult(): MatchLobbyPlayersOcrResult {
+    val slots = MatchLobbyPlayersOcrResult.unavailable().slots.toMutableList()
+    screenshots
+        .filterIsInstance<MatchLobbySlotNumberOcrScreenshotResult.Processed>()
+        .forEach { screenshot ->
+            (screenshot.teamCropPreviews as? MatchLobbyTeamCropPreviewResult.Available)
+                ?.previews
+                .orEmpty()
+                .forEach { teamCropPreview ->
+                    val slotNumber = teamCropPreview.detectedSlotNumber
+                        .takeIf { it in TeamSlot.SLOT_NUMBERS }
+                        ?: return@forEach
+                    val rowPreviewsByRow = teamCropPreview.playerRowPreviews.associateBy { it.row }
+                    slots[slotNumber - 1] = MatchLobbyPlayersOcrSlot(
+                        slotNumber = slotNumber,
+                        players = LobbyPlayerRow.entries
+                            .map { row ->
+                                MatchLobbyPlayersOcrPlayer(
+                                    playerNumber = row.ordinal + 1,
+                                    playerName = rowPreviewsByRow[row]?.dualOcrResult?.finalText,
+                                )
+                            },
+                    )
+                }
+        }
+    return MatchLobbyPlayersOcrResult(slots)
+}
 
 private const val TEMP_LOBBY_SLOT_PHASE1_TAG = "TEMP_LOBBY_SLOT_PHASE1"
 
