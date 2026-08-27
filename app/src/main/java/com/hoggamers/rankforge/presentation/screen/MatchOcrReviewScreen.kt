@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +46,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -93,6 +95,8 @@ object MatchOcrReviewTestTags {
     fun compactPlacement(position: Int): String = "${compactRow(position)}_placement"
     fun compactTeam(position: Int): String = "${compactRow(position)}_team"
     fun compactPlayer(position: Int, slot: Int): String = "${compactRow(position)}_player_$slot"
+    fun compactPlayerKillInput(position: Int, slot: Int): String =
+        "${compactPlayer(position, slot)}_kill_input"
     fun compactPlayerRow(position: Int, row: Int): String = "${compactRow(position)}_players_$row"
     fun placement(rowIndex: Int): String = "${row(rowIndex)}_placement"
     fun playerName(rowIndex: Int): String = "${row(rowIndex)}_player_name"
@@ -137,6 +141,7 @@ fun MatchOcrReviewRoute(
         onBack = onBack,
         onPlacementChanged = viewModel::onPlacementChanged,
         onKillsChanged = viewModel::onKillsChanged,
+        onPlayerKillsChanged = viewModel::onPlayerKillsChanged,
         onAssignedTeamSlotChanged = viewModel::onAssignedTeamSlotChanged,
         onExcludeRow = viewModel::onExcludeRow,
         onResetRowCorrection = viewModel::onResetRowCorrection,
@@ -153,6 +158,7 @@ fun MatchOcrReviewScreen(
     onBack: () -> Unit,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit = {},
@@ -170,6 +176,7 @@ fun MatchOcrReviewScreen(
             onBack = onBack,
             onPlacementChanged = onPlacementChanged,
             onKillsChanged = onKillsChanged,
+            onPlayerKillsChanged = onPlayerKillsChanged,
             onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
             onExcludeRow = onExcludeRow,
             onResetRowCorrection = onResetRowCorrection,
@@ -271,6 +278,7 @@ private fun MatchOcrReviewReadyState(
     onBack: () -> Unit,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onExcludeRow: ((rowIndex: Int) -> Unit)?,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
@@ -310,6 +318,7 @@ private fun MatchOcrReviewReadyState(
                 uiState = uiState,
                 onPlacementChanged = onPlacementChanged,
                 onKillsChanged = onKillsChanged,
+                onPlayerKillsChanged = onPlayerKillsChanged,
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onExcludeRow = onExcludeRow,
                 onResetRowCorrection = onResetRowCorrection,
@@ -448,6 +457,7 @@ internal fun MatchOcrReviewResultContent(
     uiState: MatchOcrReviewUiState.Ready,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit = {},
@@ -495,6 +505,7 @@ internal fun MatchOcrReviewResultContent(
                     correctionDraft = correctionRowsByIndex[row.rowIndex],
                     onPlacementChanged = onPlacementChanged,
                     onKillsChanged = onKillsChanged,
+                    onPlayerKillsChanged = onPlayerKillsChanged,
                     onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                     onExcludeRow = onExcludeRow,
                     onResetRowCorrection = onResetRowCorrection,
@@ -581,6 +592,9 @@ internal fun MatchOcrReviewCompactRow(
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
+    correctionDraft: MatchOcrReviewRowCorrectionDraft? = null,
+    correctionEnabled: Boolean = false,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
 ) {
     val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
@@ -626,8 +640,24 @@ internal fun MatchOcrReviewCompactRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(previewRow.position)),
         )
-        CompactPlayerRow(previewRow, row = 1, leftSlot = 1, rightSlot = 3)
-        CompactPlayerRow(previewRow, row = 2, leftSlot = 2, rightSlot = 4)
+        CompactPlayerRow(
+            previewRow = previewRow,
+            row = 1,
+            leftSlot = 1,
+            rightSlot = 3,
+            correctionDraft = correctionDraft,
+            correctionEnabled = correctionEnabled,
+            onPlayerKillsChanged = onPlayerKillsChanged,
+        )
+        CompactPlayerRow(
+            previewRow = previewRow,
+            row = 2,
+            leftSlot = 2,
+            rightSlot = 4,
+            correctionDraft = correctionDraft,
+            correctionEnabled = correctionEnabled,
+            onPlayerKillsChanged = onPlayerKillsChanged,
+        )
     }
 }
 
@@ -675,6 +705,9 @@ private fun CompactPlayerRow(
     row: Int,
     leftSlot: Int,
     rightSlot: Int,
+    correctionDraft: MatchOcrReviewRowCorrectionDraft?,
+    correctionEnabled: Boolean,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -682,8 +715,22 @@ private fun CompactPlayerRow(
             .testTag(MatchOcrReviewTestTags.compactPlayerRow(previewRow.position, row)),
         horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        CompactPlayerCell(previewRow, leftSlot, Modifier.weight(1f))
-        CompactPlayerCell(previewRow, rightSlot, Modifier.weight(1f))
+        CompactPlayerCell(
+            previewRow = previewRow,
+            slot = leftSlot,
+            modifier = Modifier.weight(1f),
+            correctionDraft = correctionDraft,
+            correctionEnabled = correctionEnabled,
+            onPlayerKillsChanged = onPlayerKillsChanged,
+        )
+        CompactPlayerCell(
+            previewRow = previewRow,
+            slot = rightSlot,
+            modifier = Modifier.weight(1f),
+            correctionDraft = correctionDraft,
+            correctionEnabled = correctionEnabled,
+            onPlayerKillsChanged = onPlayerKillsChanged,
+        )
     }
 }
 
@@ -692,6 +739,9 @@ private fun CompactPlayerCell(
     previewRow: MatchResultOcrPreviewRowUiState,
     slot: Int,
     modifier: Modifier,
+    correctionDraft: MatchOcrReviewRowCorrectionDraft?,
+    correctionEnabled: Boolean,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
 ) {
     val player = previewRow.slots.firstOrNull { it.slot == slot }
     val playerName = player?.playerText?.trim().orEmpty().ifBlank {
@@ -700,14 +750,51 @@ private fun CompactPlayerCell(
     val kill = player?.killText?.trim().orEmpty().ifBlank {
         stringResource(R.string.match_ocr_review_compact_unknown_kill)
     }
-    Text(
-        text = stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill),
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
-    )
+    val playerKillDraft = correctionDraft
+        ?.playerKillDrafts
+        ?.firstOrNull { draft -> draft.playerSlot == slot }
+    if (playerKillDraft == null) {
+        Text(
+            text = stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
+        )
+    } else {
+        Row(
+            modifier = modifier
+                .testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
+        ) {
+            Text(
+                text = "$slot. $playerName - [",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            BasicTextField(
+                value = playerKillDraft.killsDraftValue,
+                onValueChange = { value ->
+                    onPlayerKillsChanged(correctionDraft.rowIndex, slot, value)
+                },
+                enabled = correctionEnabled,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .width(24.dp)
+                    .testTag(MatchOcrReviewTestTags.compactPlayerKillInput(previewRow.position, slot)),
+            )
+            Text(
+                text = "]",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
@@ -841,6 +928,7 @@ internal fun MatchOcrReviewRow(
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
@@ -883,6 +971,9 @@ internal fun MatchOcrReviewRow(
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
+                correctionDraft = correctionDraft,
+                correctionEnabled = correctionEnabled,
+                onPlayerKillsChanged = onPlayerKillsChanged,
             )
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
                 row = row,
@@ -903,6 +994,9 @@ internal fun MatchOcrReviewRow(
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
+                correctionDraft = correctionDraft,
+                correctionEnabled = correctionEnabled,
+                onPlayerKillsChanged = onPlayerKillsChanged,
             )
         }
         if (

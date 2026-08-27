@@ -205,6 +205,28 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
     }
 
     @Test
+    fun correctedKillsBecomeCanonicalTeamKillsAndExistingScoringInput() = runTest {
+        val repository = createRepository()
+        val rows = validCorrectionRows().replaceRow(0) {
+            it.copy(
+                correctedKills = "14",
+                originalKills = 10,
+            )
+        }
+
+        val finalized = createUseCase(repository)(validInput(correctionRows = rows))
+            as FinalizeOcrCorrectionMatchResult.Finalized
+        val firstParticipant = finalized.match.participantResults.first { it.teamSlotNumber == 1 }
+        val firstStanding = CumulativeTournamentStandingsEngine()(listOf(finalized.match))
+            .first { it.teamSlotNumber == 1 }
+
+        assertEquals(14, finalized.match.kills.first { it.teamSlotNumber == 1 }.kills)
+        assertEquals(14, firstParticipant.kills)
+        assertEquals(14, firstStanding.totalKillPoints)
+        assertEquals(26, firstStanding.totalPoints)
+    }
+
+    @Test
     fun confirmationDoesNotOverrideBlockingDraftFailures() = runTest {
         val repository = createRepository()
         val useCase = createUseCase(repository)

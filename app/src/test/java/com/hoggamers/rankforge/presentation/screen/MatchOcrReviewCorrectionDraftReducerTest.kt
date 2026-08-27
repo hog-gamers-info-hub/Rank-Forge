@@ -90,6 +90,103 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun initialPlayerKillDraftsPreserveEvidenceAndDeriveTeamTotal() {
+        val row = playerKillDraft().rows.first()
+
+        assertEquals(listOf(1, 2, 3, 4), row.playerKillDrafts.map { it.playerSlot })
+        assertEquals(listOf("3", "2", "1", "4"), row.playerKillDrafts.map { it.originalKillsValue })
+        assertEquals(listOf("3", "2", "1", "4"), row.playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("10", row.killsDraftValue)
+    }
+
+    @Test
+    fun fewerThanFourPlayerSlotsAreUsedWithoutSynthesizingAnotherPlayer() {
+        val row = playerKillDraft(firstRowKills = listOf("2", "1", "4")).rows.first()
+
+        assertEquals(listOf(1, 2, 3), row.playerKillDrafts.map { it.playerSlot })
+        assertEquals("7", row.killsDraftValue)
+    }
+
+    @Test
+    fun changingOnePlayerKillRecalculatesOnlyThatRowTotal() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 3,
+            value = "5",
+        )
+
+        assertEquals(listOf("3", "2", "5", "4"), draft.rows[0].playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("14", draft.rows[0].killsDraftValue)
+    }
+
+    @Test
+    fun changingOnePlayerKillLeavesOtherPlayerDraftsUnchanged() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "8",
+        )
+
+        assertEquals("3", draft.rows[0].playerKillDrafts.first { it.playerSlot == 1 }.killsDraftValue)
+        assertEquals("1", draft.rows[0].playerKillDrafts.first { it.playerSlot == 3 }.killsDraftValue)
+        assertEquals("4", draft.rows[0].playerKillDrafts.first { it.playerSlot == 4 }.killsDraftValue)
+    }
+
+    @Test
+    fun zeroPlayerKillIsValidAndIncludedInDerivedTotal() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "0",
+        )
+
+        assertEquals("8", draft.rows[0].killsDraftValue)
+        assertFalse(draft.rows[0].validation.blockers.contains(MatchOcrReviewCorrectionReason.INVALID_KILLS))
+    }
+
+    @Test
+    fun blankPlayerKillDoesNotBecomeZeroAndBlocksDraft() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 3,
+            value = "",
+        )
+
+        assertEquals("", draft.rows[0].killsDraftValue)
+        assertRowBlocked(draft, 0, MatchOcrReviewCorrectionReason.MISSING_KILLS)
+    }
+
+    @Test
+    fun nonNumericPlayerKillBlocksDraft() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "abc",
+        )
+
+        assertEquals("", draft.rows[0].killsDraftValue)
+        assertRowBlocked(draft, 0, MatchOcrReviewCorrectionReason.INVALID_KILLS)
+    }
+
+    @Test
+    fun negativePlayerKillBlocksDraft() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "-1",
+        )
+
+        assertEquals("", draft.rows[0].killsDraftValue)
+        assertRowBlocked(draft, 0, MatchOcrReviewCorrectionReason.NEGATIVE_KILLS)
+    }
+
+    @Test
     fun teamSlotCorrectionUpdatesOnlySelectedRow() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initialDraft(), 2, "11")
 
@@ -203,6 +300,28 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun redistributedPlayerKillsRemainDirtyWhenTeamTotalIsUnchanged() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(firstRowKills = listOf("2", "4")),
+            rowIndex = 0,
+            playerSlot = 1,
+            value = "3",
+        ).let { changed ->
+            MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+                draft = changed,
+                rowIndex = 0,
+                playerSlot = 2,
+                value = "3",
+            )
+        }
+
+        assertEquals("6", draft.rows[0].originalKillsValue)
+        assertEquals("6", draft.rows[0].killsDraftValue)
+        assertTrue(draft.rows[0].isDirty)
+        assertTrue(draft.isDirty)
+    }
+
+    @Test
     fun resetRowRestoresOriginalParsedAndSuggestedValues() {
         val changed = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(initialDraft(), 3, "10")
         val reset = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(changed, 3)
@@ -210,6 +329,21 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         assertEquals("3", reset.rows[3].killsDraftValue)
         assertFalse(reset.rows[3].isDirty)
         assertFalse(reset.isDirty)
+    }
+
+    @Test
+    fun resetRowRestoresOriginalPlayerKillsAndDerivedTotal() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 3,
+            value = "5",
+        )
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(changed, 0)
+
+        assertEquals(listOf("3", "2", "1", "4"), reset.rows[0].playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("10", reset.rows[0].killsDraftValue)
+        assertFalse(reset.rows[0].isDirty)
     }
 
     @Test
@@ -240,6 +374,29 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         assertEquals((1..12).map { it.toString() }, reset.rows.map { it.placementDraftValue })
         assertEquals((0..11).map { it.toString() }, reset.rows.map { it.killsDraftValue })
         assertEquals((1..12).map { it.toString() }, reset.rows.map { it.assignedTeamSlotDraftValue })
+    }
+
+    @Test
+    fun resetAllRestoresPlayerKillsAndTotalsAcrossMultipleRows() {
+        val changedFirstRow = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(),
+            rowIndex = 0,
+            playerSlot = 1,
+            value = "5",
+        )
+        val changedSecondRow = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = changedFirstRow,
+            rowIndex = 1,
+            playerSlot = 2,
+            value = "7",
+        )
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetAllCorrections(changedSecondRow)
+
+        assertEquals(listOf("3", "2", "1", "4"), reset.rows[0].playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("10", reset.rows[0].killsDraftValue)
+        assertEquals(listOf("2", "1"), reset.rows[1].playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("3", reset.rows[1].killsDraftValue)
+        assertFalse(reset.isDirty)
     }
 
     @Test
@@ -275,6 +432,7 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         assertTrue(publicMethodNames.contains("onConfirmFinalizeWarnings"))
         assertTrue(publicMethodNames.contains("onPlacementChanged"))
         assertTrue(publicMethodNames.contains("onKillsChanged"))
+        assertTrue(publicMethodNames.contains("onPlayerKillsChanged"))
         assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
     }
 
@@ -351,6 +509,31 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         rows: List<MatchOcrReviewRowUiState> = readyRows(),
     ): MatchOcrReviewCorrectionDraft =
         MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+
+    private fun playerKillDraft(
+        firstRowKills: List<String> = listOf("3", "2", "1", "4"),
+    ): MatchOcrReviewCorrectionDraft = initialDraft(
+        rows = readyRows().mapIndexed { index, row ->
+            when (index) {
+                0 -> row.withPlayerKillEvidence(firstRowKills)
+                1 -> row.withPlayerKillEvidence(listOf("2", "1"))
+                else -> row
+            }
+        },
+    )
+
+    private fun MatchOcrReviewRowUiState.withPlayerKillEvidence(
+        kills: List<String>,
+    ): MatchOcrReviewRowUiState = copy(
+        detectedKillDisplayValue = kills.sumOf { it.toInt() }.toString(),
+        originalParsedKillValue = kills.sumOf { it.toInt() },
+        playerKillEvidence = kills.mapIndexed { index, value ->
+            MatchOcrReviewPlayerKillEvidenceUiState(
+                playerSlot = index + 1,
+                originalKillsValue = value,
+            )
+        },
+    )
 
     private fun readyRows(): List<MatchOcrReviewRowUiState> =
         (0..11).map { index ->

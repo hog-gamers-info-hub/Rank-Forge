@@ -1132,6 +1132,7 @@ class MatchOcrReviewViewModelTest {
         assertTrue(publicMethodNames.contains("load"))
         assertTrue(publicMethodNames.contains("onPlacementChanged"))
         assertTrue(publicMethodNames.contains("onKillsChanged"))
+        assertTrue(publicMethodNames.contains("onPlayerKillsChanged"))
         assertTrue(publicMethodNames.contains("onAssignedTeamSlotChanged"))
         assertTrue(publicMethodNames.contains("onExcludeRow"))
         assertTrue(publicMethodNames.contains("onResetRowCorrection"))
@@ -1147,6 +1148,134 @@ class MatchOcrReviewViewModelTest {
 
         assertTrue(declaredMethodNames.none { it.contains("score", ignoreCase = true) })
         assertTrue(declaredMethodNames.none { it.contains("standing", ignoreCase = true) })
+    }
+
+    @Test
+    fun playerKillChangeDelegatesToCorrectionDraftReducer() = runTest(dispatcher) {
+        val rows = correctionRows().mapIndexed { index, row ->
+            if (index == 0) {
+                row.copy(
+                    detectedKillDisplayValue = "10",
+                    originalParsedKillValue = 10,
+                    playerKillEvidence = listOf("3", "2", "1", "4").mapIndexed { playerIndex, kills ->
+                        MatchOcrReviewPlayerKillEvidenceUiState(
+                            playerSlot = playerIndex + 1,
+                            originalKillsValue = kills,
+                        )
+                    },
+                )
+            } else {
+                row
+            }
+        }
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val viewModel = viewModelWith(createRepository(), readyState(correctionDraft = draft, rows = rows))
+
+        viewModel.onPlayerKillsChanged(rowIndex = 0, playerSlot = 3, value = "5")
+
+        val updated = (viewModel.uiState.value as MatchOcrReviewUiState.Ready).correctionDraft!!.rows[0]
+        assertEquals(listOf("3", "2", "5", "4"), updated.playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("14", updated.killsDraftValue)
+    }
+
+    @Test
+    fun finalizationUsesLiveDerivedPlayerKillsAndRetainsPlayerDraftValues() = runTest(dispatcher) {
+        val repository = createRepository()
+        val rows = correctionRows().withFirstRowPlayerKillEvidence(listOf("3", "2", "1", "4"))
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val finalizedSync = RecordingFinalizedMatchCloudSync()
+        val viewModel = viewModelWith(
+            repository = repository,
+            initialUiState = readyState(correctionDraft = initialDraft, rows = rows),
+            finalizedMatchCloudSync = finalizedSync,
+        )
+
+        viewModel.onPlayerKillsChanged(rowIndex = 0, playerSlot = 3, value = "5")
+        viewModel.onFinalizeOcrCorrection()
+        viewModel.onConfirmFinalizeWarnings()
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val finalizedRowDraft = ready.correctionDraft!!.rows.first()
+        val finalizedMatch = repository.observeMatchById(MATCH_ID).first()!!
+        val correctionSnapshot = repository.readPreservedOcrEvidence(MATCH_ID)!!
+            .correctionSnapshots
+            .first { it.rowIndex == 0 }
+
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(listOf("3", "2", "5", "4"), finalizedRowDraft.playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("14", finalizedRowDraft.killsDraftValue)
+        assertEquals(14, finalizedMatch.kills.first { it.teamSlotNumber == 1 }.kills)
+        assertFalse(finalizedMatch.kills.first { it.teamSlotNumber == 1 }.kills == 10)
+        assertEquals(14, correctionSnapshot.correctedKills)
+        assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
+    }
+
+    @Test
+    fun sameTotalPlayerRedistributionFinalizesWithTeamTotalAndRetainsPlayerDrafts() = runTest(dispatcher) {
+        val repository = createRepository()
+        val rows = correctionRows().withFirstRowPlayerKillEvidence(listOf("2", "4"))
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = initialDraft, rows = rows))
+
+        viewModel.onPlayerKillsChanged(rowIndex = 0, playerSlot = 1, value = "3")
+        viewModel.onPlayerKillsChanged(rowIndex = 0, playerSlot = 2, value = "3")
+
+        val edited = (viewModel.uiState.value as MatchOcrReviewUiState.Ready).correctionDraft!!.rows.first()
+        assertTrue(edited.isDirty)
+        assertEquals("6", edited.killsDraftValue)
+
+        viewModel.onFinalizeOcrCorrection()
+        viewModel.onConfirmFinalizeWarnings()
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(listOf("3", "3"), ready.correctionDraft!!.rows.first().playerKillDrafts.map { it.killsDraftValue })
+        assertEquals(6, repository.observeMatchById(MATCH_ID).first()!!.kills.first {
+            it.teamSlotNumber == 1
+        }.kills)
+    }
+
+    @Test
+    fun legacyAggregateKillsRemainAuthoritativeForFinalization() = runTest(dispatcher) {
+        val repository = createRepository()
+        val draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(correctionDraft(), 0, "7")
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = draft))
+
+        viewModel.onFinalizeOcrCorrection()
+        viewModel.onConfirmFinalizeWarnings()
+        advanceUntilIdle()
+
+        assertEquals(7, repository.observeMatchById(MATCH_ID).first()!!.kills.first {
+            it.teamSlotNumber == 1
+        }.kills)
+    }
+
+    @Test
+    fun playerKillChangesAfterFinalizationDoNotMutateTheCorrectionDraft() = runTest(dispatcher) {
+        val repository = createRepository()
+        val rows = correctionRows().withFirstRowPlayerKillEvidence(listOf("3", "2", "1", "4"))
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
+            rowIndex = 0,
+            playerSlot = 3,
+            value = "5",
+        )
+        val viewModel = viewModelWith(
+            repository = repository,
+            initialUiState = readyState(correctionDraft = initialDraft, rows = rows).copy(
+                finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+            ),
+        )
+
+        viewModel.onPlayerKillsChanged(rowIndex = 0, playerSlot = 3, value = "9")
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(listOf("3", "2", "5", "4"), ready.correctionDraft!!.rows.first().playerKillDrafts.map {
+            it.killsDraftValue
+        })
     }
 
     private fun viewModelWith(
@@ -1279,6 +1408,25 @@ class MatchOcrReviewViewModelTest {
                 originalSuggestedTeamSlot = rowIndex + 1,
             )
         }
+
+    private fun List<MatchOcrReviewRowUiState>.withFirstRowPlayerKillEvidence(
+        kills: List<String>,
+    ): List<MatchOcrReviewRowUiState> = map { row ->
+        if (row.rowIndex == 0) {
+            row.copy(
+                detectedKillDisplayValue = kills.sumOf { it.toInt() }.toString(),
+                originalParsedKillValue = kills.sumOf { it.toInt() },
+                playerKillEvidence = kills.mapIndexed { index, value ->
+                    MatchOcrReviewPlayerKillEvidenceUiState(
+                        playerSlot = index + 1,
+                        originalKillsValue = value,
+                    )
+                },
+            )
+        } else {
+            row
+        }
+    }
 
     private fun preservedEvidence(): PreservedMatchOcrEvidence = PreservedMatchOcrEvidence(
         tournamentId = TOURNAMENT_ID,

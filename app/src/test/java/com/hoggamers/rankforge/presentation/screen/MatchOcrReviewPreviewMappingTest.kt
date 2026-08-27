@@ -151,6 +151,8 @@ class MatchOcrReviewPreviewMappingTest {
         assertEquals("P1 Alpha, P2 Bravo", first.detectedPlayerNameEvidenceLabel)
         assertEquals("5", first.detectedKillDisplayValue)
         assertEquals(5, first.originalParsedKillValue)
+        assertEquals(listOf(1, 2), first.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("2", "3"), first.playerKillEvidence.map { it.originalKillsValue })
         assertEquals("Unavailable", first.suggestedTeamSlotDisplayValue)
         assertEquals(MatchOcrReviewSeverity.BLOCKING, first.severity)
         assertTrue(first.blockerLabels.any { it.contains("Team assignment") })
