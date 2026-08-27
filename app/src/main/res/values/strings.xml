@@ -382,8 +382,8 @@
     <string name="match_ocr_review_remaining_team_slots_title">Remaining Team Slots</string>
     <string name="match_ocr_review_remaining_team_slots_value">Slots: %1$s</string>
     <string name="match_ocr_review_remaining_team_slots_none">No unclaimed valid team slots.</string>
-    <string name="match_ocr_review_remaining_team_slots_options">Available remaining slots</string>
-    <string name="match_ocr_review_remaining_team_slot">Slot %1$d</string>
+    <string name="match_ocr_review_remaining_team_slots_options">Remaining slots</string>
+    <string name="match_ocr_review_remaining_team_slot">%1$d</string>
     <string name="match_ocr_review_correction_position_short_label">Position</string>
     <string name="match_ocr_review_correction_kills_short_label">Kills</string>
     <string name="match_ocr_review_correction_slot_short_label">Slot</string>

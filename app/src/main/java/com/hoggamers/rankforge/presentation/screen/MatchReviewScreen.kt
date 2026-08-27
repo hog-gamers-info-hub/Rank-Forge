@@ -656,6 +656,8 @@ private fun MatchReviewContent(
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
         ocrReviewOpened ||
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
+    val hasDisplayableResultOcrData = shouldShowInlineOcrDetails &&
+        ocrUiState.hasDisplayableResultOcrData()
     val hasLobbyPlayerOcrEvidence = shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()
     val lobbyTeamCropPreviewsByScreenshotIndex = (ocrUiState as? MatchOcrReviewUiState.Ready)
         ?.phase1LobbySlotNumberOcr
@@ -859,6 +861,7 @@ private fun MatchReviewContent(
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
+                    showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                 )
             }
@@ -925,6 +928,7 @@ private fun MatchReviewContent(
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
+                    showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                 )
             }
@@ -1762,6 +1766,17 @@ private fun MatchOcrReviewUiState.hasLobbyPlayerEvidence(): Boolean = when (this
 private fun MatchOcrReviewUiState.hasPreservedResultOcrEvidence(): Boolean =
     this is MatchOcrReviewUiState.Ready && rows.isNotEmpty()
 
+private fun MatchOcrReviewUiState.hasDisplayableResultOcrData(): Boolean = when (this) {
+    is MatchOcrReviewUiState.Empty ->
+        (matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)?.rows?.isNotEmpty() == true
+    is MatchOcrReviewUiState.Ready ->
+        rows.isNotEmpty() ||
+            (matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)?.rows?.isNotEmpty() == true
+    MatchOcrReviewUiState.Loading,
+    is MatchOcrReviewUiState.Error,
+    -> false
+}
+
 @Composable
 private fun MatchReviewResultOcrDetailsContent(
     uiState: MatchOcrReviewUiState,
@@ -1988,6 +2003,7 @@ private fun ResultScreenshotSelector(
     onPositionRowCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
     ) -> Unit,
+    showSourceScreenshot: Boolean = true,
     ocrDetailsContent: @Composable () -> Unit = {},
 ) {
     DisposableEffect(resultPositionCropPreviews) {
@@ -2068,6 +2084,7 @@ private fun ResultScreenshotSelector(
                                 ),
                             imageAreaHeight = maxResultScreenshotHeight,
                             isEditable = isEditable,
+                            showSourceScreenshot = showSourceScreenshot,
                             showOcrDetails = pagerState.currentPage == page,
                             ocrDetailsContent = ocrDetailsContent,
                             onSelectScreenshot = onSelectScreenshot,
@@ -2080,7 +2097,7 @@ private fun ResultScreenshotSelector(
         } else {
             ocrDetailsContent()
         }
-        nextEmptyRole?.let { role ->
+        nextEmptyRole?.takeIf { showSourceScreenshot }?.let { role ->
             val slot = resultScreenshots.slot(role)
             Button(
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
@@ -2122,6 +2139,7 @@ private fun ResultScreenshotPage(
     positionCropPreviewState: MatchResultPositionCropPreviewState,
     imageAreaHeight: Dp,
     isEditable: Boolean,
+    showSourceScreenshot: Boolean,
     showOcrDetails: Boolean,
     ocrDetailsContent: @Composable () -> Unit,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
@@ -2152,12 +2170,8 @@ private fun ResultScreenshotPage(
             ),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        previewImageUri?.let { imageUri ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-            ) {
+        if (showSourceScreenshot) {
+            previewImageUri?.let { imageUri ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2173,8 +2187,7 @@ private fun ResultScreenshotPage(
                         ),
                         sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
                         sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                        modifier = Modifier
-                            .fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         testTag = if (screenshotNumber == 1) {
                             MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
                         } else {
@@ -2182,36 +2195,38 @@ private fun ResultScreenshotPage(
                         },
                     )
                 }
-                ResultPositionCropPreviews(
-                    role = role,
-                    state = positionCropPreviewState,
-                )
-                if (isEditable) {
-                    MatchReviewScreenshotActionRow(
-                        replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
-                        editLabel = stringResource(R.string.match_review_screenshot_edit_action),
-                        removeLabel = stringResource(R.string.match_review_result_screenshot_remove_short_action),
-                        replaceContentDescription = stringResource(
-                            R.string.match_review_screenshot_replace_content_description,
-                        ),
-                        editContentDescription = stringResource(
-                            R.string.match_review_screenshot_crop_content_description,
-                        ),
-                        removeContentDescription = stringResource(
-                            R.string.match_review_screenshot_remove_content_description,
-                        ),
-                        replaceEnabled = !slot.isBusy,
-                        editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
-                        removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
-                        replaceTestTag = role.replaceActionTestTag(),
-                        editTestTag = role.cropActionTestTag(),
-                        removeTestTag = role.removeActionTestTag(),
-                        onReplace = { onSelectScreenshot(role) },
-                        onEdit = { onOpenCrop(role) },
-                        onRemove = { onRemoveScreenshot(role) },
-                    )
-                }
             }
+        }
+        if (previewImageUri != null || !showSourceScreenshot) {
+            ResultPositionCropPreviews(
+                role = role,
+                state = positionCropPreviewState,
+            )
+        }
+        if (showSourceScreenshot && isEditable && previewImageUri != null) {
+            MatchReviewScreenshotActionRow(
+                replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
+                editLabel = stringResource(R.string.match_review_screenshot_edit_action),
+                removeLabel = stringResource(R.string.match_review_result_screenshot_remove_short_action),
+                replaceContentDescription = stringResource(
+                    R.string.match_review_screenshot_replace_content_description,
+                ),
+                editContentDescription = stringResource(
+                    R.string.match_review_screenshot_crop_content_description,
+                ),
+                removeContentDescription = stringResource(
+                    R.string.match_review_screenshot_remove_content_description,
+                ),
+                replaceEnabled = !slot.isBusy,
+                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
+                removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
+                replaceTestTag = role.replaceActionTestTag(),
+                editTestTag = role.cropActionTestTag(),
+                removeTestTag = role.removeActionTestTag(),
+                onReplace = { onSelectScreenshot(role) },
+                onEdit = { onOpenCrop(role) },
+                onRemove = { onRemoveScreenshot(role) },
+            )
         }
         if (slot.isValidationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_validating))
@@ -2272,7 +2287,7 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (isEditable && previewImageUri == null) {
+        if (showSourceScreenshot && isEditable && previewImageUri == null) {
             ResultScreenshotActionRow(
                 role = role,
                 slot = slot,

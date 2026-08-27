@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -535,27 +536,7 @@ internal fun MatchOcrReviewResultContent(
 internal fun MatchOcrReviewRemainingTeamSlotsSection(
     assistant: MatchOcrReviewTeamSlotAssistantState,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.REMAINING_TEAM_SLOTS),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-    ) {
-        Text(
-            text = stringResource(R.string.match_ocr_review_remaining_team_slots_title),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = if (assistant.remainingTeamSlots.isEmpty()) {
-                stringResource(R.string.match_ocr_review_remaining_team_slots_none)
-            } else {
-                stringResource(
-                    R.string.match_ocr_review_remaining_team_slots_value,
-                    assistant.remainingTeamSlots.joinToString(", "),
-                )
-            },
-        )
-    }
+    Unit
 }
 
 @Composable
@@ -1384,38 +1365,36 @@ private fun MatchOcrReviewCorrectionFields(
     if (availableTeamSlotOptions.isNotEmpty()) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             Text(text = stringResource(R.string.match_ocr_review_remaining_team_slots_options))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 availableTeamSlotOptions.forEach { option ->
-                    TextButton(
-                        onClick = {
-                            onAssignedTeamSlotChanged(
-                                correctionDraft.rowIndex,
-                                option.teamSlot.toString(),
-                            )
-                        },
-                        enabled = correctionEnabled,
-                        modifier = Modifier.testTag(
-                            MatchOcrReviewTestTags.teamSlotOption(
-                                correctionDraft.rowIndex,
-                                option.teamSlot,
-                            ),
+                    Text(
+                        text = stringResource(
+                            R.string.match_ocr_review_remaining_team_slot,
+                            option.teamSlot,
                         ),
-                    ) {
-                        Text(
-                            text = stringResource(
-                                R.string.match_ocr_review_remaining_team_slot,
-                                option.teamSlot,
-                            ),
-                        )
-                    }
+                        modifier = Modifier
+                            .testTag(
+                                MatchOcrReviewTestTags.teamSlotOption(
+                                    correctionDraft.rowIndex,
+                                    option.teamSlot,
+                                ),
+                            )
+                            .clickable(enabled = correctionEnabled) {
+                                onAssignedTeamSlotChanged(
+                                    correctionDraft.rowIndex,
+                                    option.teamSlot.toString(),
+                                )
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
                 }
             }
         }
