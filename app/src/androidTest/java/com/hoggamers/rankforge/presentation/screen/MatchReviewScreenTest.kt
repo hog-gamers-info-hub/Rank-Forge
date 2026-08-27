@@ -967,7 +967,6 @@ class MatchReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .assertIsDisplayed()
@@ -1021,10 +1020,12 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
-            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertCountEquals(1)
 
         composeTestRule.runOnIdle { ocrUiState = inlineOcrState() }
         composeTestRule.waitForIdle()
@@ -1032,10 +1033,338 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(0))
+            .assertCountEquals(1)
+    }
+
+    @Test
+    fun resultPositionPagerPairsUpperRectanglesWithTheirExactPreviewRows() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(
+                previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                previewRow(2, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(
+                                            1,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                        MatchResultPositionCropPreview(
+                                            2,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
             .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertIsNotDisplayed()
+    }
+
+    @Test
+    fun resultPositionPagerPairsLowerPositionsElevenAndTwelveWithTheirExactPreviewRows() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            rows = listOf(
+                previewRow(11, MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                previewRow(12, MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(
+                                            11,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                        MatchResultPositionCropPreview(
+                                            12,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))
+            .assertCountEquals(1)
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(12))
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(11))
+            .assertIsNotDisplayed()
+    }
+
+    @Test
+    fun resultPositionPagerDoesNotSubstituteAnotherPreviewRowWhenPositionIsMissing() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(previewRow(2, MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(
+                                            1,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                        MatchResultPositionCropPreview(
+                                            2,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
+            .assertCountEquals(1)
+    }
+
+    @Test
+    fun resultPositionPagerNavigatesContinuouslyAcrossUpperLowerBoundaryInBothDirections() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            rows = (1..12).map { position ->
+                previewRow(
+                    position = position,
+                    role = if (position <= 10) {
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                    } else {
+                        MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                    },
+                )
+            },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        val upperImage = AndroidMatchResultPositionCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        )
+        val lowerImage = AndroidMatchResultPositionCropPreviewImage(
+            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER, hasLinkedAsset = true),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER, hasLinkedAsset = true),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        *(1..11).map { position ->
+                                            MatchResultPositionCropPreview(position, upperImage)
+                                        }.toTypedArray(),
+                                    ),
+                                ),
+                            MatchResultScreenshotRole.MATCH_RESULT_LOWER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(11, lowerImage),
+                                        MatchResultPositionCropPreview(12, lowerImage),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        val pager = composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG,
+        )
+        repeat(8) {
+            pager.performTouchInput { swipeLeft() }
+            composeTestRule.waitForIdle()
+        }
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(9))
+            .assertCountEquals(1)
+
+        pager.performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))
+            .assertCountEquals(1)
+
+        pager.performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertCountEquals(1)
+
+        pager.performTouchInput { swipeRight() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+            .assertCountEquals(0)
     }
 
     @Test
@@ -1194,6 +1523,69 @@ class MatchReviewScreenTest {
             assertEquals(listOf(0), resetRows)
             assertEquals(1, finalizeCount)
         }
+    }
+
+    @Test
+    fun resultPositionPagerKeepsTeamSlotControlsMappedToTheirCorrectionRows() {
+        val ocrState = embeddedManualOcrState()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(
+                                            1,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                        MatchResultPositionCropPreview(
+                                            2,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithText("Remaining Team Slots").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Slots: 11, 12").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
+            .assertCountEquals(1)
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 11))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 12))
+            .assertCountEquals(1)
     }
 
     @Test
@@ -2058,26 +2450,6 @@ class MatchReviewScreenTest {
         }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "6")
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
-            .assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Position 11").assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crops_11")
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag("match_review_result_position_row_crop_11_1")
-            .assertCountEquals(0)
     }
 
     @Test
