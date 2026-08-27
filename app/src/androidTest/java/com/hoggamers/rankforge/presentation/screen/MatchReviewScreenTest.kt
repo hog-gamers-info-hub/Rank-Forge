@@ -1229,10 +1229,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.REMAINING_TEAM_SLOTS)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slots: 11, 12").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Remaining Team Slots").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Slots: 11, 12").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
             .performScrollTo()
             .assertIsDisplayed()
@@ -1244,7 +1242,7 @@ class MatchReviewScreenTest {
             assertEquals(listOf(0 to "11"), teamSlots)
             assertEquals("11", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
         }
-        composeTestRule.onNodeWithText("Slots: 12").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Slots: 12").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
             .assertIsDisplayed()
 
