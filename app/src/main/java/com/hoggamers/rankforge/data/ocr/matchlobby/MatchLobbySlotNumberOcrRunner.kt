@@ -22,6 +22,10 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropGeometryResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropSlotGeometry
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropUnavailableReason
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotContentSlotNumberExtractor
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyGridReconstructionResult
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyObservedSlotAnchor
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridRole
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridReconstructor
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
@@ -131,6 +135,8 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val playerRowCropPipeline: LobbyPlayerRowCropPipeline = NoOpLobbyPlayerRowCropPipeline,
 ) : MatchLobbySlotNumberOcrRunner {
+    private val gridReconstructor = LobbySlotGridReconstructor()
+
     internal var teamCropPreviewFactory: MatchLobbyTeamCropPreviewFactory =
         AndroidMatchLobbyTeamCropPreviewFactory
 
@@ -240,6 +246,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         val teamCropPreviews = createTeamCropPreviews(
             panelImage = panel.croppedPanelImage,
             slots = slots,
+            screenshotIndex = position.index,
         )
         releasePanel(panel, position)?.let { failure ->
             if (failure is CancellationException) {
@@ -270,13 +277,16 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
     private suspend fun createTeamCropPreviews(
         panelImage: OcrPreprocessingImage,
         slots: List<MatchLobbySlotNumberOcrSlot>,
+        screenshotIndex: Int,
     ): MatchLobbyTeamCropPreviewResult {
-        val geometrySlots = slots.map { slot ->
+        val geometryBySlot = mutableMapOf<Int, LobbyTeamCropBounds>()
+        val observedAnchors = slots.mapNotNull { slot ->
             val candidate = slot.candidate
-            val detectedSlotNumber = candidate.detectedSlotNumber
-                ?: return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE)
-            if (candidate.status != RosterCandidateParseStatus.PARSED) {
-                return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE)
+            val detectedSlotNumber = candidate.detectedSlotNumber ?: return@mapNotNull null
+            if (candidate.status != RosterCandidateParseStatus.PARSED ||
+                detectedSlotNumber !in expectedSlotRange(screenshotIndex)
+            ) {
+                return@mapNotNull null
             }
             val evidence = candidate.rawSourceResults
                 .filterIsInstance<RosterRawOcrExtractionResult.Extracted>()
@@ -284,18 +294,73 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             val numberBounds = evidence.asSequence()
                 .mapNotNull { it.slotNumberBoundsOrNull(detectedSlotNumber) }
                 .firstOrNull()
-                ?: return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.SLOT_NUMBER_GEOMETRY_UNAVAILABLE)
-            LobbyTeamCropSlotGeometry(
-                visibleSlotPosition = slot.visibleSlotPosition,
-                detectedSlotNumber = detectedSlotNumber,
-                slotNumberBounds = numberBounds,
+                ?: return@mapNotNull null
+            geometryBySlot[detectedSlotNumber] = numberBounds
+            LobbyObservedSlotAnchor(
+                slotNumber = detectedSlotNumber,
+                centerX = numberBounds.centerX,
+                centerY = numberBounds.centerY,
             )
         }
-        val geometry = LobbyTeamCropGeometryCalculator.calculate(
-            panelWidth = panelImage.width,
-            panelHeight = panelImage.height,
-            slots = geometrySlots,
-        )
+        if (observedAnchors.size < 2) {
+            return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE)
+        }
+        val reconstructed = when (
+            val result = gridReconstructor.reconstruct(screenshotIndex, observedAnchors)
+        ) {
+            is LobbyGridReconstructionResult.Reconstructed -> result.grid
+            LobbyGridReconstructionResult.InsufficientAnchors,
+            LobbyGridReconstructionResult.InvalidSlotGroup,
+            LobbyGridReconstructionResult.DuplicateSlot,
+            LobbyGridReconstructionResult.InvalidGeometry,
+            -> return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY)
+        }
+        if (reconstructed.points.any { point ->
+                point.centerX < 0.0 || point.centerX > panelImage.width.toDouble() ||
+                    point.centerY < 0.0 || point.centerY > panelImage.height.toDouble()
+            }
+        ) {
+            return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY)
+        }
+        val geometry = if (observedAnchors.size == RosterVisibleSlotPosition.entries.size) {
+            val geometrySlots = slots.map { slot ->
+                val candidate = slot.candidate
+                val detectedSlotNumber = candidate.detectedSlotNumber
+                    ?: return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE)
+                val numberBounds = geometryBySlot[detectedSlotNumber]
+                    ?: return unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.SLOT_NUMBER_GEOMETRY_UNAVAILABLE)
+                LobbyTeamCropSlotGeometry(
+                    visibleSlotPosition = slot.visibleSlotPosition,
+                    detectedSlotNumber = detectedSlotNumber,
+                    slotNumberBounds = numberBounds,
+                )
+            }
+            LobbyTeamCropGeometryCalculator.calculate(
+                panelWidth = panelImage.width,
+                panelHeight = panelImage.height,
+                slots = geometrySlots,
+            )
+        } else {
+            val observedSlotLeftInsets = observedAnchors.mapNotNull { anchor ->
+                val role = LobbySlotGridRole.fromSlotNumber(anchor.slotNumber)
+                    ?: return@mapNotNull null
+                val slotLeftInset = when (role) {
+                    LobbySlotGridRole.TOP_LEFT,
+                    LobbySlotGridRole.BOTTOM_LEFT,
+                    -> anchor.centerX
+                    LobbySlotGridRole.TOP_RIGHT,
+                    LobbySlotGridRole.BOTTOM_RIGHT,
+                    -> anchor.centerX - reconstructed.columnPitch
+                }
+                slotLeftInset
+            }
+            LobbyTeamCropGeometryCalculator.calculate(
+                panelWidth = panelImage.width,
+                panelHeight = panelImage.height,
+                grid = reconstructed,
+                observedSlotLeftInsets = observedSlotLeftInsets,
+            )
+        }
         val available = geometry as? LobbyTeamCropGeometryResult.Available
             ?: return unavailableTeamCrops(geometry.toPreviewUnavailableReason())
         return try {
@@ -324,6 +389,9 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             unavailableTeamCrops(MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED)
         }
     }
+
+    private fun expectedSlotRange(screenshotIndex: Int): IntRange =
+        RosterScreenshotPosition.fromIndex(screenshotIndex)?.tournamentSlotRange ?: 1..0
 
     private fun RosterRawOcrRegionEvidence.slotNumberBoundsOrNull(
         number: Int,
