@@ -31,13 +31,58 @@ class MatchOcrReviewTeamSlotAssistantTest {
     }
 
     @Test
-    fun ownCurrentValidSlotRemainsAvailableWhileEditingThatRow() {
+    fun currentValidSlotIsExcludedFromTheRowsRemainingOptions() {
         val state = derive(
             slots = listOf("11", "1", "2", "3", "5", "6", "7", "8", "9", "10", "", ""),
             manualRowIndexes = setOf(0),
         )
 
-        assertEquals(listOf(4, 11, 12), state.availableOptionsByRow.getValue(0).map { it.teamSlot })
+        assertEquals(listOf(4, 12), state.availableOptionsByRow.getValue(0).map { it.teamSlot })
+    }
+
+    @Test
+    fun manualSlotReplacementAndClearingRefreshRemainingOptionsFromTheCurrentDraft() {
+        val initial = draft(listOf("", "1", "2", "5", "6", "7", "8", "9", "10", "11", "12", ""))
+        val assignedThree = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = initial,
+            rowIndex = 0,
+            value = "3",
+        )
+        val assignedFour = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = assignedThree,
+            rowIndex = 0,
+            value = "4",
+        )
+        val cleared = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = assignedFour,
+            rowIndex = 0,
+            value = "",
+        )
+
+        assertEquals(
+            listOf(4),
+            MatchOcrReviewTeamSlotAssistant
+                .derive(assignedThree, manualRowIndexes = setOf(0))
+                .availableOptionsByRow
+                .getValue(0)
+                .map { it.teamSlot },
+        )
+        assertEquals(
+            listOf(3),
+            MatchOcrReviewTeamSlotAssistant
+                .derive(assignedFour, manualRowIndexes = setOf(0))
+                .availableOptionsByRow
+                .getValue(0)
+                .map { it.teamSlot },
+        )
+        assertEquals(
+            listOf(3, 4),
+            MatchOcrReviewTeamSlotAssistant
+                .derive(cleared, manualRowIndexes = setOf(0))
+                .availableOptionsByRow
+                .getValue(0)
+                .map { it.teamSlot },
+        )
     }
 
     @Test

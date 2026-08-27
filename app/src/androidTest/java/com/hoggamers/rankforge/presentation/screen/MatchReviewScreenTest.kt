@@ -16,10 +16,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -1623,6 +1626,61 @@ class MatchReviewScreenTest {
 
         composeTestRule.onAllNodesWithText("Remaining Team Slots").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Slots: 11, 12").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("11"))
+            }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            assertEquals(listOf(0 to "11"), teamSlots)
+            assertEquals("11", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
+        }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("12"))
+            }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            assertEquals("12", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
+        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString("13"))
+            }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .performSemanticsAction(SemanticsActions.SetText) {
+                it(AnnotatedString(""))
+            }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle {
+            assertEquals("", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
+        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
+            .assertIsDisplayed()
+
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
             .performScrollTo()
             .assertIsDisplayed()
@@ -1631,11 +1689,16 @@ class MatchReviewScreenTest {
 
         composeTestRule.waitForIdle()
         composeTestRule.runOnIdle {
-            assertEquals(listOf(0 to "11"), teamSlots)
+            assertEquals(
+                listOf(0 to "11", 0 to "12", 0 to "13", 0 to "", 0 to "11"),
+                teamSlots,
+            )
             assertEquals("11", ocrState.correctionDraft?.rows?.first()?.assignedTeamSlotDraftValue)
         }
         composeTestRule.onAllNodesWithText("Slots: 12").assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
             .assertIsDisplayed()
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
