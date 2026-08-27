@@ -31,8 +31,6 @@ private val PointIqAllTournamentsBody = Color(0xFF607393)
 const val ALL_TOURNAMENTS_SCREEN_TEST_TAG = "all_tournaments_screen"
 const val ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG = "all_tournaments_home_action"
 const val ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG = "all_tournaments_back_action"
-const val ALL_TOURNAMENTS_LOCAL_HEADING_TEST_TAG = "all_tournaments_local_heading"
-const val ALL_TOURNAMENTS_CLOUD_HEADING_TEST_TAG = "all_tournaments_cloud_heading"
 
 @Composable
 fun AllTournamentsRoute(
@@ -119,7 +117,6 @@ fun AllTournamentsScreen(
             text = stringResource(R.string.all_tournaments_local_heading),
             style = MaterialTheme.typography.headlineMedium,
             color = PointIqAllTournamentsNavy,
-            modifier = Modifier.testTag(ALL_TOURNAMENTS_LOCAL_HEADING_TEST_TAG),
         )
         Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
         Text(
@@ -135,24 +132,6 @@ fun AllTournamentsScreen(
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
         ) {
-            item {
-                Text(
-                    text = stringResource(R.string.pointiq_local_tournaments_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = PointIqAllTournamentsNavy,
-                )
-            }
-            item {
-                Text(
-                    text = stringResource(R.string.pointiq_local_tournaments_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PointIqAllTournamentsBody,
-                )
-            }
-            item {
-                Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
-            }
-
             if (uiState.isEmpty) {
                 item {
                     Text(
@@ -178,24 +157,6 @@ fun AllTournamentsScreen(
 
             item {
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
-            }
-            item {
-                Text(
-                    text = stringResource(R.string.all_tournaments_cloud_heading),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = PointIqAllTournamentsNavy,
-                    modifier = Modifier.testTag(ALL_TOURNAMENTS_CLOUD_HEADING_TEST_TAG),
-                )
-            }
-            item {
-                Text(
-                    text = stringResource(R.string.pointiq_cloud_tournaments_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PointIqAllTournamentsBody,
-                )
-            }
-            item {
-                Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
             }
 
             if (restorationUiState != null) {

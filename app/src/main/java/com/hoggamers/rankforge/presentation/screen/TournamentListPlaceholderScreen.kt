@@ -134,11 +134,6 @@ internal fun TournamentCloudRestorationSection(
                 .padding(RankForgeSpacing.Medium),
             verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
         ) {
-            Text(
-                text = stringResource(R.string.restore_tournament_action),
-                style = MaterialTheme.typography.titleMedium,
-                color = PointIqListNavy,
-            )
             Button(
                 onClick = onLoadCloudTournaments,
                 enabled = uiState !is TournamentCloudRestorationUiState.Loading &&
