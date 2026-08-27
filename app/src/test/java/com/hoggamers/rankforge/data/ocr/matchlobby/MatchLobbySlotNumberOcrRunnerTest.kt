@@ -257,7 +257,7 @@ class MatchLobbySlotNumberOcrRunnerTest {
         assertEquals(4, copiedCount)
         assertEquals(1, preparer.releaseCount)
         assertEquals(RosterVisibleSlotPosition.entries, previews.previews.map { it.visibleSlotPosition })
-        assertEquals(listOf(4, 10, 3, 2), previews.previews.map { it.detectedSlotNumber })
+        assertEquals(listOf(1, 2, 3, 4), previews.previews.map { it.detectedSlotNumber })
     }
 
     @Test
@@ -273,35 +273,139 @@ class MatchLobbySlotNumberOcrRunnerTest {
             rowCropPipeline = pipeline,
         ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
 
-        assertEquals(listOf(4, 10, 3, 2), pipeline.authoritativeSlots)
+        assertEquals(listOf(1, 2, 3, 4), pipeline.authoritativeSlots)
         assertTrue("${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
         val previews = processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available
         assertEquals(4, previews.previews.size)
-        assertEquals(listOf(4, 10, 3, 2), previews.previews.map { it.detectedSlotNumber })
+        assertEquals(listOf(1, 2, 3, 4), previews.previews.map { it.detectedSlotNumber })
         assertTrue(previews.previews.all { it.playerRowPreviews.map { row -> row.row } == LobbyPlayerRow.entries })
     }
 
     @Test
-    fun missingOrAmbiguousCandidatesMakeOnlyTheCropResultUnavailable() = runTest {
+    fun twoValidGeometricAnchorsRecoverTheRemainingTeamCrops() = runTest {
         val processed = runner(
             FakeAssetRepository(mapOf(1 to asset(1))),
             FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
             FakeExtractor(
                 mapOf(
-                    RosterScreenshotPosition.ONE to extractionResults(
+                    RosterScreenshotPosition.ONE to geometricExtractionResults(
                         RosterScreenshotPosition.ONE,
-                        listOf(emptyList(), listOf(10, 11), listOf(3), listOf(2)),
+                        listOf(null, 2, 3, null),
                     ),
                 ),
             ),
+            previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
+        ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
+
+        assertTrue("${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
+        assertEquals(
+            listOf(1, 2, 3, 4),
+            (processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available)
+                .previews.map { it.detectedSlotNumber },
+        )
+        assertEquals(RosterCandidateParseStatus.MISSING, processed.slots.first().candidate.status)
+    }
+
+    @Test
+    fun threeGeometricAnchorsRecoverEachPossibleMissingRole() = runTest {
+        (0..3).forEach { missingIndex ->
+            val processed = runner(
+                FakeAssetRepository(mapOf(1 to asset(1))),
+                FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
+                FakeExtractor(
+                    mapOf(
+                        RosterScreenshotPosition.ONE to geometricExtractionResults(
+                            RosterScreenshotPosition.ONE,
+                            List(4) { index -> if (index == missingIndex) null else index + 1 },
+                        ),
+                    ),
+                ),
+                previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
+            ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
+
+            assertTrue("missingIndex=$missingIndex ${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
+            assertEquals(
+                listOf(1, 2, 3, 4),
+                (processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available)
+                    .previews.map { it.detectedSlotNumber },
+            )
+        }
+    }
+
+    @Test
+    fun twoGeometricAnchorsRecoverEachGridRelationship() = runTest {
+        listOf(
+            listOf(1, 2, null, null),
+            listOf(null, null, 3, 4),
+            listOf(1, null, 3, null),
+            listOf(null, 2, null, 4),
+            listOf(1, null, null, 4),
+            listOf(null, 2, 3, null),
+        ).forEach { numbers ->
+            val processed = runner(
+                FakeAssetRepository(mapOf(1 to asset(1))),
+                FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
+                FakeExtractor(
+                    mapOf(
+                        RosterScreenshotPosition.ONE to geometricExtractionResults(
+                            RosterScreenshotPosition.ONE,
+                            numbers,
+                        ),
+                    ),
+                ),
+                previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
+            ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
+
+            assertTrue("numbers=$numbers ${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
+            assertEquals(
+                listOf(1, 2, 3, 4),
+                (processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available)
+                    .previews.map { it.detectedSlotNumber },
+            )
+        }
+    }
+
+    @Test
+    fun fewerThanTwoGeometricAnchorsKeepTeamCropsUnavailable() = runTest {
+        val processed = runner(
+            FakeAssetRepository(mapOf(1 to asset(1))),
+            FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
+            FakeExtractor(
+                mapOf(
+                    RosterScreenshotPosition.ONE to geometricExtractionResults(
+                        RosterScreenshotPosition.ONE,
+                        listOf(1, null, null, null),
+                    ),
+                ),
+            ),
+            previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
         ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
 
         assertTrue(processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Unavailable)
+    }
+
+    @Test
+    fun outOfGroupSlotEvidenceDoesNotParticipateInRecovery() = runTest {
+        val processed = runner(
+            FakeAssetRepository(mapOf(1 to asset(1))),
+            FakePanelPreparer(imageWidth = 1_000, imageHeight = 800),
+            FakeExtractor(
+                mapOf(
+                    RosterScreenshotPosition.ONE to geometricExtractionResults(
+                        RosterScreenshotPosition.ONE,
+                        listOf(5, 2, 3, null),
+                    ),
+                ),
+            ),
+            previewFactory = MatchLobbyTeamCropPreviewFactory { _, _ -> FakeTeamCropPreviewImage },
+        ).process("tournament-1", "match-1").processed(RosterScreenshotPosition.ONE)
+
+        assertTrue("${processed.teamCropPreviews}", processed.teamCropPreviews is MatchLobbyTeamCropPreviewResult.Available)
         assertEquals(
-            MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE,
-            (processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Unavailable).reason,
+            listOf(1, 2, 3, 4),
+            (processed.teamCropPreviews as MatchLobbyTeamCropPreviewResult.Available)
+                .previews.map { it.detectedSlotNumber },
         )
-        assertEquals(RosterCandidateParseStatus.MISSING, processed.slots.first().candidate.status)
     }
 
     @Test
@@ -420,12 +524,13 @@ class MatchLobbySlotNumberOcrRunnerTest {
 
     private fun geometricExtractionResults(
         position: RosterScreenshotPosition,
+        numbers: List<Int?> = listOf(1, 2, 3, 4),
     ): List<RosterRawOcrExtractionResult> {
         val values = listOf(
-            Triple(4, 90, 90),
-            Triple(10, 490, 90),
-            Triple(3, 90, 290),
-            Triple(2, 490, 290),
+            Triple(numbers[0], 90, 90),
+            Triple(numbers[1], 490, 90),
+            Triple(numbers[2], 90, 290),
+            Triple(numbers[3], 490, 290),
         )
         return RosterVisibleSlotPosition.entries.mapIndexed { index, visiblePosition ->
             val (number, originX, originY) = values[index]
@@ -434,6 +539,9 @@ class MatchLobbySlotNumberOcrRunnerTest {
                 visibleSlotPosition = visiblePosition,
                 regionType = RosterRawOcrRegionType.SLOT_CONTENT,
             )
+            if (number == null) {
+                return@mapIndexed RosterRawOcrExtractionResult.Empty(identity)
+            }
             val numberGeometry = RawOcrGeometry(RawOcrBoundingBox(4, 5, 16, 15), null)
             RosterRawOcrExtractionResult.Extracted(
                 RosterRawOcrRegionEvidence(

@@ -54,6 +54,83 @@ sealed interface LobbyTeamCropGeometryResult {
 }
 
 object LobbyTeamCropGeometryCalculator {
+    /**
+     * Calculates canonical crops from a complete reconstructed grid. The
+     * supplied insets are derived only from real OCR slot boxes; inferred grid
+     * points never masquerade as OCR evidence.
+     */
+    fun calculate(
+        panelWidth: Int,
+        panelHeight: Int,
+        grid: LobbySlotGrid,
+        observedSlotLeftInsets: List<Double>,
+    ): LobbyTeamCropGeometryResult {
+        if (panelWidth <= 0 || panelHeight <= 0 || observedSlotLeftInsets.isEmpty()) {
+            return LobbyTeamCropGeometryResult.Unavailable(
+                LobbyTeamCropUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+            )
+        }
+        if (!grid.hasValidGeometry() || grid.points.any { point ->
+                point.centerX < 0.0 || point.centerX > panelWidth.toDouble() ||
+                    point.centerY < 0.0 || point.centerY > panelHeight.toDouble()
+            }
+        ) {
+            return LobbyTeamCropGeometryResult.Unavailable(
+                LobbyTeamCropUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+            )
+        }
+        if (observedSlotLeftInsets.any { !it.isFinite() } ||
+            observedSlotLeftInsets.max() - observedSlotLeftInsets.min() >
+            grid.columnPitch * MAX_GRID_DEVIATION_FRACTION
+        ) {
+            return LobbyTeamCropGeometryResult.Unavailable(
+                LobbyTeamCropUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+            )
+        }
+
+        val slotLeftInset = observedSlotLeftInsets.average()
+        val panelRight = panelWidth.toDouble()
+        val panelBottom = panelHeight.toDouble()
+        val crops = grid.points.map { point ->
+            val cropLeft = point.centerX - slotLeftInset
+            val cropTop = point.centerY - grid.rowPitch / 2.0
+            val cropBottom = point.centerY + grid.rowPitch / 2.0
+            val cropRight = minOf(
+                point.centerX + grid.columnPitch * HORIZONTAL_CROP_DISTANCE_FRACTION,
+                panelRight,
+            )
+            if (!(cropRight > cropLeft && cropBottom > cropTop)) {
+                return LobbyTeamCropGeometryResult.Unavailable(
+                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                )
+            }
+            val rawBounds = LobbyTeamCropBounds(cropLeft, cropTop, cropRight, cropBottom)
+            val boundaryTolerance = maxOf(grid.columnPitch, grid.rowPitch) * MAX_BOUNDARY_CLAMP_FRACTION
+            if (!rawBounds.isSafelyWithin(panelRight, panelBottom, boundaryTolerance)) {
+                return LobbyTeamCropGeometryResult.Unavailable(
+                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                )
+            }
+            val bounded = LobbyTeamCropBounds(
+                left = rawBounds.left.coerceIn(0.0, panelRight),
+                top = rawBounds.top.coerceIn(0.0, panelBottom),
+                right = rawBounds.right.coerceIn(0.0, panelRight),
+                bottom = rawBounds.bottom.coerceIn(0.0, panelBottom),
+            )
+            if (!bounded.isPositive()) {
+                return LobbyTeamCropGeometryResult.Unavailable(
+                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                )
+            }
+            LobbyTeamCrop(
+                visibleSlotPosition = RosterVisibleSlotPosition.entries[point.role.ordinal],
+                detectedSlotNumber = point.slotNumber,
+                bounds = bounded,
+            )
+        }
+        return LobbyTeamCropGeometryResult.Available(crops)
+    }
+
     fun calculate(
         panelWidth: Int,
         panelHeight: Int,
@@ -144,6 +221,19 @@ object LobbyTeamCropGeometryCalculator {
     }
 
     private fun Double.isPositive(): Boolean = isFinite() && this > 0.0
+
+    private fun LobbySlotGrid.hasValidGeometry(): Boolean =
+        listOf(
+            topRowCenterY,
+            bottomRowCenterY,
+            leftColumnCenterX,
+            rightColumnCenterX,
+            rowPitch,
+            columnPitch,
+        ).all { it.isFinite() } &&
+            rowPitch > 0.0 &&
+            columnPitch > 0.0 &&
+            points.all { it.centerX.isFinite() && it.centerY.isFinite() }
 
     private fun LobbyTeamCropBounds.isPositive(): Boolean =
         right.isFinite() && bottom.isFinite() && left.isFinite() && top.isFinite() &&
