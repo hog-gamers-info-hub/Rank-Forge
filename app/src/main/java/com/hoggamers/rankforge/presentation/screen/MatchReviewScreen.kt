@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -2462,45 +2464,84 @@ private fun ResultPositionCropPreviews(
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG),
             ) {
-                HorizontalPager(
+                StableHeightHorizontalPager(
                     state = pagerState,
-                    pageSize = androidx.compose.foundation.pager.PageSize.Fill,
-                    pageSpacing = RankForgeSpacing.ExtraSmall,
+                    pageCount = previews.size,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_COMBINED_PAGER_TEST_TAG),
                 ) { page ->
-                    val preview = previews[page]
-                    val image = preview.image as? AndroidMatchResultPositionCropPreviewImage ?: return@HorizontalPager
-                    val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-                    ) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(maxDisplayHeight)
-                                .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
+                    previews.getOrNull(page)?.let { preview ->
+                        (preview.image as? AndroidMatchResultPositionCropPreviewImage)?.let { image ->
+                            val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
                             ) {
-                                Image(
-                                    bitmap = image.bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .aspectRatio(aspectRatio),
-                                )
+                                        .height(maxDisplayHeight)
+                                        .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Image(
+                                            bitmap = image.bitmap.asImageBitmap(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(aspectRatio),
+                                        )
+                                    }
+                                }
+                                ocrPositionContent(preview.position)
                             }
                         }
-                        ocrPositionContent(preview.position)
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StableHeightHorizontalPager(
+    state: PagerState,
+    pageCount: Int,
+    modifier: Modifier = Modifier,
+    pageContent: @Composable (Int) -> Unit,
+) {
+    SubcomposeLayout(modifier = modifier) { constraints ->
+        val pageMeasurementConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val measuredPageHeight = (0 until pageCount).maxOfOrNull { page ->
+            subcompose("measure-page-$page") { pageContent(page) }
+                .map { measurable -> measurable.measure(pageMeasurementConstraints).height }
+                .maxOrNull()
+                ?: 0
+        } ?: 0
+        val pageHeight = measuredPageHeight
+            .coerceAtLeast(constraints.minHeight)
+            .let { measured ->
+                if (constraints.hasBoundedHeight) measured.coerceAtMost(constraints.maxHeight) else measured
+            }
+        val pagerConstraints = constraints.copy(minHeight = pageHeight, maxHeight = pageHeight)
+        val pager = subcompose("pager") {
+            HorizontalPager(
+                state = state,
+                pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+                pageSpacing = RankForgeSpacing.ExtraSmall,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(pageHeight.toDp()),
+                pageContent = { page -> pageContent(page) },
+            )
+        }.single().measure(pagerConstraints)
+        layout(pager.width, pageHeight) {
+            pager.place(0, 0)
         }
     }
 }

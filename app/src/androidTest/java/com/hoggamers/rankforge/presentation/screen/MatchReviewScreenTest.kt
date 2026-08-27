@@ -1123,6 +1123,77 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun resultPositionPagerKeepsWholePageHeightStableAcrossDifferentCropRatios() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(
+                previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                previewRow(2, MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = listOf(
+                            resultSlot(
+                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                                hasLinkedAsset = true,
+                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                                cropProfileId = "match-result",
+                            ),
+                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                        ),
+                        resultPositionCropPreviews = mapOf(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                                MatchResultPositionCropPreviewState.Available(
+                                    listOf(
+                                        MatchResultPositionCropPreview(
+                                            1,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                        MatchResultPositionCropPreview(
+                                            2,
+                                            AndroidMatchResultPositionCropPreviewImage(
+                                                Bitmap.createBitmap(12, 30, Bitmap.Config.ARGB_8888),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                )
+            }
+        }
+
+        val pager = composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG,
+        )
+        val initialHeight = pager.fetchSemanticsNode().boundsInRoot.height
+
+        pager.performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+
+        val nextHeight = pager.fetchSemanticsNode().boundsInRoot.height
+        assertEquals(initialHeight, nextHeight, 0.5f)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun resultPositionPagerPairsLowerPositionsElevenAndTwelveWithTheirExactPreviewRows() {
         val preview = MatchResultOcrPreviewUiState.Ready(
             roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
