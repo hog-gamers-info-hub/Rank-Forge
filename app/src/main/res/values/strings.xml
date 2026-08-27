@@ -79,6 +79,12 @@
     <string name="auth_failure_unknown">Authentication failed. Try again.</string>
     <string name="tournament_creation_title">Create tournament</string>
     <string name="tournament_name_label">Tournament Name</string>
+    <string name="tournament_game_label">Select your game</string>
+    <string name="tournament_game_free_fire_max">Free Fire MAX</string>
+    <string name="tournament_mode_label">Mode</string>
+    <string name="tournament_mode_solo">Solo</string>
+    <string name="tournament_mode_duo">Duo</string>
+    <string name="tournament_mode_squad">Squad</string>
     <string name="tournament_date_label">Tournament Date</string>
     <string name="organizer_name_label">Organizer (Optional)</string>
     <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>

@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -64,6 +66,48 @@ class TournamentCreationScreenTest {
         composeTestRule.onNodeWithText(context.getString(R.string.organizer_name_label)).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.organizer_contact_number_label)).assertIsDisplayed()
         composeTestRule.runOnIdle { assertEquals("Summer Cup", name) }
+    }
+
+    @Test
+    fun gameAndModeDropdownsRenderWithTheirAvailableOptions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentCreationScreen(
+                    uiState = TournamentCreationUiState(),
+                    onTournamentNameChanged = {},
+                    onTournamentDateChanged = {},
+                    onOrganizerNameChanged = {},
+                    onOrganizerContactNumberChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                    onKeepEditing = {},
+                    onDiscardChanges = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_game_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_game_free_fire_max))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_GAME_DROPDOWN_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_mode_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_mode_squad)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_MODE_DROPDOWN_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(TOURNAMENT_MODE_OPTION_DUO_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
     }
 
     @Test
