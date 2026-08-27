@@ -214,8 +214,7 @@ class SupabaseTournamentStandingsShareRemoteDataSource @Inject constructor(
 
     private fun success(token: String): TournamentStandingsSharePublicationResult.Success =
         TournamentStandingsSharePublicationResult.Success(
-            publicUrl = "${config.supabaseUrl.trimEnd('/')}/functions/v1/" +
-                "public-tournament-standings?token=$token",
+            publicUrl = "$PUBLIC_VIEWER_BASE_URL?token=$token",
         )
 
     private fun failure(
@@ -225,6 +224,8 @@ class SupabaseTournamentStandingsShareRemoteDataSource @Inject constructor(
 
     private companion object {
         const val MAX_ROW_COUNT = 12
+        const val PUBLIC_VIEWER_BASE_URL =
+            "https://hog-gamers-info-hub.github.io/Rank-Forge/standings/"
     }
 }
 

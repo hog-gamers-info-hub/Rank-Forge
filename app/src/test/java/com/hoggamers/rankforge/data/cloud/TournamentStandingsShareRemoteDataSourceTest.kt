@@ -78,7 +78,7 @@ class TournamentStandingsShareRemoteDataSourceTest {
 
         val result = dataSource(gateway).publish(TOURNAMENT_ID, listOf(row()))
 
-        assertSuccess(result, "https://project.supabase.co/functions/v1/public-tournament-standings?token=$token")
+        assertSuccess(result, "https://hog-gamers-info-hub.github.io/Rank-Forge/standings/?token=$token")
         assertEquals(listOf(TOURNAMENT_ID), gateway.selectedTournamentIds)
         val update = gateway.updates.single()
         assertEquals(TOURNAMENT_ID, update.tournamentId)
@@ -103,7 +103,7 @@ class TournamentStandingsShareRemoteDataSourceTest {
 
         val result = dataSource(gateway).publish(TOURNAMENT_ID, standings)
 
-        assertSuccess(result, "https://project.supabase.co/functions/v1/public-tournament-standings?token=$token")
+        assertSuccess(result, "https://hog-gamers-info-hub.github.io/Rank-Forge/standings/?token=$token")
         val insert = gateway.inserts.single()
         assertEquals(TOURNAMENT_ID, insert.first)
         assertEquals(serializeRows(standings), insert.second)
@@ -136,7 +136,7 @@ class TournamentStandingsShareRemoteDataSourceTest {
 
         val result = dataSource(gateway).publish(TOURNAMENT_ID, listOf(row()))
 
-        assertSuccess(result, "https://project.supabase.co/functions/v1/public-tournament-standings?token=$token")
+        assertSuccess(result, "https://hog-gamers-info-hub.github.io/Rank-Forge/standings/?token=$token")
         assertEquals(listOf(TOURNAMENT_ID, TOURNAMENT_ID), gateway.selectedTournamentIds)
         assertEquals(1, gateway.inserts.size)
         assertEquals(1, gateway.updates.size)

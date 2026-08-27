@@ -23,14 +23,22 @@ Android Share UI/integration is NOT part of Phase 1.
 
 ## Architecture
 
-Use Supabase only.
+Use Supabase as the public JSON backend and GitHub Pages as the static browser
+viewer.
 
-Do not create a separate React, Vite, Next.js, or other web application.
+The browser-hosting flow is locked as:
+Android
+-> GitHub Pages share URL
+-> GitHub Pages standings viewer
+-> public Supabase Edge Function JSON
+-> stored standings snapshot
 
-Use:
+The hosted Supabase function domain serves the previous HTML response as
+text/plain in production, so HTML/CSS rendering is hosted by the static
+GitHub Pages viewer instead. Use:
 1. one dedicated standings-share database table
-2. one Supabase Edge Function
-3. server-rendered HTML/CSS returned directly by that Edge Function
+2. one Supabase Edge Function returning validated JSON
+3. one self-contained static viewer under web/standings/
 
 ## Authoritative standings data
 
@@ -111,7 +119,8 @@ The function must validate the opaque share token before returning any standings
 
 Invalid or unknown tokens must return a simple not-found response and must not reveal whether a tournament exists.
 
-The function returns HTML directly.
+The function returns validated JSON for the static GitHub Pages viewer; it does
+not render HTML.
 
 No JavaScript framework is required.
 
