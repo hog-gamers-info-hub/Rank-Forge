@@ -181,6 +181,8 @@ const val MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG =
     "match_review_result_position_crops_upper_pager"
 const val MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG =
     "match_review_result_position_crops_lower_pager"
+private const val MATCH_REVIEW_RESULT_POSITION_CROPS_COMBINED_PAGER_TEST_TAG =
+    "match_review_result_position_crops_combined_pager"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG = "match_review_result_screenshot_next_select"
 const val MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG = "match_review_lobby_screenshots_section"
 const val MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG = "match_review_lobby_player_details_section"
@@ -697,6 +699,20 @@ private fun MatchReviewContent(
             )
         }
     }
+    val resultOcrPositionContent: @Composable (Int) -> Unit = { position ->
+        if (shouldShowInlineOcrDetails) {
+            MatchReviewResultOcrPositionContent(
+                uiState = ocrUiState,
+                position = position,
+                onPlacementChanged = onOcrPlacementChanged,
+                onKillsChanged = onOcrKillsChanged,
+                onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                onExcludeOcrRow = onExcludeOcrRow,
+                onResetRowCorrection = onOcrResetRowCorrection,
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -863,6 +879,7 @@ private fun MatchReviewContent(
                     onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
                     showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
+                    ocrPositionContent = resultOcrPositionContent,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -930,6 +947,7 @@ private fun MatchReviewContent(
                     onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
                     showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
+                    ocrPositionContent = resultOcrPositionContent,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -1842,6 +1860,77 @@ private fun MatchReviewResultOcrDetailsContent(
 }
 
 @Composable
+private fun MatchReviewResultOcrPositionContent(
+    uiState: MatchOcrReviewUiState,
+    position: Int,
+    onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
+    onKillsChanged: (rowIndex: Int, value: String) -> Unit,
+    onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
+    onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
+    onExcludeOcrRow: (rowIndex: Int) -> Unit,
+    onResetRowCorrection: (rowIndex: Int) -> Unit,
+) {
+    when (uiState) {
+        is MatchOcrReviewUiState.Empty -> {
+            val previewRow = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+                ?.rows
+                ?.singleOrNull { it.position == position }
+                ?: return
+            OcrReviewContainer {
+                MatchOcrReviewCompactRow(
+                    previewRow = previewRow,
+                    reviewRow = null,
+                    teamNamesBySlot = uiState.teamNamesBySlot,
+                )
+            }
+        }
+
+        is MatchOcrReviewUiState.Ready -> {
+            val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
+            val row = uiState.rows.singleOrNull { candidate ->
+                candidate.rowIndex + 1 == position &&
+                    correctionRowsByIndex[candidate.rowIndex]?.isExcluded != true
+            } ?: return
+            val previewRow = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+                ?.rows
+                ?.singleOrNull { it.position == position }
+            val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
+            OcrReviewContainer {
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = previewRow,
+                    teamNamesBySlot = uiState.teamNamesBySlot,
+                    correctionDraft = correctionRowsByIndex[row.rowIndex],
+                    onPlacementChanged = onPlacementChanged,
+                    onKillsChanged = onKillsChanged,
+                    onPlayerKillsChanged = onPlayerKillsChanged,
+                    onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
+                    onExcludeRow = onExcludeOcrRow,
+                    onResetRowCorrection = onResetRowCorrection,
+                    correctionEnabled = !uiState.finalization.isFinalized,
+                    availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
+                        emptyList()
+                    } else {
+                        teamSlotAssistant
+                            ?.availableOptionsByRow
+                            ?.get(row.rowIndex)
+                            .orEmpty()
+                    },
+                    showWarningDetails = false,
+                    compactFieldRow = true,
+                    showBlockerDetails = false,
+                    compactResetAction = true,
+                )
+            }
+        }
+
+        MatchOcrReviewUiState.Loading,
+        is MatchOcrReviewUiState.Error,
+        -> Unit
+    }
+}
+
+@Composable
 private fun MatchReviewResultPreviewPager(
     preview: MatchResultOcrPreviewUiState.Ready,
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
@@ -2005,6 +2094,7 @@ private fun ResultScreenshotSelector(
     ) -> Unit,
     showSourceScreenshot: Boolean = true,
     ocrDetailsContent: @Composable () -> Unit = {},
+    ocrPositionContent: @Composable (Int) -> Unit = {},
 ) {
     DisposableEffect(resultPositionCropPreviews) {
         onDispose { onPositionCropPreviewsDisposed(resultPositionCropPreviews) }
@@ -2022,6 +2112,23 @@ private fun ResultScreenshotSelector(
             ?.let { slot -> role to slot }
     }
     val selectedRoles = selectedPages.map { it.first }
+    val positionItems = selectedPages
+        .flatMap { (role, _) ->
+            resultPositionCropPreviews[role]
+                ?.sortedCrops()
+                .orEmpty()
+                .map { preview -> ResultPositionPageItem(role = role, preview = preview) }
+        }
+        .groupBy { it.preview.position }
+        .values
+        .mapNotNull { items ->
+            items.firstOrNull { item ->
+                item.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER &&
+                    item.preview.position >= 11
+            } ?: items.firstOrNull()
+        }
+        .sortedBy { it.preview.position }
+    val hasCombinedPositionCropPreviews = positionItems.isNotEmpty()
     val nextEmptyRole = roles.firstOrNull { role ->
         !resultScreenshots.slot(role).hasSelection()
     }
@@ -2086,7 +2193,9 @@ private fun ResultScreenshotSelector(
                             isEditable = isEditable,
                             showSourceScreenshot = showSourceScreenshot,
                             showOcrDetails = pagerState.currentPage == page,
+                            showPositionCropPreviews = !hasCombinedPositionCropPreviews,
                             ocrDetailsContent = ocrDetailsContent,
+                            ocrPositionContent = ocrPositionContent,
                             onSelectScreenshot = onSelectScreenshot,
                             onOpenCrop = onOpenCrop,
                             onRemoveScreenshot = onRemoveScreenshot,
@@ -2096,6 +2205,12 @@ private fun ResultScreenshotSelector(
             }
         } else {
             ocrDetailsContent()
+        }
+        if (hasCombinedPositionCropPreviews) {
+            ResultPositionCropPreviews(
+                items = positionItems,
+                ocrPositionContent = ocrPositionContent,
+            )
         }
         nextEmptyRole?.takeIf { showSourceScreenshot }?.let { role ->
             val slot = resultScreenshots.slot(role)
@@ -2141,7 +2256,9 @@ private fun ResultScreenshotPage(
     isEditable: Boolean,
     showSourceScreenshot: Boolean,
     showOcrDetails: Boolean,
+    showPositionCropPreviews: Boolean = true,
     ocrDetailsContent: @Composable () -> Unit,
+    ocrPositionContent: @Composable (Int) -> Unit,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
@@ -2158,6 +2275,8 @@ private fun ResultScreenshotPage(
     } else {
         null
     }
+    val hasPositionCropPreviews = showPositionCropPreviews &&
+        positionCropPreviewState.sortedCrops().isNotEmpty()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2197,10 +2316,12 @@ private fun ResultScreenshotPage(
                 }
             }
         }
-        if (previewImageUri != null || !showSourceScreenshot) {
+        if (showPositionCropPreviews && (previewImageUri != null || !showSourceScreenshot)) {
             ResultPositionCropPreviews(
-                role = role,
-                state = positionCropPreviewState,
+                items = positionCropPreviewState.sortedCrops().map { preview ->
+                    ResultPositionPageItem(role = role, preview = preview)
+                },
+                ocrPositionContent = ocrPositionContent,
             )
         }
         if (showSourceScreenshot && isEditable && previewImageUri != null) {
@@ -2296,28 +2417,28 @@ private fun ResultScreenshotPage(
                 onRemoveScreenshot = onRemoveScreenshot,
             )
         }
-        if (showOcrDetails) {
+        if (showOcrDetails && showPositionCropPreviews && !hasPositionCropPreviews) {
             ocrDetailsContent()
         }
     }
 }
 
+private data class ResultPositionPageItem(
+    val role: MatchResultScreenshotRole,
+    val preview: MatchResultPositionCropPreview,
+)
+
 @Composable
 private fun ResultPositionCropPreviews(
-    role: MatchResultScreenshotRole,
-    state: MatchResultPositionCropPreviewState,
+    items: List<ResultPositionPageItem>,
+    ocrPositionContent: @Composable (Int) -> Unit,
 ) {
-    val previews = state.sortedCrops()
-    if (previews.isEmpty()) return
-    val pagerState = rememberPagerState(pageCount = { previews.size })
-    LaunchedEffect(previews) {
+    if (items.isEmpty()) return
+    val pagerState = rememberPagerState(pageCount = { items.size })
+    LaunchedEffect(items) {
         pagerState.scrollToPage(0)
     }
-    val pagerTag = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
-        MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG
-    } else {
-        MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG
-    }
+    val previews = items.map { it.preview }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxDisplayHeight = maxWidth * (
             previews
@@ -2331,35 +2452,53 @@ private fun ResultPositionCropPreviews(
                 ?.coerceAtMost(1f)
                 ?: 1f
             )
-        HorizontalPager(
-            state = pagerState,
-            pageSize = androidx.compose.foundation.pager.PageSize.Fill,
-            pageSpacing = RankForgeSpacing.ExtraSmall,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag(pagerTag),
-        ) { page ->
-            val preview = previews[page]
-            val image = preview.image as? AndroidMatchResultPositionCropPreviewImage ?: return@HorizontalPager
-            val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
-            Card(
+                .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG),
+        ) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(maxDisplayHeight)
-                    .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
+                    .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG),
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        bitmap = image.bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(aspectRatio),
-                    )
+                HorizontalPager(
+                    state = pagerState,
+                    pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+                    pageSpacing = RankForgeSpacing.ExtraSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_COMBINED_PAGER_TEST_TAG),
+                ) { page ->
+                    val preview = previews[page]
+                    val image = preview.image as? AndroidMatchResultPositionCropPreviewImage ?: return@HorizontalPager
+                    val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    ) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(maxDisplayHeight)
+                                .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    bitmap = image.bitmap.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(aspectRatio),
+                                )
+                            }
+                        }
+                        ocrPositionContent(preview.position)
+                    }
                 }
             }
         }
