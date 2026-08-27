@@ -31,6 +31,12 @@ data class MatchOcrReviewCorrectionDraft(
         }
 }
 
+data class MatchOcrReviewPlayerKillCorrectionDraft(
+    val playerSlot: Int,
+    val originalKillsValue: String,
+    val killsDraftValue: String,
+)
+
 data class MatchOcrReviewRowCorrectionDraft(
     val rowIndex: Int,
     val originalPlacementValue: String,
@@ -42,12 +48,14 @@ data class MatchOcrReviewRowCorrectionDraft(
     val originallyRequiredManualReview: Boolean,
     val weakConfidenceOrSafetyEvidence: Boolean,
     val isExcluded: Boolean = false,
+    val playerKillDrafts: List<MatchOcrReviewPlayerKillCorrectionDraft> = emptyList(),
     val validation: MatchOcrReviewRowCorrectionValidation,
 ) {
     val isDirty: Boolean
         get() = isExcluded ||
             placementDraftValue != originalPlacementValue ||
             killsDraftValue != originalKillsValue ||
+            playerKillDrafts.any { it.killsDraftValue != it.originalKillsValue } ||
             assignedTeamSlotDraftValue != originalAssignedTeamSlotValue
 }
 
@@ -96,7 +104,18 @@ object MatchOcrReviewCorrectionDraftReducer {
     ): MatchOcrReviewCorrectionDraft {
         val drafts = rows.map { row ->
             val originalPlacementValue = row.originalParsedPlacementValue?.toString().orEmpty()
-            val originalKillsValue = row.originalParsedKillValue?.toString().orEmpty()
+            val playerKillDrafts = row.playerKillEvidence.map { evidence ->
+                MatchOcrReviewPlayerKillCorrectionDraft(
+                    playerSlot = evidence.playerSlot,
+                    originalKillsValue = evidence.originalKillsValue,
+                    killsDraftValue = evidence.originalKillsValue,
+                )
+            }
+            val originalKillsValue = if (playerKillDrafts.isEmpty()) {
+                row.originalParsedKillValue?.toString().orEmpty()
+            } else {
+                playerKillDrafts.derivedKillsDraftValue()
+            }
             val originalAssignedTeamSlotValue = row.originalSuggestedTeamSlot?.toString().orEmpty()
 
             MatchOcrReviewRowCorrectionDraft(
@@ -110,6 +129,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                 originallyRequiredManualReview = row.blockerLabels.isNotEmpty() || row.warningLabels.isNotEmpty(),
                 weakConfidenceOrSafetyEvidence = row.hasWeakConfidenceOrSafetyEvidence(),
                 isExcluded = false,
+                playerKillDrafts = playerKillDrafts,
                 validation = MatchOcrReviewRowCorrectionValidation(),
             )
         }
@@ -137,6 +157,27 @@ object MatchOcrReviewCorrectionDraftReducer {
         row.copy(killsDraftValue = value)
     }
 
+    fun onPlayerKillsChanged(
+        draft: MatchOcrReviewCorrectionDraft,
+        rowIndex: Int,
+        playerSlot: Int,
+        value: String,
+    ): MatchOcrReviewCorrectionDraft = updateRow(draft, rowIndex) { row ->
+        if (row.playerKillDrafts.count { it.playerSlot == playerSlot } != 1) {
+            row
+        } else {
+            row.copy(
+                playerKillDrafts = row.playerKillDrafts.map { player ->
+                    if (player.playerSlot == playerSlot) {
+                        player.copy(killsDraftValue = value)
+                    } else {
+                        player
+                    }
+                },
+            )
+        }
+    }
+
     fun onAssignedTeamSlotChanged(
         draft: MatchOcrReviewCorrectionDraft,
         rowIndex: Int,
@@ -161,6 +202,9 @@ object MatchOcrReviewCorrectionDraftReducer {
             killsDraftValue = row.originalKillsValue,
             assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
             isExcluded = false,
+            playerKillDrafts = row.playerKillDrafts.map { player ->
+                player.copy(killsDraftValue = player.originalKillsValue)
+            },
         )
     }
 
@@ -173,7 +217,11 @@ object MatchOcrReviewCorrectionDraftReducer {
                         killsDraftValue = row.originalKillsValue,
                         assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
                         isExcluded = false,
+                        playerKillDrafts = row.playerKillDrafts.map { player ->
+                            player.copy(killsDraftValue = player.originalKillsValue)
+                        },
                     )
+                        .withDerivedKillsDraftValue()
                 },
             ),
         )
@@ -222,11 +270,32 @@ object MatchOcrReviewCorrectionDraftReducer {
                             blockers += MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
                     }
 
-                    when {
-                        kills.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
-                        kills.isStrictNegativeInteger() -> blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
-                        kills.toStrictNonNegativeIntOrNull() == null ->
+                    if (row.playerKillDrafts.isEmpty()) {
+                        when {
+                            kills.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
+                            kills.isStrictNegativeInteger() -> blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
+                            kills.toStrictNonNegativeIntOrNull() == null ->
+                                blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
+                        }
+                    } else {
+                        row.playerKillDrafts.forEach { player ->
+                            val playerKills = player.killsDraftValue.trim()
+                            when {
+                                playerKills.isBlank() ->
+                                    blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
+                                playerKills.isStrictNegativeInteger() ->
+                                    blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
+                                playerKills.toStrictNonNegativeIntOrNull() == null ->
+                                    blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
+                            }
+                        }
+
+                        if (row.playerKillDrafts.all { player ->
+                                player.killsDraftValue.trim().toStrictNonNegativeIntOrNull() != null
+                            } && kills.toStrictNonNegativeIntOrNull() == null
+                        ) {
                             blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
+                        }
                     }
 
                     when {
@@ -242,7 +311,10 @@ object MatchOcrReviewCorrectionDraftReducer {
                     if (row.placementDraftValue != row.originalPlacementValue) {
                         warnings += MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR
                     }
-                    if (row.killsDraftValue != row.originalKillsValue) {
+                    if (
+                        row.killsDraftValue != row.originalKillsValue ||
+                        row.playerKillDrafts.any { it.killsDraftValue != it.originalKillsValue }
+                    ) {
                         warnings += MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR
                     }
                     if (row.assignedTeamSlotDraftValue != row.originalAssignedTeamSlotValue) {
@@ -273,10 +345,29 @@ object MatchOcrReviewCorrectionDraftReducer {
     ): MatchOcrReviewCorrectionDraft = validate(
         draft.copy(
             rows = draft.rows.map { row ->
-                if (row.rowIndex == rowIndex) transform(row) else row
+                if (row.rowIndex == rowIndex) {
+                    transform(row).withDerivedKillsDraftValue()
+                } else {
+                    row
+                }
             },
         ),
     )
+
+    private fun MatchOcrReviewRowCorrectionDraft.withDerivedKillsDraftValue(): MatchOcrReviewRowCorrectionDraft =
+        if (playerKillDrafts.isEmpty()) {
+            this
+        } else {
+            copy(killsDraftValue = playerKillDrafts.derivedKillsDraftValue())
+        }
+
+    private fun List<MatchOcrReviewPlayerKillCorrectionDraft>.derivedKillsDraftValue(): String {
+        val values = map { player -> player.killsDraftValue.trim().toStrictNonNegativeIntOrNull() }
+        return values.takeIf { it.all { value -> value != null } }
+            ?.sumOf { it!!.toLong() }
+            ?.toString()
+            .orEmpty()
+    }
 
     private fun duplicateRowIndexesForValues(valuesByRowIndex: List<Pair<Int, Int>>): Set<Int> =
         valuesByRowIndex

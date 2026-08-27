@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -182,6 +183,97 @@ class MatchOcrReviewScreenTest {
             .assertTextEquals("4. Player Four - [8]")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
+    }
+
+    @Test
+    fun compactPlayerKillValueEditsInlineAndForwardsItsRowAndSlot() {
+        val rows = defaultReadyRows().map { row ->
+            if (row.rowIndex == 0) {
+                row.copy(
+                    detectedKillDisplayValue = "10",
+                    originalParsedKillValue = 10,
+                    playerKillEvidence = listOf("3", "2", "1", "4").mapIndexed { index, kills ->
+                        MatchOcrReviewPlayerKillEvidenceUiState(
+                            playerSlot = index + 1,
+                            originalKillsValue = kills,
+                        )
+                    },
+                )
+            } else {
+                row
+            }
+        }
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        var playerKillChange: Triple<Int, Int, String>? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = readyState(
+                        rows = rows,
+                        correctionDraft = correctionDraft,
+                        preview = compactPreview(),
+                    ),
+                    onBack = {},
+                    onPlayerKillsChanged = { rowIndex, playerSlot, value ->
+                        playerKillChange = Triple(rowIndex, playerSlot, value)
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Position - 1")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - 1 | Team name - Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerKillInput(1, 3))
+            .performTextReplacement("9")
+
+        composeTestRule.runOnIdle {
+            assertEquals(Triple(0, 3, "9"), playerKillChange)
+        }
+    }
+
+    @Test
+    fun finalizedPlayerKillDraftsRemainVisibleInPlaceAndReadOnly() {
+        val rows = defaultReadyRows().withFirstRowPlayerKillEvidence(listOf("3", "2", "1", "4"))
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
+            rowIndex = 0,
+            playerSlot = 3,
+            value = "5",
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = rows.first(),
+                    previewRow = compactPreview().rows.first(),
+                    teamNamesBySlot = emptyMap(),
+                    correctionDraft = correctionDraft.rows.first(),
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onResetRowCorrection = { _ -> },
+                    correctionEnabled = false,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Position - 1")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - 1 | Team name - Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
+        listOf(1 to "3", 2 to "2", 3 to "5", 4 to "4").forEach { (playerSlot, kills) ->
+            composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerKillInput(1, playerSlot))
+                .assertTextEquals(kills)
+                .assertIsNotEnabled()
+        }
     }
 
     @Test
@@ -1143,6 +1235,25 @@ class MatchOcrReviewScreenTest {
                 originalSuggestedTeamSlot = rowIndex + 1,
             )
         }
+
+    private fun List<MatchOcrReviewRowUiState>.withFirstRowPlayerKillEvidence(
+        kills: List<String>,
+    ): List<MatchOcrReviewRowUiState> = map { row ->
+        if (row.rowIndex == 0) {
+            row.copy(
+                detectedKillDisplayValue = kills.sumOf { it.toInt() }.toString(),
+                originalParsedKillValue = kills.sumOf { it.toInt() },
+                playerKillEvidence = kills.mapIndexed { index, value ->
+                    MatchOcrReviewPlayerKillEvidenceUiState(
+                        playerSlot = index + 1,
+                        originalKillsValue = value,
+                    )
+                },
+            )
+        } else {
+            row
+        }
+    }
 
     private fun emptyStateWithLongPreview(): MatchOcrReviewUiState.Empty =
         MatchOcrReviewUiState.Empty(

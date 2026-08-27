@@ -244,6 +244,14 @@ object MatchResultOcrPreviewUiStateMapper {
             originalParsedPlacementValue = placement.toIntOrNull() ?: position,
             originalParsedKillValue = totalKillsOrNull(this, allKillsNumeric, killValues),
             originalSuggestedTeamSlot = null,
+            playerKillEvidence = slots
+                .sortedBy { it.slot }
+                .map { slot ->
+                    MatchOcrReviewPlayerKillEvidenceUiState(
+                        playerSlot = slot.slot,
+                        originalKillsValue = slot.killText,
+                    )
+                },
         )
     }
 
@@ -301,6 +309,12 @@ data class MatchOcrReviewRowUiState(
     val originalParsedPlacementValue: Int? = null,
     val originalParsedKillValue: Int? = null,
     val originalSuggestedTeamSlot: Int? = null,
+    val playerKillEvidence: List<MatchOcrReviewPlayerKillEvidenceUiState> = emptyList(),
+)
+
+data class MatchOcrReviewPlayerKillEvidenceUiState(
+    val playerSlot: Int,
+    val originalKillsValue: String,
 )
 
 data class MatchOcrReviewTeamSlotCandidateUiState(

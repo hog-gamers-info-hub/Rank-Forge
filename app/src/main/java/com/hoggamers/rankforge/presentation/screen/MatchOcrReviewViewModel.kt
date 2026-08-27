@@ -549,6 +549,17 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    fun onPlayerKillsChanged(rowIndex: Int, playerSlot: Int, value: String) {
+        updateCorrectionDraft { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+                draft = draft,
+                rowIndex = rowIndex,
+                playerSlot = playerSlot,
+                value = value,
+            )
+        }
+    }
+
     fun onAssignedTeamSlotChanged(rowIndex: Int, value: String) {
         updateCorrectionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(draft, rowIndex, value)
