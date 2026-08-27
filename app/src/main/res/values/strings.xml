@@ -103,6 +103,7 @@
     <string name="keep_editing_action">Keep Editing</string>
     <string name="discard_changes_action">Discard Changes</string>
     <string name="back_action">Back</string>
+    <string name="share_action">Share</string>
     <string name="continue_action">Continue</string>
     <string name="download_action">Download</string>
     <string name="tournament_details_title">Tournament Details</string>
@@ -205,6 +206,9 @@
     <string name="tournament_standings_finalized_only_message">Only finalized matches are included in these standings.</string>
     <string name="tournament_standings_empty_title">No finalized matches yet</string>
     <string name="tournament_standings_empty_message">Finalize a match to see tournament standings.</string>
+    <string name="tournament_standings_share_text_title">Tournament Standings</string>
+    <string name="tournament_standings_share_chooser_title">Share tournament standings</string>
+    <string name="tournament_standings_share_failed_message">Unable to create share link. Try again.</string>
     <string name="tournament_standing_position_label">Position</string>
     <string name="tournament_standing_team_slot_label">Team slot</string>
     <string name="tournament_standing_team_slot_inline">Team slot - %1$d</string>

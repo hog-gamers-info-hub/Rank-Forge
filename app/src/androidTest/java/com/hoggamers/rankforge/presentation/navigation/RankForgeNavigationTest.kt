@@ -35,6 +35,9 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
+import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareFailureReason
+import com.hoggamers.rankforge.data.cloud.TournamentStandingsSharePublicationResult
+import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSource
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -197,6 +200,7 @@ import com.hoggamers.rankforge.presentation.screen.MATCH_ITEM_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.OPEN_STANDINGS_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDINGS_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX
+import com.hoggamers.rankforge.presentation.screen.TournamentStandingRowUiState
 import com.hoggamers.rankforge.presentation.screen.TournamentStandingsViewModel
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
@@ -2506,6 +2510,15 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     cumulativeStandings = CumulativeTournamentStandingsEngine(),
                     tieBreakRules = TieBreakRules(),
+                    shareRemoteDataSource = object : TournamentStandingsShareRemoteDataSource {
+                        override suspend fun publish(
+                            tournamentId: String,
+                            rows: List<TournamentStandingRowUiState>,
+                        ): TournamentStandingsSharePublicationResult =
+                            TournamentStandingsSharePublicationResult.Failure(
+                                TournamentStandingsShareFailureReason.SERVER_FAILURE,
+                            )
+                    },
                 ).also {
                     it.load(tournamentId)
                 }
