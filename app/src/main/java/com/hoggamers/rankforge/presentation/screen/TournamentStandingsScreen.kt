@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -22,16 +23,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +47,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
+import kotlinx.coroutines.flow.Flow
 
 private val PointIqStandingsNavy = Color(0xFF071B3E)
 private val PointIqStandingsBody = Color(0xFF607393)
@@ -63,6 +69,7 @@ const val TOURNAMENT_STANDINGS_EMPTY_TEST_TAG = "tournament_standings_empty"
 const val TOURNAMENT_STANDINGS_LIST_TEST_TAG = "tournament_standings_list"
 const val TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX = "tournament_standing_row_"
 const val TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX = "tournament_standing_complete_tie_"
+const val TOURNAMENT_STANDINGS_SHARE_ACTION_TEST_TAG = "tournament_standings_share_action"
 const val OPEN_STANDINGS_ACTION_TEST_TAG = "open_standings_action"
 
 @Composable
@@ -75,17 +82,63 @@ fun TournamentStandingsRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    TournamentStandingsScreen(
-        uiState = uiState,
-        onBackToTournamentDetails = onBackToTournamentDetails,
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    TournamentStandingsShareEventEffect(
+        shareEvents = viewModel.shareEvents,
+        shareTextTitle = context.getString(R.string.tournament_standings_share_text_title),
+        chooserTitle = context.getString(R.string.tournament_standings_share_chooser_title),
+        failureMessage = context.getString(R.string.tournament_standings_share_failed_message),
+        startActivity = { intent -> context.startActivity(intent) },
+        showFailure = { message -> snackbarHostState.showSnackbar(message) },
     )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        TournamentStandingsScreen(
+            uiState = uiState,
+            onBackToTournamentDetails = onBackToTournamentDetails,
+            onShareStandings = viewModel::shareStandings,
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+@Composable
+internal fun TournamentStandingsShareEventEffect(
+    shareEvents: Flow<TournamentStandingsShareEvent>,
+    shareTextTitle: String,
+    chooserTitle: String,
+    failureMessage: String,
+    startActivity: (Intent) -> Unit,
+    showFailure: suspend (String) -> Unit,
+) {
+    LaunchedEffect(shareEvents) {
+        shareEvents.collect { event ->
+            when (event) {
+                is TournamentStandingsShareEvent.ShareUrl -> {
+                    startActivity(
+                        createTournamentStandingsShareChooserIntent(
+                            publicUrl = event.publicUrl,
+                            shareTextTitle = shareTextTitle,
+                            chooserTitle = chooserTitle,
+                        ),
+                    )
+                }
+
+                TournamentStandingsShareEvent.ShareFailed -> showFailure(failureMessage)
+            }
+        }
+    }
 }
 
 @Composable
 fun TournamentStandingsScreen(
     uiState: TournamentStandingsUiState,
     onBackToTournamentDetails: () -> Unit,
+    onShareStandings: () -> Unit,
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -94,7 +147,9 @@ fun TournamentStandingsScreen(
         uiState.rows.isEmpty() -> TournamentStandingsEmptyState(onBackToTournamentDetails)
         else -> TournamentStandingsContent(
             rows = uiState.rows,
+            isPublishing = uiState.isPublishing,
             onBackToTournamentDetails = onBackToTournamentDetails,
+            onShareStandings = onShareStandings,
         )
     }
 }
@@ -102,7 +157,9 @@ fun TournamentStandingsScreen(
 @Composable
 private fun TournamentStandingsContent(
     rows: List<TournamentStandingRowUiState>,
+    isPublishing: Boolean,
     onBackToTournamentDetails: () -> Unit,
+    onShareStandings: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -121,7 +178,11 @@ private fun TournamentStandingsContent(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        TournamentStandingsHeader(onBackToTournamentDetails)
+        TournamentStandingsHeader(
+            isPublishing = isPublishing,
+            onShareStandings = onShareStandings,
+            onBackToTournamentDetails = onBackToTournamentDetails,
+        )
         Spacer(modifier = Modifier.height(18.dp))
         TournamentStandingsInfoBanner()
         Spacer(modifier = Modifier.height(20.dp))
@@ -139,7 +200,11 @@ private fun TournamentStandingsContent(
 }
 
 @Composable
-private fun TournamentStandingsHeader(onBackToTournamentDetails: () -> Unit) {
+private fun TournamentStandingsHeader(
+    isPublishing: Boolean = false,
+    onShareStandings: (() -> Unit)? = null,
+    onBackToTournamentDetails: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -154,6 +219,19 @@ private fun TournamentStandingsHeader(onBackToTournamentDetails: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        onShareStandings?.let { share ->
+            TextButton(
+                onClick = share,
+                enabled = !isPublishing,
+                modifier = Modifier.testTag(TOURNAMENT_STANDINGS_SHARE_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(R.string.share_action),
+                    color = PointIqStandingsBlue,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
         TextButton(onClick = onBackToTournamentDetails) {
             Text(
                 text = stringResource(R.string.back_action),
@@ -162,6 +240,18 @@ private fun TournamentStandingsHeader(onBackToTournamentDetails: () -> Unit) {
             )
         }
     }
+}
+
+internal fun createTournamentStandingsShareChooserIntent(
+    publicUrl: String,
+    shareTextTitle: String,
+    chooserTitle: String,
+): Intent {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, "$shareTextTitle\n$publicUrl")
+    }
+    return Intent.createChooser(shareIntent, chooserTitle)
 }
 
 @Composable
@@ -394,7 +484,7 @@ private fun TournamentStandingsEmptyState(onBackToTournamentDetails: () -> Unit)
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        TournamentStandingsHeader(onBackToTournamentDetails)
+        TournamentStandingsHeader(onBackToTournamentDetails = onBackToTournamentDetails)
         Spacer(modifier = Modifier.height(28.dp))
         Text(
             text = stringResource(R.string.tournament_standings_empty_title),
