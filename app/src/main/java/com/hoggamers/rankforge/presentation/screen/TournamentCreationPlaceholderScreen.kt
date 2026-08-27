@@ -27,6 +27,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -39,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -80,6 +85,12 @@ const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
 const val TOURNAMENT_DATE_FIELD_TEST_TAG = "tournament_date_field"
 const val TOURNAMENT_DATE_TRAILING_ACTION_TEST_TAG = "tournament_date_trailing_action"
 const val TOURNAMENT_DATE_CONFIRM_ACTION_TEST_TAG = "tournament_date_confirm_action"
+const val TOURNAMENT_GAME_DROPDOWN_TEST_TAG = "tournament_game_dropdown"
+const val TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG = "tournament_game_option_free_fire_max"
+const val TOURNAMENT_MODE_DROPDOWN_TEST_TAG = "tournament_mode_dropdown"
+const val TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG = "tournament_mode_option_solo"
+const val TOURNAMENT_MODE_OPTION_DUO_TEST_TAG = "tournament_mode_option_duo"
+const val TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG = "tournament_mode_option_squad"
 
 @Composable
 fun TournamentCreationRoute(
@@ -131,6 +142,12 @@ fun TournamentCreationScreen(
     onDiscardChanges: () -> Unit,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
+    val freeFireMax = stringResource(R.string.tournament_game_free_fire_max)
+    val solo = stringResource(R.string.tournament_mode_solo)
+    val duo = stringResource(R.string.tournament_mode_duo)
+    val squad = stringResource(R.string.tournament_mode_squad)
+    var selectedGame by rememberSaveable { mutableStateOf(freeFireMax) }
+    var selectedMode by rememberSaveable { mutableStateOf(squad) }
     val scrollState = rememberScrollState()
     val tournamentDateLabel = stringResource(R.string.tournament_date_label)
     val openDatePicker = { showDatePicker = true }
@@ -181,6 +198,34 @@ fun TournamentCreationScreen(
             label = stringResource(R.string.tournament_name_label),
             error = uiState.validationErrors[TournamentField.NAME],
             onValueChange = onTournamentNameChanged,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        PointIqTournamentDropdownField(
+            value = selectedGame,
+            label = stringResource(R.string.tournament_game_label),
+            options = listOf(freeFireMax),
+            isOptionEnabled = { true },
+            onOptionSelected = { selectedGame = it },
+            fieldTestTag = TOURNAMENT_GAME_DROPDOWN_TEST_TAG,
+            optionTestTag = { TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG },
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        PointIqTournamentDropdownField(
+            value = selectedMode,
+            label = stringResource(R.string.tournament_mode_label),
+            options = listOf(solo, duo, squad),
+            isOptionEnabled = { it == squad },
+            onOptionSelected = { selectedMode = it },
+            fieldTestTag = TOURNAMENT_MODE_DROPDOWN_TEST_TAG,
+            optionTestTag = { option ->
+                when (option) {
+                    solo -> TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG
+                    duo -> TOURNAMENT_MODE_OPTION_DUO_TEST_TAG
+                    else -> TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG
+                }
+            },
         )
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -334,6 +379,56 @@ fun TournamentCreationScreen(
                 }
             },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PointIqTournamentDropdownField(
+    value: String,
+    label: String,
+    options: List<String>,
+    isOptionEnabled: (String) -> Boolean,
+    onOptionSelected: (String) -> Unit,
+    fieldTestTag: String,
+    optionTestTag: (String) -> String,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(text = label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            shape = RoundedCornerShape(14.dp),
+            colors = pointIqTournamentFieldColors(),
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+                .testTag(fieldTestTag),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(text = option) },
+                    onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    },
+                    enabled = isOptionEnabled(option),
+                    modifier = Modifier.testTag(optionTestTag(option)),
+                )
+            }
+        }
     }
 }
 
