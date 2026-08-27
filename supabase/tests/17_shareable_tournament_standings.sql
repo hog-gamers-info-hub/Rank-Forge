@@ -1,6 +1,6 @@
 begin;
 
-select plan(26);
+select plan(28);
 
 select has_table(
     'public',
@@ -118,15 +118,40 @@ select ok(
 insert into auth.users (id, email)
 values
     ('c1000000-0000-0000-0000-000000000001', 'share-owner-a@example.test'),
-    ('c1000000-0000-0000-0000-000000000002', 'share-owner-b@example.test');
+    ('c1000000-0000-0000-0000-000000000002', 'share-owner-b@example.test'),
+    ('c1000000-0000-0000-0000-000000000003', 'share-owner-generated@example.test');
 
 insert into public.tournaments (id, owner_id, name)
 values
     ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'Private Owner A Tournament'),
     ('c2000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-000000000002', 'Private Owner B Tournament'),
-    ('c2000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000001', 'Private Owner A Second Tournament');
+    ('c2000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000001', 'Private Owner A Second Tournament'),
+    ('c2000000-0000-0000-0000-000000000004', 'c1000000-0000-0000-0000-000000000003', 'Database Generated Token Tournament');
 
 set local role authenticated;
+set local request.jwt.claim.sub = 'c1000000-0000-0000-0000-000000000003';
+
+select lives_ok($$
+    insert into public.tournament_standings_shares (
+        tournament_id,
+        standings
+    )
+    values (
+        'c2000000-0000-0000-0000-000000000004',
+        '[]'::jsonb
+    )
+$$, 'owner can insert a snapshot without supplying a share token');
+select ok(
+    (
+        select share_token is not null
+            and pg_typeof(share_token) = 'uuid'::regtype
+            and share_token::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        from public.tournament_standings_shares
+        where tournament_id = 'c2000000-0000-0000-0000-000000000004'
+    ),
+    'database generates a non-null UUID share token when it is omitted'
+);
+
 set local request.jwt.claim.sub = 'c1000000-0000-0000-0000-000000000001';
 
 select lives_ok($$
@@ -147,7 +172,7 @@ select ok(
         from public.tournament_standings_shares
         where tournament_id = 'c2000000-0000-0000-0000-000000000001'
     ),
-    'owner receives a database-generated share token when it is omitted'
+    'owner receives a share token for the inserted share record'
 );
 select is(
     (

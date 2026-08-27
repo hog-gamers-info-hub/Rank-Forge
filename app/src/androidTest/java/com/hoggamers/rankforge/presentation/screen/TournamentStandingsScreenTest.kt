@@ -12,12 +12,17 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.runtime.mutableStateOf
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -193,16 +198,97 @@ class TournamentStandingsScreenTest {
     }
 
     @Test
-    fun shareIntentUsesPlainTextActionAndExpectedText() {
+    fun shareChooserIntentUsesExpectedSendIntentAndLocalizedTitle() {
         val publicUrl = "https://example.supabase.co/functions/v1/public-tournament-standings?token=test"
-        val intent = createTournamentStandingsShareIntent(
+        val chooserIntent = createTournamentStandingsShareChooserIntent(
             publicUrl = publicUrl,
             shareTextTitle = "Tournament Standings",
+            chooserTitle = "Share tournament standings",
         )
+        val shareIntent = chooserIntent.extras?.get(Intent.EXTRA_INTENT) as? Intent
 
-        assertEquals(Intent.ACTION_SEND, intent.action)
-        assertEquals("text/plain", intent.type)
-        assertEquals("Tournament Standings\n$publicUrl", intent.getStringExtra(Intent.EXTRA_TEXT))
+        assertEquals(Intent.ACTION_CHOOSER, chooserIntent.action)
+        assertEquals("Share tournament standings", chooserIntent.getCharSequenceExtra(Intent.EXTRA_TITLE))
+        assertNotNull(shareIntent)
+        assertEquals(Intent.ACTION_SEND, shareIntent?.action)
+        assertEquals("text/plain", shareIntent?.type)
+        assertEquals(
+            "Tournament Standings\n$publicUrl",
+            shareIntent?.getStringExtra(Intent.EXTRA_TEXT),
+        )
+        assertFalse(shareIntent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty().contains("tournament-id"))
+    }
+
+    @Test
+    fun shareUrlEventLaunchesOneChooserWithoutFailureMessage() {
+        val events = Channel<TournamentStandingsShareEvent>(Channel.BUFFERED)
+        val launchedIntents = mutableListOf<Intent>()
+        val failureMessages = mutableListOf<String>()
+        composeTestRule.setContent {
+            TournamentStandingsShareEventEffect(
+                shareEvents = events.receiveAsFlow(),
+                shareTextTitle = "Tournament Standings",
+                chooserTitle = "Share tournament standings",
+                failureMessage = FAILURE_MESSAGE,
+                startActivity = { launchedIntents += it },
+                showFailure = { failureMessages += it },
+            )
+        }
+
+        events.trySend(TournamentStandingsShareEvent.ShareUrl(PUBLIC_URL))
+        composeTestRule.waitUntil(timeoutMillis = 5_000) { launchedIntents.size == 1 }
+
+        assertEquals(1, launchedIntents.size)
+        assertEquals(0, failureMessages.size)
+        assertEquals(Intent.ACTION_CHOOSER, launchedIntents.single().action)
+    }
+
+    @Test
+    fun shareFailedEventShowsOneFailureMessageWithoutChooser() {
+        val events = Channel<TournamentStandingsShareEvent>(Channel.BUFFERED)
+        val launchedIntents = mutableListOf<Intent>()
+        val failureMessages = mutableListOf<String>()
+        composeTestRule.setContent {
+            TournamentStandingsShareEventEffect(
+                shareEvents = events.receiveAsFlow(),
+                shareTextTitle = "Tournament Standings",
+                chooserTitle = "Share tournament standings",
+                failureMessage = FAILURE_MESSAGE,
+                startActivity = { launchedIntents += it },
+                showFailure = { failureMessages += it },
+            )
+        }
+
+        events.trySend(TournamentStandingsShareEvent.ShareFailed)
+        composeTestRule.waitUntil(timeoutMillis = 5_000) { failureMessages.size == 1 }
+
+        assertEquals(listOf(FAILURE_MESSAGE), failureMessages)
+        assertEquals(0, launchedIntents.size)
+    }
+
+    @Test
+    fun consumedShareUrlIsNotReplayedAfterRecomposition() {
+        val events = Channel<TournamentStandingsShareEvent>(Channel.BUFFERED)
+        val launchedIntents = mutableListOf<Intent>()
+        val recomposition = mutableStateOf(0)
+        composeTestRule.setContent {
+            recomposition.value
+            TournamentStandingsShareEventEffect(
+                shareEvents = events.receiveAsFlow(),
+                shareTextTitle = "Tournament Standings",
+                chooserTitle = "Share tournament standings",
+                failureMessage = FAILURE_MESSAGE,
+                startActivity = { launchedIntents += it },
+                showFailure = {},
+            )
+        }
+
+        events.trySend(TournamentStandingsShareEvent.ShareUrl(PUBLIC_URL))
+        composeTestRule.waitUntil(timeoutMillis = 5_000) { launchedIntents.size == 1 }
+        composeTestRule.runOnIdle { recomposition.value += 1 }
+        composeTestRule.waitForIdle()
+
+        assertEquals(1, launchedIntents.size)
     }
 
     private fun standingRow(
@@ -222,3 +308,7 @@ class TournamentStandingsScreenTest {
         isCompleteTie = isCompleteTie,
     )
 }
+
+private const val PUBLIC_URL =
+    "https://example.supabase.co/functions/v1/public-tournament-standings?token=test"
+private const val FAILURE_MESSAGE = "Unable to create share link. Try again."

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Decisions recorded — implementation not started.**
+**Phase 1 and Phase 2 implemented locally — hosted deployment and end-to-end verification pending.**
 
 ## Purpose
 

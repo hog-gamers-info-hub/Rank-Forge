@@ -47,6 +47,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
+import kotlinx.coroutines.flow.Flow
 
 private val PointIqStandingsNavy = Color(0xFF071B3E)
 private val PointIqStandingsBody = Color(0xFF607393)
@@ -83,32 +84,14 @@ fun TournamentStandingsRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(viewModel, context) {
-        viewModel.shareEvents.collect { event ->
-            when (event) {
-                is TournamentStandingsShareEvent.ShareUrl -> {
-                    val shareIntent = createTournamentStandingsShareIntent(
-                        publicUrl = event.publicUrl,
-                        shareTextTitle = context.getString(
-                            R.string.tournament_standings_share_text_title,
-                        ),
-                    )
-                    context.startActivity(
-                        Intent.createChooser(
-                            shareIntent,
-                            context.getString(R.string.tournament_standings_share_chooser_title),
-                        ),
-                    )
-                }
-
-                TournamentStandingsShareEvent.ShareFailed -> {
-                    snackbarHostState.showSnackbar(
-                        context.getString(R.string.tournament_standings_share_failed_message),
-                    )
-                }
-            }
-        }
-    }
+    TournamentStandingsShareEventEffect(
+        shareEvents = viewModel.shareEvents,
+        shareTextTitle = context.getString(R.string.tournament_standings_share_text_title),
+        chooserTitle = context.getString(R.string.tournament_standings_share_chooser_title),
+        failureMessage = context.getString(R.string.tournament_standings_share_failed_message),
+        startActivity = { intent -> context.startActivity(intent) },
+        showFailure = { message -> snackbarHostState.showSnackbar(message) },
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         TournamentStandingsScreen(
@@ -120,6 +103,34 @@ fun TournamentStandingsRoute(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+    }
+}
+
+@Composable
+internal fun TournamentStandingsShareEventEffect(
+    shareEvents: Flow<TournamentStandingsShareEvent>,
+    shareTextTitle: String,
+    chooserTitle: String,
+    failureMessage: String,
+    startActivity: (Intent) -> Unit,
+    showFailure: suspend (String) -> Unit,
+) {
+    LaunchedEffect(shareEvents) {
+        shareEvents.collect { event ->
+            when (event) {
+                is TournamentStandingsShareEvent.ShareUrl -> {
+                    startActivity(
+                        createTournamentStandingsShareChooserIntent(
+                            publicUrl = event.publicUrl,
+                            shareTextTitle = shareTextTitle,
+                            chooserTitle = chooserTitle,
+                        ),
+                    )
+                }
+
+                TournamentStandingsShareEvent.ShareFailed -> showFailure(failureMessage)
+            }
+        }
     }
 }
 
@@ -231,12 +242,16 @@ private fun TournamentStandingsHeader(
     }
 }
 
-internal fun createTournamentStandingsShareIntent(
+internal fun createTournamentStandingsShareChooserIntent(
     publicUrl: String,
     shareTextTitle: String,
-): Intent = Intent(Intent.ACTION_SEND).apply {
-    type = "text/plain"
-    putExtra(Intent.EXTRA_TEXT, "$shareTextTitle\n$publicUrl")
+    chooserTitle: String,
+): Intent {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, "$shareTextTitle\n$publicUrl")
+    }
+    return Intent.createChooser(shareIntent, chooserTitle)
 }
 
 @Composable
