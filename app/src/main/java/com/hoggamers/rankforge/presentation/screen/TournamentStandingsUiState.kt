@@ -5,7 +5,14 @@ import com.hoggamers.rankforge.domain.tournament.TieBreakStanding
 data class TournamentStandingsUiState(
     val isLoading: Boolean = true,
     val rows: List<TournamentStandingRowUiState> = emptyList(),
+    val isPublishing: Boolean = false,
 )
+
+sealed interface TournamentStandingsShareEvent {
+    data class ShareUrl(val publicUrl: String) : TournamentStandingsShareEvent
+
+    data object ShareFailed : TournamentStandingsShareEvent
+}
 
 data class TournamentStandingRowUiState(
     val displayOrder: Int,
