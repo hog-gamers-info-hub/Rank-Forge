@@ -30,6 +30,7 @@ import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
 const val AUTH_SESSION_LOADING_SCREEN_TEST_TAG = "auth_session_loading_screen"
+const val AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG = "auth_external_auth_callback_processing"
 
 @Composable
 fun RankForgeApp(
@@ -110,6 +111,7 @@ fun RankForgeAppContent(
             onExitPasswordRecovery = onAuthExitPasswordRecovery,
         )
         authUiState.isSignedIn -> authenticatedContent()
+        authUiState.isExternalAuthCallbackProcessing -> ExternalAuthCallbackProcessingScreen()
         authUiState.isSessionLoading -> AuthSessionLoadingScreen()
         authUiState.mode == AuthMode.Login -> PointIqLoginScreen(
             uiState = authUiState,
@@ -149,6 +151,16 @@ fun RankForgeAppContent(
             onExitPasswordRecovery = onAuthExitPasswordRecovery,
         )
     }
+}
+
+@Composable
+private fun ExternalAuthCallbackProcessingScreen() {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG),
+        color = MaterialTheme.colorScheme.background,
+    ) {}
 }
 
 @Composable

@@ -53,7 +53,19 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             AuthCallbackKind.NORMAL_AUTH_CALLBACK -> {
-                supabaseClientProvider.client.handleDeeplinks(intent)
+                authViewModel.onExternalAuthCallbackReceived()
+                supabaseClientProvider.client.handleDeeplinks(
+                    intent = intent,
+                    onError = { authViewModel.onExternalAuthCallbackFailed() },
+                )
+                if (
+                    data.getQueryParameter("code").isNullOrBlank() ||
+                        data.getQueryParameter("error") != null ||
+                        data.getQueryParameter("error_code") != null ||
+                        data.getQueryParameter("error_description") != null
+                ) {
+                    authViewModel.onExternalAuthCallbackFailed()
+                }
             }
             AuthCallbackKind.PASSWORD_RECOVERY_CALLBACK -> {
                 authViewModel.onPasswordRecoveryLinkReceived()

@@ -15,6 +15,7 @@ object AuthUiStateReducer {
                 currentState.copy(
                     accountEmail = null,
                     isSessionLoading = false,
+                    isExternalAuthCallbackProcessing = false,
                     isSignedIn = false,
                     warningMessage = null,
                     errorMessage = null,
@@ -23,6 +24,7 @@ object AuthUiStateReducer {
                 currentState.copy(
                     accountEmail = result.user.email,
                     isSessionLoading = false,
+                    isExternalAuthCallbackProcessing = false,
                     isSignedIn = true,
                     warningMessage = null,
                     errorMessage = null,
@@ -72,6 +74,7 @@ object AuthUiStateReducer {
                 currentState.copy(
                     accountEmail = null,
                     isSessionLoading = false,
+                    isExternalAuthCallbackProcessing = false,
                     isSignedIn = false,
                     warningMessage = null,
                     errorMessage = null,
@@ -80,6 +83,7 @@ object AuthUiStateReducer {
                 currentState.copy(
                     accountEmail = authState.user.email,
                     isSessionLoading = false,
+                    isExternalAuthCallbackProcessing = false,
                     isSignedIn = true,
                     warningMessage = null,
                     errorMessage = null,
@@ -107,6 +111,24 @@ object AuthUiStateReducer {
                 errorMessage = AuthUiMessage.AuthenticationFailure(authState.failure.category),
             )
         }
+
+    fun beginExternalAuthCallback(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            isSessionLoading = true,
+            isExternalAuthCallbackProcessing = true,
+            isSignedIn = false,
+            statusMessage = null,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun failExternalAuthCallback(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            accountEmail = null,
+            isSessionLoading = false,
+            isExternalAuthCallbackProcessing = false,
+            isSignedIn = false,
+        )
 
     fun startOperation(currentState: AuthUiState): AuthUiState =
         currentState.copy(
