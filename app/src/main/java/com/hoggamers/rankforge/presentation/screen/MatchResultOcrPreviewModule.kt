@@ -9,7 +9,6 @@ import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreview
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleOcrRecognizer
-import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionRowCropGenerator
 import com.hoggamers.rankforge.data.ocr.matchresult.HybridMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
@@ -37,7 +36,6 @@ object MatchResultOcrPreviewModule {
         localImagePreserver: LocalImagePreserver,
         screenshotOwnerProvider: ScreenshotOwnerProvider,
         positionCropGenerator: AndroidMatchResultPositionCropGenerator,
-        rowCropGenerator: AndroidMatchResultPositionRowCropGenerator,
         paddleRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
     ): MatchResultOcrPreviewRunner {
         val legacyRunner = CachingMatchResultOcrPreviewRunner(
@@ -59,7 +57,6 @@ object MatchResultOcrPreviewModule {
             ),
             screenshotOwnerProvider = screenshotOwnerProvider,
             positionCropGenerator = positionCropGenerator,
-            rowCropGenerator = rowCropGenerator,
             paddleRecognizer = paddleRecognizer,
         )
         return HybridMatchResultOcrPreviewRunner(

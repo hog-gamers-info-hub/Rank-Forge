@@ -465,7 +465,6 @@ fun MatchReviewRoute(
         onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
         onResultPositionCropPreviewsDisposed = viewModel::releaseResultPositionCropPreviewsIfStale,
-        onResultPositionRowCropPreviewsDisposed = viewModel::releaseResultPositionRowCropPreviewsIfStale,
         matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
         onSelectLobbyScreenshot = lobbyScreenshotIntakeViewModel?.let { intakeViewModel ->
             { index -> intakeViewModel.requestPhotoPicker(index) }
@@ -517,9 +516,6 @@ fun MatchReviewScreen(
     onResultPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit = {},
-    onResultPositionRowCropPreviewsDisposed: (
-        Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
-    ) -> Unit = {},
     onSelectLobbyScreenshot: (Int) -> Unit = {},
     onOpenLobbyScreenshotCrop: (Int) -> Unit = {},
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
@@ -569,7 +565,6 @@ fun MatchReviewScreen(
             onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
             onRemoveResultScreenshot = onRemoveResultScreenshot,
             onResultPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-            onResultPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
             onSelectLobbyScreenshot = onSelectLobbyScreenshot,
             onOpenLobbyScreenshotCrop = onOpenLobbyScreenshotCrop,
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
@@ -617,9 +612,6 @@ private fun MatchReviewContent(
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
     onResultPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
-    ) -> Unit,
-    onResultPositionRowCropPreviewsDisposed: (
-        Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
     ) -> Unit,
     onSelectLobbyScreenshot: (Int) -> Unit,
     onOpenLobbyScreenshotCrop: (Int) -> Unit,
@@ -871,14 +863,12 @@ private fun MatchReviewContent(
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = uiState.resultPositionCropPreviews,
-                    resultPositionRowCropPreviews = uiState.resultPositionRowCropPreviews,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
                     showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
@@ -939,14 +929,12 @@ private fun MatchReviewContent(
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = uiState.resultPositionCropPreviews,
-                    resultPositionRowCropPreviews = uiState.resultPositionRowCropPreviews,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
                     showSourceScreenshot = !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
@@ -958,14 +946,12 @@ private fun MatchReviewContent(
             ResultScreenshotSelector(
                 resultScreenshots = uiState.resultScreenshots,
                 resultPositionCropPreviews = uiState.resultPositionCropPreviews,
-                resultPositionRowCropPreviews = uiState.resultPositionRowCropPreviews,
                 isEditable = uiState.isEditable,
                 onSelectScreenshot = onSelectResultScreenshot,
                 onSelectBatch = onSelectResultScreenshotBatch,
                 onOpenCrop = onOpenResultScreenshotCrop,
                 onRemoveScreenshot = onRemoveResultScreenshot,
                 onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                onPositionRowCropPreviewsDisposed = onResultPositionRowCropPreviewsDisposed,
             )
         }
         if (showOcrPreflight) {
@@ -2082,7 +2068,6 @@ private fun MatchReviewResultRowsPagerContent(
 private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
     resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
-    resultPositionRowCropPreviews: Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onSelectBatch: (() -> Unit)?,
@@ -2091,18 +2076,12 @@ private fun ResultScreenshotSelector(
     onPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit,
-    onPositionRowCropPreviewsDisposed: (
-        Map<MatchResultScreenshotRole, Map<Int, MatchResultPositionRowCropPreviewState>>,
-    ) -> Unit,
     showSourceScreenshot: Boolean = true,
     ocrDetailsContent: @Composable () -> Unit = {},
     ocrPositionContent: @Composable (Int) -> Unit = {},
 ) {
     DisposableEffect(resultPositionCropPreviews) {
         onDispose { onPositionCropPreviewsDisposed(resultPositionCropPreviews) }
-    }
-    DisposableEffect(resultPositionRowCropPreviews) {
-        onDispose { onPositionRowCropPreviewsDisposed(resultPositionRowCropPreviews) }
     }
     val roles = listOf(
         MatchResultScreenshotRole.MATCH_RESULT_UPPER,

@@ -14,7 +14,7 @@ import kotlinx.coroutines.CancellationException
  * field extraction, OCR normalization, or other behavior changes in a way that could alter
  * MatchResultOcrExtractionResult.
  */
-const val MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION = 1
+const val MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION = 2
 
 class CachingMatchResultOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,

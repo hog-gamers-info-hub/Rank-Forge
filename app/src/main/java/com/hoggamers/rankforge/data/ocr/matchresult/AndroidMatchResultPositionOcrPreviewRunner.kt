@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -12,15 +11,11 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowAssembler
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrVisualRow
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultEliminationPrefixType
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrFieldMapper
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrInput
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassifier
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassification
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticResult
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPlayerBoundaryDecision
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -33,17 +28,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-internal fun isThreeXRowRecognitionSuccessful(
-    evaluation: MatchResultRowOcrCandidateEvaluation,
-): Boolean = evaluation.result is MatchResultPositionPaddleOcrResult.Success
-
-/** Production BASIC PP position route. It does not consume temporary diagnostics. */
+/** Production whole-position PP route. */
 class AndroidMatchResultPositionOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localFileResolver: MatchResultOcrPreviewLocalFileResolver,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
-    private val rowCropGenerator: AndroidMatchResultPositionRowCropGenerator,
     private val paddleRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
     private val rowOcrPreprocessor: AndroidMatchResultRowOcrPreprocessor = AndroidMatchResultRowOcrPreprocessor(),
@@ -91,84 +81,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             }
             try {
                 val semantics = generated.crops.sortedBy { it.geometry.position }.map { positionCrop ->
-                    val rows = when (val result = rowCropGenerator.generate(
-                        positionCrop.bitmap,
-                        positionCrop.geometry.position,
-                    )) {
-                        is MatchResultPositionRowCropGenerationResult.Generated -> result
-                        else -> throw IllegalStateException("Position row geometry failed.")
-                    }
-                    try {
-                        val rowCrops = rows.crops.sortedBy { it.geometry.rowIndex }
-                        val threeXRows = rowCrops.map { row ->
-                            recognizeEnhancedRow(
-                                positionCrop = positionCrop,
-                                row = row,
-                                role = identity.role,
-                                candidate = MatchResultRowOcrCandidate.SCALE_3X,
-                            )
-                        }
-                        if (threeXRows.any { !isThreeXRowRecognitionSuccessful(it.evaluation) }) {
-                            throw IllegalStateException("Position row PP OCR failed at 3X.")
-                        }
-                        val semanticInput = MatchResultPositionOcrInput(
-                            role = identity.role,
-                            position = positionCrop.geometry.position,
-                            cropWidth = positionCrop.bitmap.width,
-                            cropHeight = positionCrop.bitmap.height,
-                            blocks = threeXRows.flatMap { it.blocks },
-                            rowCrops = rows.crops.map { it.geometry },
-                            placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
-                            killVerifications = emptyMap(),
+                    val wholeAttempt = wholePositionSemantic(positionCrop, identity.role)
+                    wholeAttempt.semantic
+                        ?: throw IllegalStateException(
+                            "Whole-position OCR unavailable: ${wholeAttempt.reason}",
                         )
-                        val threeXSemantic = fieldMapper.map(semanticInput)
-                        val finalRows = threeXRows.map { threeX ->
-                            if (!shouldRetryRow(threeX, threeXSemantic)) {
-                                threeX
-                            } else {
-                                val fourX = recognizeEnhancedRow(
-                                    positionCrop = positionCrop,
-                                    row = rowCrops.first { it.geometry.rowIndex == threeX.rowIndex },
-                                    role = identity.role,
-                                    candidate = MatchResultRowOcrCandidate.SCALE_4X,
-                                )
-                                threeX.copy(fourX = fourX)
-                            }
-                        }
-                        val semantic = mergeKillRecovery(
-                            base = threeXSemantic,
-                            retries = finalRows,
-                            input = semanticInput,
-                        )
-                        finalRows.forEach { selectedRow ->
-                            if (selectedRow.evaluation.resultCount <= 0) {
-                                throw IllegalStateException("Position row PP OCR failed.")
-                            }
-                            logRowSemantic(
-                                role = identity.role,
-                                position = positionCrop.geometry.position,
-                                summary = MatchResultRowOcrSemanticDiagnostic.summarize(
-                                    semantic = semantic,
-                                    rowIndex = selectedRow.rowIndex,
-                                    selected = selectedRow.fourX?.candidate ?: selectedRow.candidate,
-                                ),
-                            )
-                            semantic.playerBoundaryEvidence[
-                                if (selectedRow.rowIndex == 1) 3 else 4
-                            ]?.let { boundary ->
-                                logPlayerBoundary(
-                                    role = identity.role,
-                                    position = positionCrop.geometry.position,
-                                    row = selectedRow.rowIndex,
-                                    selected = selectedRow.fourX?.candidate ?: selectedRow.candidate,
-                                    boundary = boundary,
-                                )
-                            }
-                        }
-                        semantic
-                    } finally {
-                        rows.release()
-                    }
                 }
                 val extraction = semantics.toAcceptedExtraction(identity.role, allowUpperFallback)
                     ?: return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
@@ -191,218 +108,132 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         }
     }
 
-    private fun shouldRetryRow(
-        threeX: RowOcrAttempt,
-        semantic: MatchResultPositionSemanticResult,
-    ): Boolean {
-        val slots = if (threeX.rowIndex == 1) listOf(1, 3) else listOf(2, 4)
-        val detectedPlayerSlots = semantic.fields.filter {
-            it.type == MatchResultOcrFieldType.PLAYER &&
-                it.slot in slots && it.resolvedText.isNotBlank()
-        }.mapNotNull { it.slot }.toSet()
-        val strongKills = detectedPlayerSlots.count { slot ->
-            MatchResultRowOcrFallbackDecision.isStrongKill(semantic.basicKillEvidence[slot])
-        }
-        val hasEmptyPrefix = slots.any { slot ->
-            semantic.basicKillEvidence[slot]?.let { it.markerMatched &&
-                it.prefixType == MatchResultEliminationPrefixType.EMPTY_PREFIX
-            } == true
-        }
-        return MatchResultRowOcrFallbackDecision.shouldRetry(
-            MatchResultRowOcrFallbackSignals(
-                detectedPlayerCount = detectedPlayerSlots.size,
-                strongKillCount = strongKills,
-                hasEmptyPrefixMarker = hasEmptyPrefix,
-            ),
-        )
-    }
-
-    private fun mergeKillRecovery(
-        base: MatchResultPositionSemanticResult,
-        retries: List<RowOcrAttempt>,
-        input: MatchResultPositionOcrInput,
-    ): MatchResultPositionSemanticResult {
-        var fields = base.fields
-        var evidence = base.basicKillEvidence
-        retries.filter { it.fourX != null }.forEach { row ->
-            val retry = row.fourX ?: return@forEach
-            val retryBlocks = retry.blocks
-            if (retryBlocks.isEmpty()) return@forEach
-            val retrySemantic = fieldMapper.map(input.copy(blocks = retryBlocks))
-            val slots = if (row.rowIndex == 1) listOf(1, 3) else listOf(2, 4)
-            slots.forEach { slot ->
-                val retryEvidence = retrySemantic.basicKillEvidence[slot]
-                val hasThreeXPlayer = fields.any {
-                    it.type == MatchResultOcrFieldType.PLAYER &&
-                        it.slot == slot && it.resolvedText.isNotBlank()
-                }
-                if (!hasThreeXPlayer ||
-                    !MatchResultRowOcrFallbackDecision.isStrongKill(retryEvidence) ||
-                    MatchResultRowOcrFallbackDecision.isStrongKill(evidence[slot])
-                ) return@forEach
-                val retryKill = retrySemantic.fields.firstOrNull {
-                    it.type == MatchResultOcrFieldType.KILL && it.slot == slot
-                } ?: return@forEach
-                fields = fields.map { field ->
-                    if (field.type == MatchResultOcrFieldType.KILL &&
-                        field.slot == slot
-                    ) retryKill else field
-                }
-                evidence = evidence + (slot to retryEvidence)
-            }
-        }
-        if (fields === base.fields) return base
-        val source = base.row?.source ?: when (input.role) {
-            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchResultOcrRowSource.UPPER_TEMPLATE
-            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> if (input.position == 11) {
-                MatchResultOcrRowSource.LOWER_ROW_A
-            } else {
-                MatchResultOcrRowSource.LOWER_ROW_B
-            }
-        }
-        val row = runCatching {
-            MatchResultOcrRowAssembler.assemble(
-                position = input.position,
-                source = source,
-                fields = fields,
-                visualRow = when (input.role) {
-                    MatchResultScreenshotRole.MATCH_RESULT_UPPER -> null
-                    MatchResultScreenshotRole.MATCH_RESULT_LOWER ->
-                        if (input.position == 11) MatchResultOcrVisualRow.A
-                        else MatchResultOcrVisualRow.B
-                },
-            )
-        }.getOrNull()
-        val players = fields.filter {
-            it.type == MatchResultOcrFieldType.PLAYER && it.resolvedText.isNotBlank()
-        }
-        val allPresentPlayersHaveKills = players.all { player ->
-            fields.firstOrNull { it.type == MatchResultOcrFieldType.KILL && it.slot == player.slot }
-                ?.resolvedText?.isNotBlank() == true
-        }
-        return base.copy(
-            fields = fields,
-            row = row,
-            basicKillEvidence = evidence,
-            isAutoAcceptable = base.structuralIdentityValid &&
-                base.placementVerification !is MatchResultNumericVerification.Conflict &&
-                base.killVerifications.values.none { it is MatchResultNumericVerification.Conflict } &&
-                allPresentPlayersHaveKills,
-        )
-    }
-
-    private suspend fun recognizeEnhancedRow(
+    private suspend fun wholePositionSemantic(
         positionCrop: MatchResultPositionBitmapCrop,
-        row: MatchResultPositionRowBitmapCrop,
         role: MatchResultScreenshotRole,
-        candidate: MatchResultRowOcrCandidate,
-    ): RowOcrAttempt {
+    ): WholePositionAttempt {
+        val structuralCenter = positionCrop.geometry.structuralCenterYInSource ?: return WholePositionAttempt(
+            semantic = null,
+            reason = WholePositionFallbackReason.STRUCTURAL_CENTER_UNAVAILABLE.name,
+        )
+        val localCenter = structuralCenter - positionCrop.geometry.bounds.top
+        if (!localCenter.isFinite() || localCenter !in 0.0..positionCrop.bitmap.height.toDouble()) {
+            return WholePositionAttempt(
+                semantic = null,
+                reason = WholePositionFallbackReason.INVALID_STRUCTURAL_CENTER.name,
+            )
+        }
         var enhanced: Bitmap? = null
-        var enhancedSize = "invalid"
-        val evaluation = try {
-            enhanced = rowOcrPreprocessor.create(row.bitmap, candidate)
-            enhanced?.let { enhancedSize = "${it.width}x${it.height}" }
-            val result = enhanced?.let {
+        return try {
+            enhanced = try {
+                rowOcrPreprocessor.create(
+                    positionCrop.bitmap,
+                    MatchResultRowOcrCandidate.SCALE_3X,
+                )
+            } catch (_: Throwable) {
+                null
+            }
+            enhanced ?: return WholePositionAttempt(
+                semantic = null,
+                reason = WholePositionFallbackReason.PREPROCESS_FAILED.name,
+            )
+            val result = try {
                 paddleRecognizer.recognize(
-                    MatchResultPositionBitmapCrop(positionCrop.geometry, it),
+                    MatchResultPositionBitmapCrop(positionCrop.geometry, enhanced),
                     role,
                 )
-            } ?: MatchResultPositionPaddleOcrResult.Failed(
-                MatchResultPositionPaddleOcrFailure.INVALID_SOURCE,
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                return WholePositionAttempt(
+                    semantic = null,
+                    reason = WholePositionFallbackReason.PADDLE_FAILED.name,
+                )
+            }
+            val evidence = (result as? MatchResultPositionPaddleOcrResult.Success)?.evidence
+                ?: return WholePositionAttempt(
+                    semantic = null,
+                    reason = WholePositionFallbackReason.PADDLE_FAILED.name,
+                )
+            val blocks = MatchResultPositionOcrGeometryMapper.mapBlocks(
+                blocks = evidence.blocks,
+                scale = MatchResultRowOcrCandidate.SCALE_3X,
+                positionWidth = positionCrop.bitmap.width,
+                positionHeight = positionCrop.bitmap.height,
             )
-            MatchResultRowOcrCandidateSelector.evaluate(candidate, result)
+            if (blocks.flatMap { it.lines }.isEmpty()) return WholePositionAttempt(
+                semantic = null,
+                reason = WholePositionFallbackReason.NO_MAPPED_LINES.name,
+            )
+            val classification = MatchResultPositionLogicalRowClassifier().classify(
+                position = positionCrop.geometry.position,
+                cropWidth = positionCrop.bitmap.width,
+                cropHeight = positionCrop.bitmap.height,
+                slotCenterYLocal = localCenter,
+                blocks = blocks,
+            )
+            if (classification !is MatchResultPositionLogicalRowClassification.Available) {
+                return WholePositionAttempt(
+                    semantic = null,
+                    reason = classification.diagnostics.reason?.name ?: WholePositionFallbackReason.UNKNOWN.name,
+                )
+            }
+            val semantic = try {
+                fieldMapper.map(
+                    MatchResultPositionOcrInput(
+                        role = role,
+                        position = positionCrop.geometry.position,
+                        cropWidth = positionCrop.bitmap.width,
+                        cropHeight = positionCrop.bitmap.height,
+                        blocks = classification.blocks,
+                        rowCrops = classification.rowCrops,
+                        placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
+                        killVerifications = emptyMap(),
+                    ),
+                )
+            } catch (_: Throwable) {
+                return WholePositionAttempt(
+                    null,
+                    WholePositionFallbackReason.SEMANTIC_MAPPING_FAILED.name,
+                )
+            }
+            val players = semantic.row?.playerSlots.orEmpty()
+            val reason = when {
+                semantic.fields.isEmpty() -> WholePositionFallbackReason.SEMANTIC_NO_FIELDS
+                players.isEmpty() -> WholePositionFallbackReason.SEMANTIC_NO_PLAYERS
+                !semantic.isAutoAcceptable -> WholePositionFallbackReason.SEMANTIC_WEAK_KILL_RECOVERY_REQUIRED
+                else -> null
+            }
+            if (reason != null) WholePositionAttempt(null, reason.name)
+            else WholePositionAttempt(semantic, WholePositionFallbackReason.UNKNOWN.name)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            MatchResultRowOcrCandidateSelector.evaluate(
-                candidate,
-                MatchResultPositionPaddleOcrResult.Failed(
-                    MatchResultPositionPaddleOcrFailure.OCR_RECOGNITION_FAILED,
-                ),
+            WholePositionAttempt(
+                semantic = null,
+                reason = WholePositionFallbackReason.UNKNOWN.name,
             )
         } finally {
             enhanced?.takeUnless { it.isRecycled }?.recycle()
         }
-        logRowCandidate(role, positionCrop.geometry.position, row.geometry.rowIndex, row.bitmap, evaluation, enhancedSize)
-        val blocks = (evaluation.result as? MatchResultPositionPaddleOcrResult.Success)?.evidence?.let { evidence ->
-            MatchResultRowOcrGeometryMapper.mapBlocks(
-                blocks = evidence.blocks,
-                scale = candidate,
-                row = row.geometry,
-                positionWidth = positionCrop.bitmap.width,
-                positionHeight = positionCrop.bitmap.height,
-            )
-        }.orEmpty()
-        return RowOcrAttempt(row.geometry.rowIndex, candidate, evaluation, blocks)
     }
 
-    private data class RowOcrAttempt(
-        val rowIndex: Int,
-        val candidate: MatchResultRowOcrCandidate,
-        val evaluation: MatchResultRowOcrCandidateEvaluation,
-        val blocks: List<RawOcrBlock>,
-        val fourX: RowOcrAttempt? = null,
+    private data class WholePositionAttempt(
+        val semantic: MatchResultPositionSemanticResult?,
+        val reason: String,
     )
 
-    private fun logRowCandidate(
-        role: MatchResultScreenshotRole,
-        position: Int,
-        row: Int,
-        original: Bitmap,
-        evaluation: MatchResultRowOcrCandidateEvaluation,
-        enhancedSize: String,
-    ) {
-        runCatching {
-            Log.i(
-                RESULT_ROW_PP_ENHANCE_LOG_TAG,
-                "RESULT_ROW_PP_ENHANCE role=$role position=$position row=$row " +
-                    "originalSize=${original.width}x${original.height} enhancedSize=$enhancedSize " +
-                    "candidate=${evaluation.candidate.name.removePrefix("SCALE_")} " +
-                    "resultCount=${evaluation.resultCount} markerCount=${evaluation.markerCount} " +
-                    "explicitKillCount=${evaluation.explicitKillCount} " +
-                    "avgConfidence=${"%.3f".format(java.util.Locale.US, evaluation.averageConfidence)} " +
-                    "status=${if (evaluation.result is MatchResultPositionPaddleOcrResult.Success) "SUCCESS" else "FAILURE"}",
-            )
-        }
-    }
-
-    private fun logRowSemantic(
-        role: MatchResultScreenshotRole,
-        position: Int,
-        summary: MatchResultRowOcrSemanticSummary,
-    ) {
-        runCatching {
-            Log.i(
-                RESULT_ROW_PP_SEMANTIC_LOG_TAG,
-                "RESULT_ROW_PP_SEMANTIC role=$role position=$position row=${summary.rowIndex} " +
-                    "selected=${summary.selected.name.removePrefix("SCALE_")} " +
-                    "killA=${summary.first.value} killASource=${summary.first.source} " +
-                    "killAStatus=${summary.first.fieldStatus} " +
-                    "killAMarkerMatched=${summary.first.markerMatched} killAPrefixType=${summary.first.prefixType} " +
-                    "killB=${summary.second.value} killBSource=${summary.second.source} " +
-                    "killBStatus=${summary.second.fieldStatus} " +
-                    "killBMarkerMatched=${summary.second.markerMatched} killBPrefixType=${summary.second.prefixType}",
-            )
-        }
-    }
-
-    private fun logPlayerBoundary(
-        role: MatchResultScreenshotRole,
-        position: Int,
-        row: Int,
-        selected: MatchResultRowOcrCandidate,
-        boundary: MatchResultPlayerBoundaryDecision,
-    ) {
-        runCatching {
-            Log.i(
-                RESULT_ROW_PLAYER_BOUNDARY_LOG_TAG,
-                "RESULT_ROW_PLAYER_BOUNDARY role=$role position=$position row=$row " +
-                    "selected=${selected.name.removePrefix("SCALE_")} anchorFound=${boundary.anchorFound} " +
-                    "anchorPrefixType=${boundary.anchorPrefixType ?: "NONE"} " +
-                    "markerType=${boundary.markerType ?: "NONE"} anchorRegion=${boundary.anchorRegion} " +
-                    "boundaryAccepted=${boundary.boundaryAccepted} reason=${boundary.reason}",
-            )
-        }
+    private enum class WholePositionFallbackReason {
+        PREPROCESS_FAILED,
+        PADDLE_FAILED,
+        NO_MAPPED_LINES,
+        STRUCTURAL_CENTER_UNAVAILABLE,
+        INVALID_STRUCTURAL_CENTER,
+        SEMANTIC_MAPPING_FAILED,
+        SEMANTIC_NO_FIELDS,
+        SEMANTIC_NO_PLAYERS,
+        SEMANTIC_WEAK_KILL_RECOVERY_REQUIRED,
+        UNKNOWN,
     }
 
     private suspend fun hasConfirmedLowerAsset(
@@ -449,9 +280,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     }
 
     private companion object {
-        const val RESULT_ROW_PP_ENHANCE_LOG_TAG = "RESULT_ROW_PP_ENHANCE"
-        const val RESULT_ROW_PP_SEMANTIC_LOG_TAG = "RESULT_ROW_PP_SEMANTIC"
-        const val RESULT_ROW_PLAYER_BOUNDARY_LOG_TAG = "RESULT_ROW_PLAYER_BOUNDARY"
     }
 
 }
