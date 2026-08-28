@@ -139,7 +139,6 @@ data class MatchResultRowOcrFallbackSignals(
     val detectedPlayerCount: Int,
     val strongKillCount: Int,
     val hasEmptyPrefixMarker: Boolean,
-    val ocrFailed: Boolean = false,
 )
 
 object MatchResultRowOcrFallbackDecision {
@@ -150,7 +149,6 @@ object MatchResultRowOcrFallbackDecision {
             )
 
     fun shouldRetry(signals: MatchResultRowOcrFallbackSignals): Boolean {
-        if (signals.ocrFailed) return true
         if (signals.detectedPlayerCount == 0) return false
         return signals.hasEmptyPrefixMarker || signals.strongKillCount < signals.detectedPlayerCount
     }

@@ -33,6 +33,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
+internal fun isThreeXRowRecognitionSuccessful(
+    evaluation: MatchResultRowOcrCandidateEvaluation,
+): Boolean = evaluation.result is MatchResultPositionPaddleOcrResult.Success
+
 /** Production BASIC PP position route. It does not consume temporary diagnostics. */
 class AndroidMatchResultPositionOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,
@@ -104,6 +108,9 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                                 candidate = MatchResultRowOcrCandidate.SCALE_3X,
                             )
                         }
+                        if (threeXRows.any { !isThreeXRowRecognitionSuccessful(it.evaluation) }) {
+                            throw IllegalStateException("Position row PP OCR failed at 3X.")
+                        }
                         val semanticInput = MatchResultPositionOcrInput(
                             role = identity.role,
                             position = positionCrop.geometry.position,
@@ -134,9 +141,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                             input = semanticInput,
                         )
                         finalRows.forEach { selectedRow ->
-                            if (selectedRow.evaluation.resultCount <= 0 &&
-                                (selectedRow.fourX?.evaluation?.resultCount ?: 0) <= 0
-                            ) {
+                            if (selectedRow.evaluation.resultCount <= 0) {
                                 throw IllegalStateException("Position row PP OCR failed.")
                             }
                             logRowSemantic(
@@ -208,7 +213,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 detectedPlayerCount = detectedPlayerSlots.size,
                 strongKillCount = strongKills,
                 hasEmptyPrefixMarker = hasEmptyPrefix,
-                ocrFailed = threeX.evaluation.result !is MatchResultPositionPaddleOcrResult.Success,
             ),
         )
     }

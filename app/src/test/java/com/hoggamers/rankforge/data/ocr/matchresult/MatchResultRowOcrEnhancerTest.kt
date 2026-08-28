@@ -50,11 +50,6 @@ class MatchResultRowOcrEnhancerTest {
     }
 
     @Test
-    fun conditionalFallbackRetriesFailedThreeXRecognition() {
-        assertTrue(shouldRetry(players = 0, strongKills = 0, ocrFailed = true))
-    }
-
-    @Test
     fun conditionalFallbackTreatsNormalizedOAndExplicitNumericAsStrong() {
         assertTrue(
             MatchResultRowOcrFallbackDecision.isStrongKill(
@@ -72,6 +67,22 @@ class MatchResultRowOcrEnhancerTest {
     @Test
     fun conditionalFallbackRetriesWhenAnyStrongKillIsMissing() {
         assertTrue(shouldRetry(players = 2, strongKills = 0))
+    }
+
+    @Test
+    fun failedThreeXRowIsNeverAcceptedAsTheProductionRow() {
+        val failedThreeX = MatchResultRowOcrCandidateSelector.evaluate(
+            MatchResultRowOcrCandidate.SCALE_3X,
+            MatchResultPositionPaddleOcrResult.Failed(
+                MatchResultPositionPaddleOcrFailure.OCR_RECOGNITION_FAILED,
+            ),
+        )
+        val nonEmptyFourX = MatchResultRowOcrCandidateSelector.evaluate(
+            MatchResultRowOcrCandidate.SCALE_4X,
+            success("3EliminationPlayer"),
+        )
+        assertTrue(!isThreeXRowRecognitionSuccessful(failedThreeX))
+        assertTrue(isThreeXRowRecognitionSuccessful(nonEmptyFourX))
     }
 
     @Test
@@ -288,13 +299,11 @@ class MatchResultRowOcrEnhancerTest {
         players: Int,
         strongKills: Int,
         emptyPrefix: Boolean = false,
-        ocrFailed: Boolean = false,
     ): Boolean = MatchResultRowOcrFallbackDecision.shouldRetry(
         MatchResultRowOcrFallbackSignals(
             detectedPlayerCount = players,
             strongKillCount = strongKills,
             hasEmptyPrefixMarker = emptyPrefix,
-            ocrFailed = ocrFailed,
         ),
     )
 }
