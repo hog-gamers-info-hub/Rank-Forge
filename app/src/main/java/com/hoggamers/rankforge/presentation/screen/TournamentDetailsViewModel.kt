@@ -1,7 +1,9 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
@@ -40,6 +42,71 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+private const val CALCULATE_POINTS_TIMING_TAG = "PointIQCalcTiming"
+
+private data class CalculatePointsTimingTrace(
+    val id: String,
+    val startedAtNanos: Long,
+)
+
+private fun newCalculatePointsTimingTrace(): CalculatePointsTimingTrace = CalculatePointsTimingTrace(
+    id = System.nanoTime().toString(36),
+    startedAtNanos = System.nanoTime(),
+)
+
+private fun logCalculatePointsStage(
+    trace: CalculatePointsTimingTrace,
+    stage: String,
+    stageStartedAtNanos: Long,
+    tournamentId: String,
+    matchId: String? = null,
+    outcome: String? = null,
+) {
+    if (!BuildConfig.DEBUG) return
+    val now = System.nanoTime()
+    val durationMs = (now - stageStartedAtNanos) / 1_000_000L
+    val sinceStartMs = (now - trace.startedAtNanos) / 1_000_000L
+    val message = buildString {
+        append("trace=")
+        append(trace.id)
+        append(" stage=")
+        append(stage)
+        append(" duration_ms=")
+        append(durationMs)
+        append(" since_start_ms=")
+        append(sinceStartMs)
+        append(" tournament_id=")
+        append(tournamentId)
+        matchId?.let {
+            append(" match_id=")
+            append(it)
+        }
+        outcome?.let {
+            append(" outcome=")
+            append(it)
+        }
+    }
+    runCatching { Log.d(CALCULATE_POINTS_TIMING_TAG, message) }
+        .onFailure { println("$CALCULATE_POINTS_TIMING_TAG $message") }
+}
+
+private fun logCalculatePointsMark(
+    trace: CalculatePointsTimingTrace,
+    stage: String,
+    tournamentId: String,
+    matchId: String? = null,
+    outcome: String? = null,
+) {
+    logCalculatePointsStage(
+        trace = trace,
+        stage = stage,
+        stageStartedAtNanos = System.nanoTime(),
+        tournamentId = tournamentId,
+        matchId = matchId,
+        outcome = outcome,
+    )
+}
 
 private fun DeleteTournamentResult.toUiError(): TournamentDeletionUiError = when (this) {
     DeleteTournamentResult.TargetNotFound -> TournamentDeletionUiError.TARGET_NOT_FOUND
@@ -126,26 +193,62 @@ class TournamentDetailsViewModel @Inject constructor(
             _uiState.value.isCreatingMatch ||
             _uiState.value.matchReviewRequest != null
         ) return
+        val trace = newCalculatePointsTimingTrace()
+        logCalculatePointsMark(
+            trace = trace,
+            stage = "00_REQUESTED",
+            tournamentId = tournament.id,
+        )
         viewModelScope.launch {
-            val slots = observeTournamentSlots(tournament.id).first()
-            val participation = slots.analyzeTeamSlotParticipation()
+            val preflightStartedAtNanos = System.nanoTime()
+            var preflightOutcome = "THREW"
+            val participation = try {
+                val slots = observeTournamentSlots(tournament.id).first()
+                slots.analyzeTeamSlotParticipation().also {
+                    preflightOutcome = "ACTIVE_${it.activeCount}"
+                }
+            } finally {
+                logCalculatePointsStage(
+                    trace = trace,
+                    stage = "01_SLOT_PREFLIGHT",
+                    stageStartedAtNanos = preflightStartedAtNanos,
+                    tournamentId = tournament.id,
+                    outcome = preflightOutcome,
+                )
+            }
             when {
-                participation.activeCount == 0 -> _uiState.update {
-                    it.copy(
-                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(0, TeamSlot.MAX_SLOT_NUMBER),
-                        calculatePointsMessage = null,
+                participation.activeCount == 0 -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingTeamCountConfirmation = TeamCountConfirmationUiState(0, TeamSlot.MAX_SLOT_NUMBER),
+                            calculatePointsMessage = null,
+                        )
+                    }
+                    logCalculatePointsMark(
+                        trace = trace,
+                        stage = "PAUSED_FOR_TEAM_CONFIRMATION",
+                        tournamentId = tournament.id,
+                        outcome = "NO_ACTIVE_TEAMS",
                     )
                 }
-                participation.activeCount < TeamSlot.MAX_SLOT_NUMBER -> _uiState.update {
-                    it.copy(
-                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(
-                            enteredCount = participation.activeCount,
-                            emptyCount = TeamSlot.MAX_SLOT_NUMBER - participation.activeCount,
-                        ),
-                        calculatePointsMessage = null,
+                participation.activeCount < TeamSlot.MAX_SLOT_NUMBER -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingTeamCountConfirmation = TeamCountConfirmationUiState(
+                                enteredCount = participation.activeCount,
+                                emptyCount = TeamSlot.MAX_SLOT_NUMBER - participation.activeCount,
+                            ),
+                            calculatePointsMessage = null,
+                        )
+                    }
+                    logCalculatePointsMark(
+                        trace = trace,
+                        stage = "PAUSED_FOR_TEAM_CONFIRMATION",
+                        tournamentId = tournament.id,
+                        outcome = "ACTIVE_${participation.activeCount}",
                     )
                 }
-                else -> requestMatchCreation(tournament.id)
+                else -> requestMatchCreation(tournament.id, trace)
             }
         }
     }
@@ -274,8 +377,18 @@ class TournamentDetailsViewModel @Inject constructor(
         _uiState.update { it.copy(navigation = null) }
     }
 
-    private fun requestMatchCreation(tournamentId: String) {
+    private fun requestMatchCreation(
+        tournamentId: String,
+        existingTrace: CalculatePointsTimingTrace? = null,
+    ) {
         if (_uiState.value.isCreatingMatch || _uiState.value.matchReviewRequest != null) return
+        val trace = existingTrace ?: newCalculatePointsTimingTrace().also {
+            logCalculatePointsMark(
+                trace = it,
+                stage = "00_CREATION_REQUESTED",
+                tournamentId = tournamentId,
+            )
+        }
         _uiState.update {
             it.copy(
                 calculatePointsMessage = null,
@@ -283,36 +396,119 @@ class TournamentDetailsViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            when (val result = createNextMatch(tournamentId)) {
+            val creationStartedAtNanos = System.nanoTime()
+            var creationOutcome = "THREW"
+            val result = try {
+                createNextMatch(tournamentId).also {
+                    creationOutcome = when (it) {
+                        is CreateNextMatchResult.Created -> "CREATED"
+                        is CreateNextMatchResult.Rejected -> "REJECTED_${it.failure}"
+                    }
+                }
+            } finally {
+                logCalculatePointsStage(
+                    trace = trace,
+                    stage = "02_CREATE_NEXT_MATCH_TOTAL",
+                    stageStartedAtNanos = creationStartedAtNanos,
+                    tournamentId = tournamentId,
+                    outcome = creationOutcome,
+                )
+            }
+            when (result) {
                 is CreateNextMatchResult.Created -> {
+                    val matchId = result.match.id
+                    val lobbyStartedAtNanos = System.nanoTime()
+                    var lobbyOutcome = "THREW"
                     val inheritedLobby = try {
-                        applyLobbyTemplate(result.match.tournamentId, result.match.id) == ApplyLobbyTemplateResult.Applied
+                        when (val applyResult = applyLobbyTemplate(result.match.tournamentId, matchId)) {
+                            ApplyLobbyTemplateResult.Applied -> {
+                                lobbyOutcome = "APPLIED"
+                                true
+                            }
+                            ApplyLobbyTemplateResult.Unavailable -> {
+                                lobbyOutcome = "UNAVAILABLE"
+                                false
+                            }
+                            ApplyLobbyTemplateResult.AuthenticationRequired -> {
+                                lobbyOutcome = "AUTHENTICATION_REQUIRED"
+                                false
+                            }
+                            ApplyLobbyTemplateResult.Failed -> {
+                                lobbyOutcome = "FAILED"
+                                false
+                            }
+                        }
                     } catch (cancellation: CancellationException) {
+                        lobbyOutcome = "CANCELLED"
                         throw cancellation
-                    } catch (_: Throwable) {
+                    } catch (throwable: Throwable) {
+                        lobbyOutcome = "THREW_${throwable.javaClass.simpleName}"
                         false
+                    } finally {
+                        logCalculatePointsStage(
+                            trace = trace,
+                            stage = "03_APPLY_LOBBY_TOTAL",
+                            stageStartedAtNanos = lobbyStartedAtNanos,
+                            tournamentId = result.match.tournamentId,
+                            matchId = matchId,
+                            outcome = lobbyOutcome,
+                        )
                     }
+
+                    val syncStartedAtNanos = System.nanoTime()
+                    var syncOutcome = "THREW"
                     try {
-                        syncDraftMatches(result.match.tournamentId)
+                        val syncResult = syncDraftMatches(result.match.tournamentId)
+                        syncOutcome = "${syncResult.primaryResult.javaClass.simpleName}_${syncResult.queueRecordingResult}"
                     } catch (cancellation: CancellationException) {
+                        syncOutcome = "CANCELLED"
                         throw cancellation
-                    } catch (_: Throwable) {
+                    } catch (throwable: Throwable) {
+                        syncOutcome = "THREW_${throwable.javaClass.simpleName}"
                         // Local match creation remains authoritative for navigation.
+                    } finally {
+                        logCalculatePointsStage(
+                            trace = trace,
+                            stage = "04_SYNC_DRAFT_TOTAL",
+                            stageStartedAtNanos = syncStartedAtNanos,
+                            tournamentId = result.match.tournamentId,
+                            matchId = matchId,
+                            outcome = syncOutcome,
+                        )
                     }
+
                     if (inheritedLobby) {
                         (1..3).forEach { index ->
+                            val checkpointStartedAtNanos = System.nanoTime()
+                            var checkpointOutcome = "THREW"
                             try {
-                                lobbyUploadCheckpoint.run(
+                                val checkpointResult = lobbyUploadCheckpoint.run(
                                     com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity(
                                         tournamentId = result.match.tournamentId,
-                                        matchId = result.match.id,
+                                        matchId = matchId,
                                         lobbyScreenshotIndex = index,
                                     ),
                                 )
+                                checkpointOutcome = checkpointResult.javaClass.simpleName
                             } catch (cancellation: CancellationException) {
+                                checkpointOutcome = "CANCELLED"
                                 throw cancellation
-                            } catch (_: Throwable) {
+                            } catch (throwable: Throwable) {
+                                checkpointOutcome = "THREW_${throwable.javaClass.simpleName}"
                                 // Local inheritance and navigation remain authoritative.
+                            } finally {
+                                logCalculatePointsStage(
+                                    trace = trace,
+                                    stage = when (index) {
+                                        1 -> "05_LOBBY_UPLOAD_1"
+                                        2 -> "06_LOBBY_UPLOAD_2"
+                                        else -> "07_LOBBY_UPLOAD_3"
+                                    },
+                                    stageStartedAtNanos = checkpointStartedAtNanos,
+                                    tournamentId = result.match.tournamentId,
+                                    matchId = matchId,
+                                    outcome = checkpointOutcome,
+                                )
                             }
                         }
                     }
@@ -321,15 +517,39 @@ class TournamentDetailsViewModel @Inject constructor(
                             isCreatingMatch = false,
                             matchReviewRequest = MatchReviewRequest(
                                 tournamentId = result.match.tournamentId,
-                                matchId = result.match.id,
+                                matchId = matchId,
                             ),
                         )
                     }
+                    logCalculatePointsMark(
+                        trace = trace,
+                        stage = "08_NAVIGATION_REQUEST",
+                        tournamentId = result.match.tournamentId,
+                        matchId = matchId,
+                        outcome = "READY",
+                    )
+                    logCalculatePointsStage(
+                        trace = trace,
+                        stage = "CALCULATE_TOTAL",
+                        stageStartedAtNanos = trace.startedAtNanos,
+                        tournamentId = result.match.tournamentId,
+                        matchId = matchId,
+                        outcome = "NAVIGATION_REQUESTED",
+                    )
                 }
-                is CreateNextMatchResult.Rejected -> _uiState.update {
-                    it.copy(
-                        isCreatingMatch = false,
-                        calculatePointsMessage = result.failure.toCalculatePointsMessage(),
+                is CreateNextMatchResult.Rejected -> {
+                    _uiState.update {
+                        it.copy(
+                            isCreatingMatch = false,
+                            calculatePointsMessage = result.failure.toCalculatePointsMessage(),
+                        )
+                    }
+                    logCalculatePointsStage(
+                        trace = trace,
+                        stage = "CALCULATE_TOTAL",
+                        stageStartedAtNanos = trace.startedAtNanos,
+                        tournamentId = tournamentId,
+                        outcome = "REJECTED_${result.failure}",
                     )
                 }
             }
