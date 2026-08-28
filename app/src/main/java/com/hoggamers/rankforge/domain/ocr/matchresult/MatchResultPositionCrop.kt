@@ -28,6 +28,8 @@ data class MatchResultPositionCrop(
     val position: Int,
     val column: MatchResultPositionColumn,
     val bounds: OcrPixelCropRect,
+    /** Structural row center in the original source image, before clipping the crop bounds. */
+    val structuralCenterYInSource: Double? = null,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -404,6 +406,7 @@ class MatchResultPositionCropCalculator(
                     right = right,
                     bottom = pixelBottom,
                 ),
+                structuralCenterYInSource = centerY,
             )
         }
         return output

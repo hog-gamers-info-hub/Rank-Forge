@@ -953,34 +953,6 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun calculateResultPositionCropsGeneratesRowsAfterPositionPreviews() = runTest {
-        val positionGenerator = RecordingMatchResultPositionCropPreviewGenerator(
-            statesByRole = mapOf(
-                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..10),
-            ),
-        )
-        val rowGenerator = RecordingMatchResultPositionRowCropPreviewGenerator()
-        val scenario = readyResultPreviewScenario(
-            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
-            generator = positionGenerator,
-            rowGenerator = rowGenerator,
-        )
-        scenario.viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        scenario.viewModel.calculateResultPositionCrops()
-        advanceUntilIdle()
-
-        assertEquals((1..10).toList(), rowGenerator.positions)
-        assertTrue(
-            scenario.viewModel.uiState.value.resultPositionRowCropPreviews
-                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
-                .values
-                .all { it is MatchResultPositionRowCropPreviewState.Available },
-        )
-    }
-
-    @Test
     fun failedPositionCropGenerationIsShownOnlyAfterCalculatePoints() = runTest {
         val generator = RecordingMatchResultPositionCropPreviewGenerator(
             statesByRole = mapOf(
@@ -2669,8 +2641,6 @@ class MatchReviewViewModelTest {
             com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository(),
         matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
             NoOpMatchResultPositionCropPreviewGenerator,
-        matchResultPositionRowCropPreviewGenerator: MatchResultPositionRowCropPreviewGenerator =
-            NoOpMatchResultPositionRowCropPreviewGenerator,
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
@@ -2697,7 +2667,6 @@ class MatchReviewViewModelTest {
         screenshotOwnerProvider = screenshotOwnerProvider,
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
         matchResultPositionCropPreviewGenerator = matchResultPositionCropPreviewGenerator,
-        matchResultPositionRowCropPreviewGenerator = matchResultPositionRowCropPreviewGenerator,
         finalizedMatchCloudSync = finalizedMatchCloudSync,
         )
 
@@ -2824,8 +2793,6 @@ class MatchReviewViewModelTest {
         roles: Array<out MatchResultScreenshotRole>,
         generator: RecordingMatchResultPositionCropPreviewGenerator =
             RecordingMatchResultPositionCropPreviewGenerator(),
-        rowGenerator: MatchResultPositionRowCropPreviewGenerator =
-            NoOpMatchResultPositionRowCropPreviewGenerator,
     ): ReadyResultPreviewScenario {
         val preserver = localImagePreserver()
         val assets = roles.map { role ->
@@ -2848,7 +2815,6 @@ class MatchReviewViewModelTest {
             localImagePreserver = preserver,
             matchResultScreenshotAssetRepository = assetRepository,
             matchResultPositionCropPreviewGenerator = generator,
-            matchResultPositionRowCropPreviewGenerator = rowGenerator,
             ),
             assets = assetRepository,
         )
@@ -2868,28 +2834,6 @@ class MatchReviewViewModelTest {
     )
 
     private data object FakeMatchResultPositionCropPreviewImage : MatchResultPositionCropPreviewImage
-
-    private class RecordingMatchResultPositionRowCropPreviewGenerator :
-        MatchResultPositionRowCropPreviewGenerator {
-        val positions = mutableListOf<Int>()
-
-        override suspend fun generate(
-            positionCrop: MatchResultPositionCropPreview,
-        ): MatchResultPositionRowCropPreviewState {
-            positions += positionCrop.position
-            return MatchResultPositionRowCropPreviewState.Available(
-                listOf(
-                    MatchResultPositionRowCropPreview(
-                        rowIndex = 1,
-                        image = FakeMatchResultPositionRowCropPreviewImage,
-                    ),
-                ),
-            )
-        }
-    }
-
-    private data object FakeMatchResultPositionRowCropPreviewImage :
-        MatchResultPositionRowCropPreviewImage
 
     private class RecordingMatchResultPositionCropPreviewGenerator(
         private val statesByRole: Map<

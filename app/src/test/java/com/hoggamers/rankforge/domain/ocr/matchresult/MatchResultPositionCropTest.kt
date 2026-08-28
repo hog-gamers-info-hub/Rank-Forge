@@ -34,6 +34,7 @@ class MatchResultPositionCropTest {
         assertEquals(385, result.crops.first { it.position == 4 }.bounds.bottom)
         assertEquals(0, result.crops.first { it.position == 6 }.bounds.top)
         assertEquals(75, result.crops.first { it.position == 6 }.bounds.bottom)
+        assertEquals(35.0, result.crops.first { it.position == 6 }.structuralCenterYInSource!!, 0.001)
     }
 
     @Test
