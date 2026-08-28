@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import io.github.jan.supabase.auth.auth
@@ -12,6 +14,26 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+
+private const val LOBBY_STORAGE_TIMING_TAG = "PointIQCalcTiming"
+
+private fun logLobbyStorageTiming(
+    stage: String,
+    startedAtNanos: Long,
+    tournamentId: String,
+    matchId: String,
+    lobbyScreenshotIndex: Int,
+    outcome: String,
+    byteSize: Long,
+) {
+    if (!BuildConfig.DEBUG) return
+    val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+    Log.d(
+        LOBBY_STORAGE_TIMING_TAG,
+        "stage=$stage duration_ms=$durationMs tournament_id=$tournamentId match_id=$matchId " +
+            "lobby_index=$lobbyScreenshotIndex byte_size=$byteSize outcome=$outcome",
+    )
+}
 
 sealed interface MatchLobbyScreenshotStorageUploadResult {
     data class Uploaded(val objectPath: String) : MatchLobbyScreenshotStorageUploadResult
@@ -131,13 +153,29 @@ class SupabaseMatchLobbyScreenshotStorageUploader internal constructor(
             extension = format.extension,
         ) ?: return failed(MatchLobbyScreenshotStorageUploadFailure.CLOUD_MATCH_ID_UNAVAILABLE)
 
+        val uploadStartedAtNanos = System.nanoTime()
+        var uploadOutcome = "THREW"
         return try {
             uploadFile(OCR_SCREENSHOTS_BUCKET, objectPath, file, format.contentType)
+            uploadOutcome = "UPLOADED"
             MatchLobbyScreenshotStorageUploadResult.Uploaded(objectPath)
         } catch (cancellation: CancellationException) {
+            uploadOutcome = "CANCELLED"
             throw cancellation
         } catch (throwable: Throwable) {
-            failed(throwable.toUploadFailure())
+            val failure = throwable.toUploadFailure()
+            uploadOutcome = "FAILED_$failure"
+            failed(failure)
+        } finally {
+            logLobbyStorageTiming(
+                stage = "LOBBY_STORAGE_UPLOAD_$index",
+                startedAtNanos = uploadStartedAtNanos,
+                tournamentId = normalizedTournamentId,
+                matchId = normalizedMatchId,
+                lobbyScreenshotIndex = index,
+                outcome = uploadOutcome,
+                byteSize = runCatching { file.length() }.getOrDefault(-1L),
+            )
         }
     }
 
