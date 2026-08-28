@@ -22,9 +22,13 @@ import java.util.concurrent.atomic.AtomicInteger
 class HybridMatchResultOcrPreviewRunnerTest {
     @Test
     fun acceptedNewPairIsReturnedWithoutLegacyCalls() = runBlocking {
+        val newRouteCalls = AtomicInteger()
         val legacyCalls = AtomicInteger()
         val runner = HybridMatchResultOcrPreviewRunner(
-            newRoute = MatchResultOcrPreviewRunner { identity -> processed(identity.role, MatchResultOcrPreviewSource.NEW_PP_POSITION) },
+            newRoute = MatchResultOcrPreviewRunner { identity ->
+                newRouteCalls.incrementAndGet()
+                processed(identity.role, MatchResultOcrPreviewSource.NEW_PP_POSITION)
+            },
             legacyRoute = MatchResultOcrPreviewRunner { identity ->
                 legacyCalls.incrementAndGet()
                 processed(identity.role, MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT)
@@ -34,7 +38,54 @@ class HybridMatchResultOcrPreviewRunnerTest {
             async { runner.process(identity(role)) }
         }.awaitAll()
         assertTrue(results.all { (it as MatchResultOcrPreviewProcessingResult.Processed).source == MatchResultOcrPreviewSource.NEW_PP_POSITION })
+        assertEquals(2, newRouteCalls.get())
         assertEquals(0, legacyCalls.get())
+    }
+
+    @Test
+    fun sequentialRoleRequestsReuseSingleCompletedPair() = runBlocking {
+        val newRouteCalls = AtomicInteger()
+        val runner = HybridMatchResultOcrPreviewRunner(
+            newRoute = MatchResultOcrPreviewRunner { identity ->
+                newRouteCalls.incrementAndGet()
+                processed(identity.role, MatchResultOcrPreviewSource.NEW_PP_POSITION)
+            },
+            legacyRoute = MatchResultOcrPreviewRunner { identity ->
+                processed(identity.role, MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT)
+            },
+        )
+
+        val upper = runner.process(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))
+        val lower = runner.process(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER))
+
+        assertEquals(
+            MatchResultOcrPreviewSource.NEW_PP_POSITION,
+            (upper as MatchResultOcrPreviewProcessingResult.Processed).source,
+        )
+        assertEquals(
+            MatchResultOcrPreviewSource.NEW_PP_POSITION,
+            (lower as MatchResultOcrPreviewProcessingResult.Processed).source,
+        )
+        assertEquals(2, newRouteCalls.get())
+    }
+
+    @Test
+    fun repeatedSameRoleAfterCompletedPairStartsFreshRun() = runBlocking {
+        val newRouteCalls = AtomicInteger()
+        val runner = HybridMatchResultOcrPreviewRunner(
+            newRoute = MatchResultOcrPreviewRunner { identity ->
+                newRouteCalls.incrementAndGet()
+                processed(identity.role, MatchResultOcrPreviewSource.NEW_PP_POSITION)
+            },
+            legacyRoute = MatchResultOcrPreviewRunner { identity ->
+                processed(identity.role, MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT)
+            },
+        )
+
+        runner.process(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))
+        runner.process(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))
+
+        assertEquals(4, newRouteCalls.get())
     }
 
     @Test
