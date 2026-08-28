@@ -346,33 +346,50 @@ class HybridMatchResultOcrPreviewRunner(
     private val legacyRoute: MatchResultOcrPreviewRunner,
 ) : MatchResultOcrPreviewRunner {
     private val lock = Any()
-    private val runs = mutableMapOf<RunKey, CompletableDeferred<Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>>>()
+    private val runs = mutableMapOf<RunKey, SharedRun>()
 
     override suspend fun process(identity: MatchResultScreenshotIdentity): MatchResultOcrPreviewProcessingResult {
         val key = RunKey(identity.tournamentId, identity.matchId)
-        val (deferred, owner) = synchronized(lock) {
+        val (run, owner) = synchronized(lock) {
             val existing = runs[key]
-            if (existing != null) existing to false
-            else CompletableDeferred<Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>>().also {
-                runs[key] = it
-            } to true
+            val reusable = existing?.takeUnless {
+                it.deferred.isCompleted && identity.role in it.requestedRoles
+            }
+            if (reusable != null) {
+                reusable.requestedRoles += identity.role
+                reusable to false
+            } else {
+                if (existing != null) {
+                    runs.remove(key, existing)
+                }
+                SharedRun(
+                    deferred = CompletableDeferred(),
+                    requestedRoles = mutableSetOf(identity.role),
+                ).also {
+                    runs[key] = it
+                } to true
+            }
         }
         if (owner) {
             try {
-                deferred.complete(runPair(identity))
+                run.deferred.complete(runPair(identity))
             } catch (cancellation: CancellationException) {
-                deferred.cancel(cancellation)
-                synchronized(lock) { runs.remove(key, deferred) }
+                run.deferred.cancel(cancellation)
+                synchronized(lock) { runs.remove(key, run) }
                 throw cancellation
             } catch (failure: Throwable) {
-                deferred.completeExceptionally(failure)
-                synchronized(lock) { runs.remove(key, deferred) }
+                run.deferred.completeExceptionally(failure)
+                synchronized(lock) { runs.remove(key, run) }
                 throw failure
             }
         }
-        val result = deferred.await()[identity.role]
+        val result = run.deferred.await()[identity.role]
             ?: MatchResultOcrPreviewProcessingResult.RecognitionFailed
-        synchronized(lock) { runs.remove(key, deferred) }
+        synchronized(lock) {
+            if (run.requestedRoles.containsAll(MatchResultScreenshotRole.entries)) {
+                runs.remove(key, run)
+            }
+        }
         return result
     }
 
@@ -429,6 +446,11 @@ class HybridMatchResultOcrPreviewRunner(
             result.extraction.rows.isNotEmpty() &&
             result.extraction.fields.isNotEmpty() &&
             result.extraction.rows.map { it.position }.distinct().size == result.extraction.rows.size
+
+    private data class SharedRun(
+        val deferred: CompletableDeferred<Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>>,
+        val requestedRoles: MutableSet<MatchResultScreenshotRole>,
+    )
 
     private data class RunKey(val tournamentId: String, val matchId: String)
 
