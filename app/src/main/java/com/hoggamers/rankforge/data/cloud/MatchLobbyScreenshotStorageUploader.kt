@@ -28,11 +28,10 @@ private fun logLobbyStorageTiming(
 ) {
     if (!BuildConfig.DEBUG) return
     val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
-    Log.d(
-        LOBBY_STORAGE_TIMING_TAG,
-        "stage=$stage duration_ms=$durationMs tournament_id=$tournamentId match_id=$matchId " +
-            "lobby_index=$lobbyScreenshotIndex byte_size=$byteSize outcome=$outcome",
-    )
+    val message = "stage=$stage duration_ms=$durationMs tournament_id=$tournamentId match_id=$matchId " +
+        "lobby_index=$lobbyScreenshotIndex byte_size=$byteSize outcome=$outcome"
+    runCatching { Log.d(LOBBY_STORAGE_TIMING_TAG, message) }
+        .onFailure { println("$LOBBY_STORAGE_TIMING_TAG $message") }
 }
 
 sealed interface MatchLobbyScreenshotStorageUploadResult {
