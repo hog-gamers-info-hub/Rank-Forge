@@ -119,6 +119,14 @@ class AuthViewModel @Inject constructor(
         _uiState.update(AuthUiStateReducer::failPasswordRecoveryLinkVerification)
     }
 
+    fun onExternalAuthCallbackReceived() {
+        _uiState.update(AuthUiStateReducer::beginExternalAuthCallback)
+    }
+
+    fun onExternalAuthCallbackFailed() {
+        _uiState.update(AuthUiStateReducer::failExternalAuthCallback)
+    }
+
     fun onNewPasswordChanged(value: String) {
         _uiState.update {
             it.copy(

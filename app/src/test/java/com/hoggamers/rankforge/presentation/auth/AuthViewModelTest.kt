@@ -465,6 +465,47 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun externalAuthCallbackReceivedShowsSessionLoadingWithoutSigningIn() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onExternalAuthCallbackReceived()
+
+        assertTrue(viewModel.uiState.value.isSessionLoading)
+        assertTrue(viewModel.uiState.value.isExternalAuthCallbackProcessing)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun externalAuthCallbackFailureClearsSessionLoadingWithoutSigningIn() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onExternalAuthCallbackReceived()
+
+        viewModel.onExternalAuthCallbackFailed()
+
+        assertFalse(viewModel.uiState.value.isSessionLoading)
+        assertFalse(viewModel.uiState.value.isExternalAuthCallbackProcessing)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun authenticatedSessionObservationCompletesExternalAuthCallbackLoading() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.onExternalAuthCallbackReceived()
+
+        repository.authState.value = AuthState.SignedIn(
+            AuthUser(id = "google-user-id", email = "google@example.com"),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertFalse(viewModel.uiState.value.isSessionLoading)
+        assertFalse(viewModel.uiState.value.isExternalAuthCallbackProcessing)
+    }
+
+    @Test
     fun duplicateGoogleLaunchIsIgnoredWhileOperationRuns() = runTest {
         repository.googleGate = CompletableDeferred()
         val viewModel = createViewModel()

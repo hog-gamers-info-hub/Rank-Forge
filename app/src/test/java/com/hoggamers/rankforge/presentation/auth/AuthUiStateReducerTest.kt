@@ -44,13 +44,45 @@ class AuthUiStateReducerTest {
     @Test
     fun signedInSessionMapsToSignedInUiState() {
         val uiState = AuthUiStateReducer.reduceSession(
-            currentState = AuthUiState(isSessionLoading = true),
+            currentState = AuthUiState(
+                isSessionLoading = true,
+                isExternalAuthCallbackProcessing = true,
+            ),
             authState = AuthState.SignedIn(AuthUser(id = "user-id", email = "user@example.com")),
         )
 
         assertTrue(uiState.isSignedIn)
         assertFalse(uiState.isSessionLoading)
+        assertFalse(uiState.isExternalAuthCallbackProcessing)
         assertEquals("user@example.com", uiState.accountEmail)
+    }
+
+    @Test
+    fun externalAuthCallbackReceivedShowsLoadingWithoutSigningIn() {
+        val uiState = AuthUiStateReducer.beginExternalAuthCallback(
+            AuthUiState(statusMessage = AuthUiMessage.ExternalAuthenticationLaunched),
+        )
+
+        assertTrue(uiState.isSessionLoading)
+        assertTrue(uiState.isExternalAuthCallbackProcessing)
+        assertFalse(uiState.isSignedIn)
+        assertEquals(null, uiState.statusMessage)
+    }
+
+    @Test
+    fun failedExternalAuthCallbackClearsLoadingWithoutSigningIn() {
+        val uiState = AuthUiStateReducer.failExternalAuthCallback(
+            AuthUiState(
+                accountEmail = "stale@example.com",
+                isSessionLoading = true,
+                isSignedIn = true,
+            ),
+        )
+
+        assertFalse(uiState.isSessionLoading)
+        assertFalse(uiState.isExternalAuthCallbackProcessing)
+        assertFalse(uiState.isSignedIn)
+        assertEquals(null, uiState.accountEmail)
     }
 
     @Test

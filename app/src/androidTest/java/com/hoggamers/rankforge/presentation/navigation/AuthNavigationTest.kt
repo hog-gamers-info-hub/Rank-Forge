@@ -20,6 +20,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.presentation.AUTH_SESSION_LOADING_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG
 import com.hoggamers.rankforge.presentation.RankForgeAppContent
 import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
@@ -54,6 +55,27 @@ class AuthNavigationTest {
         composeTestRule.onNodeWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Rank-Forge").assertIsDisplayed()
         composeTestRule.onNodeWithText("Checking account session.").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
+    }
+
+    @Test
+    fun externalAuthCallbackProcessingShowsNeutralStateInsteadOfSessionLoadingOrAuth() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(
+                        isSessionLoading = true,
+                        isExternalAuthCallbackProcessing = true,
+                    ),
+                    authenticatedContent = { Text("protected_home", Modifier.testTag("protected_home")) },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }
