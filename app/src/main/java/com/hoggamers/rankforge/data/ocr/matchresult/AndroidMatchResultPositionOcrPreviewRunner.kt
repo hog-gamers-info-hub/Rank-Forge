@@ -217,6 +217,33 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         evaluation: MatchResultRowOcrCandidateEvaluation,
         enhancedSize: String,
     ) {
+        val candidateText = (evaluation.result as? MatchResultPositionPaddleOcrResult.Success)
+            ?.evidence
+            ?.blocks
+            .orEmpty()
+            .flatMap { block -> block.lines }
+            .map { line ->
+                line.text
+                    .replace('\n', ' ')
+                    .replace('\r', ' ')
+                    .replace('|', '/')
+                    .trim()
+            }
+            .filter { it.isNotEmpty() }
+            .joinToString(" | ")
+            .ifBlank { "<EMPTY>" }
+        runCatching {
+            Log.i(
+                RESULT_ROW_PP_COMPARE_LOG_TAG,
+                "RESULT_ROW_PP_COMPARE role=$role position=$position row=$row " +
+                    "candidate=${evaluation.candidate.name.removePrefix("SCALE_")} " +
+                    "resultCount=${evaluation.resultCount} markerCount=${evaluation.markerCount} " +
+                    "explicitKillCount=${evaluation.explicitKillCount} nonEmptyCount=${evaluation.nonEmptyCount} " +
+                    "avgConfidence=${"%.3f".format(java.util.Locale.US, evaluation.averageConfidence)} " +
+                    "status=${if (evaluation.result is MatchResultPositionPaddleOcrResult.Success) "SUCCESS" else "FAILURE"} " +
+                    "text=[$candidateText]",
+            )
+        }
         runCatching {
             Log.i(
                 RESULT_ROW_PP_ENHANCE_LOG_TAG,
@@ -330,6 +357,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
 
     private companion object {
         const val RESULT_ROW_PP_ENHANCE_LOG_TAG = "RESULT_ROW_PP_ENHANCE"
+        const val RESULT_ROW_PP_COMPARE_LOG_TAG = "RESULT_ROW_PP_COMPARE"
         const val RESULT_ROW_PP_SEMANTIC_LOG_TAG = "RESULT_ROW_PP_SEMANTIC"
         const val RESULT_ROW_PLAYER_BOUNDARY_LOG_TAG = "RESULT_ROW_PLAYER_BOUNDARY"
     }
