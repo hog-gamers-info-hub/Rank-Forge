@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
@@ -15,6 +17,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+private const val LOBBY_METADATA_TIMING_TAG = "PointIQCalcTiming"
+
+private fun logLobbyMetadataTiming(
+    startedAtNanos: Long,
+    identity: MatchLobbyScreenshotIdentity?,
+    outcome: String,
+) {
+    if (!BuildConfig.DEBUG) return
+    val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+    val suffix = if (identity == null) {
+        "outcome=$outcome"
+    } else {
+        "tournament_id=${identity.tournamentId} match_id=${identity.matchId} " +
+            "lobby_index=${identity.lobbyScreenshotIndex} outcome=$outcome"
+    }
+    Log.d(
+        LOBBY_METADATA_TIMING_TAG,
+        "stage=LOBBY_METADATA_UPSERT duration_ms=$durationMs $suffix",
+    )
+}
 
 enum class MatchLobbyScreenshotAssetCloudFailure {
     MISSING_AUTH_SESSION,
@@ -158,6 +181,7 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
         if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || ownerId != expectedOwnerUserId)) {
             return failed(MatchLobbyScreenshotAssetCloudFailure.AUTHORIZATION)
         }
+        val timingIdentity = asset.identityOrNull()
         val payload = when (val result = asset.copy(ownerUserId = expectedOwnerUserId ?: asset.ownerUserId)
             .toMatchLobbyScreenshotAssetCloudPayload(expectedOwnerUserId ?: ownerId)) {
             is MatchLobbyScreenshotAssetCloudPayloadMappingResult.Success -> result.payload
@@ -166,13 +190,25 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
             MatchLobbyScreenshotAssetCloudPayloadMappingResult.CloudMatchIdUnavailable ->
                 return failed(MatchLobbyScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE)
         }
+        val upsertStartedAtNanos = System.nanoTime()
+        var upsertOutcome = "THREW"
         return try {
             upsertPayload(payload)
+            upsertOutcome = "SUCCESS"
             MatchLobbyScreenshotAssetCloudResult.Success
         } catch (cancellation: CancellationException) {
+            upsertOutcome = "CANCELLED"
             throw cancellation
         } catch (throwable: Throwable) {
-            failed(throwable.toCloudFailure())
+            val failure = throwable.toCloudFailure()
+            upsertOutcome = "FAILED_$failure"
+            failed(failure)
+        } finally {
+            logLobbyMetadataTiming(
+                startedAtNanos = upsertStartedAtNanos,
+                identity = timingIdentity,
+                outcome = upsertOutcome,
+            )
         }
     }
 
