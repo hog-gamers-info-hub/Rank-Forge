@@ -33,10 +33,9 @@ private fun logLobbyMetadataTiming(
         "tournament_id=${identity.tournamentId} match_id=${identity.matchId} " +
             "lobby_index=${identity.lobbyScreenshotIndex} outcome=$outcome"
     }
-    Log.d(
-        LOBBY_METADATA_TIMING_TAG,
-        "stage=LOBBY_METADATA_UPSERT duration_ms=$durationMs $suffix",
-    )
+    val message = "stage=LOBBY_METADATA_UPSERT duration_ms=$durationMs $suffix"
+    runCatching { Log.d(LOBBY_METADATA_TIMING_TAG, message) }
+        .onFailure { println("$LOBBY_METADATA_TIMING_TAG $message") }
 }
 
 enum class MatchLobbyScreenshotAssetCloudFailure {
