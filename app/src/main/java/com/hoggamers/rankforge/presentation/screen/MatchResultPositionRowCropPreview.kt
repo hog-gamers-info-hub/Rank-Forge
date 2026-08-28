@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleVerificationDiagnostic
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionRowCropGenerator
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionRowCropGenerationResult
 import javax.inject.Inject
@@ -54,7 +53,6 @@ fun interface MatchResultPositionRowCropPreviewGenerator {
 @Singleton
 class AndroidMatchResultPositionRowCropPreviewGenerator @Inject constructor(
     private val generator: AndroidMatchResultPositionRowCropGenerator,
-    private val semanticVerificationDiagnostic: MatchResultPositionPaddleVerificationDiagnostic,
 ) : MatchResultPositionRowCropPreviewGenerator {
     override suspend fun generate(positionCrop: MatchResultPositionCropPreview): MatchResultPositionRowCropPreviewState =
         withContext(Dispatchers.IO) {
@@ -64,14 +62,6 @@ class AndroidMatchResultPositionRowCropPreviewGenerator @Inject constructor(
                 )
             when (val result = generator.generate(image.bitmap, positionCrop.position)) {
                 is MatchResultPositionRowCropGenerationResult.Generated -> {
-                    // TEMPORARY Phase 2 semantic verification diagnostic. REMOVE BEFORE COMMIT.
-                    try {
-                        semanticVerificationDiagnostic.verify(positionCrop, result)
-                    } catch (cancellation: java.util.concurrent.CancellationException) {
-                        throw cancellation
-                    } catch (_: Throwable) {
-                        // Diagnostics must never change the existing row-preview result.
-                    }
                     val rows = result.crops.sortedBy { it.geometry.rowIndex }.map { crop ->
                         MatchResultPositionRowCropPreview(
                             rowIndex = crop.geometry.rowIndex,
