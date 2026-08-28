@@ -20,6 +20,72 @@ import org.junit.Test
 
 class MatchResultRowOcrEnhancerTest {
     @Test
+    fun conditionalFallbackKeepsFullyResolvedTwoPlayerRowAtThreeX() {
+        assertTrue(!shouldRetry(players = 2, strongKills = 2))
+    }
+
+    @Test
+    fun conditionalFallbackKeepsPartiallyPopulatedStrongRowAtThreeX() {
+        assertTrue(!shouldRetry(players = 1, strongKills = 1))
+    }
+
+    @Test
+    fun conditionalFallbackRetriesWhenDetectedPlayerLacksStrongKill() {
+        assertTrue(shouldRetry(players = 2, strongKills = 1))
+    }
+
+    @Test
+    fun conditionalFallbackRetriesBareEmptyPrefixMarker() {
+        assertTrue(
+            !MatchResultRowOcrFallbackDecision.isStrongKill(
+                com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticTextParser.parse("Elimination"),
+            ),
+        )
+        assertTrue(shouldRetry(players = 1, strongKills = 0, emptyPrefix = true))
+    }
+
+    @Test
+    fun conditionalFallbackDoesNotRetryFullyBlankSuccessfulRow() {
+        assertTrue(!shouldRetry(players = 0, strongKills = 0))
+    }
+
+    @Test
+    fun conditionalFallbackTreatsNormalizedOAndExplicitNumericAsStrong() {
+        assertTrue(
+            MatchResultRowOcrFallbackDecision.isStrongKill(
+                com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticTextParser.parse("OElimination"),
+            ),
+        )
+        assertTrue(
+            MatchResultRowOcrFallbackDecision.isStrongKill(
+                com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticTextParser.parse("3Elimination"),
+            ),
+        )
+        assertTrue(!shouldRetry(players = 2, strongKills = 2))
+    }
+
+    @Test
+    fun conditionalFallbackRetriesWhenAnyStrongKillIsMissing() {
+        assertTrue(shouldRetry(players = 2, strongKills = 0))
+    }
+
+    @Test
+    fun failedThreeXRowIsNeverAcceptedAsTheProductionRow() {
+        val failedThreeX = MatchResultRowOcrCandidateSelector.evaluate(
+            MatchResultRowOcrCandidate.SCALE_3X,
+            MatchResultPositionPaddleOcrResult.Failed(
+                MatchResultPositionPaddleOcrFailure.OCR_RECOGNITION_FAILED,
+            ),
+        )
+        val nonEmptyFourX = MatchResultRowOcrCandidateSelector.evaluate(
+            MatchResultRowOcrCandidate.SCALE_4X,
+            success("3EliminationPlayer"),
+        )
+        assertTrue(!isThreeXRowRecognitionSuccessful(failedThreeX))
+        assertTrue(isThreeXRowRecognitionSuccessful(nonEmptyFourX))
+    }
+
+    @Test
     fun selectionPrioritizesMarkersThenExplicitKillsThenNonEmptyThenConfidence() {
         val moreMarkers = MatchResultRowOcrCandidateSelector.evaluate(
             MatchResultRowOcrCandidate.SCALE_3X,
@@ -227,5 +293,17 @@ class MatchResultRowOcrEnhancerTest {
         recognizedLanguage = null,
         confidence = RawOcrConfidence.Available(confidence),
         elements = emptyList(),
+    )
+
+    private fun shouldRetry(
+        players: Int,
+        strongKills: Int,
+        emptyPrefix: Boolean = false,
+    ): Boolean = MatchResultRowOcrFallbackDecision.shouldRetry(
+        MatchResultRowOcrFallbackSignals(
+            detectedPlayerCount = players,
+            strongKillCount = strongKills,
+            hasEmptyPrefixMarker = emptyPrefix,
+        ),
     )
 }

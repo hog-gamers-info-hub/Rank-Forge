@@ -135,6 +135,25 @@ data class MatchResultRowOcrCandidateSelection(
     val reason: String,
 )
 
+data class MatchResultRowOcrFallbackSignals(
+    val detectedPlayerCount: Int,
+    val strongKillCount: Int,
+    val hasEmptyPrefixMarker: Boolean,
+)
+
+object MatchResultRowOcrFallbackDecision {
+    fun isStrongKill(parsed: com.hoggamers.rankforge.domain.ocr.matchresult.ParsedEliminationText?): Boolean =
+        parsed?.markerMatched == true && (
+            parsed.prefixType == MatchResultEliminationPrefixType.O_NORMALIZED ||
+                (parsed.prefixType == MatchResultEliminationPrefixType.EXPLICIT_NUMERIC && parsed.kill != null)
+            )
+
+    fun shouldRetry(signals: MatchResultRowOcrFallbackSignals): Boolean {
+        if (signals.detectedPlayerCount == 0) return false
+        return signals.hasEmptyPrefixMarker || signals.strongKillCount < signals.detectedPlayerCount
+    }
+}
+
 object MatchResultRowOcrCandidateSelector {
     fun evaluate(
         candidate: MatchResultRowOcrCandidate,
