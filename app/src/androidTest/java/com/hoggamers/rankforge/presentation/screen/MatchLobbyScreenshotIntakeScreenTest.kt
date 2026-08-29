@@ -35,9 +35,6 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -272,7 +269,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             ).assertExists()
         }
         composeTestRule.onNodeWithText("1. PP Row 1").assertExists()
-        composeTestRule.onNodeWithText("2. ML fallback row 2").assertExists()
+        composeTestRule.onNodeWithText("2. PP Row 2").assertExists()
         composeTestRule.onAllNodesWithText("Resolved: Resolved Row 1").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("ML: ML Row 1").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("PP: PP Row 1").assertCountEquals(0)
@@ -1268,46 +1265,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
                 boundsInTeamCrop = bounds,
                 slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
                 slotAnchorY = 150.0,
-                structuralEvidence = null,
-                image = AndroidMatchLobbyTeamCropPreviewImage(
-                    Bitmap.createBitmap(850, height, Bitmap.Config.ARGB_8888),
-                ),
-                dualOcrResult = LobbyPlayerDualOcrResult(
-                    teamSlotNumber = slotNumber,
-                    row = row,
-                    rowBounds = bounds,
-                    slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
-                    slotAnchorY = 150.0,
-                    mlEvidence = if (row.ordinal == 1) {
-                        LobbyPlayerOcrEngineEvidence(
-                            engine = LobbyPlayerOcrEngine.ML_KIT,
-                            rawText = "ML fallback row 2",
-                            candidateText = "ML fallback row 2",
-                        )
-                    } else {
-                        null
-                    },
-                    ppEvidence = LobbyPlayerOcrEngineEvidence(
-                        engine = LobbyPlayerOcrEngine.PP_OCRV6,
-                        rawText = if (row.ordinal == 1) "" else "PP Row ${row.ordinal + 1}",
-                        candidateText = if (row.ordinal == 1) null else "PP Row ${row.ordinal + 1}",
-                    ),
-                    resolvedText = if (row.ordinal == 1) {
-                        "ML fallback row 2"
-                    } else {
-                        "PP Row ${row.ordinal + 1}"
-                    },
-                    selectedSource = if (row.ordinal == 1) {
-                        com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerNameOcrSource.ML_FALLBACK
-                    } else {
-                        com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerNameOcrSource.PP_PRIMARY
-                    },
-                    finalText = if (row.ordinal == 1) {
-                        "ML fallback row 2"
-                    } else {
-                        "PP Row ${row.ordinal + 1}"
-                    },
-                ),
+                structuralEvidence = "PP Row ${row.ordinal + 1}",
             )
         }
 }

@@ -6,7 +6,7 @@ import android.util.Log
 object OpenCvNativeLoader {
     const val LIBRARY_NAME = "opencv_java4"
 
-    private const val TAG = "TEMP_PP_PLAYER_ROW"
+    private const val TAG = "OpenCvNativeLoader"
 
     @Volatile
     private var loaded = false

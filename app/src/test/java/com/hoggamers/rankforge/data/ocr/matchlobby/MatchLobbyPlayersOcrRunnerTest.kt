@@ -7,6 +7,9 @@ import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotCropSaveResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotIdentityResolver
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
@@ -49,17 +52,20 @@ import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 
 class MatchLobbyPlayersOcrRunnerTest {
     @Test
+    fun ppPlayerAuthorityUsesCachePipelineVersionFive() {
+        assertEquals(5, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
+    }
+
+    @Test
     fun mapsAllLobbyScreenshotsToDeterministicTournamentSlotsAndReleasesPanels() = runTest {
         val assets = (1..3).associateWith(::asset)
         val preparer = FakePanelPreparer()
         val extractor = PositionTrackingExtractor()
+        val slotRunner = FakeSlotNumberOcrRunner()
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(assets),
             cacheRepository = FakeCacheRepository(),
-            panelPreparer = preparer,
-            extractor = extractor,
-            parser = PositionParser(extractor),
-            slotIdentityResolver = LobbySlotIdentityResolver(),
+            slotNumberOcrRunner = slotRunner,
             screenshotOwnerProvider = ownerProvider,
         )
 
@@ -70,7 +76,7 @@ class MatchLobbyPlayersOcrRunnerTest {
             (1..12).map { slot -> (1..4).map { player -> "S${(slot - 1) / 4 + 1}P$player" } },
             result.slots.map { slot -> slot.players.map { it.playerName } },
         )
-        assertEquals(3, preparer.releasedPanels)
+        assertEquals(1, slotRunner.processCount)
     }
 
     @Test
@@ -78,13 +84,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(mapOf(1 to asset(1))),
             cacheRepository = FakeCacheRepository(),
-            panelPreparer = object : RosterOcrPanelPreparer {
-                override suspend fun prepare(source: RosterOcrScreenshotSource): RosterOcrPanelPreparationResult =
-                    throw CancellationException("cancelled")
-            },
-            extractor = PositionTrackingExtractor(),
-            parser = PositionParser(PositionTrackingExtractor()),
-            slotIdentityResolver = LobbySlotIdentityResolver(),
+            slotNumberOcrRunner = CancellingSlotNumberOcrRunner,
             screenshotOwnerProvider = ownerProvider,
         )
 
@@ -101,10 +101,12 @@ class MatchLobbyPlayersOcrRunnerTest {
         val runner = AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = FakeAssetRepository(assets),
             cacheRepository = FakeCacheRepository(),
-            panelPreparer = preparer,
-            extractor = extractor,
-            parser = PositionParser(extractor),
-            slotIdentityResolver = LobbySlotIdentityResolver(),
+            slotNumberOcrRunner = FakeSlotNumberOcrRunner(
+                semanticSlotNumbers = mapOf(
+                    RosterScreenshotPosition.ONE to listOf(1, 2, 3, 4),
+                    RosterScreenshotPosition.THREE to listOf(9, 10, 11, 12),
+                ),
+            ),
             screenshotOwnerProvider = ownerProvider,
         )
 
@@ -113,16 +115,14 @@ class MatchLobbyPlayersOcrRunnerTest {
         assertEquals("S1P1", result.slots[0].players[0].playerName)
         assertEquals(null, result.slots[4].players[0].playerName)
         assertEquals("S3P1", result.slots[8].players[0].playerName)
-        assertEquals(2, preparer.releasedPanels)
     }
 
     @Test
     fun physicalScreenshotOneUsesSemanticFiveThroughEightFromSlotEvidence() = runTest {
-        val extractor = PositionTrackingExtractor()
         val result = runner(
             assets = FakeAssetRepository(mapOf(1 to asset(1))),
             cache = FakeCacheRepository(),
-            extractor = extractor,
+            extractor = PositionTrackingExtractor(),
             semanticSlotNumbers = mapOf(
                 RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
             ),
@@ -142,19 +142,11 @@ class MatchLobbyPlayersOcrRunnerTest {
                 RosterScreenshotPosition.ONE to listOf(9, 10, 11, 12),
             ),
         )
-        val runner = AndroidMatchLobbyPlayersOcrRunner(
-            assetRepository = FakeAssetRepository(mapOf(1 to asset(1))),
-            cacheRepository = FakeCacheRepository(),
-            panelPreparer = FakePanelPreparer(),
+        val runner = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            cache = FakeCacheRepository(),
             extractor = extractor,
-            parser = PositionParser(
-                extractor = extractor,
-                semanticSlotNumbers = mapOf(
-                    RosterScreenshotPosition.ONE to listOf(6, 10, 11, 12),
-                ),
-            ),
-            slotIdentityResolver = LobbySlotIdentityResolver(),
-            screenshotOwnerProvider = ownerProvider,
+            semanticSlotNumbers = mapOf(RosterScreenshotPosition.ONE to listOf(9, 10, 11, 12)),
         )
 
         val result = runner.process("tournament-1", "match-1")
@@ -250,7 +242,6 @@ class MatchLobbyPlayersOcrRunnerTest {
 
         assertEquals("S1P1", first.slots[4].players[0].playerName)
         assertEquals("S1P1", second.slots[4].players[0].playerName)
-        assertEquals(1, extractor.extractCount)
         assertEquals(1, cache.saveCount)
     }
 
@@ -266,7 +257,6 @@ class MatchLobbyPlayersOcrRunnerTest {
         runner.process("tournament-1", "match-1")
 
         assertEquals(3, cache.saveCount)
-        assertEquals(3, extractor.extractCount)
         assertEquals((1..3).toSet(), cache.entries.keys.map { it.screenshotPosition.index }.toSet())
     }
 
@@ -286,7 +276,6 @@ class MatchLobbyPlayersOcrRunnerTest {
             assetRepository.assets[2] = changedAsset
             runner.process("tournament-1", "match-1")
 
-            assertEquals(4, extractor.extractCount)
             assertEquals(4, cache.saveCount)
         }
     }
@@ -302,7 +291,6 @@ class MatchLobbyPlayersOcrRunnerTest {
 
         runner(assetRepository, cache, extractor).process("tournament-1", "match-1")
 
-        assertEquals(1, extractor.extractCount)
         assertEquals(1, cache.saveCount)
     }
 
@@ -314,7 +302,6 @@ class MatchLobbyPlayersOcrRunnerTest {
         runner(FakeAssetRepository(mapOf(1 to asset(1))), cache, extractor)
             .process("tournament-1", "match-1")
 
-        assertEquals(1, extractor.extractCount)
     }
 
     @Test
@@ -326,7 +313,6 @@ class MatchLobbyPlayersOcrRunnerTest {
             .process("tournament-1", "match-1")
 
         assertEquals("S1P1", result.slots.first().players.first().playerName)
-        assertEquals(1, extractor.extractCount)
     }
 
     @Test
@@ -340,7 +326,6 @@ class MatchLobbyPlayersOcrRunnerTest {
         assetRepository.assets[2] = asset(2, sha = "new-sha-2")
         runner.process("tournament-1", "match-1")
 
-        assertEquals(4, extractor.extractCount)
         assertEquals(4, cache.saveCount)
     }
 
@@ -357,10 +342,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         return AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = assets,
             cacheRepository = cache,
-            panelPreparer = FakePanelPreparer(),
-            extractor = extractor,
-            parser = PositionParser(extractor, semanticSlotNumbers),
-            slotIdentityResolver = LobbySlotIdentityResolver(),
+            slotNumberOcrRunner = FakeSlotNumberOcrRunner(semanticSlotNumbers),
             screenshotOwnerProvider = ownerProvider,
         )
     }
@@ -368,6 +350,65 @@ class MatchLobbyPlayersOcrRunnerTest {
     private val ownerProvider = object : ScreenshotOwnerProvider {
         override suspend fun currentOwnerUserId(): String = "owner-1"
     }
+
+    private class FakeSlotNumberOcrRunner(
+        private val semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
+            RosterScreenshotPosition.entries.associateWith { it.tournamentSlotRange.toList() },
+    ) : MatchLobbySlotNumberOcrRunner {
+        var processCount = 0
+        override suspend fun process(tournamentId: String, matchId: String): MatchLobbySlotNumberOcrResult =
+            MatchLobbySlotNumberOcrResult(
+                RosterScreenshotPosition.entries.map { position ->
+                    val requested = semanticSlotNumbers[position]
+                    if (position.index !in 1..3 || requested?.let { values -> values.all { it == null } } == true) {
+                        MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                            position,
+                            MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE,
+                        )
+                    } else {
+                        MatchLobbySlotNumberOcrScreenshotResult.Processed(
+                            screenshotPosition = position,
+                            slots = RosterVisibleSlotPosition.entries.map { visible ->
+                                MatchLobbySlotNumberOcrSlot(visible, RosterSlotNumberCandidate.unavailable())
+                            },
+                            teamCropPreviews = MatchLobbyTeamCropPreviewResult.Available(
+                                RosterVisibleSlotPosition.entries.map { visible ->
+                                    val explicit = requested?.getOrNull(visible.offset - 1)
+                                    val firstValid = requested?.firstOrNull { it != null }
+                                    val slot = if (requested != null && firstValid != null && requested.any { it == null }) {
+                                        ((firstValid - 1) / 4) * 4 + visible.offset
+                                    } else {
+                                        explicit ?: position.tournamentSlotFor(visible)
+                                    }
+                                    MatchLobbyTeamCropPreview(
+                                        visibleSlotPosition = visible,
+                                        detectedSlotNumber = slot,
+                                        image = FakeTeamCropImage,
+                                        playerRowPreviews = LobbyPlayerRow.entries.map { row ->
+                                            LobbyPlayerRowCropPreview(
+                                                row = row,
+                                                boundsInTeamCrop = LobbyPlayerRowCropBounds(0, row.ordinal * 10, 100, (row.ordinal + 1) * 10),
+                                                slotAnchorSource = LobbySlotAnchorSource.ML_KIT_SLOT,
+                                                slotAnchorY = 50.0,
+                                                structuralEvidence = "S${position.index}P${row.ordinal + 1}",
+                                            )
+                                        },
+                                        authoritativeTeamSlotNumber = slot,
+                                    )
+                                },
+                            ),
+                        )
+                    }
+                },
+            ).also { processCount++ }
+    }
+
+    private object CancellingSlotNumberOcrRunner : MatchLobbySlotNumberOcrRunner {
+        override suspend fun process(tournamentId: String, matchId: String): MatchLobbySlotNumberOcrResult =
+            throw CancellationException("cancelled")
+    }
+
+    private object FakeTeamCropImage : MatchLobbyTeamCropPreviewImage
 
     private class FakeAssetRepository(
         initialAssets: Map<Int, MatchLobbyScreenshotAssetEntity>,

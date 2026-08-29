@@ -721,7 +721,6 @@ class MatchLobbySlotNumberOcrRunnerTest {
                         slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
                         slotAnchorY = 5.0,
                         structuralEvidence = null,
-                        image = FakeTeamCropPreviewImage,
                     )
                 },
             )

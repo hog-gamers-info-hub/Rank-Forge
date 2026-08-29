@@ -1,6 +1,5 @@
 package com.hoggamers.rankforge.data.ocr.matchlobby
 
-import android.util.Log
 import android.graphics.Bitmap
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidBitmapOcrImage
@@ -54,6 +53,7 @@ data class MatchLobbyTeamCropPreview(
     val detectedSlotNumber: Int,
     val image: MatchLobbyTeamCropPreviewImage,
     val playerRowPreviews: List<LobbyPlayerRowCropPreview> = emptyList(),
+    val authoritativeTeamSlotNumber: Int = 0,
 )
 
 enum class MatchLobbyTeamCropPreviewUnavailableReason {
@@ -144,7 +144,6 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         tournamentId: String,
         matchId: String,
     ): MatchLobbySlotNumberOcrResult {
-        logPhase1("processStart")
         val result = if (tournamentId.isBlank() || matchId.isBlank()) {
             unavailableForAll(MatchLobbySlotNumberOcrUnavailableReason.INVALID_MATCH_CONTEXT)
         } else {
@@ -159,7 +158,6 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                 )
             }
         }
-        logPhase1("processComplete")
         return result
     }
 
@@ -169,15 +167,12 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         position: RosterScreenshotPosition,
         ownerUserId: String,
     ): MatchLobbySlotNumberOcrScreenshotResult {
-        logPhase1("screenshotStart screenshotIndex=${position.index}")
         val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
         val asset = try {
             assetRepository.getByIdentityAndOwner(identity, ownerUserId)
         } catch (cancellation: CancellationException) {
-            logPhase1("cancelled stage=assetLookup screenshotIndex=${position.index}")
             throw cancellation
-        } catch (failure: Throwable) {
-            logFailure("assetLookup", position, failure)
+        } catch (_: Throwable) {
             return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
         } ?: return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
 
@@ -186,10 +181,8 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         val prepared = try {
             panelPreparer.prepare(source)
         } catch (cancellation: CancellationException) {
-            logPhase1("cancelled stage=panelPreparation screenshotIndex=${position.index}")
             throw cancellation
-        } catch (failure: Throwable) {
-            logFailure("panelPreparation", position, failure)
+        } catch (_: Throwable) {
             return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
         }
         val panel = when (prepared) {
@@ -197,8 +190,6 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                 return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
             is RosterOcrPanelPreparationResult.Prepared -> prepared.panel
         }
-        logPhase1("panelPrepared screenshotIndex=${position.index}")
-
         var extraction: List<RosterRawOcrExtractionResult>? = null
         var extractionFailure: Throwable? = null
         try {
@@ -209,7 +200,6 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     regionSelection = RosterRawOcrRegionSelection.SLOT_CONTENT_ONLY,
                 ),
             )
-            logPhase1("extractionReturned screenshotIndex=${position.index} resultCount=${extraction.size}")
         } catch (throwable: Throwable) {
             extractionFailure = throwable
         }
@@ -217,27 +207,17 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         extractionFailure?.let { failure ->
             releasePanel(panel, position)?.let { releaseFailure ->
                 if (releaseFailure is CancellationException) {
-                    logPhase1("cancelled stage=panelRelease screenshotIndex=${position.index}")
                     throw releaseFailure
                 }
-                logFailure("panelRelease", position, releaseFailure)
             }
             if (failure is CancellationException) {
-                logPhase1("cancelled stage=extraction screenshotIndex=${position.index}")
                 throw failure
             }
-            logFailure("extraction", position, failure)
             return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED)
         }
         val candidates = LobbySlotContentSlotNumberExtractor.derive(requireNotNull(extraction))
         val slots = RosterVisibleSlotPosition.entries.map { visiblePosition ->
             val candidate = candidates[visiblePosition] ?: RosterSlotNumberCandidate.unavailable()
-            logPhase1(
-                "screenshotIndex=${position.index} " +
-                    "visiblePosition=${visiblePosition.name} " +
-                    "status=${candidate.status.name} " +
-                    "detectedNumber=${candidate.detectedSlotNumber}",
-            )
             MatchLobbySlotNumberOcrSlot(
                 visibleSlotPosition = visiblePosition,
                 candidate = candidate,
@@ -250,13 +230,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         )
         releasePanel(panel, position)?.let { failure ->
             if (failure is CancellationException) {
-                logPhase1("cancelled stage=panelRelease screenshotIndex=${position.index}")
                 throw failure
             }
-            logFailure("panelRelease", position, failure)
             return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
         }
-        logPhase1("screenshotComplete screenshotIndex=${position.index}")
         return MatchLobbySlotNumberOcrScreenshotResult.Processed(
             screenshotPosition = position,
             slots = slots,
@@ -368,7 +345,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                 val image = teamCropPreviewFactory.create(panelImage, crop)
                 val rowPreviews = when (
                     val generated = playerRowCropPipeline.generate(
-                        authoritativeTeamSlotNumber = crop.detectedSlotNumber,
+                        authoritativeTeamSlotNumber = RosterScreenshotPosition
+                            .fromIndex(screenshotIndex)
+                            ?.tournamentSlotFor(crop.visibleSlotPosition)
+                            ?: crop.detectedSlotNumber,
                         teamCropImage = image,
                     )
                 ) {
@@ -380,6 +360,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     detectedSlotNumber = crop.detectedSlotNumber,
                     image = image,
                     playerRowPreviews = rowPreviews,
+                    authoritativeTeamSlotNumber = RosterScreenshotPosition
+                        .fromIndex(screenshotIndex)
+                        ?.tournamentSlotFor(crop.visibleSlotPosition)
+                        ?: crop.detectedSlotNumber,
                 )
             }
             MatchLobbyTeamCropPreviewResult.Available(previews)
@@ -460,7 +444,6 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         reason: MatchLobbySlotNumberOcrUnavailableReason,
     ): MatchLobbySlotNumberOcrResult = MatchLobbySlotNumberOcrResult(
         RosterScreenshotPosition.entries.map { position ->
-            logPhase1("screenshotStart screenshotIndex=${position.index}")
             unavailable(position, reason)
         },
     )
@@ -469,23 +452,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         position: RosterScreenshotPosition,
         reason: MatchLobbySlotNumberOcrUnavailableReason,
     ): MatchLobbySlotNumberOcrScreenshotResult.Unavailable {
-        logPhase1("screenshotIndex=${position.index} unavailableReason=${reason.name}")
         return MatchLobbySlotNumberOcrScreenshotResult.Unavailable(position, reason)
-    }
-
-    private fun logFailure(
-        stage: String,
-        position: RosterScreenshotPosition,
-        failure: Throwable,
-    ) {
-        logPhase1(
-            "failed stage=$stage screenshotIndex=${position.index} " +
-                "exceptionType=${failure.javaClass.simpleName}",
-        )
-    }
-
-    private fun logPhase1(message: String) {
-        runCatching { Log.w(TEMP_LOBBY_SLOT_PHASE1_TAG, message) }
     }
 }
 
@@ -513,5 +480,3 @@ private object AndroidMatchLobbyTeamCropPreviewFactory : MatchLobbyTeamCropPrevi
         return AndroidMatchLobbyTeamCropPreviewImage(preview)
     }
 }
-
-private const val TEMP_LOBBY_SLOT_PHASE1_TAG = "TEMP_LOBBY_SLOT_PHASE1"

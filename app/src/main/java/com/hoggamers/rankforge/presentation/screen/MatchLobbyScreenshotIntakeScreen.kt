@@ -788,7 +788,7 @@ private fun LobbyPlayerRowPreviewColumn(
         slotNumber = preview.detectedSlotNumber,
         teamName = teamName,
         playerNames = preview.playerRowPreviews.associate { rowPreview ->
-            rowPreview.row.ordinal + 1 to rowPreview.dualOcrResult?.finalText
+            rowPreview.row.ordinal + 1 to rowPreview.structuralEvidence
         },
         slotTestTag = MATCH_LOBBY_TEAM_CROP_TEAM_SLOT_LABEL_TEST_TAG_PREFIX + preview.detectedSlotNumber,
         playerTestTag = { playerNumber ->

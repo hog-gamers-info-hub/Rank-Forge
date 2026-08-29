@@ -40,10 +40,6 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrConsensusStatus
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
@@ -1593,23 +1589,7 @@ class MatchOcrReviewViewModelTest {
                 boundsInTeamCrop = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
                 slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
                 slotAnchorY = 5.0,
-                structuralEvidence = null,
-                image = SlotOnlyTeamCropPreviewImage,
-                dualOcrResult = LobbyPlayerDualOcrResult(
-                    teamSlotNumber = slotNumber,
-                    row = row,
-                    rowBounds = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
-                    slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
-                    slotAnchorY = 5.0,
-                    ppEvidence = LobbyPlayerOcrEngineEvidence(
-                        engine = LobbyPlayerOcrEngine.PP_OCRV6,
-                        rawText = playerName,
-                        candidateText = playerName,
-                    ),
-                    resolvedText = playerName,
-                    consensusStatus = LobbyPlayerOcrConsensusStatus.PP_ONLY,
-                    finalText = playerName,
-                ),
+                structuralEvidence = playerName,
             )
         },
     )

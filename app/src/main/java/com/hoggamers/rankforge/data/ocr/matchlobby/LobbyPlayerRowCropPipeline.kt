@@ -9,7 +9,6 @@ import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrEngineOutput
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrFragment
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropGeometryCalculator
@@ -32,8 +31,6 @@ data class LobbyPlayerRowCropPreview(
     val slotAnchorSource: LobbySlotAnchorSource,
     val slotAnchorY: Double,
     val structuralEvidence: String?,
-    val image: MatchLobbyTeamCropPreviewImage,
-    val dualOcrResult: LobbyPlayerDualOcrResult? = null,
 )
 
 sealed interface LobbyPlayerRowCropGenerationResult {
@@ -59,7 +56,6 @@ interface LobbyPlayerRowCropPipeline {
 class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
     private val recognizerFactory: MlKitTextRecognizerFactory,
     private val ppRuntime: LobbyPlayerPpOcrRuntime,
-    private val dualOcrRunner: LobbyPlayerDualOcrRunner = NoOpLobbyPlayerDualOcrRunner,
 ) : LobbyPlayerRowCropPipeline {
     override suspend fun generate(
         authoritativeTeamSlotNumber: Int,
@@ -76,8 +72,19 @@ class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
         } catch (_: Throwable) {
             RawOcrEngineOutput(fullText = "", blocks = emptyList())
         }
+        val playerOcr = try {
+            ppRuntime.recognize(source)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            LobbyPlayerPpOcrRecognition(fragments = emptyList())
+        }
         val mlEvidence = structure.findSlotEvidence(source.width, source.height)
-        val ppEvidence = if (mlEvidence == null) recognizePpSlotEvidence(source) else null
+        val ppEvidence = if (mlEvidence == null) {
+            LobbyPlayerPpEvidenceMapper.findSlotEvidence(playerOcr, source.width, source.height)
+        } else {
+            null
+        }
         val anchor = LobbySlotAnchorResolver().resolve(
             authoritativeTeamSlotNumber = authoritativeTeamSlotNumber,
             teamCropWidth = source.width,
@@ -93,45 +100,22 @@ class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
         val selectedSlotBox = anchor.selectedEvidence?.boundingBox
         val mapping = LobbyPlayerRowMapper.map(
             rowBands = geometry.bands,
-            fragments = structure.playerFragments(),
+            fragments = LobbyPlayerPpEvidenceMapper.playerFragments(playerOcr),
             selectedSlotBoundingBox = selectedSlotBox,
             slotGutterRight = geometry.playerAreaLeft,
         )
 
-        val copied = mutableListOf<Bitmap>()
-        return try {
-            val rows = LobbyPlayerRow.entries.map { row ->
-                val bounds = geometry.boundsFor(row)
-                val bitmap = Bitmap.createBitmap(source, bounds.left, bounds.top, bounds.width, bounds.height)
-                    .copy(Bitmap.Config.ARGB_8888, false)
-                    ?: throw IllegalStateException("Unable to copy row bitmap")
-                copied += bitmap
-                val dualOcrResult = dualOcrRunner.run(
-                    teamSlotNumber = authoritativeTeamSlotNumber,
-                    row = row,
-                    rowBounds = bounds,
-                    slotAnchorSource = anchor.source,
-                    slotAnchorY = anchor.anchorY,
-                    bitmap = bitmap,
-                )
-                LobbyPlayerRowCropPreview(
-                    row = row,
-                    boundsInTeamCrop = bounds,
-                    slotAnchorSource = anchor.source,
-                    slotAnchorY = anchor.anchorY,
-                    structuralEvidence = mapping.row(row).structuralText,
-                    image = AndroidMatchLobbyTeamCropPreviewImage(bitmap),
-                    dualOcrResult = dualOcrResult,
-                )
-            }
-            LobbyPlayerRowCropGenerationResult.Generated(rows)
-        } catch (cancellation: CancellationException) {
-            copied.recycleAll()
-            throw cancellation
-        } catch (throwable: Throwable) {
-            copied.recycleAll()
-            throw throwable
+        val rows = LobbyPlayerRow.entries.map { row ->
+            val bounds = geometry.boundsFor(row)
+            LobbyPlayerRowCropPreview(
+                row = row,
+                boundsInTeamCrop = bounds,
+                slotAnchorSource = anchor.source,
+                slotAnchorY = anchor.anchorY,
+                structuralEvidence = mapping.row(row).structuralText,
+            )
         }
+        return LobbyPlayerRowCropGenerationResult.Generated(rows)
     }
 
     private suspend fun recognizeStructure(bitmap: Bitmap): RawOcrEngineOutput = withContext(Dispatchers.Default) {
@@ -141,42 +125,6 @@ class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
             RawOcrEngineOutput(fullText = text.text, blocks = text.toRawOcrBlocks())
         } finally {
             recognizer.close()
-        }
-    }
-
-    private suspend fun recognizePpSlotEvidence(bitmap: Bitmap): LobbySlotAnchorEvidence? {
-        val left = (bitmap.width * SLOT_REGION_LEFT_FRACTION).toInt().coerceAtLeast(0)
-        val right = (bitmap.width * SLOT_REGION_RIGHT_FRACTION).toInt().coerceIn(left + 1, bitmap.width)
-        val top = (bitmap.height * SLOT_REGION_TOP_FRACTION).toInt().coerceAtLeast(0)
-        val bottom = (bitmap.height * SLOT_REGION_BOTTOM_FRACTION).toInt().coerceIn(top + 1, bitmap.height)
-        val region = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-        return try {
-            ppRuntime.recognize(region).fragments.asSequence()
-                .mapNotNull { result ->
-                    val number = result.text.trim().toIntOrNull()?.takeIf { it in 1..12 } ?: return@mapNotNull null
-                    val box = result.boundingBox ?: return@mapNotNull null
-                    LobbySlotAnchorEvidence(
-                        rawText = result.text,
-                        detectedSlotNumber = number,
-                        boundingBox = RawOcrBoundingBox(
-                            left = box.left + left,
-                            top = box.top + top,
-                            right = box.right + left,
-                            bottom = box.bottom + top,
-                        ),
-                        requestOriginX = left,
-                        requestOriginY = top,
-                        requestWidth = right - left,
-                        requestHeight = bottom - top,
-                    )
-                }
-                .firstOrNull()
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            null
-        } finally {
-            region.recycleIfNeeded()
         }
     }
 
@@ -203,22 +151,36 @@ class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
             }
             .firstOrNull()
 
-    private fun RawOcrEngineOutput.playerFragments(): List<LobbyPlayerOcrFragment> = blocks.flatMap { block ->
-        block.lines.map { line ->
-            LobbyPlayerOcrFragment(line.text, line.geometry?.boundingBox)
-        }
-    }
-
-    private fun MutableList<Bitmap>.recycleAll() = forEach { it.recycleIfNeeded() }
-    private fun Bitmap.recycleIfNeeded() { if (!isRecycled) recycle() }
-
     private companion object {
         const val SLOT_GUTTER_FRACTION = 0.15
-        const val SLOT_REGION_LEFT_FRACTION = 0.0
-        const val SLOT_REGION_RIGHT_FRACTION = 0.15
-        const val SLOT_REGION_TOP_FRACTION = 0.25
-        const val SLOT_REGION_BOTTOM_FRACTION = 0.75
     }
+}
+
+internal object LobbyPlayerPpEvidenceMapper {
+    fun playerFragments(recognition: LobbyPlayerPpOcrRecognition): List<LobbyPlayerOcrFragment> =
+        recognition.fragments.map { fragment ->
+            LobbyPlayerOcrFragment(
+                rawText = fragment.text,
+                boundingBox = fragment.boundingBox,
+                isSlotNumberEvidence = fragment.text.trim().toIntOrNull()?.let { it in 1..12 } == true,
+            )
+        }
+
+    fun findSlotEvidence(
+        recognition: LobbyPlayerPpOcrRecognition,
+        width: Int,
+        height: Int,
+    ): LobbySlotAnchorEvidence? = recognition.fragments.asSequence()
+        .mapNotNull { result ->
+            val number = result.text.trim().toIntOrNull()?.takeIf { it in 1..12 } ?: return@mapNotNull null
+            val box = result.boundingBox ?: return@mapNotNull null
+            if (box.left < 0 || box.top < 0 || box.right > width || box.bottom > height ||
+                box.right <= box.left || box.bottom <= box.top ||
+                (box.left + box.right) / 2.0 > width * 0.15
+            ) return@mapNotNull null
+            LobbySlotAnchorEvidence(rawText = result.text, detectedSlotNumber = number, boundingBox = box)
+        }
+        .firstOrNull()
 }
 
 object NoOpLobbyPlayerRowCropPipeline : LobbyPlayerRowCropPipeline {
