@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPanelPpOcrRuntime
+import com.hoggamers.rankforge.data.ocr.matchlobby.NoOpLobbyPanelPpOcrRuntime
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
@@ -47,6 +49,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val templateRepository: TournamentLobbyTemplateAssetRepository,
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
     private val authRepository: AuthRepository,
+    private val lobbyPanelPpOcrRuntime: LobbyPanelPpOcrRuntime = NoOpLobbyPanelPpOcrRuntime,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
     val uiState: StateFlow<MatchLobbyScreenshotIntakeUiState> = _uiState.asStateFlow()
@@ -59,6 +62,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private var activeBatchTargetSlots: Set<Int> = emptySet()
     private var nextMultiPhotoPickerRequestId = 0L
     private val missingMarked = mutableSetOf<String>()
+    private var lobbyPanelPpPrewarmStarted = false
 
     fun load(tournamentId: String, matchId: String) {
         val key = "$tournamentId:$matchId"
@@ -77,6 +81,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             )
             return
         }
+        startLobbyPanelPpPrewarmIfNeeded()
         _uiState.value = MatchLobbyScreenshotIntakeUiState(
             isLoading = true,
             tournamentId = tournamentId,
@@ -144,6 +149,20 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     markMissingIfNeeded(state.tournamentId!!, state.matchId!!, slot.index)
                 }
                 _uiState.value = mergeTransientState(state)
+            }
+        }
+    }
+
+    private fun startLobbyPanelPpPrewarmIfNeeded() {
+        if (lobbyPanelPpPrewarmStarted) return
+        lobbyPanelPpPrewarmStarted = true
+        viewModelScope.launch {
+            try {
+                lobbyPanelPpOcrRuntime.prewarm()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Prewarming is an optimization; the OCR runner retains lazy creation.
             }
         }
     }

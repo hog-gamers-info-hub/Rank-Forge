@@ -43,7 +43,7 @@ data class MatchLobbyPlayersOcrResult(
     }
 }
 
-const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 5
+const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 7
 
 fun interface MatchLobbyPlayersOcrRunner {
     suspend fun process(tournamentId: String, matchId: String): MatchLobbyPlayersOcrResult
@@ -162,11 +162,11 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
             MatchLobbyPlayersOcrSlot(
                 slotNumber = slotNumber,
                 players = LobbyPlayerRow.entries.map { row ->
+                    val rowPreview = preview.playerRowPreviews.firstOrNull { it.row == row }
                     MatchLobbyPlayersOcrPlayer(
                         playerNumber = row.ordinal + 1,
-                        playerName = preview.playerRowPreviews
-                            .firstOrNull { it.row == row }
-                            ?.structuralEvidence
+                        playerName = rowPreview?.playerName
+                            ?: rowPreview?.structuralEvidence
                             ?.trim()
                             ?.takeIf { it.isNotBlank() },
                     )

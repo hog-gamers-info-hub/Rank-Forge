@@ -1,6 +1,5 @@
 package com.hoggamers.rankforge.data.ocr.matchlobby
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.google.android.gms.tasks.Task
@@ -8,7 +7,6 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyAutoCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyAutoCropCalculator
@@ -18,29 +16,21 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyCropCalibrationProfile
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyOcrAnchorLevel
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyOcrAnchorObservation
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyOcrAnchorResolver
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPpOcrFallbackPolicy
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridReconstructor
 import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult
-import com.paddle.ocr.PaddleOCR
-import com.paddle.ocr.model.OCRResult
-import com.paddle.ocr.util.OpenCVUtils
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 @Singleton
 class AndroidMatchLobbyAutoCropProposer @Inject constructor(
-    @param:ApplicationContext private val context: Context,
     private val recognizerFactory: MlKitTextRecognizerFactory,
 ) : MatchLobbyAutoCropProposer {
     private val anchorResolver = LobbyOcrAnchorResolver()
@@ -94,24 +84,7 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
             }
 
             val mlKitObservations = recognizedText.toLobbyAnchorObservations()
-            val mlKitResolvedGroups = anchorResolver.resolveAll(mlKitObservations, dimensions)
-            val resolvedGroups = if (LobbyPpOcrFallbackPolicy.shouldRunPpOcr(mlKitResolvedGroups)) {
-                val ppObservations = original.toPpOcrAnchorObservations()
-                val mergeEligiblePpObservations = LobbyPpOcrFallbackPolicy.ppObservationsForMerge(
-                    mlKitGroups = mlKitResolvedGroups,
-                    ppObservations = ppObservations,
-                )
-                if (mergeEligiblePpObservations.isEmpty()) {
-                    mlKitResolvedGroups
-                } else {
-                    anchorResolver.resolveAll(
-                        observations = mlKitObservations + mergeEligiblePpObservations,
-                        imageDimensions = dimensions,
-                    )
-                }
-            } else {
-                mlKitResolvedGroups
-            }
+            val resolvedGroups = anchorResolver.resolveAll(mlKitObservations, dimensions)
 
             val candidates = resolvedGroups.mapNotNull { resolved ->
                 val reconstruction = gridReconstructor.reconstruct(
@@ -147,67 +120,6 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
         } finally {
             original.recycleIfNeeded()
         }
-    }
-
-    private suspend fun Bitmap.toPpOcrAnchorObservations(): List<LobbyOcrAnchorObservation> {
-        val openCvReady = try {
-            OpenCVUtils.init(context)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            false
-        }
-        if (!openCvReady) return emptyList()
-
-        val paddleOcr = try {
-            PaddleOCR.create(context)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return emptyList()
-        }
-
-        return try {
-            paddleOcr.recognize(this).results.mapIndexedNotNull { resultIndex, result ->
-                result.toLobbyAnchorObservationOrNull(resultIndex)
-            }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            emptyList()
-        } finally {
-            try {
-                paddleOcr.release()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                Unit
-            }
-        }
-    }
-
-    private fun OCRResult.toLobbyAnchorObservationOrNull(
-        resultIndex: Int,
-    ): LobbyOcrAnchorObservation? {
-        val slotNumber = text.trim().toIntOrNull()?.takeIf { it in 1..12 }
-            ?: return null
-        val points = box.points
-        if (points.any { !it.x.isFinite() || !it.y.isFinite() }) return null
-
-        val boundingBox = RawOcrBoundingBox(
-            left = floor(points.minOf { it.x }.toDouble()).toInt(),
-            top = floor(points.minOf { it.y }.toDouble()).toInt(),
-            right = ceil(points.maxOf { it.x }.toDouble()).toInt(),
-            bottom = ceil(points.maxOf { it.y }.toDouble()).toInt(),
-        )
-
-        return LobbyOcrAnchorObservation(
-            text = slotNumber.toString(),
-            boundingBox = boundingBox,
-            level = LobbyOcrAnchorLevel.LINE,
-            blockIndex = resultIndex,
-            lineIndex = 0,
-        )
     }
 
     private fun Text.toLobbyAnchorObservations(): List<LobbyOcrAnchorObservation> = buildList {
