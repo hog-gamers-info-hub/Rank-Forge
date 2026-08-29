@@ -227,6 +227,8 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                             )
                         },
                     )
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
                 } catch (_: Throwable) {
                     MatchLobbyTeamCropPreviewResult.Unavailable(
                         MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
