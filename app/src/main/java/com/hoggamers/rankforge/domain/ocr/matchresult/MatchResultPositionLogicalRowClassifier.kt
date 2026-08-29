@@ -126,26 +126,26 @@ class MatchResultPositionLogicalRowClassifier {
             )
         }
 
-        // OCR line centers need a tighter band than the full text height; otherwise the
-        // physical upper/lower rows collapse into CENTER for larger fonts.
+        // Match Result position rectangles contain two physical text rows; OCR fragments
+        // from one row share near-identical vertical centers. CENTER is uncertainty, not
+        // a third row, so derive UPPER and LOWER from the strongest Y split first.
         val tolerance = medianHeight * CENTER_TOLERANCE_FRACTION
-        // The placement number is structural evidence, not a player row. Remove only an
-        // exact position token in the left placement region near the structural center.
+
+        // The placement number is structural evidence, not a player row. Remove only a
+        // compact numeric-like token in the left placement region near the structural center.
         val classifiedLines = candidates.map { candidate ->
             val spanning = (candidate.box.bottom - candidate.box.top).toDouble() > medianHeight * SPANNING_HEIGHT_FACTOR
-            val placement = candidate.line.text.trim() == position.toString() &&
-                ((candidate.box.left + candidate.box.right) / 2.0) <= cropWidth * PLACEMENT_REGION_FRACTION &&
-                abs(candidate.centerY - slotCenterYLocal) <= medianHeight &&
-                !spanning
+            val placement = isStructuralPlacementCandidate(
+                candidate, cropWidth, slotCenterYLocal, medianHeight, spanning,
+            )
             val band = when {
                 placement -> MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED
                 spanning -> MatchResultPositionLogicalRowBand.SPANNING_IGNORED
-                candidate.centerY < slotCenterYLocal - tolerance -> MatchResultPositionLogicalRowBand.UPPER
-                candidate.centerY > slotCenterYLocal + tolerance -> MatchResultPositionLogicalRowBand.LOWER
                 else -> MatchResultPositionLogicalRowBand.CENTER
             }
             ClassifiedLine(candidate, band)
         }
+
         val placementRemoved = classifiedLines.count { it.band == MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED }
         val spanningIgnored = classifiedLines.count { it.band == MatchResultPositionLogicalRowBand.SPANNING_IGNORED }
         val lines = classifiedLines.filter {
@@ -163,68 +163,73 @@ class MatchResultPositionLogicalRowClassifier {
             },
         )
 
-        val grouped = lines.groupBy { it.band.toLogicalRow() }
-        val upper = grouped[MatchResultPositionLogicalRow.UPPER].orEmpty()
-        val lower = grouped[MatchResultPositionLogicalRow.LOWER].orEmpty()
-        val center = grouped[MatchResultPositionLogicalRow.CENTER].orEmpty()
-        val reason = when {
-            lower.isNotEmpty() && upper.isEmpty() && center.isEmpty() -> MatchResultPositionLogicalRowFallbackReason.LOWER_ONLY
-            center.isNotEmpty() && upper.isNotEmpty() && lower.isNotEmpty() -> MatchResultPositionLogicalRowFallbackReason.CENTER_WITH_BOTH
-            center.isNotEmpty() && upper.isNotEmpty() -> MatchResultPositionLogicalRowFallbackReason.CENTER_WITH_UPPER
-            center.isNotEmpty() && lower.isNotEmpty() -> MatchResultPositionLogicalRowFallbackReason.CENTER_WITH_LOWER
-            else -> null
-        }
-        if (reason != null) return unavailable(
+        val clusters = deriveTwoRowClusters(
+            lines.map { it.candidate }, slotCenterYLocal, tolerance,
+        ) ?: return unavailable(
             position, cropHeight, slotCenterYLocal, totalMappedLines,
             medianHeight = medianHeight, tolerance = tolerance, placementRemoved = placementRemoved,
             spanningIgnored = spanningIgnored, usableLines = lines.size,
-            upper = upper.size, center = center.size, lower = lower.size,
-            reason = reason,
+            reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
         )
 
-        val rowCrops = when {
-            upper.isNotEmpty() && lower.isNotEmpty() -> listOf(
-                rowCrop(1, upper, cropWidth, cropHeight),
-                rowCrop(2, lower, cropWidth, cropHeight),
-            )
-            center.isNotEmpty() -> listOf(
-                rowCrop(1, center, cropWidth, cropHeight),
-            )
-            upper.isNotEmpty() -> listOf(
-                rowCrop(1, upper, cropWidth, cropHeight),
-            )
-            else -> return unavailable(
-                position, cropHeight, slotCenterYLocal, totalMappedLines,
-                medianHeight = medianHeight, tolerance = tolerance, placementRemoved = placementRemoved,
-                spanningIgnored = spanningIgnored, usableLines = lines.size,
-                reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
+        val assignedLines = classifiedLines.map { line ->
+            if (line.band == MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED ||
+                line.band == MatchResultPositionLogicalRowBand.SPANNING_IGNORED
+            ) return@map line
+            val upperDistance = abs(line.candidate.centerY - clusters.upperCenter)
+            val lowerDistance = abs(line.candidate.centerY - clusters.lowerCenter)
+            if (upperDistance == lowerDistance) {
+                return unavailable(
+                    position, cropHeight, slotCenterYLocal, totalMappedLines,
+                    medianHeight = medianHeight, tolerance = tolerance,
+                    placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+                    usableLines = lines.size,
+                    reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
+                )
+            }
+            ClassifiedLine(
+                line.candidate,
+                if (upperDistance < lowerDistance) {
+                    MatchResultPositionLogicalRowBand.UPPER
+                } else {
+                    MatchResultPositionLogicalRowBand.LOWER
+                },
             )
         }
+        val upper = assignedLines.filter { it.band == MatchResultPositionLogicalRowBand.UPPER }
+        val lower = assignedLines.filter { it.band == MatchResultPositionLogicalRowBand.LOWER }
+        if (upper.isEmpty() || lower.isEmpty()) return unavailable(
+            position, cropHeight, slotCenterYLocal, totalMappedLines,
+            medianHeight = medianHeight, tolerance = tolerance,
+            placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+            usableLines = lines.size, upper = upper.size, lower = lower.size,
+            reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
+        )
+
+        val rowCrops = listOf(rowCrop(1, upper, cropWidth, cropHeight), rowCrop(2, lower, cropWidth, cropHeight))
         if (rowCrops.any { it == null }) return unavailable(
             position, cropHeight, slotCenterYLocal, totalMappedLines,
-            medianHeight = medianHeight, placementRemoved = placementRemoved, usableLines = lines.size,
-            upper = upper.size, center = center.size, lower = lower.size,
+            medianHeight = medianHeight, tolerance = tolerance,
+            placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+            usableLines = lines.size, upper = upper.size, lower = lower.size,
             reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
         )
-        val classification = when {
-            upper.isNotEmpty() && lower.isNotEmpty() -> MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2
-            center.isNotEmpty() -> MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW
-            else -> MatchResultPositionLogicalRowClassificationKind.ROW1_ONLY
-        }
         val diagnostics = MatchResultPositionLogicalRowDiagnostics(
             position = position, positionHeight = cropHeight, slotCenterYLocal = slotCenterYLocal,
             medianTextHeight = medianHeight, derivedTolerance = tolerance,
             totalMappedLines = totalMappedLines, placementLinesRemoved = placementRemoved,
             spanningIgnored = spanningIgnored,
-            usableLines = lines.size, upperCount = upper.size, centerCount = center.size,
-            lowerCount = lower.size, classification = classification,
+            usableLines = lines.size, upperCount = upper.size, centerCount = 0,
+            lowerCount = lower.size,
+            classification = MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2,
         )
+
         return MatchResultPositionLogicalRowClassification.Available(
             rowCrops = rowCrops.filterNotNull(),
             diagnostics = diagnostics,
             blocks = blocks.mapNotNull { block ->
                 block.copy(lines = block.lines.filter { line ->
-                    classifiedLines.any {
+                    assignedLines.any {
                         it.candidate.line === line && it.band != MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED
                     }
                 })
@@ -267,6 +272,54 @@ class MatchResultPositionLogicalRowClassifier {
         ),
     )
 
+    private fun isStructuralPlacementCandidate(
+        candidate: Candidate,
+        cropWidth: Int,
+        slotCenterYLocal: Double,
+        medianHeight: Double,
+        spanning: Boolean,
+    ): Boolean {
+        if (spanning) return false
+        val token = candidate.line.text.trim()
+        if (token.isEmpty() || token.length > MAX_PLACEMENT_TOKEN_LENGTH ||
+            token.any { it !in NUMERIC_LIKE_PLACEMENT_CHARACTERS }
+        ) return false
+        val centerX = (candidate.box.left + candidate.box.right) / 2.0
+        return centerX <= cropWidth * PLACEMENT_REGION_FRACTION &&
+            abs(candidate.centerY - slotCenterYLocal) <= medianHeight
+    }
+
+    private fun deriveTwoRowClusters(
+        candidates: List<Candidate>,
+        slotCenterYLocal: Double,
+        tolerance: Double,
+    ): RowClusters? {
+        if (candidates.size < 2) return null
+        val sorted = candidates.sortedBy { it.centerY }
+        var largestGap = Double.NEGATIVE_INFINITY
+        var splitIndex = -1
+        for (index in 0 until sorted.lastIndex) {
+            val gap = sorted[index + 1].centerY - sorted[index].centerY
+            if (gap > largestGap) {
+                largestGap = gap
+                splitIndex = index
+            }
+        }
+        if (splitIndex < 0 || largestGap <= tolerance) return null
+        val upper = sorted.subList(0, splitIndex + 1)
+        val lower = sorted.subList(splitIndex + 1, sorted.size)
+        val upperCenter = median(upper.map { it.centerY }) ?: return null
+        val lowerCenter = median(lower.map { it.centerY }) ?: return null
+        if (upperCenter >= slotCenterYLocal || lowerCenter <= slotCenterYLocal) return null
+        if (upper.zipWithNext().any { (first, second) -> second.centerY - first.centerY > tolerance } ||
+            lower.zipWithNext().any { (first, second) -> second.centerY - first.centerY > tolerance }
+        ) return null
+        if (upper.any { abs(it.centerY - upperCenter) > tolerance } ||
+            lower.any { abs(it.centerY - lowerCenter) > tolerance }
+        ) return null
+        return RowClusters(upper, lower, upperCenter, lowerCenter)
+    }
+
     private fun rowCrop(
         rowIndex: Int,
         lines: List<ClassifiedLine>,
@@ -294,6 +347,13 @@ class MatchResultPositionLogicalRowClassifier {
         val band: MatchResultPositionLogicalRowBand,
     )
 
+    private data class RowClusters(
+        val upper: List<Candidate>,
+        val lower: List<Candidate>,
+        val upperCenter: Double,
+        val lowerCenter: Double,
+    )
+
     private fun MatchResultPositionLogicalRowBand.toLogicalRow(): MatchResultPositionLogicalRow = when (this) {
         MatchResultPositionLogicalRowBand.UPPER -> MatchResultPositionLogicalRow.UPPER
         MatchResultPositionLogicalRowBand.CENTER -> MatchResultPositionLogicalRow.CENTER
@@ -312,7 +372,9 @@ class MatchResultPositionLogicalRowClassifier {
 
     private companion object {
         const val PLACEMENT_REGION_FRACTION = 0.10
-        const val CENTER_TOLERANCE_FRACTION = 0.40
+        const val CENTER_TOLERANCE_FRACTION = 0.35
         const val SPANNING_HEIGHT_FACTOR = 2.0
+        const val MAX_PLACEMENT_TOKEN_LENGTH = 3
+        const val NUMERIC_LIKE_PLACEMENT_CHARACTERS = "0123456789IiLlOo|"
     }
 }
