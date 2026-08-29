@@ -35,9 +35,6 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme

@@ -123,7 +123,6 @@ class LobbyPlayerRowMapperTest {
     @Test
     fun ppFragmentsAreThePlayerNameAuthorityAndPreserveMissingRows() {
         val pp = LobbyPlayerPpOcrRecognition(
-            rawText = "PP_NAME_ONE PP_NAME_THREE PP_NAME_FOUR",
             fragments = listOf(
                 LobbyPlayerOcrTextFragment("PP_NAME_ONE", RawOcrBoundingBox(40, 20, 120, 40)),
                 LobbyPlayerOcrTextFragment("PP_NAME_THREE", RawOcrBoundingBox(40, 200, 140, 220)),
@@ -142,7 +141,6 @@ class LobbyPlayerRowMapperTest {
     @Test
     fun ppSlotNumberIsExcludedAndItsOriginalCoordinatesArePreserved() {
         val pp = LobbyPlayerPpOcrRecognition(
-            rawText = "4 PP_NAME",
             fragments = listOf(
                 LobbyPlayerOcrTextFragment("4", RawOcrBoundingBox(5, 20, 25, 40)),
                 LobbyPlayerOcrTextFragment("PP_NAME", RawOcrBoundingBox(40, 20, 120, 40)),

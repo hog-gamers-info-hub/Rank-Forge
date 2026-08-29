@@ -40,10 +40,6 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerDualOcrResult
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngine
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrEngineEvidence
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrConsensusStatus
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource

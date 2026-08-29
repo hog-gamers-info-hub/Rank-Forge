@@ -77,7 +77,7 @@ class AndroidLobbyPlayerRowCropPipeline @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            LobbyPlayerPpOcrRecognition(rawText = "", fragments = emptyList())
+            LobbyPlayerPpOcrRecognition(fragments = emptyList())
         }
         val mlEvidence = structure.findSlotEvidence(source.width, source.height)
         val ppEvidence = if (mlEvidence == null) {

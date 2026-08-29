@@ -1,6 +1,5 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
@@ -212,9 +211,6 @@ class MatchOcrReviewViewModel @Inject constructor(
         allowIncompleteEvidence: Boolean,
         useSlotNumberOnlyLobbyOcr: Boolean = false,
     ) {
-        logPhase1LobbySlotNumber(
-            "reprocessEntered useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
-        )
         loadedMatchKey = "$tournamentId:$matchId"
         startOcrProcessing(
             tournamentId = tournamentId,
@@ -230,9 +226,6 @@ class MatchOcrReviewViewModel @Inject constructor(
         allowIncompleteEvidence: Boolean,
         useSlotNumberOnlyLobbyOcr: Boolean,
     ) {
-        logPhase1LobbySlotNumber(
-            "startOcrProcessing useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
-        )
         cacheLoadJob?.cancel()
 
         _uiState.update {
@@ -261,11 +254,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     }
                 }
                 val lobbyOcr = async {
-                    logPhase1LobbySlotNumber(
-                        "lobbyAsyncEntered useSlotNumberOnlyLobbyOcr=$useSlotNumberOnlyLobbyOcr",
-                    )
                     if (useSlotNumberOnlyLobbyOcr) {
-                        logPhase1LobbySlotNumber("slotOnlyBranchSelected")
                         SlotNumberOnlyLobbyOutcome(
                             processSlotNumberOnlyLobbyOcr(tournamentId, matchId),
                         )
@@ -361,18 +350,10 @@ class MatchOcrReviewViewModel @Inject constructor(
         tournamentId: String,
         matchId: String,
     ): MatchLobbySlotNumberOcrResult = try {
-        logPhase1LobbySlotNumber(
-            "slotWrapperEntered runnerClass=${matchLobbySlotNumberOcrRunner.javaClass.simpleName}",
-        )
-        logPhase1LobbySlotNumber("slotRunnerInvoke")
-        matchLobbySlotNumberOcrRunner.process(tournamentId, matchId).also {
-            logPhase1LobbySlotNumber("slotRunnerReturned")
-        }
+        matchLobbySlotNumberOcrRunner.process(tournamentId, matchId)
     } catch (cancellation: CancellationException) {
-        logPhase1LobbySlotNumber("slotWrapperCancelled")
         throw cancellation
-    } catch (failure: Throwable) {
-        logPhase1LobbySlotNumber("slotWrapperFailed exceptionType=${failure.javaClass.simpleName}")
+    } catch (_: Throwable) {
         MatchLobbySlotNumberOcrResult(
             com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition.entries.map { position ->
                 MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
@@ -382,29 +363,6 @@ class MatchOcrReviewViewModel @Inject constructor(
                 )
             },
         )
-    }.also(::logPhase1LobbySlotNumberOcr)
-
-    private fun logPhase1LobbySlotNumberOcr(result: MatchLobbySlotNumberOcrResult) {
-        result.screenshots.forEach { screenshot ->
-            when (screenshot) {
-                is MatchLobbySlotNumberOcrScreenshotResult.Processed -> screenshot.slots.forEach { slot ->
-                    logPhase1LobbySlotNumber(
-                        "screenshotIndex=${screenshot.screenshotPosition.index} " +
-                            "visiblePosition=${slot.visibleSlotPosition.name} " +
-                            "status=${slot.candidate.status.name} " +
-                            "detectedNumber=${slot.candidate.detectedSlotNumber}",
-                    )
-                }
-                is MatchLobbySlotNumberOcrScreenshotResult.Unavailable -> logPhase1LobbySlotNumber(
-                    "screenshotIndex=${screenshot.screenshotPosition.index} " +
-                        "unavailableReason=${screenshot.reason.name}",
-                )
-            }
-        }
-    }
-
-    private fun logPhase1LobbySlotNumber(message: String) {
-        runCatching { Log.w(TEMP_LOBBY_SLOT_PHASE1_TAG, message) }
     }
 
     fun loadCached(tournamentId: String, matchId: String) {
@@ -1086,8 +1044,6 @@ private fun MatchLobbySlotNumberOcrResult.toMatchLobbyPlayersOcrResult(): MatchL
         }
     return MatchLobbyPlayersOcrResult(slots)
 }
-
-private const val TEMP_LOBBY_SLOT_PHASE1_TAG = "TEMP_LOBBY_SLOT_PHASE1"
 
 private fun MatchLobbyPlayersOcrResult.toUiState(): List<MatchOcrReviewLobbySlotUiState> =
     slots.sortedBy { it.slotNumber }.map { slot ->
