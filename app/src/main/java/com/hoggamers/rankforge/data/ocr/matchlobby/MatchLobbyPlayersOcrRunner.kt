@@ -7,20 +7,10 @@ import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.presentation.screen.NoOpScreenshotOwnerProvider
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
-import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionInput
-import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractionResult
-import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyResolvedSlotGroup
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotIdentityResolutionResult
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotIdentityResolver
-import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotContentSlotNumberExtractor
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseInput
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParser
-import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotCandidate
-import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
-import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -53,7 +43,7 @@ data class MatchLobbyPlayersOcrResult(
     }
 }
 
-const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 3
+const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 5
 
 fun interface MatchLobbyPlayersOcrRunner {
     suspend fun process(tournamentId: String, matchId: String): MatchLobbyPlayersOcrResult
@@ -63,10 +53,7 @@ fun interface MatchLobbyPlayersOcrRunner {
 class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
     private val assetRepository: MatchLobbyScreenshotAssetRepository,
     private val cacheRepository: MatchLobbyOcrCacheRepository,
-    private val panelPreparer: RosterOcrPanelPreparer,
-    private val extractor: RosterRawOcrExtractor,
-    private val parser: RosterCandidateParser,
-    private val slotIdentityResolver: LobbySlotIdentityResolver,
+    private val slotNumberOcrRunner: MatchLobbySlotNumberOcrRunner,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
 ) : MatchLobbyPlayersOcrRunner {
     override suspend fun process(
@@ -79,8 +66,63 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()?.takeIf { it.isNotBlank() }
             ?: return MatchLobbyPlayersOcrResult.unavailable()
 
+        val cachedContributions = mutableMapOf<RosterScreenshotPosition, MatchLobbyScreenshotContribution>()
+        val fingerprints = mutableMapOf<RosterScreenshotPosition, MatchLobbyOcrCacheFingerprint?>()
+        val uncachedPositions = mutableSetOf<RosterScreenshotPosition>()
+        RosterScreenshotPosition.entries.forEach { position ->
+            val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
+            val asset = try {
+                assetRepository.getByIdentityAndOwner(identity, ownerUserId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            val fingerprint = asset?.toMatchLobbyOcrCacheFingerprint(identity, position)
+            fingerprints[position] = fingerprint
+            val cached = fingerprint?.let { value ->
+                try {
+                    cacheRepository.readByOwner(value, ownerUserId)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            val contribution = cached?.toContribution()
+            if (contribution != null) cachedContributions[position] = contribution
+            else uncachedPositions += position
+        }
+
+        val freshScreenshots = if (uncachedPositions.isEmpty()) {
+            emptyMap()
+        } else {
+            val fresh = try {
+                slotNumberOcrRunner.process(tournamentId, matchId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            fresh?.screenshots
+                ?.filter { it.screenshotPosition in uncachedPositions && fingerprints[it.screenshotPosition] != null }
+                ?.associateBy { it.screenshotPosition }
+                .orEmpty()
+        }
         val contributions = RosterScreenshotPosition.entries.mapNotNull { position ->
-            processScreenshot(tournamentId, matchId, position, ownerUserId)
+            cachedContributions[position] ?: freshScreenshots[position]
+                ?.toContribution()
+                ?.also { contribution ->
+                    fingerprints[position]?.let { fingerprint ->
+                        try {
+                            cacheRepository.saveByOwner(fingerprint, contribution.slots, ownerUserId)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Throwable) {
+                            // Cache persistence is an optimization and must not block OCR Review.
+                        }
+                    }
+                }
         }
         val slots = MatchLobbyPlayersOcrResult.unavailable().slots.toMutableList()
         contributions
@@ -93,138 +135,6 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
                 }
             }
         return MatchLobbyPlayersOcrResult(slots)
-    }
-
-    private suspend fun processScreenshot(
-        tournamentId: String,
-        matchId: String,
-        position: RosterScreenshotPosition,
-        ownerUserId: String,
-    ): MatchLobbyScreenshotContribution? {
-        val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
-        val asset = try {
-            assetRepository.getByIdentityAndOwner(identity, ownerUserId)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: RuntimeException) {
-            return null
-        } ?: run {
-            return null
-        }
-
-        val source = asset.toRosterOcrScreenshotSource(position, identity) ?: run {
-            return null
-        }
-        val fingerprint = asset.toMatchLobbyOcrCacheFingerprint(identity, position)
-        if (fingerprint != null) {
-            val cached = try {
-                cacheRepository.readByOwner(fingerprint, ownerUserId)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                null
-            }
-            if (cached != null && readFingerprint(identity, position, ownerUserId) == fingerprint) {
-                val cachedContribution = cached.toContribution()
-                if (cachedContribution != null) {
-                    return cachedContribution
-                }
-            }
-        }
-        val prepared = try {
-            panelPreparer.prepare(source)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return null
-        }
-        val panel = when (prepared) {
-            is RosterOcrPanelPreparationResult.Failed -> {
-                return null
-            }
-            is RosterOcrPanelPreparationResult.Prepared -> prepared.panel
-        }
-
-        var extraction: List<RosterRawOcrExtractionResult>? = null
-        var extractionFailure: Throwable? = null
-        try {
-            extraction = extractor.extract(
-                RosterRawOcrExtractionInput(
-                    croppedPanelImage = panel.croppedPanelImage,
-                    croppedPanelInput = panel.croppedPanelInput,
-                ),
-            )
-        } catch (cancellation: CancellationException) {
-            extractionFailure = cancellation
-        } catch (_: Throwable) {
-            extractionFailure = ExtractionFailure
-        }
-
-        var releaseFailure: Throwable? = null
-        try {
-            panel.release()
-        } catch (cancellation: CancellationException) {
-            releaseFailure = cancellation
-        } catch (_: Throwable) {
-            releaseFailure = ReleaseFailure
-        }
-        extractionFailure?.let { failure ->
-            if (failure is CancellationException) throw failure
-            return null
-        }
-        releaseFailure?.let { failure ->
-            if (failure is CancellationException) throw failure
-            return null
-        }
-
-        val extractionResults = requireNotNull(extraction)
-        val parsed = try {
-            parser.parse(RosterCandidateParseInput(extractionResults))
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            return null
-        }
-        val contentSlotNumberCandidates = LobbySlotContentSlotNumberExtractor.derive(extractionResults)
-        val semanticSlots = parsed.slots.map { slot ->
-            slot.copy(
-                slotNumberCandidate = contentSlotNumberCandidates[slot.visibleSlotPosition]
-                    ?: com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate.unavailable(),
-            )
-        }
-        val resolvedGroup = when (val resolution = slotIdentityResolver.resolve(semanticSlots)) {
-            is LobbySlotIdentityResolutionResult.Resolved -> resolution.group
-            is LobbySlotIdentityResolutionResult.Unresolved -> {
-                return null
-            }
-        }
-        val candidatesByVisiblePosition = semanticSlots.associateBy { it.visibleSlotPosition }
-        val slots = resolvedGroup.slots.map { resolvedSlot ->
-            val candidate = candidatesByVisiblePosition[resolvedSlot.visibleSlotPosition]
-            MatchLobbyPlayersOcrSlot(
-                slotNumber = resolvedSlot.tournamentSlotNumber,
-                players = (1..4).map { playerNumber ->
-                    val player = candidate?.playerNameCandidates
-                        ?.firstOrNull { it.playerRowIndex == playerNumber }
-                    MatchLobbyPlayersOcrPlayer(
-                        playerNumber = playerNumber,
-                        playerName = player?.candidateText
-                            ?.trim()
-                            ?.takeIf { player.status == RosterCandidateParseStatus.PARSED && it.isNotBlank() },
-                    )
-                },
-            )
-        }
-        if (fingerprint != null && readFingerprint(identity, position, ownerUserId) == fingerprint) {
-            try {
-            cacheRepository.saveByOwner(fingerprint, slots, ownerUserId)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                // Cache persistence is an optimization and must not block OCR Review.
-            }
-        }
-        return MatchLobbyScreenshotContribution(resolvedGroup, slots)
     }
 
     private fun List<MatchLobbyPlayersOcrSlot>.toContribution(): MatchLobbyScreenshotContribution? {
@@ -240,23 +150,34 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
         )
     }
 
-    private fun Set<Int>.toIntRange(): IntRange = minOrNull()!!..maxOrNull()!!
-
-    private suspend fun readFingerprint(
-        identity: MatchLobbyScreenshotIdentity,
-        position: RosterScreenshotPosition,
-        ownerUserId: String,
-    ): MatchLobbyOcrCacheFingerprint? = try {
-        assetRepository.getByIdentityAndOwner(identity, ownerUserId)
-            ?.toMatchLobbyOcrCacheFingerprint(identity, position)
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (_: Throwable) {
-        null
+    private fun MatchLobbySlotNumberOcrScreenshotResult.toContribution(): MatchLobbyScreenshotContribution? {
+        val processed = this as? MatchLobbySlotNumberOcrScreenshotResult.Processed ?: return null
+        val previews = (processed.teamCropPreviews as? MatchLobbyTeamCropPreviewResult.Available)
+            ?.previews
+            ?: return null
+        val slots = previews.map { preview ->
+            val slotNumber = preview.authoritativeTeamSlotNumber
+                .takeIf { it in 1..12 }
+                ?: processed.screenshotPosition.tournamentSlotFor(preview.visibleSlotPosition)
+            MatchLobbyPlayersOcrSlot(
+                slotNumber = slotNumber,
+                players = LobbyPlayerRow.entries.map { row ->
+                    MatchLobbyPlayersOcrPlayer(
+                        playerNumber = row.ordinal + 1,
+                        playerName = preview.playerRowPreviews
+                            .firstOrNull { it.row == row }
+                            ?.structuralEvidence
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() },
+                    )
+                },
+            )
+        }
+        if (slots.size != RosterVisibleSlotPosition.entries.size) return null
+        return slots.toContribution()
     }
 
-    private object ExtractionFailure : Throwable()
-    private object ReleaseFailure : Throwable()
+    private fun Set<Int>.toIntRange(): IntRange = minOrNull()!!..maxOrNull()!!
 
     private data class MatchLobbyScreenshotContribution(
         val group: LobbyResolvedSlotGroup,

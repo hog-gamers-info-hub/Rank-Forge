@@ -1593,23 +1593,7 @@ class MatchOcrReviewViewModelTest {
                 boundsInTeamCrop = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
                 slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
                 slotAnchorY = 5.0,
-                structuralEvidence = null,
-                image = SlotOnlyTeamCropPreviewImage,
-                dualOcrResult = LobbyPlayerDualOcrResult(
-                    teamSlotNumber = slotNumber,
-                    row = row,
-                    rowBounds = LobbyPlayerRowCropBounds(0, index, 10, index + 1),
-                    slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
-                    slotAnchorY = 5.0,
-                    ppEvidence = LobbyPlayerOcrEngineEvidence(
-                        engine = LobbyPlayerOcrEngine.PP_OCRV6,
-                        rawText = playerName,
-                        candidateText = playerName,
-                    ),
-                    resolvedText = playerName,
-                    consensusStatus = LobbyPlayerOcrConsensusStatus.PP_ONLY,
-                    finalText = playerName,
-                ),
+                structuralEvidence = playerName,
             )
         },
     )

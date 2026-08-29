@@ -3991,7 +3991,6 @@ class MatchReviewScreenTest {
             slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
             slotAnchorY = 4.0,
             structuralEvidence = null,
-            image = image,
         )
         val teamCrops = MatchLobbyTeamCropPreviewResult.Available(
             RosterVisibleSlotPosition.entries.mapIndexed { index, position ->

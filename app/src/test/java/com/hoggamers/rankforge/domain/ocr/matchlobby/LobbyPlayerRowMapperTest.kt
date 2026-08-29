@@ -1,6 +1,9 @@
 package com.hoggamers.rankforge.domain.ocr.matchlobby
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerPpEvidenceMapper
+import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerPpOcrRecognition
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrTextFragment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -115,6 +118,47 @@ class LobbyPlayerRowMapperTest {
         assertEquals("upper-split", mapping.row(LobbyPlayerRow.ROW_2).structuralText)
         assertEquals("anchor", mapping.row(LobbyPlayerRow.ROW_3).structuralText)
         assertEquals("bottom", mapping.row(LobbyPlayerRow.ROW_4).structuralText)
+    }
+
+    @Test
+    fun ppFragmentsAreThePlayerNameAuthorityAndPreserveMissingRows() {
+        val pp = LobbyPlayerPpOcrRecognition(
+            rawText = "PP_NAME_ONE PP_NAME_THREE PP_NAME_FOUR",
+            fragments = listOf(
+                LobbyPlayerOcrTextFragment("PP_NAME_ONE", RawOcrBoundingBox(40, 20, 120, 40)),
+                LobbyPlayerOcrTextFragment("PP_NAME_THREE", RawOcrBoundingBox(40, 200, 140, 220)),
+                LobbyPlayerOcrTextFragment("PP_NAME_FOUR", RawOcrBoundingBox(40, 280, 140, 300)),
+            ),
+        )
+
+        val mapping = LobbyPlayerRowMapper.map(bands, LobbyPlayerPpEvidenceMapper.playerFragments(pp))
+
+        assertEquals("PP_NAME_ONE", mapping.row(LobbyPlayerRow.ROW_1).structuralText)
+        assertNull(mapping.row(LobbyPlayerRow.ROW_2).structuralText)
+        assertEquals("PP_NAME_THREE", mapping.row(LobbyPlayerRow.ROW_3).structuralText)
+        assertEquals("PP_NAME_FOUR", mapping.row(LobbyPlayerRow.ROW_4).structuralText)
+    }
+
+    @Test
+    fun ppSlotNumberIsExcludedAndItsOriginalCoordinatesArePreserved() {
+        val pp = LobbyPlayerPpOcrRecognition(
+            rawText = "4 PP_NAME",
+            fragments = listOf(
+                LobbyPlayerOcrTextFragment("4", RawOcrBoundingBox(5, 20, 25, 40)),
+                LobbyPlayerOcrTextFragment("PP_NAME", RawOcrBoundingBox(40, 20, 120, 40)),
+            ),
+        )
+
+        val fragments = LobbyPlayerPpEvidenceMapper.playerFragments(pp)
+        val mapping = LobbyPlayerRowMapper.map(
+            bands,
+            fragments,
+            selectedSlotBoundingBox = fragments.first().boundingBox,
+            slotGutterRight = 30,
+        )
+
+        assertEquals(RawOcrBoundingBox(40, 20, 120, 40), fragments[1].boundingBox)
+        assertEquals("PP_NAME", mapping.row(LobbyPlayerRow.ROW_1).structuralText)
     }
 
     private fun fragment(text: String, left: Int, top: Int) = LobbyPlayerOcrFragment(

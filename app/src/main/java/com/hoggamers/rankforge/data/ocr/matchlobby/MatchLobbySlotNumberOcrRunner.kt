@@ -54,6 +54,7 @@ data class MatchLobbyTeamCropPreview(
     val detectedSlotNumber: Int,
     val image: MatchLobbyTeamCropPreviewImage,
     val playerRowPreviews: List<LobbyPlayerRowCropPreview> = emptyList(),
+    val authoritativeTeamSlotNumber: Int = 0,
 )
 
 enum class MatchLobbyTeamCropPreviewUnavailableReason {
@@ -368,7 +369,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                 val image = teamCropPreviewFactory.create(panelImage, crop)
                 val rowPreviews = when (
                     val generated = playerRowCropPipeline.generate(
-                        authoritativeTeamSlotNumber = crop.detectedSlotNumber,
+                        authoritativeTeamSlotNumber = RosterScreenshotPosition
+                            .fromIndex(screenshotIndex)
+                            ?.tournamentSlotFor(crop.visibleSlotPosition)
+                            ?: crop.detectedSlotNumber,
                         teamCropImage = image,
                     )
                 ) {
@@ -380,6 +384,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     detectedSlotNumber = crop.detectedSlotNumber,
                     image = image,
                     playerRowPreviews = rowPreviews,
+                    authoritativeTeamSlotNumber = RosterScreenshotPosition
+                        .fromIndex(screenshotIndex)
+                        ?.tournamentSlotFor(crop.visibleSlotPosition)
+                        ?: crop.detectedSlotNumber,
                 )
             }
             MatchLobbyTeamCropPreviewResult.Available(previews)

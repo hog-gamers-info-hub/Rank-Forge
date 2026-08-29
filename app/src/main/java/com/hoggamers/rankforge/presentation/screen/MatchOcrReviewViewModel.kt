@@ -1078,7 +1078,7 @@ private fun MatchLobbySlotNumberOcrResult.toMatchLobbyPlayersOcrResult(): MatchL
                             .map { row ->
                                 MatchLobbyPlayersOcrPlayer(
                                     playerNumber = row.ordinal + 1,
-                                    playerName = rowPreviewsByRow[row]?.dualOcrResult?.finalText,
+                                    playerName = rowPreviewsByRow[row]?.structuralEvidence,
                                 )
                             },
                     )
