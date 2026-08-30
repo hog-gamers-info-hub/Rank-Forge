@@ -52,8 +52,8 @@ import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 
 class MatchLobbyPlayersOcrRunnerTest {
     @Test
-    fun ppPlayerAuthorityUsesCachePipelineVersionSix() {
-        assertEquals(7, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
+    fun ppPlayerAuthorityUsesCachePipelineVersionTen() {
+        assertEquals(10, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
     }
 
     @Test

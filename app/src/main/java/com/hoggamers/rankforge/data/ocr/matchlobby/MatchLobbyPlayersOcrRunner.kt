@@ -43,7 +43,7 @@ data class MatchLobbyPlayersOcrResult(
     }
 }
 
-const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 7
+const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 10
 
 fun interface MatchLobbyPlayersOcrRunner {
     suspend fun process(tournamentId: String, matchId: String): MatchLobbyPlayersOcrResult

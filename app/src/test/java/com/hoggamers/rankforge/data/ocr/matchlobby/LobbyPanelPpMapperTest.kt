@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,6 +154,143 @@ class LobbyPanelPpMapperTest {
     }
 
     @Test
+    fun bottomLeftRow4SelectsClosestLineForSlotsThreeSevenAndEleven() {
+        listOf(
+            RosterScreenshotPosition.ONE to 3,
+            RosterScreenshotPosition.TWO to 7,
+            RosterScreenshotPosition.THREE to 11,
+        ).forEach { (position, slotNumber) ->
+            val result = mapped(
+                bottomLeftFragmentsWithSeparateRow4Lines(
+                    position = position,
+                    footerText = "SRESTATOR UET(3/9)",
+                ),
+            )
+            val team = result.teams.single { it.crop.detectedSlotNumber == slotNumber }
+
+            assertEquals(LobbySlotGridRole.BOTTOM_LEFT, LobbySlotGridRole.fromSlotNumber(slotNumber))
+            assertEquals(
+                "player-4-leftplayer-4-right",
+                team.rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }.playerName,
+            )
+        }
+    }
+
+    @Test
+    fun bottomLeftPhysicalRow4LineSelectionRejectsFooterForSlotsThreeSevenAndEleven() {
+        listOf(
+            RosterScreenshotPosition.ONE to 3,
+            RosterScreenshotPosition.TWO to 7,
+            RosterScreenshotPosition.THREE to 11,
+        ).forEach { (position, slotNumber) ->
+            val result = mapped(
+                physicalBottomLeftFragmentsFor(position),
+                panelHeight = PHYSICAL_PANEL_HEIGHT,
+            )
+            val player4 = result.teams.single { it.crop.detectedSlotNumber == slotNumber }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+
+            assertEquals("FE.PHANTOM", player4.playerName)
+        }
+    }
+
+    @Test
+    fun bottomLeftRow4FilterUsesOnlyGeometryForArbitraryFooterText() {
+        listOf("XYZ", "28", "SPECT...").forEach { footerText ->
+            val result = mapped(bottomLeftFragmentsFor(RosterScreenshotPosition.ONE, footerText))
+            val row4 = result.teams.single { it.crop.detectedSlotNumber == 3 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+
+            assertEquals("player-4", row4.playerName)
+        }
+    }
+
+    @Test
+    fun bottomLeftRow4AcceptsGenuinePlayerWithSmallVerticalDeviation() {
+        val result = mapped(
+            bottomLeftFragmentsFor(
+                position = RosterScreenshotPosition.ONE,
+                footerText = "footer",
+                player4CenterY = 790,
+                footerCenterY = 815,
+            ),
+        )
+
+        assertEquals(
+            "player-4",
+            result.teams.single { it.crop.detectedSlotNumber == 3 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName,
+        )
+    }
+
+    @Test
+    fun bottomLeftRow4SingleClusterRemainsAccepted() {
+        val result = mapped(
+            fragmentsFor(RosterScreenshotPosition.ONE) + buildList {
+                (1..3).forEach { player ->
+                    add(fragment("player-$player", 110, 470 + (player - 1) * 100))
+                }
+                add(fragment("player-4", 110, 790))
+            },
+        )
+
+        assertEquals(
+            "player-4",
+            result.teams.single { it.crop.detectedSlotNumber == 3 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName,
+        )
+    }
+
+    @Test
+    fun nonBottomLeftRolesKeepTheirExistingRow4Mapping() {
+        val result = mapped(
+            completePanelFragments() + listOf(
+                fragment("top-left-footer", 110, 410),
+                fragment("top-right-footer", 610, 410),
+                fragment("bottom-right-footer", 610, 810),
+            ),
+        )
+
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 1 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName
+                ?.contains("top-left-footer") == true,
+        )
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 2 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName
+                ?.contains("top-right-footer") == true,
+        )
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 4 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName
+                ?.contains("bottom-right-footer") == true,
+        )
+    }
+
+    @Test
+    fun bottomLeftRow4FilterSkipsWhenRowsOneThroughThreeEvidenceIsInsufficient() {
+        val result = mapped(
+            fragmentsFor(RosterScreenshotPosition.ONE) + listOf(
+                fragment("only-player-1", 110, 470),
+                fragment("footer", 110, 810),
+            ),
+        )
+
+        assertEquals(
+            "footer",
+            result.teams.single { it.crop.detectedSlotNumber == 3 }
+                .rowPreviews.single { it.row == LobbyPlayerRow.ROW_4 }
+                .playerName,
+        )
+    }
+
+    @Test
     fun duplicateSlotEvidenceUsesHighestConfidenceDeterministically() {
         val result = mapped(
             completePanelFragments() + fragment("1", 60, 220, confidence = 0.99f),
@@ -184,16 +322,68 @@ class LobbyPanelPpMapperTest {
         add(fragment("delta-four", 610, 770))
     }
 
-    private fun fragmentsFor(position: RosterScreenshotPosition): List<LobbyPanelPpFragment> = buildList {
+    private fun fragmentsFor(
+        position: RosterScreenshotPosition,
+        topAnchorCenterY: Int = 220,
+        bottomAnchorCenterY: Int = 620,
+    ): List<LobbyPanelPpFragment> = buildList {
         val numbers = position.tournamentSlotRange.toList()
-        add(fragment(numbers[0].toString(), 60, 220, confidence = 0.91f))
-        add(fragment(numbers[1].toString(), 560, 220, confidence = 0.82f))
-        add(fragment(numbers[2].toString(), 60, 620, confidence = 0.83f))
-        add(fragment(numbers[3].toString(), 560, 620, confidence = 0.84f))
+        add(fragment(numbers[0].toString(), 60, topAnchorCenterY, confidence = 0.91f))
+        add(fragment(numbers[1].toString(), 560, topAnchorCenterY, confidence = 0.82f))
+        add(fragment(numbers[2].toString(), 60, bottomAnchorCenterY, confidence = 0.83f))
+        add(fragment(numbers[3].toString(), 560, bottomAnchorCenterY, confidence = 0.84f))
     }
 
-    private fun mapped(fragments: List<LobbyPanelPpFragment>): LobbyPanelPpMappingResult.Available =
-        (LobbyPanelPpMapper.map(PANEL_WIDTH, PANEL_HEIGHT, fragments)
+    private fun bottomLeftFragmentsFor(
+        position: RosterScreenshotPosition,
+        footerText: String,
+        player4CenterY: Int = 770,
+        footerCenterY: Int = 810,
+    ): List<LobbyPanelPpFragment> = fragmentsFor(position) + buildList {
+        (1..3).forEach { player ->
+            add(fragment("player-$player", 110, 470 + (player - 1) * 100))
+        }
+        add(fragment("player-4", 110, player4CenterY))
+        add(fragment(footerText, 110, footerCenterY))
+    }
+
+    private fun bottomLeftFragmentsWithSeparateRow4Lines(
+        position: RosterScreenshotPosition,
+        footerText: String,
+        player4CenterY: Int = 770,
+        footerCenterY: Int = 810,
+    ): List<LobbyPanelPpFragment> = fragmentsFor(position) + buildList {
+        (1..3).forEach { player ->
+            add(fragment("player-$player", 110, 470 + (player - 1) * 100))
+        }
+        add(fragment("player-4-left", 110, player4CenterY))
+        add(fragment("player-4-right", 210, player4CenterY))
+        add(fragment("$footerText-left", 110, footerCenterY))
+        add(fragment("$footerText-right", 210, footerCenterY))
+    }
+
+    private fun physicalBottomLeftFragmentsFor(
+        position: RosterScreenshotPosition,
+    ): List<LobbyPanelPpFragment> = fragmentsFor(
+        position = position,
+        topAnchorCenterY = PHYSICAL_TOP_ANCHOR_Y,
+        bottomAnchorCenterY = PHYSICAL_BOTTOM_ANCHOR_Y,
+    ) + buildList {
+        add(physicalFragment("player-1", 110, 317, 337))
+        add(physicalFragment("player-2", 110, 368, 387))
+        add(physicalFragment("player-3", 110, 418, 438))
+        add(physicalFragment("FE.PHANT", 110, 467, 487))
+        add(physicalFragment("OM", 210, 468, 486))
+        add(physicalFragment("SRESTATOR UET", 110, 479, 499))
+        add(physicalFragment("(3/9)", 210, 479, 499))
+    }
+
+    private fun mapped(
+        fragments: List<LobbyPanelPpFragment>,
+        panelWidth: Int = PANEL_WIDTH,
+        panelHeight: Int = PANEL_HEIGHT,
+    ): LobbyPanelPpMappingResult.Available =
+        (LobbyPanelPpMapper.map(panelWidth, panelHeight, fragments)
             as LobbyPanelSemanticMappingResult.Available).mapping
 
     private fun unmapped(fragments: List<LobbyPanelPpFragment>): LobbyPanelPpMappingResult.Unavailable =
@@ -213,9 +403,24 @@ class LobbyPanelPpMapperTest {
         readingOrderIndex = nextIndex++,
     )
 
+    private fun physicalFragment(
+        text: String,
+        centerX: Int,
+        top: Int,
+        bottom: Int,
+    ) = LobbyPanelPpFragment(
+        text = text,
+        confidence = 0.75f,
+        boundingBox = RawOcrBoundingBox(centerX - 20, top, centerX + 20, bottom),
+        readingOrderIndex = nextIndex++,
+    )
+
     private companion object {
         const val PANEL_WIDTH = 1_000
         const val PANEL_HEIGHT = 900
+        const val PHYSICAL_PANEL_HEIGHT = 505
+        const val PHYSICAL_TOP_ANCHOR_Y = 202
+        const val PHYSICAL_BOTTOM_ANCHOR_Y = 404
         var nextIndex = 0
     }
 }
