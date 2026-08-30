@@ -49,6 +49,31 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
+    fun calculatingStateDisplaysOnlyAnimatedCalculatingUi() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewScreen(
+                    uiState = MatchOcrReviewUiState.Calculating(
+                        tournamentId = "synthetic-tournament",
+                        matchId = "synthetic-match",
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.CALCULATING).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Calculating Results").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Please wait. This will only take a few seconds.",
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.READY_CONTENT)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.ROW_LIST)
+            .assertCountEquals(0)
+    }
+
+    @Test
     fun emptyStateIsDisplayed() {
         composeTestRule.setContent {
             RankForgeTheme {

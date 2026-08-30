@@ -535,6 +535,8 @@ fun MatchReviewScreen(
     onOcrDismissFinalizeWarnings: () -> Unit = {},
 ) {
     when {
+        ocrUiState is MatchOcrReviewUiState.Calculating ->
+            MatchOcrReviewCalculatingState()
         uiState.isLoading ||
             (uiState.isAvailable && !showLegacyManualReviewContent && lobbyUiState.isLoading) ->
             RankForgeLoadingState(
@@ -1706,6 +1708,7 @@ private fun MatchReviewLobbyPlayerDetailsContent(
                 text = ocrUiState.message,
                 color = MaterialTheme.colorScheme.error,
             )
+            is MatchOcrReviewUiState.Calculating -> Unit
             is MatchOcrReviewUiState.Ready -> {
                 if (ocrUiState.lobbyPlayers.isNotEmpty()) {
                     MatchReviewLobbyPlayersPager(
@@ -1765,6 +1768,7 @@ private fun MatchOcrReviewUiState.hasLobbyPlayerEvidence(): Boolean = when (this
     is MatchOcrReviewUiState.Empty -> lobbyPlayers.any { it.players.isNotEmpty() }
     is MatchOcrReviewUiState.Ready -> lobbyPlayers.any { it.players.isNotEmpty() }
     MatchOcrReviewUiState.Loading,
+    is MatchOcrReviewUiState.Calculating,
     is MatchOcrReviewUiState.Error,
     -> false
 }
@@ -1779,6 +1783,7 @@ private fun MatchOcrReviewUiState.hasDisplayableResultOcrData(): Boolean = when 
         rows.isNotEmpty() ||
             (matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)?.rows?.isNotEmpty() == true
     MatchOcrReviewUiState.Loading,
+    is MatchOcrReviewUiState.Calculating,
     is MatchOcrReviewUiState.Error,
     -> false
 }
@@ -1830,6 +1835,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 text = uiState.message,
                 color = MaterialTheme.colorScheme.error,
             )
+            is MatchOcrReviewUiState.Calculating -> Unit
             is MatchOcrReviewUiState.Ready -> MatchReviewResultRowsPagerContent(
                 uiState = uiState,
                 onPlacementChanged = onPlacementChanged,
@@ -1913,6 +1919,7 @@ private fun MatchReviewResultOcrPositionContent(
         }
 
         MatchOcrReviewUiState.Loading,
+        is MatchOcrReviewUiState.Calculating,
         is MatchOcrReviewUiState.Error,
         -> Unit
     }

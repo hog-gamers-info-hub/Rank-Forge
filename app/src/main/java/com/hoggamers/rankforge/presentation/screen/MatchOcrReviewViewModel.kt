@@ -228,15 +228,12 @@ class MatchOcrReviewViewModel @Inject constructor(
     ) {
         cacheLoadJob?.cancel()
 
-        _uiState.update {
-            MatchOcrReviewUiState.Empty(
-                tournamentId = tournamentId,
-                matchId = matchId,
-                matchResultOcrPreview = MatchResultOcrPreviewUiState.Processing,
-            )
-        }
-        _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
         previewJob?.cancel()
+        _uiState.value = MatchOcrReviewUiState.Calculating(
+            tournamentId = tournamentId,
+            matchId = matchId,
+        )
+        _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
         previewJob = viewModelScope.launch {
             val (roleResults, lobbyOutcome) = coroutineScope {
                 val resultOcr = async {
@@ -325,6 +322,13 @@ class MatchOcrReviewViewModel @Inject constructor(
                     null
                 }
                 when (state) {
+                    is MatchOcrReviewUiState.Calculating -> reviewState ?: MatchOcrReviewUiState.Empty(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        matchResultOcrPreview = preview,
+                        teamNamesBySlot = teamContext.teamNamesBySlot,
+                        lobbyPlayers = lobbyPlayers,
+                    )
                     is MatchOcrReviewUiState.Empty -> {
                         if (state.tournamentId == tournamentId && state.matchId == matchId) {
                             reviewState ?: state.copy(
@@ -399,6 +403,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                             }
                         }
                         is MatchOcrReviewUiState.Error,
+                        is MatchOcrReviewUiState.Calculating,
                         MatchOcrReviewUiState.Loading,
                         -> state
                     }
@@ -444,6 +449,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         }
                     }
                     is MatchOcrReviewUiState.Error,
+                    is MatchOcrReviewUiState.Calculating,
                     -> state
                     MatchOcrReviewUiState.Loading -> completeReviewStateFromPreview(
                         tournamentId = tournamentId,

@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.delay
 
 private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
@@ -64,6 +66,7 @@ private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 object MatchOcrReviewTestTags {
     const val SCREEN = "match_ocr_review_screen"
     const val LOADING = "match_ocr_review_loading"
+    const val CALCULATING = "match_ocr_review_calculating"
     const val EMPTY = "match_ocr_review_empty"
     const val ERROR = "match_ocr_review_error"
     const val EMPTY_CONTENT = "match_ocr_review_empty_content"
@@ -170,6 +173,7 @@ fun MatchOcrReviewScreen(
 ) {
     when (uiState) {
         MatchOcrReviewUiState.Loading -> MatchOcrReviewLoadingState()
+        is MatchOcrReviewUiState.Calculating -> MatchOcrReviewCalculatingState()
         is MatchOcrReviewUiState.Empty -> MatchOcrReviewEmptyState(uiState, onBack)
         is MatchOcrReviewUiState.Error -> MatchOcrReviewErrorState(uiState, onBack)
         is MatchOcrReviewUiState.Ready -> MatchOcrReviewReadyState(
@@ -186,6 +190,58 @@ fun MatchOcrReviewScreen(
             onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
             onDismissFinalizeWarnings = onDismissFinalizeWarnings,
         )
+    }
+}
+
+@Composable
+internal fun MatchOcrReviewCalculatingState() {
+    val dotCount = remember { mutableStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(450L)
+            dotCount.value = if (dotCount.value == 3) 1 else dotCount.value + 1
+        }
+    }
+    RankForgeScreenContainer(
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.CALCULATING),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start,
+            ) {
+                Text(
+                    text = stringResource(R.string.match_ocr_review_calculating_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Box(
+                    modifier = Modifier.width(24.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = ".".repeat(dotCount.value),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.match_ocr_review_calculating_message),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                softWrap = false,
+                textAlign = TextAlign.Start,
+            )
+        }
     }
 }
 

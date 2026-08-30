@@ -77,6 +77,11 @@ data class MatchResultOcrPreviewManualRowUiState(
 sealed interface MatchOcrReviewUiState {
     data object Loading : MatchOcrReviewUiState
 
+    data class Calculating(
+        val tournamentId: String,
+        val matchId: String,
+    ) : MatchOcrReviewUiState
+
     data class Ready(
         val tournamentId: String,
         val matchId: String,
