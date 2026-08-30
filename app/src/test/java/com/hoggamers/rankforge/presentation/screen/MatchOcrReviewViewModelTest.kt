@@ -100,14 +100,14 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun loadInitializesEmptyStateFromRouteArguments() {
+    fun loadInitializesCalculatingStateFromRouteArguments() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
         viewModel.load("synthetic-tournament", "synthetic-match")
 
         val state = viewModel.uiState.value
-        assertTrue(state is MatchOcrReviewUiState.Empty)
-        state as MatchOcrReviewUiState.Empty
+        assertTrue(state is MatchOcrReviewUiState.Calculating)
+        state as MatchOcrReviewUiState.Calculating
         assertEquals("synthetic-tournament", state.tournamentId)
         assertEquals("synthetic-match", state.matchId)
     }
@@ -193,8 +193,8 @@ class MatchOcrReviewViewModelTest {
         viewModel.load(TOURNAMENT_ID, MATCH_ID)
 
         val state = viewModel.uiState.value
-        assertTrue(state is MatchOcrReviewUiState.Empty)
-        state as MatchOcrReviewUiState.Empty
+        assertTrue(state is MatchOcrReviewUiState.Calculating)
+        state as MatchOcrReviewUiState.Calculating
         assertEquals(TOURNAMENT_ID, state.tournamentId)
         assertEquals(MATCH_ID, state.matchId)
         assertEquals(beforeMatch, repository.observeMatchById(MATCH_ID).first())
@@ -208,7 +208,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun repeatedLoadForSameRouteKeepsDeterministicEmptyState() {
+    fun repeatedLoadForSameRouteKeepsDeterministicCalculatingState() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
         viewModel.load("synthetic-tournament", "synthetic-match")
@@ -348,8 +348,9 @@ class MatchOcrReviewViewModelTest {
             )
             advanceUntilIdle()
 
-            val state = viewModel.uiState.value as MatchOcrReviewUiState.Empty
-            assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Processing)
+            val state = viewModel.uiState.value as MatchOcrReviewUiState.Calculating
+            assertEquals(TOURNAMENT_ID, state.tournamentId)
+            assertEquals(MATCH_ID, state.matchId)
             assertEquals(0, oldLobbyRunnerCalls)
         }
 
