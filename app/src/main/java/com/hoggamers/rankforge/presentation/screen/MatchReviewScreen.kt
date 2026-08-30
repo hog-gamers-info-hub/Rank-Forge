@@ -679,6 +679,11 @@ private fun MatchReviewContent(
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
     val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
+    val hasCombinedPositionCropPreviews = uiState.resultScreenshots.any { slot ->
+        slot.hasSelection() && uiState.resultPositionCropPreviews[slot.role]
+            ?.sortedCrops()
+            ?.isNotEmpty() == true
+    }
     val isEmptyScreenshotUi = !showLegacyManualReviewContent &&
         !hasLobbyScreenshotSelection &&
         !hasResultScreenshotSelection &&
@@ -1008,8 +1013,8 @@ private fun MatchReviewContent(
             MatchOcrCacheAvailability.NOT_AVAILABLE,
             -> Unit
         }
+        val readyOcrUiState = ocrUiState as? MatchOcrReviewUiState.Ready
         if (!showLegacyManualReviewContent && shouldShowInlineOcrDetails) {
-            val readyOcrUiState = ocrUiState as? MatchOcrReviewUiState.Ready
             readyOcrUiState?.correctionDraft?.let { correctionDraft ->
                 MatchOcrReviewFinalizeAction(
                     correctionDraft = correctionDraft,
@@ -1018,6 +1023,24 @@ private fun MatchReviewContent(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
+        }
+        if (!showLegacyManualReviewContent && hasCombinedPositionCropPreviews) {
+            readyOcrUiState?.finalization?.error?.let { error ->
+                Text(
+                    text = stringResource(error.toMatchReviewMessageRes()),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZATION_ERROR),
+                )
+            }
+        }
+        if (!showLegacyManualReviewContent &&
+            readyOcrUiState?.finalization?.showWarningConfirmation == true
+        ) {
+            MatchOcrReviewFinalizeWarningDialog(
+                warningCount = readyOcrUiState.correctionDraft?.warningCount ?: 0,
+                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+            )
         }
         if (uiState.isEditable) {
             Button(
@@ -2067,13 +2090,6 @@ private fun MatchReviewResultRowsPagerContent(
             }
         }
     }
-    if (uiState.finalization.showWarningConfirmation) {
-        MatchOcrReviewFinalizeWarningDialog(
-            warningCount = uiState.correctionDraft?.warningCount ?: 0,
-            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
-            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
-        )
-    }
 }
 
 @Composable
@@ -2824,6 +2840,22 @@ private fun MatchReviewNotFoundState(onBackToDetails: () -> Unit) {
             Text(text = stringResource(R.string.back_to_match_details_action))
         }
     }
+}
+
+private fun MatchOcrReviewFinalizationError.toMatchReviewMessageRes(): Int = when (this) {
+    MatchOcrReviewFinalizationError.MISSING_CORRECTION_DRAFT ->
+        R.string.match_ocr_review_finalization_missing_draft
+    MatchOcrReviewFinalizationError.CORRECTION_DRAFT_BLOCKED ->
+        R.string.match_ocr_review_finalization_blocked_error
+    MatchOcrReviewFinalizationError.MISSING_TOURNAMENT ->
+        R.string.match_ocr_review_finalization_missing_tournament
+    MatchOcrReviewFinalizationError.MISSING_MATCH ->
+        R.string.match_ocr_review_finalization_missing_match
+    MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
+        R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.FINALIZATION_FAILED,
+    MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE,
+    -> R.string.match_ocr_review_finalization_failed
 }
 
 private fun MatchResultValidationError.toMessageRes(): Int = when (this) {

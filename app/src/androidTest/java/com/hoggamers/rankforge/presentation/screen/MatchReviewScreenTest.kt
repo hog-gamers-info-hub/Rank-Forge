@@ -1865,6 +1865,167 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun simplifiedInlineFinalizeShowsOneWarningDialogWithCombinedPositionPreviews() {
+        var ocrUiState by mutableStateOf(warningOcrState())
+        var finalizeCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = selectedResultScreenshotSlots(),
+                        resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrUiState,
+                    onOcrFinalize = {
+                        finalizeCount++
+                        ocrUiState = ocrUiState.copy(
+                            finalization = ocrUiState.finalization.copy(
+                                showWarningConfirmation = true,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.runOnIdle { assertEquals(1, finalizeCount) }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun simplifiedInlineFinalizeWarningConfirmInvokesCallbackExactlyOnce() {
+        var confirmCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = selectedResultScreenshotSlots(),
+                        resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = warningOcrState().copy(
+                        finalization = MatchOcrReviewFinalizationUiState(
+                            showWarningConfirmation = true,
+                        ),
+                    ),
+                    onOcrConfirmFinalizeWarnings = { confirmCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS)
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, confirmCount) }
+    }
+
+    @Test
+    fun simplifiedInlineFinalizeWarningDismissInvokesCallbackExactlyOnce() {
+        var dismissCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = selectedResultScreenshotSlots(),
+                        resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = warningOcrState().copy(
+                        finalization = MatchOcrReviewFinalizationUiState(
+                            showWarningConfirmation = true,
+                        ),
+                    ),
+                    onOcrDismissFinalizeWarnings = { dismissCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, dismissCount) }
+    }
+
+    @Test
+    fun simplifiedInlineFinalizeWithoutWarningsRemainsEnabledWithCombinedPositionPreviews() {
+        var finalizeCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = selectedResultScreenshotSlots(),
+                        resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                    onOcrFinalize = { finalizeCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, finalizeCount) }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedInlineFinalizeErrorRemainsVisibleWithCombinedPositionPreviews() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(
+                        resultScreenshots = selectedResultScreenshotSlots(),
+                        resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState().copy(
+                        finalization = MatchOcrReviewFinalizationUiState(
+                            error = MatchOcrReviewFinalizationError.FINALIZATION_FAILED,
+                        ),
+                    ),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZATION_ERROR)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun simplifiedReviewCalculateActionInvokesCalculateCallbackWhenEligible() {
         var ocrReviewCount = 0
         var calculateCount = 0
@@ -4121,6 +4282,40 @@ class MatchReviewScreenTest {
             ),
         )
     }
+
+    private fun warningOcrState(): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrState()
+        val baseDraft = base.correctionDraft ?: error("Expected correction draft")
+        val warningDraft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(baseDraft, 0, "9")
+        return base.copy(
+            warningCount = warningDraft.warningCount,
+            correctionDraft = warningDraft,
+        )
+    }
+
+    private fun selectedResultScreenshotSlots() = listOf(
+        resultSlot(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            hasLinkedAsset = true,
+            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+            cropProfileId = "match-result",
+        ),
+        resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+    )
+
+    private fun combinedPositionCropPreviewStates() = mapOf(
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+            MatchResultPositionCropPreviewState.Available(
+                listOf(
+                    MatchResultPositionCropPreview(
+                        position = 1,
+                        image = AndroidMatchResultPositionCropPreviewImage(
+                            Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                        ),
+                    ),
+                ),
+            ),
+    )
 
     private fun inlineOcrStateWithRows(): MatchOcrReviewUiState.Ready {
         val first = inlineOcrState()
