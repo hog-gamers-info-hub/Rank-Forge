@@ -888,6 +888,45 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun calculateResultPositionCropsKeepsSwappedSemanticGeometryOnPhysicalSlots() = runTest {
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                // The stored UPPER slot contains the semantic LOWER screenshot.
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(11..12),
+                // The stored LOWER slot contains the semantic UPPER screenshot.
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to availablePositionCropPreviews(1..10),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            ),
+            generator = generator,
+        )
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(
+            (11..12).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+        assertEquals(
+            (1..10).toList(),
+            scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .sortedCrops()
+                .map(MatchResultPositionCropPreview::position),
+        )
+    }
+
+    @Test
     fun calculateResultPositionCropsEnablesUpperPositionElevenFallbackWithoutLowerInput() = runTest {
         val generator = RecordingMatchResultPositionCropPreviewGenerator(
             statesByRole = mapOf(
@@ -2853,11 +2892,11 @@ class MatchReviewViewModelTest {
         override suspend fun generate(
             localFile: File,
             confirmedCrop: OcrNormalizedCropRect,
-            role: MatchResultScreenshotRole,
+            storedRole: MatchResultScreenshotRole,
             allowUpperPositionElevenFallback: Boolean,
         ): MatchResultPositionCropPreviewState {
-            requests += Request(localFile, confirmedCrop, role, allowUpperPositionElevenFallback)
-            return statesByRole[role] ?: MatchResultPositionCropPreviewState.Unavailable(
+            requests += Request(localFile, confirmedCrop, storedRole, allowUpperPositionElevenFallback)
+            return statesByRole[storedRole] ?: MatchResultPositionCropPreviewState.Unavailable(
                 MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
             )
         }

@@ -37,6 +37,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
     private val paddleEngineProvider: MatchResultPositionPaddleOcrEngineProvider,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
+    private val semanticRoleResolver: MatchResultSemanticRoleResolver = MatchResultSemanticRoleResolver(),
 ) : MatchResultOcrPreviewRunner {
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -72,20 +73,35 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             ?: return@withContext MatchResultOcrPreviewProcessingResult.MissingLocalOriginal
         val source = decodeCrop(file, pixelCrop)
             ?: return@withContext MatchResultOcrPreviewProcessingResult.DecodeFailed
-        val allowUpperFallback = identity.role == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
-            !hasConfirmedLowerAsset(identity, owner)
+        var resolvedSemanticRole: MatchResultScreenshotRole? = null
         try {
-            val generated = when (val result = positionCropGenerator.generate(source, identity.role, allowUpperFallback)) {
+            val observation = when (val result = positionCropGenerator.observe(source)) {
+                is MatchResultPositionCropObservationResult.Observed -> result
+                MatchResultPositionCropObservationResult.InvalidSource,
+                MatchResultPositionCropObservationResult.OcrFailed,
+                -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+            }
+            val resolved = when (val result = semanticRoleResolver.resolve(observation.evidence)) {
+                is MatchResultSemanticRoleResolution.Resolved -> result
+                MatchResultSemanticRoleResolution.Unresolved,
+                MatchResultSemanticRoleResolution.Ambiguous,
+                -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+            }
+            val semanticRole = resolved.role
+            resolvedSemanticRole = semanticRole
+            val allowUpperFallback = semanticRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
+                !hasConfirmedLowerAsset(identity, owner)
+            val generated = when (val result = positionCropGenerator.generate(source, resolved.geometry)) {
                 is MatchResultPositionCropGenerationResult.Generated -> result
-                else -> return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
+                else -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(semanticRole)
             }
             try {
                 val inputPlan = MatchResultPpInputPlanner.plan(
-                    role = identity.role,
+                    role = semanticRole,
                     sourceWidth = source.width,
                     sourceHeight = source.height,
                     crops = generated.geometry.crops,
-                ) ?: throw IllegalStateException("Unable to plan Result PP input for role=${identity.role}")
+                ) ?: throw IllegalStateException("Unable to plan Result PP input for role=$semanticRole")
                 val inputBitmap = if (inputPlan.mode == MatchResultPpInputMode.FULL_PANEL) {
                     source
                 } else {
@@ -100,11 +116,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 try {
                     val semantics = runPanelPpProduction(
                         inputBitmap = inputBitmap,
-                        role = identity.role,
+                        role = semanticRole,
                         inputPlan = inputPlan,
                     )
-                    val extraction = semantics.toAcceptedExtraction(identity.role, allowUpperFallback)
-                        ?: return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
+                    val extraction = semantics.toAcceptedExtraction(semanticRole, allowUpperFallback)
+                        ?: return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(semanticRole)
                     MatchResultOcrPreviewProcessingResult.Processed(
                         extraction = extraction,
                         pixelCrop = pixelCrop,
@@ -121,7 +137,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            MatchResultOcrPreviewProcessingResult.RecognitionFailed
+            resolvedSemanticRole?.let(MatchResultOcrPreviewProcessingResult::SemanticRoleProcessingFailed)
+                ?: MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
         } finally {
             if (!source.isRecycled) source.recycle()
         }
@@ -254,6 +271,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
 class HybridMatchResultOcrPreviewRunner(
     private val newRoute: MatchResultOcrPreviewRunner,
     private val legacyRoute: MatchResultOcrPreviewRunner,
+    private val semanticRoleReconciler: MatchResultSemanticRoleReconciler = MatchResultSemanticRoleReconciler(),
 ) : MatchResultOcrPreviewRunner {
     private val lock = Any()
     private val runs = mutableMapOf<RunKey, SharedRun>()
@@ -311,15 +329,41 @@ class HybridMatchResultOcrPreviewRunner(
                 newRoute.process(identity.copy(role = role))
             }
         }.mapValues { (_, deferred) -> deferred.await() }
-        if (newResults.values.all(::isAcceptable)) {
+        val reconciliation = semanticRoleReconciler.reconcile(newResults)
+        val canonicalNewResults = (reconciliation as? MatchResultSemanticRoleReconciliation.Resolved)?.results
+        if (canonicalNewResults != null && canonicalNewResults.values.all(::isAcceptable)) {
             logAcceptedRoute()
-            return@coroutineScope newResults
+            return@coroutineScope canonicalNewResults
+        }
+        if (newResults.requiresSemanticSafeFailure(reconciliation)) {
+            return@coroutineScope MatchResultScreenshotRole.entries.associateWith {
+                MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+            }
         }
         val legacyResults = MatchResultScreenshotRole.entries.associateWith { role ->
             legacyRoute.process(identity.copy(role = role))
         }
         logFallbackRoute(fallbackReason(newResults))
         return@coroutineScope legacyResults
+    }
+
+    private fun Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>
+        .requiresSemanticSafeFailure(
+            reconciliation: MatchResultSemanticRoleReconciliation,
+        ): Boolean {
+        if (values.any { it == MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed }) {
+            return true
+        }
+        if (entries.any { (requestedRole, result) ->
+                result is MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed &&
+                    result.role != requestedRole
+            }
+        ) {
+            return true
+        }
+        // A complete physical pair with a non-bijective semantic assignment cannot
+        // be safely reinterpreted by the stored-role legacy route.
+        return reconciliation is MatchResultSemanticRoleReconciliation.Conflict
     }
 
     private fun fallbackReason(

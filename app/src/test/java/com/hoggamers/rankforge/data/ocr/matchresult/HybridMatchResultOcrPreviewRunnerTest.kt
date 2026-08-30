@@ -70,6 +70,62 @@ class HybridMatchResultOcrPreviewRunnerTest {
     }
 
     @Test
+    fun swappedPhysicalRolesReturnCanonicalSemanticResultsWithTwoNewRouteCalls() = runBlocking {
+        val newRouteCalls = AtomicInteger()
+        val legacyCalls = AtomicInteger()
+        val runner = HybridMatchResultOcrPreviewRunner(
+            newRoute = MatchResultOcrPreviewRunner { storedIdentity ->
+                newRouteCalls.incrementAndGet()
+                val semanticRole = when (storedIdentity.role) {
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                }
+                processed(semanticRole, MatchResultOcrPreviewSource.NEW_PP_POSITION)
+            },
+            legacyRoute = MatchResultOcrPreviewRunner { identity ->
+                legacyCalls.incrementAndGet()
+                processed(identity.role, MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT)
+            },
+        )
+
+        val results = MatchResultScreenshotRole.entries.map { role ->
+            async { runner.process(identity(role)) }
+        }.awaitAll()
+
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            (results[0] as MatchResultOcrPreviewProcessingResult.Processed).extraction.role,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            (results[1] as MatchResultOcrPreviewProcessingResult.Processed).extraction.role,
+        )
+        assertEquals(2, newRouteCalls.get())
+        assertEquals(0, legacyCalls.get())
+    }
+
+    @Test
+    fun duplicateSemanticRoleFailsSafelyWithoutLegacyReinterpretation() = runBlocking {
+        val legacyCalls = AtomicInteger()
+        val runner = HybridMatchResultOcrPreviewRunner(
+            newRoute = MatchResultOcrPreviewRunner {
+                processed(MatchResultScreenshotRole.MATCH_RESULT_UPPER, MatchResultOcrPreviewSource.NEW_PP_POSITION)
+            },
+            legacyRoute = MatchResultOcrPreviewRunner { identity ->
+                legacyCalls.incrementAndGet()
+                processed(identity.role, MatchResultOcrPreviewSource.LEGACY_FULL_SCREENSHOT)
+            },
+        )
+
+        val results = MatchResultScreenshotRole.entries.map { role ->
+            async { runner.process(identity(role)) }
+        }.awaitAll()
+
+        assertTrue(results.all { it == MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed })
+        assertEquals(0, legacyCalls.get())
+    }
+
+    @Test
     fun repeatedSameRoleAfterCompletedPairStartsFreshRun() = runBlocking {
         val newRouteCalls = AtomicInteger()
         val runner = HybridMatchResultOcrPreviewRunner(

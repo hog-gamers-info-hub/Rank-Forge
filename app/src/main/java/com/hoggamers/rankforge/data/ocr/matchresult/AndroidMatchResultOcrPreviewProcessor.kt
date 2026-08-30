@@ -97,6 +97,10 @@ class AndroidMatchResultOcrPreviewProcessor(
             MatchResultOcrPreviewProcessingResult.DecodeFailed -> logResultOnly("DecodeFailed")
             MatchResultOcrPreviewProcessingResult.RecognitionFailed ->
                 logResultOnly("RecognitionFailed")
+            MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed ->
+                logResultOnly("SemanticRoleResolutionFailed")
+            is MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed ->
+                logResultOnly("SemanticRoleProcessingFailed")
         }
     }
 

@@ -30,6 +30,10 @@ sealed interface MatchResultOcrPreviewProcessingResult {
     data object InvalidCrop : MatchResultOcrPreviewProcessingResult
     data object DecodeFailed : MatchResultOcrPreviewProcessingResult
     data object RecognitionFailed : MatchResultOcrPreviewProcessingResult
+    data object SemanticRoleResolutionFailed : MatchResultOcrPreviewProcessingResult
+    data class SemanticRoleProcessingFailed(
+        val role: MatchResultScreenshotRole,
+    ) : MatchResultOcrPreviewProcessingResult
 }
 
 enum class MatchResultOcrPreviewSource {
