@@ -8,7 +8,6 @@ import com.hoggamers.rankforge.data.ocr.matchresult.CachingMatchResultOcrPreview
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionOcrPreviewRunner
-import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleOcrRecognizer
 import com.hoggamers.rankforge.data.ocr.matchresult.HybridMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
@@ -36,7 +35,7 @@ object MatchResultOcrPreviewModule {
         localImagePreserver: LocalImagePreserver,
         screenshotOwnerProvider: ScreenshotOwnerProvider,
         positionCropGenerator: AndroidMatchResultPositionCropGenerator,
-        paddleRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
+        paddleEngineProvider: com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrEngineProvider,
     ): MatchResultOcrPreviewRunner {
         val legacyRunner = CachingMatchResultOcrPreviewRunner(
             assetRepository = assetRepository,
@@ -57,7 +56,7 @@ object MatchResultOcrPreviewModule {
             ),
             screenshotOwnerProvider = screenshotOwnerProvider,
             positionCropGenerator = positionCropGenerator,
-            paddleRecognizer = paddleRecognizer,
+            paddleEngineProvider = paddleEngineProvider,
         )
         return HybridMatchResultOcrPreviewRunner(
             newRoute = newPositionRunner,
