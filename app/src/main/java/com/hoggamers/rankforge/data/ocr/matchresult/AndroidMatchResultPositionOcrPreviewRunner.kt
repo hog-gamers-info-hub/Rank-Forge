@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -28,15 +29,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-/** Production whole-position PP route. */
+/** Production panel/ROI PP route. */
 class AndroidMatchResultPositionOcrPreviewRunner(
     private val assetRepository: MatchResultScreenshotAssetRepository,
     private val localFileResolver: MatchResultOcrPreviewLocalFileResolver,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
-    private val paddleRecognizer: AndroidMatchResultPositionPaddleOcrRecognizer,
+    private val paddleEngineProvider: MatchResultPositionPaddleOcrEngineProvider,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
-    private val rowOcrPreprocessor: AndroidMatchResultRowOcrPreprocessor = AndroidMatchResultRowOcrPreprocessor(),
 ) : MatchResultOcrPreviewRunner {
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -80,22 +80,41 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 else -> return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
             }
             try {
-                val semantics = generated.crops.sortedBy { it.geometry.position }.map { positionCrop ->
-                    val wholeAttempt = wholePositionSemantic(positionCrop, identity.role)
-                    wholeAttempt.semantic
-                        ?: throw IllegalStateException(
-                            "Whole-position OCR unavailable: ${wholeAttempt.reason}",
-                        )
+                val inputPlan = MatchResultPpInputPlanner.plan(
+                    role = identity.role,
+                    sourceWidth = source.width,
+                    sourceHeight = source.height,
+                    crops = generated.geometry.crops,
+                ) ?: throw IllegalStateException("Unable to plan Result PP input for role=${identity.role}")
+                val inputBitmap = if (inputPlan.mode == MatchResultPpInputMode.FULL_PANEL) {
+                    source
+                } else {
+                    Bitmap.createBitmap(
+                        source,
+                        inputPlan.bounds.left,
+                        inputPlan.bounds.top,
+                        inputPlan.bounds.width,
+                        inputPlan.bounds.height,
+                    )
                 }
-                val extraction = semantics.toAcceptedExtraction(identity.role, allowUpperFallback)
-                    ?: return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
-                MatchResultOcrPreviewProcessingResult.Processed(
-                    extraction = extraction,
-                    pixelCrop = pixelCrop,
-                    cropWidth = source.width,
-                    cropHeight = source.height,
-                    source = MatchResultOcrPreviewSource.NEW_PP_POSITION,
-                )
+                try {
+                    val semantics = runPanelPpProduction(
+                        inputBitmap = inputBitmap,
+                        role = identity.role,
+                        inputPlan = inputPlan,
+                    )
+                    val extraction = semantics.toAcceptedExtraction(identity.role, allowUpperFallback)
+                        ?: return@withContext MatchResultOcrPreviewProcessingResult.RecognitionFailed
+                    MatchResultOcrPreviewProcessingResult.Processed(
+                        extraction = extraction,
+                        pixelCrop = pixelCrop,
+                        cropWidth = source.width,
+                        cropHeight = source.height,
+                        source = MatchResultOcrPreviewSource.NEW_PP_POSITION,
+                    )
+                } finally {
+                    if (inputBitmap !== source && !inputBitmap.isRecycled) inputBitmap.recycle()
+                }
             } finally {
                 generated.release()
             }
@@ -108,133 +127,84 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         }
     }
 
-    private suspend fun wholePositionSemantic(
-        positionCrop: MatchResultPositionBitmapCrop,
+    private suspend fun runPanelPpProduction(
+        inputBitmap: Bitmap,
         role: MatchResultScreenshotRole,
-    ): WholePositionAttempt {
-        val structuralCenter = positionCrop.geometry.structuralCenterYInSource ?: return WholePositionAttempt(
-            semantic = null,
-            reason = WholePositionFallbackReason.STRUCTURAL_CENTER_UNAVAILABLE.name,
+        inputPlan: MatchResultPpInputPlan,
+    ): List<MatchResultPositionSemanticResult> {
+        val engine = paddleEngineProvider.getOrCreate()
+        val runResult = engine.recognize(inputBitmap)
+        val panelBlocks = PaddleRawOcrGeometryMapper.map(
+            runResult = runResult,
+            cropWidth = inputBitmap.width,
+            cropHeight = inputBitmap.height,
         )
-        val localCenter = structuralCenter - positionCrop.geometry.bounds.top
-        if (!localCenter.isFinite() || localCenter !in 0.0..positionCrop.bitmap.height.toDouble()) {
-            return WholePositionAttempt(
-                semantic = null,
-                reason = WholePositionFallbackReason.INVALID_STRUCTURAL_CENTER.name,
-            )
+
+        val mapped = MatchResultPanelPpMapper.map(panelBlocks, inputPlan.crops)
+        val semanticResults = mapped.map { evidence -> mapPanelPosition(role, evidence) }
+        val expectedPositions = inputPlan.crops.map { it.position }.sorted()
+        val productionReady = expectedPositions.isNotEmpty() &&
+            semanticResults.size == expectedPositions.size &&
+            semanticResults.all { it.productionReady }
+        if (!productionReady) {
+            throw IllegalStateException("Whole-panel OCR unavailable for role=$role")
         }
-        var enhanced: Bitmap? = null
-        return try {
-            enhanced = try {
-                rowOcrPreprocessor.create(
-                    positionCrop.bitmap,
-                    MatchResultRowOcrCandidate.SCALE_3X,
-                )
-            } catch (_: Throwable) {
-                null
-            }
-            enhanced ?: return WholePositionAttempt(
-                semantic = null,
-                reason = WholePositionFallbackReason.PREPROCESS_FAILED.name,
-            )
-            val result = try {
-                paddleRecognizer.recognize(
-                    MatchResultPositionBitmapCrop(positionCrop.geometry, enhanced),
-                    role,
-                )
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                return WholePositionAttempt(
-                    semantic = null,
-                    reason = WholePositionFallbackReason.PADDLE_FAILED.name,
-                )
-            }
-            val evidence = (result as? MatchResultPositionPaddleOcrResult.Success)?.evidence
-                ?: return WholePositionAttempt(
-                    semantic = null,
-                    reason = WholePositionFallbackReason.PADDLE_FAILED.name,
-                )
-            val blocks = MatchResultPositionOcrGeometryMapper.mapBlocks(
-                blocks = evidence.blocks,
-                scale = MatchResultRowOcrCandidate.SCALE_3X,
-                positionWidth = positionCrop.bitmap.width,
-                positionHeight = positionCrop.bitmap.height,
-            )
-            if (blocks.flatMap { it.lines }.isEmpty()) return WholePositionAttempt(
-                semantic = null,
-                reason = WholePositionFallbackReason.NO_MAPPED_LINES.name,
-            )
-            val classification = MatchResultPositionLogicalRowClassifier().classify(
-                position = positionCrop.geometry.position,
-                cropWidth = positionCrop.bitmap.width,
-                cropHeight = positionCrop.bitmap.height,
-                slotCenterYLocal = localCenter,
-                blocks = blocks,
-            )
-            if (classification !is MatchResultPositionLogicalRowClassification.Available) {
-                return WholePositionAttempt(
-                    semantic = null,
-                    reason = classification.diagnostics.reason?.name ?: WholePositionFallbackReason.UNKNOWN.name,
-                )
-            }
-            val semantic = try {
+        return semanticResults.map { result ->
+            result.semantic
+                ?: throw IllegalStateException("Whole-panel semantic unavailable for role=$role")
+        }.sortedBy { it.position }
+    }
+
+    private fun mapPanelPosition(
+        role: MatchResultScreenshotRole,
+        evidence: MatchResultPanelPpPositionEvidence,
+    ): PanelPositionSemantic {
+        val crop = evidence.crop
+        val classification = MatchResultPositionLogicalRowClassifier().classify(
+            position = crop.position,
+            cropWidth = crop.bounds.width,
+            cropHeight = crop.bounds.height,
+            slotCenterYLocal = crop.structuralCenterYInSource?.minus(crop.bounds.top),
+            blocks = evidence.blocks,
+        )
+        val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
+            try {
                 fieldMapper.map(
                     MatchResultPositionOcrInput(
                         role = role,
-                        position = positionCrop.geometry.position,
-                        cropWidth = positionCrop.bitmap.width,
-                        cropHeight = positionCrop.bitmap.height,
+                        position = crop.position,
+                        cropWidth = crop.bounds.width,
+                        cropHeight = crop.bounds.height,
                         blocks = classification.blocks,
                         rowCrops = classification.rowCrops,
                         placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
                         killVerifications = emptyMap(),
                     ),
                 )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (_: Throwable) {
-                return WholePositionAttempt(
-                    null,
-                    WholePositionFallbackReason.SEMANTIC_MAPPING_FAILED.name,
-                )
+                null
             }
-            val players = semantic.row?.playerSlots.orEmpty()
-            val reason = when {
-                semantic.fields.isEmpty() -> WholePositionFallbackReason.SEMANTIC_NO_FIELDS
-                players.isEmpty() -> WholePositionFallbackReason.SEMANTIC_NO_PLAYERS
-                !semantic.isAutoAcceptable -> WholePositionFallbackReason.SEMANTIC_WEAK_KILL_RECOVERY_REQUIRED
-                else -> null
-            }
-            if (reason != null) WholePositionAttempt(null, reason.name)
-            else WholePositionAttempt(semantic, WholePositionFallbackReason.UNKNOWN.name)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            WholePositionAttempt(
-                semantic = null,
-                reason = WholePositionFallbackReason.UNKNOWN.name,
-            )
-        } finally {
-            enhanced?.takeUnless { it.isRecycled }?.recycle()
+        } else {
+            null
         }
+        val localLines = evidence.blocks.sumOf { it.lines.size }
+        val productionReady = localLines > 0 &&
+            classification is MatchResultPositionLogicalRowClassification.Available &&
+            semantic?.fields?.isNotEmpty() == true &&
+            semantic.row?.playerSlots.orEmpty().isNotEmpty() &&
+            semantic.isAutoAcceptable
+        return PanelPositionSemantic(
+            semantic = semantic,
+            productionReady = productionReady,
+        )
     }
 
-    private data class WholePositionAttempt(
+    private data class PanelPositionSemantic(
         val semantic: MatchResultPositionSemanticResult?,
-        val reason: String,
+        val productionReady: Boolean,
     )
-
-    private enum class WholePositionFallbackReason {
-        PREPROCESS_FAILED,
-        PADDLE_FAILED,
-        NO_MAPPED_LINES,
-        STRUCTURAL_CENTER_UNAVAILABLE,
-        INVALID_STRUCTURAL_CENTER,
-        SEMANTIC_MAPPING_FAILED,
-        SEMANTIC_NO_FIELDS,
-        SEMANTIC_NO_PLAYERS,
-        SEMANTIC_WEAK_KILL_RECOVERY_REQUIRED,
-        UNKNOWN,
-    }
 
     private suspend fun hasConfirmedLowerAsset(
         identity: MatchResultScreenshotIdentity,
@@ -277,9 +247,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         } finally {
             if (!decoded.isRecycled) decoded.recycle()
         }
-    }
-
-    private companion object {
     }
 
 }
