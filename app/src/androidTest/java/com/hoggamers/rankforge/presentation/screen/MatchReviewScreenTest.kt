@@ -369,6 +369,45 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun calculatedOcrDetailsRemainVisibleAfterCalculatingStateRecomposition() {
+        var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    ocrUiState = ocrUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onCalculatePoints = {
+                        ocrUiState = MatchOcrReviewUiState.Calculating(
+                            tournamentId = "tournament-id",
+                            matchId = "match-id",
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithText("Calculating Results").assertIsDisplayed()
+
+        composeTestRule.runOnIdle {
+            ocrUiState = inlineOcrState()
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Player One - [8]", substring = true)
+            .assertExists()
+    }
+
+    @Test
     fun completeLegacyEvidenceOpensOcrReviewWithoutCalculatingPoints() {
         var opened = 0
         var calculated = 0

@@ -534,6 +534,8 @@ fun MatchReviewScreen(
     onOcrConfirmFinalizeWarnings: () -> Unit = {},
     onOcrDismissFinalizeWarnings: () -> Unit = {},
 ) {
+    var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
+
     when {
         ocrUiState is MatchOcrReviewUiState.Calculating ->
             MatchOcrReviewCalculatingState()
@@ -572,6 +574,8 @@ fun MatchReviewScreen(
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
             showLegacyManualReviewContent = showLegacyManualReviewContent,
             showInlineOcrDetails = showInlineOcrDetails,
+            ocrReviewOpened = ocrReviewOpened,
+            onOcrReviewOpenedChange = { ocrReviewOpened = it },
             ocrCacheAvailability = ocrCacheAvailability,
             ocrUiState = ocrUiState,
             onOcrPlacementChanged = onOcrPlacementChanged,
@@ -620,6 +624,8 @@ private fun MatchReviewContent(
     matchLobbyScreenshotIntake: @Composable () -> Unit,
     showLegacyManualReviewContent: Boolean,
     showInlineOcrDetails: Boolean,
+    ocrReviewOpened: Boolean,
+    onOcrReviewOpenedChange: (Boolean) -> Unit,
     ocrCacheAvailability: MatchOcrCacheAvailability,
     ocrUiState: MatchOcrReviewUiState,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit,
@@ -641,14 +647,13 @@ private fun MatchReviewContent(
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
     var selectedResultFormat by remember { mutableStateOf<ResultExportFileFormat?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
-    var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
         lobbySlots = lobbyUiState.slots,
         resultSlots = uiState.resultScreenshots,
     )
     LaunchedEffect(ocrPreflightItems) {
         if (ocrPreflightItems.isNotEmpty()) {
-            ocrReviewOpened = false
+            onOcrReviewOpenedChange(false)
         }
     }
     val shouldShowInlineOcrDetails = showInlineOcrDetails ||
@@ -962,27 +967,27 @@ private fun MatchReviewContent(
                 onCancel = { showOcrPreflight = false },
                 onCalculatePoints = {
                     showOcrPreflight = false
-                    ocrReviewOpened = true
+                    onOcrReviewOpenedChange(true)
                     onCalculatePoints()
                 },
                 onSelectLobbyScreenshot = { index ->
                     showOcrPreflight = false
-                    ocrReviewOpened = false
+                    onOcrReviewOpenedChange(false)
                     onSelectLobbyScreenshot(index)
                 },
                 onOpenLobbyScreenshotCrop = { index ->
                     showOcrPreflight = false
-                    ocrReviewOpened = false
+                    onOcrReviewOpenedChange(false)
                     onOpenLobbyScreenshotCrop(index)
                 },
                 onSelectResultScreenshot = { role ->
                     showOcrPreflight = false
-                    ocrReviewOpened = false
+                    onOcrReviewOpenedChange(false)
                     onSelectResultScreenshot(role)
                 },
                 onOpenResultScreenshotCrop = { role ->
                     showOcrPreflight = false
-                    ocrReviewOpened = false
+                    onOcrReviewOpenedChange(false)
                     onOpenResultScreenshotCrop(role)
                 },
             )
@@ -1018,10 +1023,10 @@ private fun MatchReviewContent(
             Button(
                 onClick = {
                     if (showLegacyManualReviewContent) {
-                        ocrReviewOpened = true
+                        onOcrReviewOpenedChange(true)
                         onOpenOcrReview()
                     } else if (ocrPreflightItems.isEmpty()) {
-                        ocrReviewOpened = true
+                        onOcrReviewOpenedChange(true)
                         onCalculatePoints()
                     } else {
                         showOcrPreflight = true
