@@ -392,11 +392,10 @@ class MatchReviewViewModel @Inject constructor(
         val lowerAvailable = _uiState.value.resultScreenshots
             .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
             .resultPositionCropPreviewInputKey() != null
-        MatchResultScreenshotRole.entries.forEach { role ->
+        MatchResultScreenshotRole.entries.forEach { storedRole ->
             generateResultPositionCropPreviews(
-                role = role,
-                allowUpperPositionElevenFallback =
-                    role == MatchResultScreenshotRole.MATCH_RESULT_UPPER && !lowerAvailable,
+                storedRole = storedRole,
+                allowUpperPositionElevenFallback = !lowerAvailable,
             )
         }
     }
@@ -2678,8 +2677,7 @@ class MatchReviewViewModel @Inject constructor(
             .resultPositionCropPreviewInputKey() != null
         MatchResultScreenshotRole.entries.forEach { role ->
             val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
-                allowUpperPositionElevenFallback =
-                    role == MatchResultScreenshotRole.MATCH_RESULT_UPPER && !lowerAvailable,
+                allowUpperPositionElevenFallback = !lowerAvailable,
             )
             if (resultPositionCropInputs[role] != inputKey) {
                 clearResultPositionCropPreviews(role)
@@ -2688,30 +2686,30 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     private fun generateResultPositionCropPreviews(
-        role: MatchResultScreenshotRole,
+        storedRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
     ) {
-        val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
+        val inputKey = _uiState.value.resultScreenshots.slot(storedRole).resultPositionCropPreviewInputKey(
             allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
         )
             ?: run {
-                clearResultPositionCropPreviews(role)
+                clearResultPositionCropPreviews(storedRole)
                 return
             }
-        if (resultPositionCropJobs[role]?.isActive == true && resultPositionCropInputs[role] == inputKey) return
+        if (resultPositionCropJobs[storedRole]?.isActive == true && resultPositionCropInputs[storedRole] == inputKey) return
 
-        resultPositionCropJobs.remove(role)?.cancel()
-        resultPositionCropInputs[role] = inputKey
+        resultPositionCropJobs.remove(storedRole)?.cancel()
+        resultPositionCropInputs[storedRole] = inputKey
         _uiState.update { state ->
             state.copy(
-                resultPositionCropPreviews = state.resultPositionCropPreviews.replace(role) {
+                resultPositionCropPreviews = state.resultPositionCropPreviews.replace(storedRole) {
                     MatchResultPositionCropPreviewState.Loading
                 },
             )
         }
-        resultPositionCropJobs[role] = viewModelScope.launch {
+        resultPositionCropJobs[storedRole] = viewModelScope.launch {
             val result = try {
-                val current = _uiState.value.resultScreenshots.slot(role)
+                val current = _uiState.value.resultScreenshots.slot(storedRole)
                 val relativePath = current.localRelativePath
                 val crop = current.confirmedCrop
                 val localFile = relativePath?.let(localImagePreserver::resolveRelativePath)
@@ -2723,7 +2721,7 @@ class MatchReviewViewModel @Inject constructor(
                     matchResultPositionCropPreviewGenerator.generate(
                         localFile = localFile,
                         confirmedCrop = crop,
-                        role = role,
+                        storedRole = storedRole,
                         allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
                     )
                 }
@@ -2734,13 +2732,13 @@ class MatchReviewViewModel @Inject constructor(
                     MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
                 )
             }
-            if (resultPositionCropInputs[role] != inputKey) {
+            if (resultPositionCropInputs[storedRole] != inputKey) {
                 result.release()
                 return@launch
             }
             _uiState.update { state ->
                 state.copy(
-                    resultPositionCropPreviews = state.resultPositionCropPreviews.replace(role) { result },
+                    resultPositionCropPreviews = state.resultPositionCropPreviews.replace(storedRole) { result },
                 )
             }
         }

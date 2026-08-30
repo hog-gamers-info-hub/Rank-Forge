@@ -33,6 +33,15 @@ data class MatchResultPositionBitmapCrop(
     }
 }
 
+sealed interface MatchResultPositionCropObservationResult {
+    data class Observed(
+        val evidence: MatchResultAutoCropEvidence,
+    ) : MatchResultPositionCropObservationResult
+
+    data object OcrFailed : MatchResultPositionCropObservationResult
+    data object InvalidSource : MatchResultPositionCropObservationResult
+}
+
 sealed interface MatchResultPositionCropGenerationResult {
     data class Generated(
         val crops: List<MatchResultPositionBitmapCrop>,
@@ -63,89 +72,121 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
 ) {
     private val calculator = MatchResultPositionCropCalculator()
 
-    suspend fun generate(
+    suspend fun observe(
         source: Bitmap,
-        role: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean = false,
-    ): MatchResultPositionCropGenerationResult = withContext(Dispatchers.Default) {
+    ): MatchResultPositionCropObservationResult = withContext(Dispatchers.Default) {
         if (!source.isUsable()) {
-            return@withContext MatchResultPositionCropGenerationResult.InvalidSource
+            return@withContext MatchResultPositionCropObservationResult.InvalidSource
         }
         val dimensions = OcrImageDimensions.from(source.width, source.height)
-            ?: return@withContext MatchResultPositionCropGenerationResult.InvalidSource
+            ?: return@withContext MatchResultPositionCropObservationResult.InvalidSource
         val inputImage = try {
             InputImage.fromBitmap(source, 0)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return@withContext MatchResultPositionCropGenerationResult.InvalidSource
+            return@withContext MatchResultPositionCropObservationResult.InvalidSource
         }
         val recognizer = try {
             recognizerFactory.create()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return@withContext MatchResultPositionCropGenerationResult.OcrFailed
+            return@withContext MatchResultPositionCropObservationResult.OcrFailed
         }
 
         val recognizedText = try {
-            try {
-                recognizer.process(inputImage).awaitPositionCropText()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                return@withContext MatchResultPositionCropGenerationResult.OcrFailed
-            }
+            recognizer.process(inputImage).awaitPositionCropText()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return@withContext MatchResultPositionCropObservationResult.OcrFailed
         } finally {
             recognizer.close()
         }
 
-        val evidence = MatchResultAutoCropEvidence(
-            observations = recognizedText.toPositionCropObservations(dimensions),
-            imageDimensions = dimensions,
+        MatchResultPositionCropObservationResult.Observed(
+            evidence = MatchResultAutoCropEvidence(
+                observations = recognizedText.toPositionCropObservations(dimensions),
+                imageDimensions = dimensions,
+            ),
         )
-        when (
-            val geometry = calculator.calculate(
-                evidence = evidence,
-                role = role,
-                allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
-            )
-        ) {
-            is MatchResultPositionCropCalculationResult.Unavailable ->
-                MatchResultPositionCropGenerationResult.GeometryUnavailable(geometry.reason)
+    }
 
-            is MatchResultPositionCropCalculationResult.Available -> {
-                val generated = mutableListOf<MatchResultPositionBitmapCrop>()
-                try {
-                    geometry.crops.forEach { crop ->
-                        val extracted = Bitmap.createBitmap(
-                            source,
-                            crop.bounds.left,
-                            crop.bounds.top,
-                            crop.bounds.width,
-                            crop.bounds.height,
-                        )
-                        val ownedCopy = try {
-                            extracted.copy(Bitmap.Config.ARGB_8888, false)
-                        } finally {
-                            if (extracted !== source && !extracted.isRecycled) {
-                                extracted.recycle()
-                            }
-                        } ?: throw IllegalStateException("Unable to copy result position crop bitmap.")
-                        generated += MatchResultPositionBitmapCrop(crop, ownedCopy)
-                    }
-                    MatchResultPositionCropGenerationResult.Generated(
-                        crops = generated,
-                        geometry = geometry,
-                    )
-                } catch (cancellation: CancellationException) {
-                    generated.forEach(MatchResultPositionBitmapCrop::release)
-                    throw cancellation
-                } catch (_: Throwable) {
-                    generated.forEach(MatchResultPositionBitmapCrop::release)
-                    MatchResultPositionCropGenerationResult.BitmapCropFailed
-                }
+    fun calculate(
+        evidence: MatchResultAutoCropEvidence,
+        role: MatchResultScreenshotRole,
+        allowUpperPositionElevenFallback: Boolean = false,
+    ): MatchResultPositionCropCalculationResult = calculator.calculate(
+        evidence = evidence,
+        role = role,
+        allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+    )
+
+    suspend fun generate(
+        source: Bitmap,
+        geometry: MatchResultPositionCropCalculationResult.Available,
+    ): MatchResultPositionCropGenerationResult = withContext(Dispatchers.Default) {
+        generateBitmaps(source, geometry)
+    }
+
+    suspend fun generate(
+        source: Bitmap,
+        role: MatchResultScreenshotRole,
+        allowUpperPositionElevenFallback: Boolean = false,
+    ): MatchResultPositionCropGenerationResult {
+        return when (val observation = observe(source)) {
+            MatchResultPositionCropObservationResult.InvalidSource ->
+                MatchResultPositionCropGenerationResult.InvalidSource
+            MatchResultPositionCropObservationResult.OcrFailed ->
+                MatchResultPositionCropGenerationResult.OcrFailed
+            is MatchResultPositionCropObservationResult.Observed -> when (
+                val geometry = calculate(
+                    evidence = observation.evidence,
+                    role = role,
+                    allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+                )
+            ) {
+                is MatchResultPositionCropCalculationResult.Unavailable ->
+                    MatchResultPositionCropGenerationResult.GeometryUnavailable(geometry.reason)
+                is MatchResultPositionCropCalculationResult.Available -> generate(source, geometry)
             }
+        }
+    }
+
+    private fun generateBitmaps(
+        source: Bitmap,
+        geometry: MatchResultPositionCropCalculationResult.Available,
+    ): MatchResultPositionCropGenerationResult {
+        val generated = mutableListOf<MatchResultPositionBitmapCrop>()
+        try {
+            geometry.crops.forEach { crop ->
+                val extracted = Bitmap.createBitmap(
+                    source,
+                    crop.bounds.left,
+                    crop.bounds.top,
+                    crop.bounds.width,
+                    crop.bounds.height,
+                )
+                val ownedCopy = try {
+                    extracted.copy(Bitmap.Config.ARGB_8888, false)
+                } finally {
+                    if (extracted !== source && !extracted.isRecycled) {
+                        extracted.recycle()
+                    }
+                } ?: throw IllegalStateException("Unable to copy result position crop bitmap.")
+                generated += MatchResultPositionBitmapCrop(crop, ownedCopy)
+            }
+            return MatchResultPositionCropGenerationResult.Generated(
+                crops = generated,
+                geometry = geometry,
+            )
+        } catch (cancellation: CancellationException) {
+            generated.forEach(MatchResultPositionBitmapCrop::release)
+            throw cancellation
+        } catch (_: Throwable) {
+            generated.forEach(MatchResultPositionBitmapCrop::release)
+            return MatchResultPositionCropGenerationResult.BitmapCropFailed
         }
     }
 
