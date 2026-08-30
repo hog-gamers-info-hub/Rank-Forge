@@ -7,7 +7,9 @@ import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyObservedSlotAnchor
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerOcrFragment
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowBands
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropGeometryCalculator
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowEvidence
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowMapper
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridReconstructor
@@ -19,6 +21,7 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropGeometryResult
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseFailure
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseStatus
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
+import kotlin.math.abs
 
 /** One result emitted by the single whole-panel PP-OCR request. */
 data class LobbyPanelPpFragment(
@@ -225,18 +228,43 @@ object LobbyPanelPpMapper {
                     isSlotNumberEvidence = fragment.readingOrderIndex in selectedIndices,
                 )
             }
-            val rowMapping = LobbyPlayerRowMapper.map(
+            val mapperFragments = localPanelFragments.map { local ->
+                LobbyPlayerOcrFragment(
+                    rawText = local.fragment.text,
+                    boundingBox = local.localBoundingBox,
+                    isSlotNumberEvidence = local.isSlotNumberEvidence,
+                )
+            }
+            val initialRowMapping = LobbyPlayerRowMapper.map(
                 rowBands = rowGeometry.bands,
-                fragments = localPanelFragments.map { local ->
-                    LobbyPlayerOcrFragment(
-                        rawText = local.fragment.text,
-                        boundingBox = local.localBoundingBox,
-                        isSlotNumberEvidence = local.isSlotNumberEvidence,
-                    )
-                },
+                fragments = mapperFragments,
                 selectedSlotBoundingBox = selectedSlotBox,
                 slotGutterRight = rowGeometry.playerAreaLeft,
             )
+            val isBottomLeft =
+                LobbySlotGridRole.fromSlotNumber(crop.detectedSlotNumber) == LobbySlotGridRole.BOTTOM_LEFT
+            val rowMapping = if (isBottomLeft) {
+                LobbyPlayerRowMapper.map(
+                    rowBands = rowGeometry.bands,
+                    fragments = filterBottomLeftRow4Fragments(
+                        localPanelFragments = localPanelFragments,
+                        initialRowMapping = initialRowMapping,
+                        rowBands = rowGeometry.bands,
+                        selectedSlotBoundingBox = selectedSlotBox,
+                        slotGutterRight = rowGeometry.playerAreaLeft,
+                    ).map { local ->
+                        LobbyPlayerOcrFragment(
+                            rawText = local.fragment.text,
+                            boundingBox = local.localBoundingBox,
+                            isSlotNumberEvidence = local.isSlotNumberEvidence,
+                        )
+                    },
+                    selectedSlotBoundingBox = selectedSlotBox,
+                    slotGutterRight = rowGeometry.playerAreaLeft,
+                )
+            } else {
+                initialRowMapping
+            }
             val anchorSource = if (selectedSlot != null) {
                 LobbySlotAnchorSource.PP_OCR_SLOT
             } else {
@@ -334,6 +362,88 @@ object LobbyPanelPpMapper {
         rawSourceResults = emptyList(),
         confidence = RawOcrConfidence.Available(fragment.confidence.coerceIn(0f, 1f)),
     )
+
+    private fun filterBottomLeftRow4Fragments(
+        localPanelFragments: List<LocalPanelFragment>,
+        initialRowMapping: com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowMapping,
+        rowBands: LobbyPlayerRowBands,
+        selectedSlotBoundingBox: RawOcrBoundingBox?,
+        slotGutterRight: Int,
+    ): List<LocalPanelFragment> {
+        val rowCenters = LobbyPlayerRow.entries
+            .take(3)
+            .mapNotNull { row ->
+                initialRowMapping.row(row).reliableCenterY()?.let { centerY ->
+                    row.ordinal to centerY
+                }
+            }
+        if (rowCenters.size < 2) return localPanelFragments
+
+        val pitchCandidates = rowCenters.zipWithNext().mapNotNull { (first, second) ->
+            val rowDistance = (second.first - first.first).toDouble()
+            ((second.second - first.second) / rowDistance)
+                .takeIf { it.isFinite() && it > 0.0 }
+        }
+        val rowPitch = pitchCandidates.medianOrNull() ?: return localPanelFragments
+        val expectedRow4CenterY = rowCenters
+            .map { (rowOrdinal, centerY) ->
+                centerY + rowPitch * (LobbyPlayerRow.ROW_4.ordinal - rowOrdinal)
+            }
+            .medianOrNull()
+            ?.takeIf { it.isFinite() }
+            ?: return localPanelFragments
+        val row4Candidates = localPanelFragments.filter { local ->
+            val box = local.localBoundingBox
+            !local.isSlotNumberEvidence &&
+                box.isPositive() &&
+                selectedSlotBoundingBox?.overlaps(box) != true &&
+                box.right > slotGutterRight &&
+                rowBands.bandFor(box.centerY)?.row == LobbyPlayerRow.ROW_4
+        }
+        if (row4Candidates.isEmpty()) return localPanelFragments
+
+        val sameLineTolerance = rowPitch * 0.10
+        val seed = row4Candidates.minBy { local ->
+            abs(local.localBoundingBox.centerY - expectedRow4CenterY)
+        }
+        val keptReadingOrderIndices = row4Candidates
+            .filter { local ->
+                abs(local.localBoundingBox.centerY - seed.localBoundingBox.centerY) <= sameLineTolerance
+            }
+            .map { it.fragment.readingOrderIndex }
+            .toSet()
+        val row4CandidateIndices = row4Candidates
+            .map { it.fragment.readingOrderIndex }
+            .toSet()
+        return localPanelFragments.filter { local ->
+            local.fragment.readingOrderIndex !in row4CandidateIndices ||
+                local.fragment.readingOrderIndex in keptReadingOrderIndices
+        }
+    }
+
+    private fun LobbyPlayerRowEvidence.reliableCenterY(): Double? = fragments
+        .mapNotNull { fragment ->
+            fragment.boundingBox
+                ?.takeIf { it.right > it.left && it.bottom > it.top }
+                ?.let { boundingBox -> (boundingBox.top + boundingBox.bottom) / 2.0 }
+        }
+        .medianOrNull()
+
+    private fun List<Double>.medianOrNull(): Double? {
+        if (isEmpty()) return null
+        val sorted = sorted()
+        val middle = sorted.size / 2
+        return if (sorted.size % 2 == 0) {
+            (sorted[middle - 1] + sorted[middle]) / 2.0
+        } else {
+            sorted[middle]
+        }
+    }
+
+    private fun RawOcrBoundingBox.isPositive(): Boolean = right > left && bottom > top
+
+    private fun RawOcrBoundingBox.overlaps(other: RawOcrBoundingBox): Boolean =
+        left < other.right && other.left < right && top < other.bottom && other.top < bottom
 
     private fun unavailable(
         reason: MatchLobbyTeamCropPreviewUnavailableReason,
