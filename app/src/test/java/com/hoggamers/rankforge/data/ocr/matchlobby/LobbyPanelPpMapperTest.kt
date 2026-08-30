@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.ocr.matchlobby
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import org.junit.Assert.assertEquals
@@ -10,13 +11,101 @@ import org.junit.Test
 
 class LobbyPanelPpMapperTest {
     @Test
-    fun mapsOneWholePanelIntoFourTeamsAndFourRows() {
+    fun contentDrivenMappingResolvesEachSemanticSlotRange() {
+        RosterScreenshotPosition.entries.forEach { expectedPosition ->
+            val result = LobbyPanelPpMapper.map(
+                panelWidth = PANEL_WIDTH,
+                panelHeight = PANEL_HEIGHT,
+                fragments = fragmentsFor(expectedPosition),
+            ) as LobbyPanelSemanticMappingResult.Available
+
+            assertEquals(expectedPosition, result.screenshotPosition)
+            assertEquals(
+                expectedPosition.tournamentSlotRange.toList(),
+                result.mapping.slots.map { it.candidate.detectedSlotNumber },
+            )
+        }
+    }
+
+    @Test
+    fun contentDrivenMappingUsesTwoAnchorsWithExistingGridReconstruction() {
         val result = LobbyPanelPpMapper.map(
             panelWidth = PANEL_WIDTH,
             panelHeight = PANEL_HEIGHT,
-            screenshotIndex = 1,
-            fragments = completePanelFragments(),
-        ) as LobbyPanelPpMappingResult.Available
+            fragments = fragmentsFor(RosterScreenshotPosition.THREE)
+                .filterNot { it.text == "11" || it.text == "12" },
+        ) as LobbyPanelSemanticMappingResult.Available
+
+        assertEquals(RosterScreenshotPosition.THREE, result.screenshotPosition)
+        assertEquals(2, result.mapping.observedAnchorCount)
+        assertEquals(listOf(9, 10, 11, 12), result.mapping.teams.map { it.crop.detectedSlotNumber })
+    }
+
+    @Test
+    fun contentDrivenMappingRejectsFewerThanTwoValidAnchors() {
+        val result = LobbyPanelPpMapper.map(
+            panelWidth = PANEL_WIDTH,
+            panelHeight = PANEL_HEIGHT,
+            fragments = listOf(fragment("1", 60, 220)),
+        ) as LobbyPanelSemanticMappingResult.Unavailable
+
+        assertEquals(
+            LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED,
+            result.failure,
+        )
+    }
+
+    @Test
+    fun numericTextInPlayerNameRegionDoesNotBecomeSlotIdentityEvidence() {
+        val result = LobbyPanelPpMapper.map(
+            panelWidth = PANEL_WIDTH,
+            panelHeight = PANEL_HEIGHT,
+            fragments = listOf(
+                fragment("1", 110, 220),
+                fragment("2", 610, 220),
+                fragment("3", 110, 620),
+                fragment("4", 610, 620),
+            ),
+        ) as LobbyPanelSemanticMappingResult.Unavailable
+
+        assertEquals(
+            LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED,
+            result.failure,
+        )
+    }
+
+    @Test
+    fun contentDrivenMappingFailsAmbiguousEvidenceWithoutGuessing() {
+        val result = LobbyPanelPpMapper.map(
+            panelWidth = PANEL_WIDTH,
+            panelHeight = PANEL_HEIGHT,
+            fragments = fragmentsFor(RosterScreenshotPosition.ONE) +
+                fragmentsFor(RosterScreenshotPosition.TWO),
+        ) as LobbyPanelSemanticMappingResult.Unavailable
+
+        assertEquals(
+            LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_CONFLICT,
+            result.failure,
+        )
+    }
+
+    @Test
+    fun contentDrivenMappingFailsWhenNoSemanticRangeMatches() {
+        val result = LobbyPanelPpMapper.map(
+            panelWidth = PANEL_WIDTH,
+            panelHeight = PANEL_HEIGHT,
+            fragments = completePanelFragments().filter { it.text.toIntOrNull() == null },
+        ) as LobbyPanelSemanticMappingResult.Unavailable
+
+        assertEquals(
+            LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED,
+            result.failure,
+        )
+    }
+
+    @Test
+    fun mapsOneWholePanelIntoFourTeamsAndFourRows() {
+        val result = mapped(completePanelFragments())
 
         assertEquals(listOf(1, 2, 3, 4), result.slots.map { it.candidate.detectedSlotNumber })
         assertEquals(RosterVisibleSlotPosition.entries, result.teams.map { it.crop.visibleSlotPosition })
@@ -32,12 +121,9 @@ class LobbyPanelPpMapperTest {
 
     @Test
     fun twoObservedAnchorsReconstructTheRemainingTeams() {
-        val result = LobbyPanelPpMapper.map(
-            panelWidth = PANEL_WIDTH,
-            panelHeight = PANEL_HEIGHT,
-            screenshotIndex = 1,
-            fragments = completePanelFragments().filterNot { it.text == "3" || it.text == "4" },
-        ) as LobbyPanelPpMappingResult.Available
+        val result = mapped(
+            completePanelFragments().filterNot { it.text == "3" || it.text == "4" },
+        )
 
         assertEquals(listOf(1, 2, 3, 4), result.teams.map { it.crop.detectedSlotNumber })
         assertEquals(2, result.observedAnchorCount)
@@ -47,12 +133,9 @@ class LobbyPanelPpMapperTest {
 
     @Test
     fun fewerThanTwoSlotAnchorsLeavesPanelUnavailable() {
-        val result = LobbyPanelPpMapper.map(
-            panelWidth = PANEL_WIDTH,
-            panelHeight = PANEL_HEIGHT,
-            screenshotIndex = 1,
-            fragments = completePanelFragments().filter { it.text == "1" || it.text == "alpha-one" },
-        ) as LobbyPanelPpMappingResult.Unavailable
+        val result = unmapped(
+            completePanelFragments().filter { it.text == "1" || it.text == "alpha-one" },
+        )
 
         assertEquals(MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE, result.reason)
     }
@@ -63,12 +146,7 @@ class LobbyPanelPpMapperTest {
             fragment("not-a-player", 12, 170, confidence = 0.99f) +
             fragment("1", 60, 220, confidence = 0.92f)
 
-        val result = LobbyPanelPpMapper.map(
-            panelWidth = PANEL_WIDTH,
-            panelHeight = PANEL_HEIGHT,
-            screenshotIndex = 1,
-            fragments = fragments,
-        ) as LobbyPanelPpMappingResult.Available
+        val result = mapped(fragments)
 
         assertEquals("alpha-one", result.teams[0].rowPreviews[0].playerName)
         assertTrue(result.teams[0].rowPreviews.none { it.playerName == "not-a-player" })
@@ -76,12 +154,9 @@ class LobbyPanelPpMapperTest {
 
     @Test
     fun duplicateSlotEvidenceUsesHighestConfidenceDeterministically() {
-        val result = LobbyPanelPpMapper.map(
-            panelWidth = PANEL_WIDTH,
-            panelHeight = PANEL_HEIGHT,
-            screenshotIndex = 1,
-            fragments = completePanelFragments() + fragment("1", 60, 220, confidence = 0.99f),
-        ) as LobbyPanelPpMappingResult.Available
+        val result = mapped(
+            completePanelFragments() + fragment("1", 60, 220, confidence = 0.99f),
+        )
 
         assertEquals(RawOcrConfidence.Available(0.99f), result.slots.first().candidate.confidence)
     }
@@ -108,6 +183,23 @@ class LobbyPanelPpMapperTest {
         add(fragment("delta-three", 610, 670))
         add(fragment("delta-four", 610, 770))
     }
+
+    private fun fragmentsFor(position: RosterScreenshotPosition): List<LobbyPanelPpFragment> = buildList {
+        val numbers = position.tournamentSlotRange.toList()
+        add(fragment(numbers[0].toString(), 60, 220, confidence = 0.91f))
+        add(fragment(numbers[1].toString(), 560, 220, confidence = 0.82f))
+        add(fragment(numbers[2].toString(), 60, 620, confidence = 0.83f))
+        add(fragment(numbers[3].toString(), 560, 620, confidence = 0.84f))
+    }
+
+    private fun mapped(fragments: List<LobbyPanelPpFragment>): LobbyPanelPpMappingResult.Available =
+        (LobbyPanelPpMapper.map(PANEL_WIDTH, PANEL_HEIGHT, fragments)
+            as LobbyPanelSemanticMappingResult.Available).mapping
+
+    private fun unmapped(fragments: List<LobbyPanelPpFragment>): LobbyPanelPpMappingResult.Unavailable =
+        (LobbyPanelPpMapper.map(PANEL_WIDTH, PANEL_HEIGHT, fragments)
+            as LobbyPanelSemanticMappingResult.Unavailable)
+            .let { LobbyPanelPpMappingResult.Unavailable(it.reason, fragmentCount = it.fragmentCount) }
 
     private fun fragment(
         text: String,

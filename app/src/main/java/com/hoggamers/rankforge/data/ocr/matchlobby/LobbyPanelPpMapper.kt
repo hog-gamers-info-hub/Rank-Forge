@@ -53,6 +53,24 @@ sealed interface LobbyPanelPpMappingResult {
     ) : LobbyPanelPpMappingResult
 }
 
+enum class LobbyPanelSemanticMappingFailure {
+    SEMANTIC_POSITION_UNRESOLVED,
+    SEMANTIC_POSITION_CONFLICT,
+}
+
+sealed interface LobbyPanelSemanticMappingResult {
+    data class Available(
+        val screenshotPosition: RosterScreenshotPosition,
+        val mapping: LobbyPanelPpMappingResult.Available,
+    ) : LobbyPanelSemanticMappingResult
+
+    data class Unavailable(
+        val reason: MatchLobbyTeamCropPreviewUnavailableReason,
+        val failure: LobbyPanelSemanticMappingFailure,
+        val fragmentCount: Int = 0,
+    ) : LobbyPanelSemanticMappingResult
+}
+
 /**
  * Deterministically maps PP whole-panel evidence into the existing Lobby slot,
  * team-crop, and player-row contracts. It performs no OCR and never invents a
@@ -61,20 +79,64 @@ sealed interface LobbyPanelPpMappingResult {
 object LobbyPanelPpMapper {
     private const val SLOT_GUTTER_FRACTION = 0.15
 
+    /**
+     * Resolves semantic screenshot position from structural slot-number evidence.
+     * The caller's storage identity is intentionally not an input.
+     */
     fun map(
         panelWidth: Int,
         panelHeight: Int,
-        screenshotIndex: Int,
+        fragments: List<LobbyPanelPpFragment>,
+    ): LobbyPanelSemanticMappingResult {
+        if (panelWidth <= 0 || panelHeight <= 0) {
+            return LobbyPanelSemanticMappingResult.Unavailable(
+                reason = MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+                failure = LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED,
+                fragmentCount = fragments.size,
+            )
+        }
+
+        val attempts = RosterScreenshotPosition.entries.map { position ->
+            position to mapForPosition(panelWidth, panelHeight, position, fragments)
+        }
+        val validCandidates = attempts.mapNotNull { (position, result) ->
+            (result as? LobbyPanelPpMappingResult.Available)?.let { mapping ->
+                position to mapping
+            }
+        }
+
+        return when (validCandidates.size) {
+            1 -> {
+                val (position, mapping) = validCandidates.single()
+                LobbyPanelSemanticMappingResult.Available(position, mapping)
+            }
+            0 -> LobbyPanelSemanticMappingResult.Unavailable(
+                reason = attempts.mapNotNull { (_, result) ->
+                    (result as? LobbyPanelPpMappingResult.Unavailable)?.reason
+                }.firstOrNull() ?: MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+                failure = LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED,
+                fragmentCount = fragments.size,
+            )
+            else -> LobbyPanelSemanticMappingResult.Unavailable(
+                reason = MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+                failure = LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_CONFLICT,
+                fragmentCount = fragments.size,
+            )
+        }
+    }
+
+    private fun mapForPosition(
+        panelWidth: Int,
+        panelHeight: Int,
+        position: RosterScreenshotPosition,
         fragments: List<LobbyPanelPpFragment>,
     ): LobbyPanelPpMappingResult {
         if (panelWidth <= 0 || panelHeight <= 0) {
             return unavailable(MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY, fragments)
         }
-        val expectedPosition = RosterScreenshotPosition.fromIndex(screenshotIndex)
-            ?: return unavailable(MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY, fragments)
         val selectedSlotEvidence = selectSlotEvidence(
             panelWidth = panelWidth,
-            screenshotIndex = screenshotIndex,
+            position = position,
             fragments = fragments,
         )
         val observedAnchors = selectedSlotEvidence.values.map { evidence ->
@@ -92,7 +154,7 @@ object LobbyPanelPpMapper {
             )
         }
 
-        val grid = when (val reconstruction = LobbySlotGridReconstructor().reconstruct(screenshotIndex, observedAnchors)) {
+        val grid = when (val reconstruction = LobbySlotGridReconstructor().reconstruct(position.index, observedAnchors)) {
             is LobbyGridReconstructionResult.Reconstructed -> reconstruction.grid
             else -> return unavailable(
                 MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
@@ -211,7 +273,7 @@ object LobbyPanelPpMapper {
         }
 
         val slots = RosterVisibleSlotPosition.entries.map { visiblePosition ->
-            val slotNumber = expectedPosition.tournamentSlotFor(visiblePosition)
+            val slotNumber = position.tournamentSlotFor(visiblePosition)
             val evidence = selectedSlotEvidence[slotNumber]
             MatchLobbySlotNumberOcrSlot(
                 visibleSlotPosition = visiblePosition,
@@ -228,10 +290,10 @@ object LobbyPanelPpMapper {
 
     private fun selectSlotEvidence(
         panelWidth: Int,
-        screenshotIndex: Int,
+        position: RosterScreenshotPosition,
         fragments: List<LobbyPanelPpFragment>,
     ): Map<Int, SlotEvidence> {
-        val expectedRange = RosterScreenshotPosition.fromIndex(screenshotIndex)?.tournamentSlotRange ?: return emptyMap()
+        val expectedRange = position.tournamentSlotRange
         return expectedRange.associateWithNotNull { slotNumber ->
             val role = LobbySlotGridRole.fromSlotNumber(slotNumber) ?: return@associateWithNotNull null
             fragments.asSequence()

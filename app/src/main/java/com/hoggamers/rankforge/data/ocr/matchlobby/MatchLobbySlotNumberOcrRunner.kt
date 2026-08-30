@@ -68,6 +68,8 @@ enum class MatchLobbySlotNumberOcrUnavailableReason {
     PANEL_PREPARATION_FAILED,
     EXTRACTION_FAILED,
     PANEL_RELEASE_FAILED,
+    SEMANTIC_POSITION_UNRESOLVED,
+    SEMANTIC_POSITION_CONFLICT,
 }
 
 sealed interface MatchLobbySlotNumberOcrScreenshotResult {
@@ -128,7 +130,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             if (ownerUserId == null) {
                 unavailableForAll(MatchLobbySlotNumberOcrUnavailableReason.OWNER_UNAVAILABLE)
             } else {
-                MatchLobbySlotNumberOcrResult(
+                LobbySemanticPositionReconciler.reconcile(
                     RosterScreenshotPosition.entries.map { position ->
                         processScreenshot(tournamentId, matchId, position, ownerUserId)
                     },
@@ -142,7 +144,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         matchId: String,
         position: RosterScreenshotPosition,
         ownerUserId: String,
-    ): MatchLobbySlotNumberOcrScreenshotResult {
+    ): LobbyPhysicalProcessingOutcome {
         val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, position.index)
 
         val asset = try {
@@ -150,22 +152,22 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
-        } ?: return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
+            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
+        } ?: return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.ASSET_UNAVAILABLE)
 
         val source = asset.toRosterOcrScreenshotSource(position, identity)
-            ?: return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP)
+            ?: return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP)
 
         val prepared = try {
             panelPreparer.prepare(source)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
+            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
         }
         val panel = when (prepared) {
             is RosterOcrPanelPreparationResult.Failed ->
-                return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
+                return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_PREPARATION_FAILED)
             is RosterOcrPanelPreparationResult.Prepared -> prepared.panel
         }
 
@@ -176,7 +178,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     throw releaseFailure
                 }
             }
-            return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP)
+            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP)
         }
 
         val ppRecognition = try {
@@ -190,29 +192,34 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             releasePanel(panel, position)?.let { releaseFailure ->
                 if (releaseFailure is CancellationException) throw releaseFailure
             }
-            return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED)
+            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED)
         }
 
         val mapping = LobbyPanelPpMapper.map(
             panelWidth = panelBitmap.width,
             panelHeight = panelBitmap.height,
-            screenshotIndex = position.index,
             fragments = ppRecognition.fragments,
         )
-        val (slots, teamCropPreviews) = when (mapping) {
-            is LobbyPanelPpMappingResult.Unavailable -> {
-                val unavailableSlots = RosterVisibleSlotPosition.entries.map { visiblePosition ->
-                    MatchLobbySlotNumberOcrSlot(
-                        visibleSlotPosition = visiblePosition,
-                        candidate = com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate.unavailable(),
-                    )
+        val resolved = when (mapping) {
+            is LobbyPanelSemanticMappingResult.Unavailable -> {
+                val reason = when (mapping.failure) {
+                    LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_UNRESOLVED ->
+                        MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_UNRESOLVED
+                    LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_CONFLICT ->
+                        MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_CONFLICT
                 }
-                unavailableSlots to MatchLobbyTeamCropPreviewResult.Unavailable(mapping.reason)
+                releasePanel(panel, position)?.let { failure ->
+                    if (failure is CancellationException) throw failure
+                    return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
+                }
+                return unavailableOutcome(position, reason)
             }
-            is LobbyPanelPpMappingResult.Available -> {
+            is LobbyPanelSemanticMappingResult.Available -> {
+                val semanticPosition = mapping.screenshotPosition
+                val panelMapping = mapping.mapping
                 val previews = try {
                     MatchLobbyTeamCropPreviewResult.Available(
-                        mapping.teams.map { mappedTeam ->
+                        panelMapping.teams.map { mappedTeam ->
                             MatchLobbyTeamCropPreview(
                                 visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
                                 detectedSlotNumber = mappedTeam.crop.detectedSlotNumber,
@@ -221,7 +228,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                                     mappedTeam.crop,
                                 ),
                                 playerRowPreviews = mappedTeam.rowPreviews,
-                                authoritativeTeamSlotNumber = position.tournamentSlotFor(
+                                authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
                                     mappedTeam.crop.visibleSlotPosition,
                                 ),
                             )
@@ -234,7 +241,12 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                         MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
                     )
                 }
-                mapping.slots to previews
+                LobbyPhysicalProcessingOutcome.Resolved(
+                    storedPosition = position,
+                    semanticPosition = semanticPosition,
+                    slots = panelMapping.slots,
+                    teamCropPreviews = previews,
+                )
             }
         }
 
@@ -242,13 +254,9 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             if (failure is CancellationException) {
                 throw failure
             }
-            return unavailable(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
+            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
         }
-        return MatchLobbySlotNumberOcrScreenshotResult.Processed(
-            screenshotPosition = position,
-            slots = slots,
-            teamCropPreviews = teamCropPreviews,
-        )
+        return resolved
     }
 
     private fun releasePanel(
@@ -275,6 +283,12 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
     ): MatchLobbySlotNumberOcrScreenshotResult.Unavailable {
         return MatchLobbySlotNumberOcrScreenshotResult.Unavailable(position, reason)
     }
+
+    private fun unavailableOutcome(
+        position: RosterScreenshotPosition,
+        reason: MatchLobbySlotNumberOcrUnavailableReason,
+    ): LobbyPhysicalProcessingOutcome.Unavailable =
+        LobbyPhysicalProcessingOutcome.Unavailable(position, reason)
 }
 
 internal fun interface MatchLobbyTeamCropPreviewFactory {
