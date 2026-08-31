@@ -227,7 +227,7 @@ class MatchResultPositionOcrFieldMapper {
             )
         }
         val playerBoundary = findStrongPlayerBoundary(middleLines)
-        val playerText = playerBoundary.anchor?.let { anchor ->
+        val rawPlayerText = playerBoundary.anchor?.let { anchor ->
             buildList {
                 anchor.parsed.playerSuffix?.takeIf { it.isNotBlank() }?.let(::add)
                 middleLines
@@ -237,6 +237,13 @@ class MatchResultPositionOcrFieldMapper {
                     .forEach(::add)
             }.joinToString(" ").trim()
         } ?: middleLines.joinToString(" ") { it.text.trim() }.trim()
+        val playerText = if (
+            input.position in 6..12 && !playerBoundary.decision.boundaryAccepted
+        ) {
+            stripLeadingMergedEliminationPrefix(rawPlayerText)
+        } else {
+            rawPlayerText
+        }
         val rightElimination = rowLines
             .filter { it.centerX() in scaledRange(input.cropWidth, RIGHT_KILL_RANGE) }
             .firstOrNull { it.text.parseElimination().markerMatched }
@@ -246,6 +253,26 @@ class MatchResultPositionOcrFieldMapper {
             elimination = rightElimination,
             playerBoundary = playerBoundary.decision,
         )
+    }
+
+    private fun stripLeadingMergedEliminationPrefix(text: String): String {
+        for (startIndex in 0..2) {
+            for (marker in MERGED_ELIMINATION_MARKERS) {
+                if (
+                    startIndex + marker.length <= text.length &&
+                    text.regionMatches(
+                        startIndex,
+                        marker,
+                        0,
+                        marker.length,
+                        ignoreCase = true,
+                    )
+                ) {
+                    return text.substring(startIndex + marker.length).trim()
+                }
+            }
+        }
+        return text
     }
 
     private fun killField(
@@ -399,6 +426,12 @@ class MatchResultPositionOcrFieldMapper {
     }
 
     private companion object {
+        val MERGED_ELIMINATION_MARKERS = listOf(
+            "Eliminations",
+            "Elimination",
+            "Eliminatio",
+            "Eliminati",
+        )
         val RIGHT_LEFT_PLAYER_RANGE = 0.05..0.40
         val RIGHT_MERGED_RANGE = 0.40..0.81
         val RIGHT_KILL_RANGE = 0.81..1.0

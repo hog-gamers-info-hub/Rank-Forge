@@ -173,7 +173,7 @@ class MatchResultPositionOcrFieldMapperTest {
         assertEquals("3", fields.fields.single { it.id == "KILL_7_1" }.resolvedText)
         assertEquals(MatchResultOcrFieldStatus.DIRECT_NUMERIC, fields.fields.single { it.id == "KILL_7_1" }.status)
         assertEquals("A", fields.row.playerSlots.first { it.slot == 1 }.player.resolvedText)
-        assertEquals("EliminationD", fields.row.playerSlots.first { it.slot == 4 }.player.resolvedText)
+        assertEquals("D", fields.row.playerSlots.first { it.slot == 4 }.player.resolvedText)
         assertTrue(!fields.isAutoAcceptable)
     }
 
@@ -201,15 +201,95 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
-    fun weakMiddleMarkerRemainsPlayerTextWhileExistingKillFallbackIsPreserved() {
+    fun weakMiddleMarkerIsRemovedFromMergedPlayerTextWhileExistingKillFallbackIsPreserved() {
         val result = mapper.map(rightInput(position = 7, middle = "EliminationsPLAYER"))
 
         assertEquals("0", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
-        assertEquals("EliminationsPLAYER", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+        assertEquals("PLAYER", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
         val boundary = requireNotNull(result.playerBoundaryEvidence[3])
         assertTrue(!boundary.boundaryAccepted)
         assertEquals(MatchResultPlayerBoundaryReason.WEAK_NO_PREFIX, boundary.reason)
         assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, boundary.anchorPrefixType)
+    }
+
+    @Test
+    fun mergedRightPlayerCleanupRemovesApprovedMarkersOnlyAtTheFirstThreePositions() {
+        val cases = listOf(
+            "EliminationsPLAYER" to "PLAYER",
+            "Eliminationxx" to "xx",
+            "Eliminatioxxp" to "xxp",
+            "Eliminatipu" to "pu",
+            "3EliminationsPLAYER" to "PLAYER",
+            "BEliminatio6R-SMOO7HX5" to "6R-SMOO7HX5",
+            "12EliminationsPLAYER" to "PLAYER",
+            "3 EliminationsATX.KARAN" to "ATX.KARAN",
+            "3EliminationsEliminationKing" to "EliminationKing",
+            "ABCEliminationsPLAYER" to "ABCEliminationsPLAYER",
+            "Eliminator" to "Eliminator",
+            "PLAYERONE" to "PLAYERONE",
+        )
+
+        cases.forEach { (middle, expected) ->
+            val result = mapper.map(rightInput(position = 6, middle = middle))
+            assertEquals(
+                expected,
+                result.fields.single { it.id == "PLAYER_6_3" }.resolvedText,
+            )
+        }
+    }
+
+    @Test
+    fun mergedRightPlayerCleanupCoversPlayerThreeAndPlayerFourAcrossAffectedPositions() {
+        listOf(6, 7, 8, 9, 10, 11, 12).forEach { position ->
+            val result = mapper.map(rightInput(position = position, middle = "BEliminatioPLAYER"))
+            assertEquals(
+                "PLAYER",
+                result.fields.single { it.id == "PLAYER_${position}_3" }.resolvedText,
+            )
+        }
+
+        val playerFour = mapper.map(
+            rightInputForSlot(position = 11, slot = 4, middle = "BEliminatioPLAYER"),
+        )
+        assertEquals("PLAYER", playerFour.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun mergedRightPlayerCleanupDoesNotChangePlayerTwoOrEarlyPositionBehavior() {
+        val playerTwo = mapper.map(
+            rightInputForSlot(
+                position = 6,
+                slot = 2,
+                middle = "PlayerFour",
+                left = "EliminationsPLAYER",
+            ),
+        )
+        assertEquals("", playerTwo.fields.single { it.id == "PLAYER_6_2" }.resolvedText)
+
+        val earlyPosition = mapper.map(
+            MatchResultPositionOcrInput(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = 5,
+                cropWidth = 491,
+                cropHeight = 82,
+                blocks = block(line("EliminationsPLAYER", 320, 10, 400, 30)),
+                rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
+                placementVerification = unresolved(),
+                killVerifications = emptyMap(),
+            ),
+        )
+        assertEquals("", earlyPosition.fields.single { it.id == "PLAYER_5_3" }.resolvedText)
+    }
+
+    @Test
+    fun mergedRightPlayerCleanupLeavesDeepMarkersAndOrdinaryPlayerTextUnchanged() {
+        val playerThree = mapper.map(rightInput(position = 6, middle = "PLAYEREliminationsX"))
+        assertEquals("PLAYEREliminationsX", playerThree.fields.single { it.id == "PLAYER_6_3" }.resolvedText)
+
+        val playerFour = mapper.map(
+            rightInputForSlot(position = 11, slot = 4, middle = "TERMINATOR"),
+        )
+        assertEquals("TERMINATOR", playerFour.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
     }
 
     @Test
@@ -308,6 +388,32 @@ class MatchResultPositionOcrFieldMapperTest {
             line(left, 70, 10, 160, 30),
             line(middle, 205, 10, 350, 30),
             line(right, 410, 10, 480, 30),
+        ),
+        rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
+        placementVerification = unresolved(),
+        killVerifications = emptyMap(),
+    )
+
+    private fun rightInputForSlot(
+        position: Int,
+        slot: Int,
+        middle: String,
+        role: MatchResultScreenshotRole = if (position <= 10) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        } else {
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER
+        },
+        left: String = "PlayerA",
+        right: String = "1Eliminations",
+    ) = MatchResultPositionOcrInput(
+        role = role,
+        position = position,
+        cropWidth = 491,
+        cropHeight = 82,
+        blocks = block(
+            line(left, 70, if (slot == 2) 50 else 10, 160, if (slot == 2) 70 else 30),
+            line(middle, 205, if (slot == 4) 50 else 10, 350, if (slot == 4) 70 else 30),
+            line(right, 410, if (slot == 4) 50 else 10, 480, if (slot == 4) 70 else 30),
         ),
         rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
         placementVerification = unresolved(),

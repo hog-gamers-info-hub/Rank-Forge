@@ -807,6 +807,9 @@ private fun CompactPlayerCell(
             Text(
                 text = "$slot. $playerName - [",
                 style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             BasicTextField(
