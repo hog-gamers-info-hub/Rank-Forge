@@ -80,6 +80,7 @@ class MatchReviewResultScreenshotCancelContractTest {
                 status = MatchStatus.DRAFT,
             ),
         )
+        Unit
     }
 
     @After
