@@ -5,8 +5,8 @@
     </style>
 
     <style name="Theme.RankForge.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/rank_forge_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/pointiq_brand_mark</item>
+        <item name="windowSplashScreenBackground">@color/pointiq_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/pointiq_splash_icon</item>
         <item name="postSplashScreenTheme">@style/Theme.RankForge</item>
     </style>
 </resources>
