@@ -715,8 +715,7 @@ fun RankForgeNavHost(
                     navController.getBackStackEntry(reviewDestination),
                 )
             }
-            val onBackToReview: () -> Unit = {
-                lobbyBatchViewModel?.cancelCropBatch(destination.tournamentId, destination.matchId)
+            val returnToReview: () -> Unit = {
                 if (!navController.popBackStack(reviewDestination, inclusive = false)) {
                     navController.navigate(reviewDestination) {
                         popUpTo(
@@ -731,6 +730,14 @@ fun RankForgeNavHost(
                     }
                 }
             }
+            val onCancelToReview: () -> Unit = {
+                lobbyBatchViewModel?.cancelLobbyScreenshotCrop(
+                    tournamentId = destination.tournamentId,
+                    matchId = destination.matchId,
+                    index = destination.lobbyScreenshotIndex,
+                )
+                returnToReview()
+            }
             val onConfirmed: () -> Unit = {
                 val nextIndex = lobbyBatchViewModel?.onCropConfirmed(
                     tournamentId = destination.tournamentId,
@@ -738,7 +745,7 @@ fun RankForgeNavHost(
                     index = destination.lobbyScreenshotIndex,
                 )
                 if (nextIndex == null) {
-                    onBackToReview()
+                    returnToReview()
                 } else {
                     navController.navigate(
                         MatchLobbyScreenshotCropDestination(
@@ -761,7 +768,7 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
-                    onCancel = onBackToReview,
+                    onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                 )
             } else {
@@ -769,7 +776,7 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
-                    onCancel = onBackToReview,
+                    onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                     viewModel = cropViewModel,
                 )

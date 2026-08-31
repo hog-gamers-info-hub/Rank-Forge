@@ -263,6 +263,89 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @Test
+    fun cancelAfterNewLobbySelectionRemovesUnconfirmedScreenshot() = runTest {
+        val root = Files.createTempDirectory("lobby-crop-cancel-new-selection").toFile()
+        val preserver = preserver(root)
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        val persisted = lobbyRepository.readByMatchAndIndex(matchId, 1)
+        val preservedFile = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        assertTrue(persisted != null)
+        assertTrue(preservedFile.isFile)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+
+        viewModel.onCropNavigationHandled()
+        viewModel.cancelLobbyScreenshotCrop(tournamentId, matchId, 1)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+        assertNull(lobbyRepository.readByMatchAndIndex(matchId, 1))
+        assertFalse(preservedFile.exists())
+    }
+
+    @Test
+    fun cancelForExistingUnconfirmedLobbyScreenshotDoesNotRemoveIt() = runTest {
+        val root = Files.createTempDirectory("lobby-crop-cancel-existing-unconfirmed").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        lobbyRepository.saveOrReplace(asset(1, matchId, preserver.relativePathFor(file)!!, "existing-unconfirmed"))
+
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+
+        viewModel.requestCropEditor(1)
+        viewModel.onCropNavigationHandled()
+        viewModel.cancelLobbyScreenshotCrop(tournamentId, matchId, 1)
+        advanceUntilIdle()
+
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+        assertTrue(file.isFile)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+    }
+
+    @Test
+    fun cancelAfterConfirmedLobbySelectionKeepsCommittedScreenshotAndCrop() = runTest {
+        val root = Files.createTempDirectory("lobby-crop-cancel-confirmed").toFile()
+        val preserver = preserver(root)
+        val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
+        file.parentFile.mkdirs()
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        val confirmedAsset = asset(1, matchId, preserver.relativePathFor(file)!!, "existing-confirmed").copy(
+            cropProfileId = "lobby",
+            cropLeft = 0.1,
+            cropTop = 0.1,
+            cropRight = 0.9,
+            cropBottom = 0.9,
+        )
+        lobbyRepository.saveOrReplace(confirmedAsset)
+
+        val viewModel = viewModel(preserver)
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.slot(1)?.hasConfirmedCrop == true)
+
+        viewModel.requestCropEditor(1)
+        viewModel.onCropNavigationHandled()
+        viewModel.cancelLobbyScreenshotCrop(tournamentId, matchId, 1)
+        advanceUntilIdle()
+
+        assertEquals(confirmedAsset, lobbyRepository.readByMatchAndIndex(matchId, 1))
+        assertTrue(file.isFile)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasLinkedAsset == true)
+        assertTrue(viewModel.uiState.value.slot(1)?.hasConfirmedCrop == true)
+    }
+
+    @Test
     fun singleLobbyBatchConfirmationReturnsToReviewAndClearsBatch() = runTest {
         val viewModel = viewModel(
             preserver(Files.createTempDirectory("lobby-single-crop-confirm").toFile()),
