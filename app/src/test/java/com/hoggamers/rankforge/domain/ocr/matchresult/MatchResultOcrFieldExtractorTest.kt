@@ -156,6 +156,56 @@ class MatchResultOcrFieldExtractorTest {
     }
 
     @Test
+    fun upperPositionSixPlayerThreeRemovesPhysicalMergedEliminationPrefix() {
+        val playerRect = MatchResultOcrCanonicalLayouts.upper.rect("PLAYER_6_3")
+        val result = extractUpper(
+            element("BEliminatio6R-SMOO7HX5", playerRect),
+        )
+
+        assertEquals(
+            "6R-SMOO7HX5",
+            result.fields.single { it.id == "PLAYER_6_3" }.resolvedText,
+        )
+    }
+
+    @Test
+    fun mergedLegacyPlayerCleanupUsesApprovedMarkersOnceAtTheStart() {
+        val cases = listOf(
+            "EliminationsPLAYER" to "PLAYER",
+            "3EliminationsPLAYER" to "PLAYER",
+            "12EliminationsPLAYER" to "PLAYER",
+            "3EliminationsEliminationKing" to "EliminationKing",
+            "Eliminator" to "Eliminator",
+            "ABCEliminationsPLAYER" to "ABCEliminationsPLAYER",
+        )
+        val playerRect = MatchResultOcrCanonicalLayouts.lower.rect("LOWER_ROW_A_PLAYER_3")
+
+        cases.forEach { (text, expected) ->
+            val result = extractLower(
+                element("11", MatchResultOcrCanonicalLayouts.lower.rect("LOWER_ROW_A_PLACEMENT")),
+                element(text, playerRect),
+            )
+            assertEquals(expected, result.fields.single { it.id == "LOWER_ROW_A_PLAYER_3" }.resolvedText)
+        }
+    }
+
+    @Test
+    fun mergedLegacyPlayerCleanupDoesNotApplyToEarlyPositionsOrPlayersOneAndTwo() {
+        val contaminated = "BEliminatio6R-SMOO7HX5"
+        val earlyPosition = extractUpper(
+            element(contaminated, MatchResultOcrCanonicalLayouts.upper.rect("PLAYER_5_3")),
+        )
+        assertEquals(contaminated, earlyPosition.fields.single { it.id == "PLAYER_5_3" }.resolvedText)
+
+        val rightLayoutPlayers = extractUpper(
+            element(contaminated, MatchResultOcrCanonicalLayouts.upper.rect("PLAYER_6_1")),
+            element(contaminated, MatchResultOcrCanonicalLayouts.upper.rect("PLAYER_6_2")),
+        )
+        assertEquals(contaminated, rightLayoutPlayers.fields.single { it.id == "PLAYER_6_1" }.resolvedText)
+        assertEquals(contaminated, rightLayoutPlayers.fields.single { it.id == "PLAYER_6_2" }.resolvedText)
+    }
+
+    @Test
     fun lowerRightPlayerPreservesNoisyLeadingCharacterWhenFieldLocal() {
         val playerRect = MatchResultOcrCanonicalLayouts.lower.rect("LOWER_ROW_A_PLAYER_4")
         val result = extractLower(
@@ -300,6 +350,30 @@ class MatchResultOcrFieldExtractorTest {
             ),
         )
 
+    private fun extractUpper(vararg elements: RawOcrElement): MatchResultOcrExtractionResult =
+        extractor.extract(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            cropWidth = 1156,
+            cropHeight = 456,
+            blocks = listOf(
+                RawOcrBlock(
+                    text = elements.joinToString(" ") { it.text },
+                    geometry = null,
+                    recognizedLanguage = null,
+                    confidence = RawOcrConfidence.Unavailable,
+                    lines = listOf(
+                        RawOcrLine(
+                            text = elements.joinToString(" ") { it.text },
+                            geometry = null,
+                            recognizedLanguage = null,
+                            confidence = RawOcrConfidence.Unavailable,
+                            elements = elements.toList(),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
     private fun element(
         text: String,
         rect: MatchResultOcrRect,
@@ -343,4 +417,3 @@ class MatchResultOcrFieldExtractorTest {
 
 private fun MatchResultOcrCanonicalLayout.rect(id: String): MatchResultOcrRect =
     fields.first { it.id == id }.rect
-

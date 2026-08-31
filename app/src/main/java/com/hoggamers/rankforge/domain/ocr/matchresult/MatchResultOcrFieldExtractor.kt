@@ -163,7 +163,13 @@ class MatchResultOcrFieldExtractor {
             MatchResultOcrFieldType.PLACEMENT ->
                 mapPlacementField(field, mapped, selectedByGeometry, selectedSymbols, symbolGeometryAvailable, role)
             MatchResultOcrFieldType.PLAYER ->
-                mapPlayerField(field, mapped, selectedInReadingOrder, selectedSymbols)
+                mapPlayerField(
+                    field = field,
+                    mapped = mapped,
+                    selectedInReadingOrder = selectedInReadingOrder,
+                    selectedSymbols = selectedSymbols,
+                    sanitizeMergedEliminationPrefix = isRightMergedPlayerField(field, role),
+                )
 
             MatchResultOcrFieldType.KILL ->
                 mapKillField(field, mapped, selectedByGeometry, selectedSymbols, symbolGeometryAvailable)
@@ -228,10 +234,12 @@ class MatchResultOcrFieldExtractor {
         mapped: MatchResultOcrRect,
         selectedInReadingOrder: List<ElementObservation>,
         selectedSymbols: List<SymbolObservation>,
+        sanitizeMergedEliminationPrefix: Boolean,
     ): MatchResultOcrField {
         val rendered = renderPlayerInReadingOrder(
             elements = selectedInReadingOrder,
             fallbackSymbols = selectedSymbols,
+            sanitizeMergedEliminationPrefix = sanitizeMergedEliminationPrefix,
         )
 
         return MatchResultOcrField(
@@ -303,19 +311,18 @@ class MatchResultOcrFieldExtractor {
     private fun renderPlayerInReadingOrder(
         elements: List<ElementObservation>,
         fallbackSymbols: List<SymbolObservation>,
+        sanitizeMergedEliminationPrefix: Boolean,
     ): String {
         val elementText = elements
             .map { it.text.trim() }
             .filter { it.isNotBlank() }
             .joinToString(separator = " ")
-            .cleanPlayerPrefixContamination()
 
         if (elementText.isNotBlank()) {
-            return elementText
+            return elementText.cleanPlayerText(sanitizeMergedEliminationPrefix)
         }
 
-        return renderPlayerSymbols(fallbackSymbols)
-            .cleanPlayerPrefixContamination()
+        return renderPlayerSymbols(fallbackSymbols).cleanPlayerText(sanitizeMergedEliminationPrefix)
     }
 
     private fun renderPlayerSymbols(symbols: List<SymbolObservation>): String {
@@ -347,6 +354,13 @@ class MatchResultOcrFieldExtractor {
     private fun renderSymbols(symbols: List<SymbolObservation>): String =
         renderPlayerSymbols(symbols)
 
+    private fun String.cleanPlayerText(sanitizeMergedEliminationPrefix: Boolean): String =
+        if (sanitizeMergedEliminationPrefix) {
+            trim().stripLeadingMergedEliminationPrefix()
+        } else {
+            cleanPlayerPrefixContamination()
+        }
+
     private fun String.cleanPlayerPrefixContamination(): String =
         trim()
             .replace(Regex("^\\d+\\s*", RegexOption.IGNORE_CASE), "")
@@ -355,6 +369,14 @@ class MatchResultOcrFieldExtractor {
             .replace(Regex("^Eliminatio\\s*", RegexOption.IGNORE_CASE), "")
             .replace(Regex("^Eliminatio(?=[A-Z0-9])", RegexOption.IGNORE_CASE), "")
             .trim()
+
+    private fun isRightMergedPlayerField(
+        field: MatchResultOcrCanonicalField,
+        role: MatchResultScreenshotRole,
+    ): Boolean = field.slot in setOf(3, 4) && when (role) {
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER -> field.position in 6..10
+        MatchResultScreenshotRole.MATCH_RESULT_LOWER -> field.position == null
+    }
 
     private fun renderRawText(elements: List<ElementObservation>): String =
         elements.joinToString(separator = " ") { it.text.trim() }.trim()
@@ -589,6 +611,33 @@ class MatchResultOcrFieldExtractor {
         }
 }
 
+private val LEGACY_MERGED_ELIMINATION_MARKERS = listOf(
+    "Eliminations",
+    "Elimination",
+    "Eliminatio",
+    "Eliminati",
+)
+
+private fun String.stripLeadingMergedEliminationPrefix(): String {
+    for (startIndex in 0..2) {
+        for (marker in LEGACY_MERGED_ELIMINATION_MARKERS) {
+            if (
+                startIndex + marker.length <= length &&
+                regionMatches(
+                    startIndex,
+                    marker,
+                    0,
+                    marker.length,
+                    ignoreCase = true,
+                )
+            ) {
+                return substring(startIndex + marker.length).trim()
+            }
+        }
+    }
+    return this
+}
+
 private fun RawOcrGeometry?.boundingBoxOrCorners(): MatchResultOcrRect? {
     val boundingBox = this?.boundingBox
     if (boundingBox != null) return boundingBox.toMatchResultRect()
@@ -634,4 +683,3 @@ private fun MatchResultOcrRect.overlapAreaRatio(other: MatchResultOcrRect): Doub
 private fun MatchResultOcrRect.centerX(): Double = (left + right) / 2.0
 
 private fun MatchResultOcrRect.centerY(): Double = (top + bottom) / 2.0
-
