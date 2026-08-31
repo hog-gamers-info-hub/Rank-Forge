@@ -787,8 +787,7 @@ fun RankForgeNavHost(
                 navController.getBackStackEntry(reviewDestination),
             )
             val cropViewModel = matchResultScreenshotCropViewModelFactory?.invoke()
-            val onBackToReview: () -> Unit = {
-                reviewBatchViewModel.cancelResultCropBatch(destination.tournamentId, destination.matchId)
+            val returnToReview: () -> Unit = {
                 if (!navController.popBackStack(reviewDestination, inclusive = false)) {
                     navController.navigate(reviewDestination) {
                         popUpTo(
@@ -803,6 +802,18 @@ fun RankForgeNavHost(
                     }
                 }
             }
+            val onCancelToReview: () -> Unit = {
+                runCatching {
+                    MatchResultScreenshotRole.valueOf(destination.screenshotRole)
+                }.getOrNull()?.let { role ->
+                    reviewBatchViewModel.cancelResultScreenshotCrop(
+                        tournamentId = destination.tournamentId,
+                        matchId = destination.matchId,
+                        role = role,
+                    )
+                }
+                returnToReview()
+            }
             val onConfirmed: () -> Unit = {
                 val role = runCatching {
                     MatchResultScreenshotRole.valueOf(destination.screenshotRole)
@@ -815,7 +826,7 @@ fun RankForgeNavHost(
                     )
                 }
                 if (nextRole == null) {
-                    onBackToReview()
+                    returnToReview()
                 } else {
                     navController.navigate(
                         MatchResultScreenshotCropDestination(
@@ -833,7 +844,7 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
-                    onCancel = onBackToReview,
+                    onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                 )
             } else {
@@ -841,7 +852,7 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
-                    onCancel = onBackToReview,
+                    onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                     viewModel = cropViewModel,
                 )

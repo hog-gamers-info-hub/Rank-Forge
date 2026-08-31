@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetSaveResult
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
@@ -22,6 +23,7 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.io.File
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +119,11 @@ class MatchReviewResultScreenshotCancelContractTest {
         )
 
         viewModel.onNavigationHandled()
-        viewModel.cancelResultCropBatch(CANCEL_CONTRACT_TOURNAMENT_ID, matchId)
+        viewModel.cancelResultScreenshotCrop(
+            CANCEL_CONTRACT_TOURNAMENT_ID,
+            matchId,
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
         advanceUntilIdle()
 
         assertFalse(
@@ -165,7 +171,11 @@ class MatchReviewResultScreenshotCancelContractTest {
         val committedFile = File(root, committedAsset!!.localRelativePath)
         assertTrue(committedFile.isFile)
 
-        viewModel.cancelResultCropBatch(CANCEL_CONTRACT_TOURNAMENT_ID, matchId)
+        viewModel.cancelResultScreenshotCrop(
+            CANCEL_CONTRACT_TOURNAMENT_ID,
+            matchId,
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
         advanceUntilIdle()
 
         val afterCancel = assetRepository.getByIdentity(identity)
@@ -176,6 +186,83 @@ class MatchReviewResultScreenshotCancelContractTest {
         assertEquals(crop.right, afterCancel.cropRight!!, 0.0)
         assertEquals(crop.bottom, afterCancel.cropBottom!!, 0.0)
         assertTrue(committedFile.isFile)
+    }
+
+    @Test
+    fun cancelForExistingUnconfirmedResultScreenshotDoesNotRemoveIt() = runTest {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val root = Files.createTempDirectory("pointiq-result-cancel-existing").toFile()
+        val assetRepository = CancelContractAssetRepository()
+        val pathHelper = LocalImagePreserver(
+            appPrivateRoot = root,
+            sourceStreamOpener = ImageSourceStreamOpener {
+                ByteArrayInputStream(byteArrayOf(9, 8, 7))
+            },
+            mimeTypeReader = ImageSourceMimeTypeReader { "image/png" },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val existingAsset = MatchResultScreenshotAssetEntity(
+            tournamentId = CANCEL_CONTRACT_TOURNAMENT_ID,
+            matchId = matchId,
+            screenshotKind = OcrScreenshotKind.MATCH_RESULT.name,
+            screenshotRole = role.name,
+            ownerUserId = "owner-id",
+            localRelativePath = pathHelper.matchResultRelativePath(
+                CANCEL_CONTRACT_TOURNAMENT_ID,
+                matchId,
+                role,
+                "png",
+            ),
+            fileExtension = "png",
+            mimeType = "image/png",
+            originalWidth = 1600,
+            originalHeight = 720,
+            byteSize = 3L,
+            sha256 = "d".repeat(64),
+            localStatus = ScreenshotLocalStatus.PRESERVED.name,
+            uploadStatus = ScreenshotUploadStatus.PENDING.name,
+            uploadFailureCode = null,
+            storageBucket = null,
+            storageObjectPath = null,
+            cropProfileId = null,
+            cropLeft = null,
+            cropTop = null,
+            cropRight = null,
+            cropBottom = null,
+            createdAt = 1L,
+            updatedAt = 1L,
+            preservedAt = 1L,
+            uploadedAt = null,
+            revision = 1L,
+        )
+        val existingFile = pathHelper.matchResultPreservedFile(
+            CANCEL_CONTRACT_TOURNAMENT_ID,
+            matchId,
+            role,
+            "png",
+        )
+        existingFile.parentFile?.mkdirs()
+        existingFile.writeBytes(byteArrayOf(9, 8, 7))
+        assetRepository.saveOrReplace(existingAsset)
+
+        val viewModel = viewModel(
+            bytesByUri = emptyMap(),
+            assetRepository = assetRepository,
+            root = root,
+        )
+        viewModel.load(CANCEL_CONTRACT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.cancelResultScreenshotCrop(
+            CANCEL_CONTRACT_TOURNAMENT_ID,
+            matchId,
+            role,
+        )
+        advanceUntilIdle()
+
+        assertNotNull(assetRepository.getByIdentity(identity(role)))
+        assertTrue(existingFile.isFile)
+        assertTrue(viewModel.uiState.value.resultScreenshots.slot(role).hasLinkedAsset)
     }
 
     private fun viewModel(
