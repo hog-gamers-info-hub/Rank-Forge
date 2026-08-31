@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.NoOpMatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReadResult
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
 import com.hoggamers.rankforge.data.ocr.NoOpMatchOcrCacheReader
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
@@ -381,7 +382,10 @@ class MatchOcrReviewViewModel @Inject constructor(
             }
             val availability = cached?.availability ?: MatchOcrCacheAvailability.NOT_AVAILABLE
             _cacheAvailability.value = availability
-            if (cached == null || availability != MatchOcrCacheAvailability.READY) {
+            val hasCompleteResultOcr = cached?.hasCompleteResultOcr() == true
+            if (cached == null ||
+                (availability != MatchOcrCacheAvailability.READY && !hasCompleteResultOcr)
+            ) {
                 _uiState.update { state ->
                     when (state) {
                         is MatchOcrReviewUiState.Ready -> {
@@ -416,21 +420,30 @@ class MatchOcrReviewViewModel @Inject constructor(
                 _cacheAvailability.value = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE
                 return@launch
             }
-            val matchedRows = MatchResultOcrPreviewTeamSuggestionMapper.map(
-                preview = preview,
-                resultRows = cached.resultRoleResults.processedResultRows(),
-                lobbyOcrResult = cached.lobbyResult,
-            )
+            val hasCompleteCombinedCache = availability == MatchOcrCacheAvailability.READY
+            val matchedRows = if (hasCompleteCombinedCache) {
+                MatchResultOcrPreviewTeamSuggestionMapper.map(
+                    preview = preview,
+                    resultRows = cached.resultRoleResults.processedResultRows(),
+                    lobbyOcrResult = cached.lobbyResult,
+                )
+            } else {
+                null
+            }
             val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
-            val lobbyPlayers = cached.lobbyResult.toUiState()
-                .takeIf {
-                    cached.lobbyResult.hasLobbyOcrEvidence(
-                        matchId,
-                        lobbyScreenshotAssetRepository,
-                        screenshotOwnerProvider.currentOwnerUserId(),
-                    )
-                }
-                .orEmpty()
+            val lobbyPlayers = if (hasCompleteCombinedCache) {
+                cached.lobbyResult.toUiState()
+                    .takeIf {
+                        cached.lobbyResult.hasLobbyOcrEvidence(
+                            matchId,
+                            lobbyScreenshotAssetRepository,
+                            screenshotOwnerProvider.currentOwnerUserId(),
+                        )
+                    }
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
             _uiState.update { state ->
                 when (state) {
                     is MatchOcrReviewUiState.Ready -> state
@@ -1100,6 +1113,15 @@ private fun List<MatchResultOcrPreviewRoleResult>.processedResultRows(): List<Ma
             ?.rows
             .orEmpty()
     }
+
+private fun MatchOcrCacheReadResult.hasCompleteResultOcr(): Boolean =
+    resultRoleResults.size == MatchResultScreenshotRole.entries.size &&
+        MatchResultScreenshotRole.entries.all { expectedRole ->
+            resultRoleResults.any { roleResult ->
+                roleResult.role == expectedRole &&
+                    roleResult.result is MatchResultOcrPreviewProcessingResult.Processed
+            }
+        }
 
 private const val SAFE_AUTOMATIC_ASSIGNMENT_LABEL = "Safe automatic assignment"
 private const val REVIEW_REQUIRED_LABEL = "Review required"
