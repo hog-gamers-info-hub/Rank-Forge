@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -53,8 +54,8 @@ class AuthNavigationTest {
         }
 
         composeTestRule.onNodeWithTag(AUTH_SESSION_LOADING_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Rank-Forge").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Checking account session.").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Rank-Forge").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Checking account session.").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
     }

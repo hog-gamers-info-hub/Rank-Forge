@@ -23,9 +23,17 @@ class MainActivity : ComponentActivity() {
     lateinit var supabaseClientProvider: SupabaseClientProvider
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         handleAuthCallback(intent)
+        splashScreen.setKeepOnScreenCondition {
+            authViewModel.uiState.value.let { state ->
+                state.isSessionLoading &&
+                    !state.isSignedIn &&
+                    !state.isPasswordRecoveryActive &&
+                    !state.isExternalAuthCallbackProcessing
+            }
+        }
         setContent {
             RankForgeApp(authViewModel = authViewModel)
         }
