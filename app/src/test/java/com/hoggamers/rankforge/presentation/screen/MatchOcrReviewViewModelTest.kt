@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRunner
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReadResult
+import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
@@ -40,6 +44,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
@@ -205,6 +210,105 @@ class MatchOcrReviewViewModelTest {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
         assertEquals(MatchOcrReviewUiState.Loading, viewModel.uiState.value)
+    }
+
+    @Test
+    fun completeResultCacheWithoutLobbyRestoresResultOnlyReviewState() = runTest(dispatcher) {
+        val repository = createRepository()
+        val cachedResult = MatchOcrCacheReadResult(
+            availability = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE,
+            resultRoleResults = completeResultRoleResults(),
+            lobbyResult = MatchLobbyPlayersOcrResult.unavailable(),
+        )
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ -> cachedResult },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(state.matchResultOcrPreview is MatchResultOcrPreviewUiState.Ready)
+        assertEquals(12, state.rows.size)
+        assertTrue(state.lobbyPlayers.isEmpty())
+        assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
+        assertTrue(state.rows.none { it.resultLobbyVoteEvidencePresent })
+        assertTrue(state.correctionDraft!!.rows.all { it.assignedTeamSlotDraftValue.isBlank() })
+    }
+
+    @Test
+    fun completeResultCacheDoesNotEraseAnExistingReadyStateWhenLobbyIsMissing() = runTest(dispatcher) {
+        val repository = createRepository()
+        val resultRoleResults = completeResultRoleResults()
+        val initialState = readyState().copy(
+            matchResultOcrPreview = MatchResultOcrPreviewUiStateMapper.map(resultRoleResults),
+        )
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(
+                    availability = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE,
+                    resultRoleResults = resultRoleResults,
+                    lobbyResult = MatchLobbyPlayersOcrResult.unavailable(),
+                )
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertEquals(initialState, viewModel.uiState.value)
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Ready)
+        assertTrue(
+            (viewModel.uiState.value as MatchOcrReviewUiState.Ready).matchResultOcrPreview is
+                MatchResultOcrPreviewUiState.Ready,
+        )
+    }
+
+    @Test
+    fun completeCombinedCacheStillUsesLobbyMatching() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(
+                    availability = MatchOcrCacheAvailability.READY,
+                    resultRoleResults = completeResultRoleResultsWithUniqueLobbyMatch(),
+                    lobbyResult = completeLobbyResultForMatching(),
+                )
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(state.lobbyPlayers.isNotEmpty())
+        assertTrue(state.rows.first().resultLobbyVoteEvidencePresent)
+        assertEquals(12, state.rows.first().originalSuggestedTeamSlot)
+    }
+
+    @Test
+    fun missingResultCacheDoesNotFabricateResultReadyState() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value !is MatchOcrReviewUiState.Ready)
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Loading)
     }
 
     @Test
@@ -1626,6 +1730,65 @@ class MatchOcrReviewViewModelTest {
             else -> result
         }
     }
+
+    private suspend fun completeResultRoleResults(): List<MatchResultOcrPreviewRoleResult> =
+        MatchResultScreenshotRole.entries.map { role ->
+            MatchResultOcrPreviewRoleResult(
+                role = role,
+                result = completePreviewRunner().process(
+                    MatchResultScreenshotIdentity(
+                        tournamentId = TOURNAMENT_ID,
+                        matchId = MATCH_ID,
+                        role = role,
+                    ),
+                ),
+            )
+        }
+
+    private suspend fun completeResultRoleResultsWithUniqueLobbyMatch():
+        List<MatchResultOcrPreviewRoleResult> = completeResultRoleResults().map { roleResult ->
+        val processed = roleResult.result as MatchResultOcrPreviewProcessingResult.Processed
+        roleResult.copy(
+            result = processed.copy(
+                extraction = processed.extraction.copy(
+                    rows = processed.extraction.rows.map { row ->
+                        if (row.position == 1) {
+                            row
+                        } else {
+                            row.copy(
+                                playerSlots = row.playerSlots.map { playerSlot ->
+                                    playerSlot.copy(
+                                        player = playerSlot.player.copy(
+                                            ocrText = "",
+                                            resolvedText = "",
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                    },
+                ),
+            ),
+        )
+    }
+
+    private fun completeLobbyResultForMatching(): MatchLobbyPlayersOcrResult =
+        MatchLobbyPlayersOcrResult(
+            slots = (1..12).map { slotNumber ->
+                MatchLobbyPlayersOcrSlot(
+                    slotNumber = slotNumber,
+                    players = if (slotNumber == 12) {
+                        (1..4).map { playerNumber ->
+                            MatchLobbyPlayersOcrPlayer(playerNumber, "Player 1-$playerNumber")
+                        }
+                    } else {
+                        (1..4).map { playerNumber ->
+                            MatchLobbyPlayersOcrPlayer(playerNumber, null)
+                        }
+                    },
+                )
+            },
+        )
 
     private fun processedSlotNumberScreenshot(
         position: RosterScreenshotPosition,

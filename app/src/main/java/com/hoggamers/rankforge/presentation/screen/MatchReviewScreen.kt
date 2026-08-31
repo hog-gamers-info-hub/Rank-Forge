@@ -473,7 +473,10 @@ fun MatchReviewRoute(
             { index -> intakeViewModel.requestCropEditor(index) }
         } ?: {},
         showLegacyManualReviewContent = showLegacyManualReviewContent,
-        showInlineOcrDetails = ocrCacheAvailability == MatchOcrCacheAvailability.READY,
+        showInlineOcrDetails = shouldShowInlineOcrDetailsForCache(
+            cacheAvailability = ocrCacheAvailability,
+            ocrUiState = ocrUiState,
+        ),
         ocrCacheAvailability = ocrCacheAvailability,
         ocrUiState = ocrUiState,
         onOcrPlacementChanged = resolvedOcrReviewViewModel::onPlacementChanged,
@@ -1815,6 +1818,12 @@ private fun MatchOcrReviewUiState.hasDisplayableResultOcrData(): Boolean = when 
     is MatchOcrReviewUiState.Error,
     -> false
 }
+
+internal fun shouldShowInlineOcrDetailsForCache(
+    cacheAvailability: MatchOcrCacheAvailability,
+    ocrUiState: MatchOcrReviewUiState,
+): Boolean = cacheAvailability == MatchOcrCacheAvailability.READY ||
+    ocrUiState.hasDisplayableResultOcrData()
 
 @Composable
 private fun MatchReviewResultOcrDetailsContent(

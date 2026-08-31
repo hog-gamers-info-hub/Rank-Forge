@@ -1580,6 +1580,16 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun staleCacheWithDisplayableResultOcrAllowsInlineResultDetails() {
+        assertTrue(
+            shouldShowInlineOcrDetailsForCache(
+                cacheAvailability = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE,
+                ocrUiState = inlineOcrState(),
+            ),
+        )
+    }
+
+    @Test
     fun inlineOcrCorrectionControlsKeepCallbacksConnected() {
         val placements = mutableListOf<Pair<Int, String>>()
         val kills = mutableListOf<Pair<Int, String>>()
