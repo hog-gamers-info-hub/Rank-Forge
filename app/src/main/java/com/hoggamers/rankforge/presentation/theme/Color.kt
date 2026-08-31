@@ -8,3 +8,4 @@ internal val RankForgeSecondary = Color(0xFF5E6062)
 internal val RankForgeOnSecondary = Color.White
 internal val RankForgeOnBackground = Color(0xFF1A1C1D)
 internal val RankForgeOnSurface = Color(0xFF1A1C1D)
+internal val RankForgePageBackground = Color(0xFFEEF6FC)

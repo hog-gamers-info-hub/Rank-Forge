@@ -65,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -78,8 +79,6 @@ private val PointIqCreateBody = Color(0xFF607393)
 private val PointIqCreateBlue = Color(0xFF176AF7)
 private val PointIqCreateCyan = Color(0xFF17C9F2)
 private val PointIqCreateBorder = Color(0xFFD6E3F4)
-private val PointIqCreateBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqCreateBackgroundBottom = Color(0xFFF4FAFF)
 
 const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
 const val TOURNAMENT_DATE_FIELD_TEST_TAG = "tournament_date_field"
@@ -157,14 +156,7 @@ fun TournamentCreationScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqCreateBackgroundTop,
-                        PointIqCreateBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .testTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG)
             .imePadding()
             .verticalScroll(scrollState)

@@ -52,7 +52,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -84,6 +83,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
@@ -95,8 +95,6 @@ private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
 private val PointIqMatchReviewEmptyCardBorder = Color(0xFF9DB5D3)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
-private val PointIqMatchReviewBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqMatchReviewBackgroundBottom = Color(0xFFF4FAFF)
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private enum class MatchReviewScreenshotActionStyle {
@@ -728,14 +726,7 @@ private fun MatchReviewContent(
             .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
             .verticalScroll(rememberScrollState())
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqMatchReviewBackgroundTop,
-                        PointIqMatchReviewBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .padding(RankForgeSpacing.Large),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
         verticalArrangement = Arrangement.Top,

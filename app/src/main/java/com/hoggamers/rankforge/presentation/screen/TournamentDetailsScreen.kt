@@ -34,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -50,6 +49,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -62,8 +62,6 @@ private val PointIqDetailsBody = Color(0xFF607393)
 private val PointIqDetailsBlue = Color(0xFF176AF7)
 private val PointIqDetailsBorder = Color(0xFFD6E3F4)
 private val PointIqDetailsCard = Color(0xFFFFFFFF)
-private val PointIqDetailsBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqDetailsBackgroundBottom = Color(0xFFF4FAFF)
 private val PointIqDetailsDanger = Color(0xFFD92D3A)
 private val PointIqDetailsDangerContainer = Color(0xFFFFF5F5)
 
@@ -304,14 +302,7 @@ private fun TournamentDetailsContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqDetailsBackgroundTop,
-                        PointIqDetailsBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .testTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG)
             .verticalScroll(rememberScrollState())
             .padding(
