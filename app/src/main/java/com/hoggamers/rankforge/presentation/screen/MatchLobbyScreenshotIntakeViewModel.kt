@@ -61,6 +61,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private var activeBatchGeneration: Long? = null
     private var activeBatchTargetSlots: Set<Int> = emptySet()
     private var nextMultiPhotoPickerRequestId = 0L
+    private val pendingNewLobbyScreenshotCropSlots = mutableSetOf<Int>()
     private val missingMarked = mutableSetOf<String>()
     private var lobbyPanelPpPrewarmStarted = false
 
@@ -182,6 +183,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             current.slots.any { it.isPhotoPickerRequestActive } ||
             current.slots.any { it.isPhotoPickerLaunchPending }
         ) return
+        pendingNewLobbyScreenshotCropSlots.remove(index)
         cancelActiveBatchAndClearTransientState()
         intakeGeneration++
         _uiState.update {
@@ -235,6 +237,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     }
 
     fun onPhotoPickerLaunchFailed(index: Int) {
+        pendingNewLobbyScreenshotCropSlots.remove(index)
         _uiState.update {
             it.replaceSlot(index) {
                 it.copy(
@@ -256,6 +259,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     }
 
     fun onMultiPhotoPickerLaunchFailed(requestId: Long) {
+        pendingNewLobbyScreenshotCropSlots.clear()
         _uiState.update { state ->
             val request = state.multiPhotoPickerRequest?.takeIf { it.requestId == requestId }
                 ?: return@update state
@@ -275,6 +279,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     fun onPhotoPickerResult(selectedUri: String?) {
         val index = _uiState.value.slots.firstOrNull { it.isPhotoPickerRequestActive }?.index
         val slot = index?.let(_uiState.value::slot) ?: return
+        val wasEmptyBeforeSelection = !slot.hasLinkedAsset
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
@@ -296,11 +301,21 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         }
         val generation = ++intakeGeneration
         cancelActiveBatchAndClearTransientState()
-        viewModelScope.launch { processSelection(index, replacementUri, generation) }
+        viewModelScope.launch {
+            processSelection(
+                index = index,
+                selectedUri = replacementUri,
+                generation = generation,
+                wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+            )
+        }
     }
 
     fun onMultiPhotoPickerResult(selectedUris: List<String>) {
         val request = _uiState.value.multiPhotoPickerRequest ?: return
+        val wasEmptyBeforeSelection = request.targetSlotIndices.associateWith { index ->
+            _uiState.value.slot(index)?.hasLinkedAsset != true
+        }
         val generation = ++intakeGeneration
         cancelActiveBatchAndClearTransientState()
         _uiState.update { state ->
@@ -333,7 +348,14 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             try {
                 val successfulSlots = buildList {
                     assignments.forEach { (index, uri) ->
-                        if (processSelection(index, uri, generation, requestCropNavigation = false)) {
+                        if (processSelection(
+                                index = index,
+                                selectedUri = uri,
+                                generation = generation,
+                                requestCropNavigation = false,
+                                wasEmptyBeforeSelection = wasEmptyBeforeSelection[index] == true,
+                            )
+                        ) {
                             add(index)
                         }
                     }
@@ -347,6 +369,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                             ),
                             pendingCropNavigationSlotIndex = successfulSlots.first(),
                         )
+                    }
+                    pendingNewLobbyScreenshotCropSlots += successfulSlots.filter {
+                        wasEmptyBeforeSelection[it] == true
                     }
                 }
             } finally {
@@ -365,14 +390,15 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         index: Int,
     ): Int? {
         val current = _uiState.value
-        val batch = current.pendingCropBatch
         if (
             current.tournamentId != tournamentId ||
-            current.matchId != matchId ||
-            batch?.currentSlotIndex != index
+            current.matchId != matchId
         ) {
             return null
         }
+        pendingNewLobbyScreenshotCropSlots.remove(index)
+        val batch = current.pendingCropBatch
+        if (batch?.currentSlotIndex != index) return null
         val nextIndex = batch.remainingSlotIndices.firstOrNull()
         _uiState.update {
             it.copy(
@@ -396,12 +422,30 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         ) {
             return
         }
+        pendingNewLobbyScreenshotCropSlots.clear()
         _uiState.update {
             it.copy(
                 pendingCropBatch = null,
                 pendingCropNavigationSlotIndex = null,
             )
         }
+    }
+
+    fun cancelLobbyScreenshotCrop(
+        tournamentId: String,
+        matchId: String,
+        index: Int,
+    ) {
+        val current = _uiState.value
+        if (current.tournamentId != tournamentId || current.matchId != matchId) return
+        val wasPendingNewSelection = pendingNewLobbyScreenshotCropSlots.remove(index)
+        _uiState.update {
+            it.copy(
+                pendingCropBatch = null,
+                pendingCropNavigationSlotIndex = null,
+            )
+        }
+        if (wasPendingNewSelection) removeScreenshot(index)
     }
 
     fun saveLobbyForNextMatches() {
@@ -476,6 +520,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             _uiState.update { it.copy(intakeError = MatchLobbyScreenshotIntakeError.INVALID_INDEX) }
             return
         }
+        pendingNewLobbyScreenshotCropSlots.remove(index)
         if (!current.isAvailable || current.isFinalized) return
         if (slot.isBusy || !slot.hasLinkedAsset || slot.isLocalFileMissing) return
         _uiState.update {
@@ -487,6 +532,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     }
 
     fun removeScreenshot(index: Int) {
+        pendingNewLobbyScreenshotCropSlots.remove(index)
         val current = _uiState.value
         val slot = current.slot(index) ?: run {
             _uiState.update { it.copy(intakeError = MatchLobbyScreenshotIntakeError.INVALID_INDEX) }
@@ -545,6 +591,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         selectedUri: String,
         generation: Long,
         requestCropNavigation: Boolean = true,
+        wasEmptyBeforeSelection: Boolean = false,
     ): Boolean {
         if (generation != intakeGeneration) return false
         val current = _uiState.value
@@ -722,6 +769,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                 }
                 if (generation == intakeGeneration && requestCropNavigation) {
                     _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
+                    if (wasEmptyBeforeSelection) {
+                        pendingNewLobbyScreenshotCropSlots += index
+                    }
                 }
                 if (retainCloudState) {
                     syncRetainedCloudMetadata(identity, fingerprint, ownerId)
@@ -832,6 +882,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     }
 
     private fun cancelActiveBatchAndClearTransientState() {
+        pendingNewLobbyScreenshotCropSlots.clear()
         val generation = activeBatchGeneration ?: return
         val targetSlots = activeBatchTargetSlots
         batchJob?.cancel()
