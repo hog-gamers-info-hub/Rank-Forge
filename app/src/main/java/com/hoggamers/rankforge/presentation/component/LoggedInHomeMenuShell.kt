@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -43,11 +42,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 
 private val PointIqHomeHeaderNavy = Color(0xFF071B3E)
 private val PointIqHomeHeaderBlue = Color(0xFF176AF7)
-private val PointIqHomeBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqHomeBackgroundBottom = Color(0xFFF3FAFF)
 private val PointIqMenuMuted = Color(0xFFA3AFC4)
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
@@ -107,7 +105,7 @@ fun LoggedInHomeMenuShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(pointIqHomeBackgroundBrush()),
+                .background(RankForgePageBackground),
         ) {
             PointIqHomeHeader(
                 onMenuClick = { isMenuOpen = true },
@@ -134,7 +132,7 @@ private fun PointIqFullScreenMenu(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(pointIqHomeBackgroundBrush())
+            .background(RankForgePageBackground)
             .testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
             .padding(horizontal = 20.dp),
     ) {
@@ -323,11 +321,3 @@ private fun PointIqHomeHeader(
         )
     }
 }
-
-private fun pointIqHomeBackgroundBrush(): Brush =
-    Brush.verticalGradient(
-        colors = listOf(
-            PointIqHomeBackgroundTop,
-            PointIqHomeBackgroundBottom,
-        ),
-    )

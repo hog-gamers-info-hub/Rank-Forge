@@ -1,7 +1,9 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +28,7 @@ import com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext
 import com.hoggamers.rankforge.domain.tournament.ConflictResolvability
 import com.hoggamers.rankforge.domain.tournament.DraftConflictResolutionResult
 import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -123,7 +126,10 @@ fun DraftConflictResolutionScreen(
     onBack: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.testTag(DRAFT_CONFLICT_RESOLUTION_SCREEN_TEST_TAG),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RankForgePageBackground)
+            .testTag(DRAFT_CONFLICT_RESOLUTION_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(com.hoggamers.rankforge.presentation.theme.RankForgeSpacing.Small),
     ) {
         Text(stringResource(R.string.draft_conflict_resolution_title))

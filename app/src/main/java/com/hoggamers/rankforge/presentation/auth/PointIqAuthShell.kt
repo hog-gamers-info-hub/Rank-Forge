@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
@@ -35,14 +34,13 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 
 private val PointIqNavy = Color(0xFF071B3E)
 private val PointIqBody = Color(0xFF40536F)
 private val PointIqMuted = Color(0xFF7A8BA4)
 private val PointIqBlue = Color(0xFF176AF7)
 private val PointIqCyan = Color(0xFF17C9F2)
-private val PointIqBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqBackgroundBottom = Color(0xFFF4FAFF)
 
 @Composable
 internal fun PointIqAuthShell(
@@ -55,11 +53,7 @@ internal fun PointIqAuthShell(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(PointIqBackgroundTop, PointIqBackgroundBottom),
-                ),
-            ),
+            .background(RankForgePageBackground),
     ) {
         PointIqBackgroundDecoration()
 

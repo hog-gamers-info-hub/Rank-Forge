@@ -33,7 +33,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,14 +46,13 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import kotlinx.coroutines.flow.Flow
 
 private val PointIqStandingsNavy = Color(0xFF071B3E)
 private val PointIqStandingsBody = Color(0xFF607393)
 private val PointIqStandingsBlue = Color(0xFF176AF7)
 private val PointIqStandingsBorder = Color(0xFFD9E6F7)
-private val PointIqStandingsBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqStandingsBackgroundBottom = Color(0xFFF4FAFF)
 private val PointIqStandingsBanner = Color(0xFFF5F8FF)
 private val PointIqStandingsBannerBorder = Color(0xFFCFE0FF)
 private val PointIqStandingsDivider = Color(0xFFE2EAF4)
@@ -164,14 +162,7 @@ private fun TournamentStandingsContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqStandingsBackgroundTop,
-                        PointIqStandingsBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
             .testTag(TOURNAMENT_STANDINGS_SCREEN_TEST_TAG),
@@ -471,14 +462,7 @@ private fun TournamentStandingsEmptyState(onBackToTournamentDetails: () -> Unit)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqStandingsBackgroundTop,
-                        PointIqStandingsBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .padding(24.dp)
             .testTag(TOURNAMENT_STANDINGS_EMPTY_TEST_TAG),
         horizontalAlignment = Alignment.Start,

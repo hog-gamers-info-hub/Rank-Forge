@@ -8,16 +8,16 @@ import com.hoggamers.rankforge.R
 
 @Composable
 fun RankForgeTheme(content: @Composable () -> Unit) {
-    val rankForgeBackground = colorResource(R.color.rank_forge_background)
+    val rankForgeSurface = colorResource(R.color.rank_forge_surface)
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = RankForgePrimary,
             onPrimary = RankForgeOnPrimary,
             secondary = RankForgeSecondary,
             onSecondary = RankForgeOnSecondary,
-            background = rankForgeBackground,
+            background = RankForgePageBackground,
             onBackground = RankForgeOnBackground,
-            surface = rankForgeBackground,
+            surface = rankForgeSurface,
             onSurface = RankForgeOnSurface,
         ),
         typography = RankForgeTypography,

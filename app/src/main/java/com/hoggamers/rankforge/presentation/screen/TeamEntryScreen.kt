@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -41,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
 private val PointIqTeamsNavy = Color(0xFF071B3E)
@@ -48,8 +48,6 @@ private val PointIqTeamsBody = Color(0xFF607393)
 private val PointIqTeamsBlue = Color(0xFF176AF7)
 private val PointIqTeamsBorder = Color(0xFFD6E3F4)
 private val PointIqTeamsCard = Color(0xFFFFFFFF)
-private val PointIqTeamsBackgroundTop = Color(0xFFFDFEFF)
-private val PointIqTeamsBackgroundBottom = Color(0xFFF4FAFF)
 
 const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
@@ -144,14 +142,7 @@ private fun TeamEntryContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PointIqTeamsBackgroundTop,
-                        PointIqTeamsBackgroundBottom,
-                    ),
-                ),
-            )
+            .background(RankForgePageBackground)
             .testTag(TEAM_ENTRY_SCREEN_TEST_TAG)
             .imePadding()
             .verticalScroll(rememberScrollState())

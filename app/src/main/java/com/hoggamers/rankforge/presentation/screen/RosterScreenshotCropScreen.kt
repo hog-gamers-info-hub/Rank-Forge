@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
 const val ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG = "roster_screenshot_crop_screen"
@@ -71,6 +73,7 @@ fun RosterScreenshotCropScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(RankForgePageBackground)
             .padding(RankForgeSpacing.Medium)
             .testTag(ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
