@@ -217,6 +217,86 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun centeredPositionFiveClassifierOutputUsesExistingRowOneHorizontalSlots() {
+        val classification = MatchResultPositionLogicalRowClassifier().classify(
+            position = 5,
+            cropWidth = 491,
+            cropHeight = 95,
+            slotCenterYLocal = 48.0,
+            blocks = block(
+                line("MG SHYAMLIVE", 40, 41, 150, 52),
+                line("0 Eliminations", 170, 41, 270, 52),
+                line("MG BAAZIGAR", 300, 44, 400, 54),
+                line("1 Eliminations", 410, 44, 480, 55),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, classification.diagnostics.classification)
+        assertEquals(listOf(1), classification.rowCrops.map { it.rowIndex })
+
+        val result = mapper.map(
+            MatchResultPositionOcrInput(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = 5,
+                cropWidth = 491,
+                cropHeight = 95,
+                blocks = classification.blocks,
+                rowCrops = classification.rowCrops,
+                placementVerification = unresolved(),
+                killVerifications = emptyMap(),
+            ),
+        )
+
+        assertEquals(listOf(1, 3), result.row!!.playerSlots.map { it.slot })
+        assertEquals("MG SHYAMLIVE", result.fields.single { it.id == "PLAYER_5_1" }.resolvedText)
+        assertEquals("0", result.fields.single { it.id == "KILL_5_1" }.resolvedText)
+        assertEquals("MG BAAZIGAR", result.fields.single { it.id == "PLAYER_5_3" }.resolvedText)
+        assertEquals("1", result.fields.single { it.id == "KILL_5_3" }.resolvedText)
+        listOf(2, 4).forEach { slot ->
+            assertEquals("", result.fields.single { it.id == "PLAYER_5_$slot" }.resolvedText)
+            assertEquals("", result.fields.single { it.id == "KILL_5_$slot" }.resolvedText)
+        }
+    }
+
+    @Test
+    fun centeredPositionEightOnePlayerUsesExistingLeftRowOneMapping() {
+        val classification = MatchResultPositionLogicalRowClassifier().classify(
+            position = 8,
+            cropWidth = 491,
+            cropHeight = 81,
+            slotCenterYLocal = 40.5,
+            blocks = block(
+                line("SOUMO`BHAI", 40, 32, 150, 43),
+                line("0 Eliminations", 210, 35, 330, 44),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, classification.diagnostics.classification)
+        assertEquals(listOf(1), classification.rowCrops.map { it.rowIndex })
+
+        val result = mapper.map(
+            MatchResultPositionOcrInput(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = 8,
+                cropWidth = 491,
+                cropHeight = 81,
+                blocks = classification.blocks,
+                rowCrops = classification.rowCrops,
+                placementVerification = unresolved(),
+                killVerifications = emptyMap(),
+            ),
+        )
+
+        assertEquals(listOf(1), result.row!!.playerSlots.map { it.slot })
+        assertEquals("SOUMO`BHAI", result.fields.single { it.id == "PLAYER_8_1" }.resolvedText)
+        assertEquals("0", result.fields.single { it.id == "KILL_8_1" }.resolvedText)
+        (2..4).forEach { slot ->
+            assertEquals("", result.fields.single { it.id == "PLAYER_8_$slot" }.resolvedText)
+            assertEquals("", result.fields.single { it.id == "KILL_8_$slot" }.resolvedText)
+        }
+    }
+
+    @Test
     fun singlePhysicalRowWithOnePlayerRetainsPlayerAndBlankKill() {
         val result = mapper.map(
             MatchResultPositionOcrInput(
