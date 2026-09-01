@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import androidx.lifecycle.viewModelScope
+
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
@@ -26,6 +28,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +49,7 @@ import org.junit.Test
 
 class MatchLobbyScreenshotIntakeViewModelTest {
     private val dispatcher = StandardTestDispatcher()
+    private val createdViewModels = mutableListOf<MatchLobbyScreenshotIntakeViewModel>()
     private lateinit var tournamentRepository: InMemoryTournamentRepository
     private lateinit var lobbyRepository: FakeLobbyRepository
     private lateinit var templateRepository: FakeTemplateRepository
@@ -88,7 +92,11 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @After
-    fun tearDown() = Dispatchers.resetMain()
+    fun tearDown() {
+        createdViewModels.forEach { it.viewModelScope.cancel() }
+        createdViewModels.clear()
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun templateObservationIsCancelledAndHiddenWhenAuthSwitchesFromAToB() = runTest {
@@ -1198,7 +1206,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         templateRepository = templateRepository,
         cloudDataSource = cloudDataSource,
         authRepository = testAuthRepository,
-    )
+    ).also { createdViewModels += it }
 
     private fun preserver(
         root: java.io.File,

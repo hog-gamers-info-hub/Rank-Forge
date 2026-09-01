@@ -237,7 +237,7 @@ class MatchOcrReviewPreviewMappingTest {
             ),
         )
 
-        viewModel.load("tournament", "match")
+        viewModel.reprocess("tournament", "match", allowIncompleteEvidence = true)
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready

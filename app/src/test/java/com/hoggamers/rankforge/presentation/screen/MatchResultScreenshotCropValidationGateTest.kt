@@ -226,9 +226,24 @@ class MatchResultScreenshotCropValidationGateTest {
             observeMatches = ObserveMatchesUseCase(tournamentRepository),
             assetRepository = repository,
             localImagePreserver = preserver,
-            uploadCheckpoint = MatchResultScreenshotUploadCheckpointAction {
-                repository.uploadCheckpointCalls++
-                MatchResultScreenshotUploadCheckpointResult.Completed
+            uploadCheckpoint = object : MatchResultScreenshotUploadCheckpointAction {
+                override suspend fun run(
+                    identity: MatchResultScreenshotIdentity,
+                ): MatchResultScreenshotUploadCheckpointResult {
+                    repository.uploadCheckpointCalls++
+                    return MatchResultScreenshotUploadCheckpointResult.Completed
+                }
+
+                override suspend fun run(
+                    identity: MatchResultScreenshotIdentity,
+                    expectedOwnerUserId: String,
+                ): MatchResultScreenshotUploadCheckpointResult {
+                    if (expectedOwnerUserId != "owner-1") {
+                        return MatchResultScreenshotUploadCheckpointResult.Skipped
+                    }
+                    repository.uploadCheckpointCalls++
+                    return MatchResultScreenshotUploadCheckpointResult.Completed
+                }
             },
             reconciliationScheduler = ScreenshotReconciliationScheduler(
                 scope = CoroutineScope(SupervisorJob() + dispatcher),

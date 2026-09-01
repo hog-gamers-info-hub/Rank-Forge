@@ -25,6 +25,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 
@@ -281,7 +282,7 @@ class TeamEntryViewModelTest {
 
     private fun viewModel() = TeamEntryViewModel(
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
-        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
+        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository, SignedInTournamentTestAuthRepository()),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
         uploadTournament = uploadAction,
     )
@@ -293,6 +294,7 @@ class TeamEntryViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 
     private class FakeTournamentCloudUploadAction : TournamentCloudUploadAction {

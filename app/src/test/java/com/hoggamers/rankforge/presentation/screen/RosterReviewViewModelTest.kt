@@ -26,6 +26,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -138,16 +139,17 @@ class RosterReviewViewModelTest {
         confirmTournamentRoster = ConfirmTournamentRosterUseCase(
             repository = repository,
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            authRepository = SignedInTournamentTestAuthRepository(),
         ),
     )
 
     private suspend fun createValidRoster() {
         repository.create(tournament())
-        SaveTeamSlotNamesUseCase(repository)(
+        SaveTeamSlotNamesUseCase(repository, SignedInTournamentTestAuthRepository())(
             "stable-id",
             (1..12).associateWith { slotNumber -> "Team $slotNumber" },
         )
-        val saveRoster = SaveRosterUseCase(repository)
+        val saveRoster = SaveRosterUseCase(repository, SignedInTournamentTestAuthRepository())
         (1..12).forEach { slotNumber ->
             saveRoster(
                 tournamentId = "stable-id",
@@ -166,5 +168,6 @@ class RosterReviewViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 }

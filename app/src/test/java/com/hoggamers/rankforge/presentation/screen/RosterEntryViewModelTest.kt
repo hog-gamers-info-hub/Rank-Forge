@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RosterEntryViewModelTest {
@@ -130,7 +131,7 @@ class RosterEntryViewModelTest {
     private fun viewModel() = RosterEntryViewModel(
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRosterPlayers = ObserveRosterPlayersUseCase(repository),
-        saveRoster = SaveRosterUseCase(repository),
+        saveRoster = SaveRosterUseCase(repository, SignedInTournamentTestAuthRepository()),
         rosterValidator = RosterValidator(),
     )
 
@@ -141,5 +142,6 @@ class RosterEntryViewModelTest {
         organizerName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
     )
 }

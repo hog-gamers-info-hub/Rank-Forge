@@ -850,6 +850,28 @@ class RosterOcrReviewViewModelTest {
         var replacementCancellation: Boolean = false
         var replaceCalls = 0
 
+        override suspend fun readLocalRevisionState(
+            tournamentId: String,
+        ): com.hoggamers.rankforge.domain.sync.LocalRevisionState =
+            com.hoggamers.rankforge.domain.sync.LocalRevisionState(
+                localRevision = 1,
+                baseCloudRevision = CloudRevision(1),
+            )
+
+        override suspend fun confirmCloudRevisionByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+            cloudRevision: Int,
+        ): com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult =
+            if (
+                (acceptAnyTournamentId || tournament?.id == tournamentId) &&
+                tournament?.ownerUserId == ownerUserId
+            ) {
+                com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.Saved
+            } else {
+                com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult.TournamentNotFound
+            }
+
         override suspend fun create(tournament: Tournament) = Unit
         override fun observeAll(): Flow<List<Tournament>> = flowOf(listOfNotNull(tournament))
         override fun observeById(tournamentId: String): Flow<Tournament?> = flowOf(
