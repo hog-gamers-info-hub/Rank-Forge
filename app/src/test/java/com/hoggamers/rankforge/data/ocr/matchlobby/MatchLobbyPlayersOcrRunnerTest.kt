@@ -52,8 +52,8 @@ import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 
 class MatchLobbyPlayersOcrRunnerTest {
     @Test
-    fun ppPlayerAuthorityUsesCachePipelineVersionTen() {
-        assertEquals(10, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
+    fun ppPlayerAuthorityUsesCurrentCachePipelineVersion() {
+        assertEquals(12, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
     }
 
     @Test
@@ -133,6 +133,47 @@ class MatchLobbyPlayersOcrRunnerTest {
             listOf("S1P1", "S1P1", "S1P1", "S1P1"),
             result.slots.drop(4).take(4).map { it.players[0].playerName },
         )
+    }
+
+    @Test
+    fun partialSemanticGroupPreservesAvailableTeamsWithoutShiftingSlots() = runTest {
+        val result = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            cache = FakeCacheRepository(),
+            extractor = PositionTrackingExtractor(),
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
+            ),
+            unavailableVisibleSlots = setOf(RosterVisibleSlotPosition.TOP_RIGHT),
+        ).process("tournament-1", "match-1")
+
+        assertEquals((1..12).toList(), result.slots.map { it.slotNumber })
+        assertEquals("S1P1", result.slots[4].players[0].playerName)
+        assertEquals(null, result.slots[5].players[0].playerName)
+        assertEquals("S1P1", result.slots[6].players[0].playerName)
+        assertEquals("S1P1", result.slots[7].players[0].playerName)
+    }
+
+    @Test
+    fun partialSemanticGroupIsCachedAndRestoredWithUnavailableTeamPreserved() = runTest {
+        val assets = FakeAssetRepository(mapOf(1 to asset(1)))
+        val cache = FakeCacheRepository()
+        val runner = runner(
+            assets = assets,
+            cache = cache,
+            extractor = PositionTrackingExtractor(),
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(5, 6, 7, 8),
+            ),
+            unavailableVisibleSlots = setOf(RosterVisibleSlotPosition.TOP_RIGHT),
+        )
+
+        val first = runner.process("tournament-1", "match-1")
+        val second = runner.process("tournament-1", "match-1")
+
+        assertEquals(1, cache.saveCount)
+        assertEquals(first, second)
+        assertEquals(null, second.slots[5].players[0].playerName)
     }
 
     @Test
@@ -337,12 +378,13 @@ class MatchLobbyPlayersOcrRunnerTest {
             RosterScreenshotPosition.entries.associateWith { position ->
                 position.tournamentSlotRange.toList()
             },
+        unavailableVisibleSlots: Set<RosterVisibleSlotPosition> = emptySet(),
     ): AndroidMatchLobbyPlayersOcrRunner {
         extractor.semanticSlotNumbers = semanticSlotNumbers
         return AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = assets,
             cacheRepository = cache,
-            slotNumberOcrRunner = FakeSlotNumberOcrRunner(semanticSlotNumbers),
+            slotNumberOcrRunner = FakeSlotNumberOcrRunner(semanticSlotNumbers, unavailableVisibleSlots),
             screenshotOwnerProvider = ownerProvider,
         )
     }
@@ -354,6 +396,7 @@ class MatchLobbyPlayersOcrRunnerTest {
     private class FakeSlotNumberOcrRunner(
         private val semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
             RosterScreenshotPosition.entries.associateWith { it.tournamentSlotRange.toList() },
+        private val unavailableVisibleSlots: Set<RosterVisibleSlotPosition> = emptySet(),
     ) : MatchLobbySlotNumberOcrRunner {
         var processCount = 0
         override suspend fun process(tournamentId: String, matchId: String): MatchLobbySlotNumberOcrResult =
@@ -372,28 +415,36 @@ class MatchLobbyPlayersOcrRunnerTest {
                                 MatchLobbySlotNumberOcrSlot(visible, RosterSlotNumberCandidate.unavailable())
                             },
                             teamCropPreviews = MatchLobbyTeamCropPreviewResult.Available(
-                                RosterVisibleSlotPosition.entries.map { visible ->
-                                    val explicit = requested?.getOrNull(visible.offset - 1)
-                                    val firstValid = requested?.firstOrNull { it != null }
-                                    val slot = if (requested != null && firstValid != null && requested.any { it == null }) {
-                                        ((firstValid - 1) / 4) * 4 + visible.offset
-                                    } else {
-                                        explicit ?: position.tournamentSlotFor(visible)
-                                    }
-                                    MatchLobbyTeamCropPreview(
+                                previews = RosterVisibleSlotPosition.entries
+                                    .filterNot { it in unavailableVisibleSlots }
+                                    .map { visible ->
+                                        val explicit = requested?.getOrNull(visible.offset - 1)
+                                        val firstValid = requested?.firstOrNull { it != null }
+                                        val slot = if (requested != null && firstValid != null && requested.any { it == null }) {
+                                            ((firstValid - 1) / 4) * 4 + visible.offset
+                                        } else {
+                                            explicit ?: position.tournamentSlotFor(visible)
+                                        }
+                                        MatchLobbyTeamCropPreview(
+                                            visibleSlotPosition = visible,
+                                            detectedSlotNumber = slot,
+                                            image = FakeTeamCropImage,
+                                            playerRowPreviews = LobbyPlayerRow.entries.map { row ->
+                                                LobbyPlayerRowCropPreview(
+                                                    row = row,
+                                                    boundsInTeamCrop = LobbyPlayerRowCropBounds(0, row.ordinal * 10, 100, (row.ordinal + 1) * 10),
+                                                    slotAnchorSource = LobbySlotAnchorSource.ML_KIT_SLOT,
+                                                    slotAnchorY = 50.0,
+                                                    structuralEvidence = "S${position.index}P${row.ordinal + 1}",
+                                                )
+                                            },
+                                            authoritativeTeamSlotNumber = slot,
+                                        )
+                                    },
+                                unavailable = unavailableVisibleSlots.map { visible ->
+                                    MatchLobbyTeamCropPreviewOutcome.Unavailable(
                                         visibleSlotPosition = visible,
-                                        detectedSlotNumber = slot,
-                                        image = FakeTeamCropImage,
-                                        playerRowPreviews = LobbyPlayerRow.entries.map { row ->
-                                            LobbyPlayerRowCropPreview(
-                                                row = row,
-                                                boundsInTeamCrop = LobbyPlayerRowCropBounds(0, row.ordinal * 10, 100, (row.ordinal + 1) * 10),
-                                                slotAnchorSource = LobbySlotAnchorSource.ML_KIT_SLOT,
-                                                slotAnchorY = 50.0,
-                                                structuralEvidence = "S${position.index}P${row.ordinal + 1}",
-                                            )
-                                        },
-                                        authoritativeTeamSlotNumber = slot,
+                                        reason = MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
                                     )
                                 },
                             ),
