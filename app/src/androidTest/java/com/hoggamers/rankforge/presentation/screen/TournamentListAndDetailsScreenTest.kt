@@ -24,7 +24,6 @@ import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_SETTINGS_ITEM_TEST_TAG
-import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -247,10 +246,6 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG)
             .assertIsEnabled()
-
-        composeTestRule
-            .onNodeWithTag(LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG)
-            .assertIsNotEnabled()
 
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG)

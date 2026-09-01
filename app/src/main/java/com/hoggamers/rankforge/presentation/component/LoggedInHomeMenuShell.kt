@@ -54,8 +54,6 @@ const val LOGGED_IN_HOME_DRAWER_TEST_TAG = "logged_in_home_drawer"
 const val LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG = "logged_in_home_account_item"
 const val LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG =
     "logged_in_home_all_tournaments_item"
-const val LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG =
-    "logged_in_home_subscription_item"
 const val LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG =
     "logged_in_home_notifications_item"
 const val LOGGED_IN_HOME_SETTINGS_ITEM_TEST_TAG =
@@ -175,11 +173,6 @@ private fun PointIqFullScreenMenu(
             text = stringResource(R.string.logged_in_home_all_tournaments),
             testTag = LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG,
             onClick = onOpenAllTournaments,
-        )
-
-        PointIqMenuDisabledItem(
-            text = stringResource(R.string.logged_in_home_subscription),
-            testTag = LOGGED_IN_HOME_SUBSCRIPTION_ITEM_TEST_TAG,
         )
 
         PointIqMenuDisabledItem(
