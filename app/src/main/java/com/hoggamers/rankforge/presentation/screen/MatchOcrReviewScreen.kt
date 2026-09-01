@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
@@ -800,35 +803,70 @@ private fun CompactPlayerCell(
             modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
         )
     } else {
+        val killValue = playerKillDraft.killsDraftValue
+        val isKillEmpty = killValue.isBlank()
+        val killCharacterCount = killValue.length.coerceAtLeast(1)
+        val killInputWidth = when (killCharacterCount) {
+            1 -> 10.dp
+            2 -> 18.dp
+            3 -> 26.dp
+            else -> (killCharacterCount * 8 + 2).dp
+        }
+        val killTextStyle = MaterialTheme.typography.bodySmall
+        val killInputHeight = with(LocalDensity.current) {
+            killTextStyle.fontSize.toDp()
+        }
+        val killBracketColor = if (isKillEmpty) MaterialTheme.colorScheme.error else Color.Unspecified
         Row(
             modifier = modifier
                 .testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$slot. $playerName - [",
-                style = MaterialTheme.typography.bodySmall,
+                text = "$slot. $playerName - ",
+                style = killTextStyle,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
+            Text(
+                text = "[",
+                style = killTextStyle,
+                color = killBracketColor,
+                maxLines = 1,
+                softWrap = false,
+            )
             BasicTextField(
-                value = playerKillDraft.killsDraftValue,
+                value = killValue,
                 onValueChange = { value ->
                     onPlayerKillsChanged(correctionDraft.rowIndex, slot, value)
                 },
                 enabled = correctionEnabled,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
+                textStyle = killTextStyle.copy(
+                    color = Color.Unspecified,
+                    textAlign = TextAlign.Center,
+                ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier
-                    .width(24.dp)
+                    .width(killInputWidth)
+                    .height(killInputHeight)
+                    .offset(y = if (isKillEmpty) 0.dp else (-2).dp)
+                    .background(
+                        color = if (isKillEmpty) {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+                        } else {
+                            Color.Transparent
+                        },
+                    )
                     .testTag(MatchOcrReviewTestTags.compactPlayerKillInput(previewRow.position, slot)),
             )
             Text(
                 text = "]",
-                style = MaterialTheme.typography.bodySmall,
+                style = killTextStyle,
+                color = killBracketColor,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
