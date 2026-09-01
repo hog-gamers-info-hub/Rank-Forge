@@ -28,7 +28,9 @@ class MatchRepositoryTest {
     fun createdMatchesAreObservableAndIsolatedByTournament() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         repository.create(tournament("second"))
+        repository.saveTeamNames("second", mapOf(1 to "Team 1"))
 
         repository.createDraftMatch(match("first", id = "match-first"))
 
@@ -40,6 +42,7 @@ class MatchRepositoryTest {
     fun duplicateIdAndNumberDoNotCorruptState() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         val first = match("first", id = "same-id")
 
         assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(first))
@@ -52,6 +55,7 @@ class MatchRepositoryTest {
     fun repositoryEnforcesTenMatchLimit() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
             assertEquals(
                 CreateMatchRepositoryResult.Created,
@@ -71,6 +75,7 @@ class MatchRepositoryTest {
     fun repositoryUpdatesDraftPlacementsAndRejectsDuplicatePositions() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         repository.createDraftMatch(match("first", id = "match-first"))
 
         assertEquals(
@@ -98,6 +103,7 @@ class MatchRepositoryTest {
     fun repositoryUpdatesDraftKillsAndRejectsNegativeValues() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         repository.createDraftMatch(match("first", id = "match-first"))
 
         assertEquals(
@@ -125,6 +131,7 @@ class MatchRepositoryTest {
     fun repositoryFlowExposesPartialDraftForResultValidation() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         repository.createDraftMatch(match("first", id = "match-first"))
         repository.saveDraftMatchPlacements("match-first", listOf(MatchPlacement(1, 1)))
         repository.saveDraftMatchKills("match-first", listOf(MatchKill(1, 0)))
@@ -146,6 +153,7 @@ class MatchRepositoryTest {
     fun draftInputsAreRestoredPerMatchAndResetDoesNotAffectAnotherMatch() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
+        repository.saveTeamNames("first", mapOf(1 to "Team 1"))
         repository.createDraftMatch(match("first", id = "match-first", number = 1))
         repository.createDraftMatch(match("first", id = "match-second", number = 2))
 

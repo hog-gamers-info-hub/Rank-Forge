@@ -257,6 +257,7 @@ private class DeletionTournamentRepository : TournamentRepository {
         organizerName = "Organizer",
         organizerContactNumber = "000",
         status = TournamentStatus.CONFIRMED,
+        ownerUserId = "owner-1",
     )
 
     override suspend fun create(tournament: Tournament) = Unit
@@ -288,6 +289,7 @@ private class TournamentDeletionTestQueueRepository : PersistentSyncQueueReposit
     override suspend fun markCompleted(id: String) = Unit
     override suspend fun remove(id: String) = Unit
     override suspend fun purgeByTournamentId(tournamentId: String) = Unit
+    override suspend fun purgeByTournamentIdAndOwner(tournamentId: String, ownerUserId: String) = Unit
 }
 
 private class TournamentDeletionRecordingCloud : CloudDeletionRepository {
@@ -312,6 +314,14 @@ private class TournamentDeletionRecordingLocal : LocalDeletionRepository {
     val results = mutableListOf<LocalDeletionResult>()
     var calls = 0
     override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult = LocalDeletionResult.Deleted
+    override suspend fun deleteTournamentLocallyByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): LocalDeletionResult {
+        calls++
+        return results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
+    }
+
     override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult {
         calls++
         return results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
@@ -320,21 +330,103 @@ private class TournamentDeletionRecordingLocal : LocalDeletionRepository {
 
 private class TournamentDeletionTestIntentRepository : DeletionIntentRepository {
     private val intents = mutableMapOf<Pair<DeletionTargetType, String>, DeletionIntent>()
-    override suspend fun read(targetType: DeletionTargetType, targetId: String): DeletionIntent? = intents[targetType to targetId]
+
+    override suspend fun read(
+        targetType: DeletionTargetType,
+        targetId: String,
+    ): DeletionIntent? = intents[targetType to targetId]
+
+    override suspend fun findByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): DeletionIntent? =
+        intents[targetType to targetId]?.takeIf { it.ownerUserId == ownerUserId }
+
     override suspend fun start(intent: DeletionIntent): DeletionIntent {
         intents[intent.targetType to intent.targetId] = intent
         return intent
     }
-    override suspend fun markRemoteDeleted(targetType: DeletionTargetType, targetId: String) {
-        val key = targetType to targetId
-        intents[key] = requireNotNull(intents[key]).copy(phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING)
+
+    override suspend fun startIfAbsent(intent: DeletionIntent): Boolean {
+        val key = intent.targetType to intent.targetId
+        if (key in intents) return false
+        intents[key] = intent
+        return true
     }
-    override suspend fun clear(targetType: DeletionTargetType, targetId: String) {
+
+    override suspend fun markRemoteDeleted(
+        targetType: DeletionTargetType,
+        targetId: String,
+    ) {
+        val key = targetType to targetId
+        intents[key] = requireNotNull(intents[key]).copy(
+            phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+        )
+    }
+
+    override suspend fun markRemoteDeletedByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean {
+        val key = targetType to targetId
+        val current = intents[key]?.takeIf { it.ownerUserId == ownerUserId } ?: return false
+        intents[key] = current.copy(
+            phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING,
+        )
+        return true
+    }
+
+    override suspend fun clear(
+        targetType: DeletionTargetType,
+        targetId: String,
+    ) {
         intents.remove(targetType to targetId)
     }
-    override suspend fun isBlocking(tournamentId: String): Boolean = false
-    override suspend fun readAll(): List<DeletionIntent> = intents.values.toList()
-    override suspend fun readPendingLocalCleanup(): List<DeletionIntent> = intents.values.filter {
-        it.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
+
+    override suspend fun clearByTargetAndOwner(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean {
+        val key = targetType to targetId
+        val current = intents[key]?.takeIf { it.ownerUserId == ownerUserId } ?: return false
+        if (intents[key] != current) return false
+        intents.remove(key)
+        return true
     }
+
+    override suspend fun isBlocking(
+        tournamentId: String,
+    ): Boolean = intents.values.any { it.tournamentId == tournamentId }
+
+    override suspend fun isBlockingByTournamentIdAndOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): Boolean = intents.values.any {
+        it.tournamentId == tournamentId && it.ownerUserId == ownerUserId
+    }
+
+    override suspend fun readAll(): List<DeletionIntent> = intents.values.toList()
+
+    override suspend fun readPendingLocalCleanup(): List<DeletionIntent> =
+        intents.values.filter {
+            it.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
+        }
+
+    override suspend fun readPendingLocalCleanupByOwner(
+        ownerUserId: String,
+    ): List<DeletionIntent> = intents.values.filter {
+        it.ownerUserId == ownerUserId &&
+            it.phase == DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
+    }
+
+    override suspend fun hasLocalCleanupClaim(
+        targetType: DeletionTargetType,
+        targetId: String,
+        ownerUserId: String,
+    ): Boolean =
+        findByTargetAndOwner(targetType, targetId, ownerUserId)?.phase ==
+            DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING
 }
