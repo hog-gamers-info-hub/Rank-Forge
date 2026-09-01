@@ -14,6 +14,7 @@ enum class MatchResultPositionLogicalRow {
 
 enum class MatchResultPositionLogicalRowClassificationKind {
     ROW1_ONLY,
+    ROW2_ONLY,
     ROW1_AND_ROW2,
     CENTERED_SINGLE_ROW,
     UNAVAILABLE,
@@ -81,6 +82,7 @@ class MatchResultPositionLogicalRowClassifier {
         cropHeight: Int,
         slotCenterYLocal: Double?,
         blocks: List<RawOcrBlock>,
+        allowSingleRowFallback: Boolean = false,
     ): MatchResultPositionLogicalRowClassification {
         val totalMappedLines = blocks.sumOf { it.lines.size }
         if (slotCenterYLocal == null) return unavailable(
@@ -163,14 +165,50 @@ class MatchResultPositionLogicalRowClassifier {
             },
         )
 
-        val clusters = deriveTwoRowClusters(
-            lines.map { it.candidate }, slotCenterYLocal, tolerance,
-        ) ?: return unavailable(
-            position, cropHeight, slotCenterYLocal, totalMappedLines,
-            medianHeight = medianHeight, tolerance = tolerance, placementRemoved = placementRemoved,
-            spanningIgnored = spanningIgnored, usableLines = lines.size,
-            reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
-        )
+        val clusters = deriveTwoRowClusters(lines.map { it.candidate }, slotCenterYLocal, tolerance)
+        if (clusters == null) {
+            val singleRow = if (allowSingleRowFallback) {
+                deriveSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
+            } else {
+                null
+            }
+            if (singleRow != null) {
+                val rowIndex = if (singleRow.centerY < slotCenterYLocal) 1 else 2
+                val rowCrop = rowCrop(rowIndex, lines, cropWidth, cropHeight)
+                if (rowCrop != null) {
+                    val diagnostics = MatchResultPositionLogicalRowDiagnostics(
+                        position = position, positionHeight = cropHeight,
+                        slotCenterYLocal = slotCenterYLocal, medianTextHeight = medianHeight,
+                        derivedTolerance = tolerance, totalMappedLines = totalMappedLines,
+                        placementLinesRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+                        usableLines = lines.size,
+                        upperCount = if (rowIndex == 1) lines.size else 0,
+                        centerCount = 0,
+                        lowerCount = if (rowIndex == 2) lines.size else 0,
+                        classification = if (rowIndex == 1) {
+                            MatchResultPositionLogicalRowClassificationKind.ROW1_ONLY
+                        } else {
+                            MatchResultPositionLogicalRowClassificationKind.ROW2_ONLY
+                        },
+                    )
+                    return MatchResultPositionLogicalRowClassification.Available(
+                        rowCrops = listOf(rowCrop),
+                        diagnostics = diagnostics,
+                        blocks = blocks.mapNotNull { block ->
+                            block.copy(lines = block.lines.filter { line ->
+                                lines.any { it.candidate.line === line }
+                            }).takeIf { it.lines.isNotEmpty() }
+                        },
+                    )
+                }
+            }
+            return unavailable(
+                position, cropHeight, slotCenterYLocal, totalMappedLines,
+                medianHeight = medianHeight, tolerance = tolerance, placementRemoved = placementRemoved,
+                spanningIgnored = spanningIgnored, usableLines = lines.size,
+                reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
+            )
+        }
 
         val assignedLines = classifiedLines.map { line ->
             if (line.band == MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED ||
@@ -320,6 +358,18 @@ class MatchResultPositionLogicalRowClassifier {
         return RowClusters(upper, lower, upperCenter, lowerCenter)
     }
 
+    private fun deriveSingleRow(
+        candidates: List<Candidate>,
+        slotCenterYLocal: Double,
+        tolerance: Double,
+    ): SingleRow? {
+        if (candidates.isEmpty()) return null
+        val centerY = median(candidates.map { it.centerY }) ?: return null
+        if (abs(centerY - slotCenterYLocal) <= tolerance) return null
+        if (candidates.any { abs(it.centerY - centerY) > tolerance }) return null
+        return SingleRow(centerY)
+    }
+
     private fun rowCrop(
         rowIndex: Int,
         lines: List<ClassifiedLine>,
@@ -353,6 +403,8 @@ class MatchResultPositionLogicalRowClassifier {
         val upperCenter: Double,
         val lowerCenter: Double,
     )
+
+    private data class SingleRow(val centerY: Double)
 
     private fun MatchResultPositionLogicalRowBand.toLogicalRow(): MatchResultPositionLogicalRow = when (this) {
         MatchResultPositionLogicalRowBand.UPPER -> MatchResultPositionLogicalRow.UPPER

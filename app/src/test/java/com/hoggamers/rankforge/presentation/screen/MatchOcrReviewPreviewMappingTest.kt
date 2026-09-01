@@ -159,6 +159,72 @@ class MatchOcrReviewPreviewMappingTest {
     }
 
     @Test
+    fun blankPlayerKillSurvivesPreviewEvidenceAndCorrectionDraft() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(
+                previewRow(
+                    position = 10,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    slots = listOf(
+                        previewSlot(1, "Player A", "4"),
+                        previewSlot(2, "Player B", ""),
+                        previewSlot(3, "Player C", "1"),
+                        previewSlot(4, "Player D", "3"),
+                    ),
+                ),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![9]
+        assertEquals(listOf("4", "", "1", "3"), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(null, reviewRow.originalParsedKillValue)
+
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow))
+        assertEquals(listOf("4", "", "1", "3"), draft.rows.single().playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("", draft.rows.single().killsDraftValue)
+        assertTrue(draft.rows.single().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+
+        val corrected = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = draft,
+            rowIndex = 9,
+            playerSlot = 2,
+            value = "2",
+        )
+        assertEquals(listOf("4", "2", "1", "3"), corrected.rows.single().playerKillDrafts.map { it.killsDraftValue })
+        assertEquals("10", corrected.rows.single().killsDraftValue)
+        assertTrue(!corrected.rows.single().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+    }
+
+    @Test
+    fun partialUpperPositionElevenRemainsVisibleWithUnavailableSlots() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(
+                previewRow(
+                    position = 11,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    slots = listOf(
+                        previewSlot(1, "Player A", "2"),
+                        previewSlot(2, "Player B", ""),
+                    ),
+                ),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![10]
+
+        assertEquals("11", reviewRow.expectedPlacementLabel)
+        assertEquals(listOf(1, 2), reviewRow.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("2", ""), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(null, reviewRow.originalParsedKillValue)
+    }
+
+    @Test
     fun incompletePreviewCreatesManualCorrectionPlaceholders() = runTest(dispatcher) {
         val viewModel = viewModelWithPreview(
             MatchResultOcrPreviewUiStateMapper.map(

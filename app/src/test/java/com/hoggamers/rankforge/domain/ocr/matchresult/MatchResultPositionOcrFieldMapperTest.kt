@@ -178,6 +178,64 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun recognizedPlayerWithoutKillKeepsItsSlotAndBlankKill() {
+        val result = mapper.map(
+            rightInput(
+                position = 10,
+                middle = "PlayerB",
+                right = "",
+            ),
+        )
+
+        val slot = result.row!!.playerSlots.single { it.slot == 3 }
+        assertEquals("PlayerB", slot.player.resolvedText)
+        assertEquals("", slot.kill.resolvedText)
+        assertEquals("", slot.kill.ocrText)
+        assertTrue(!result.isAutoAcceptable)
+    }
+
+    @Test
+    fun upperSinglePhysicalRowMapsOnlySlotsOneAndThree() {
+        val result = mapper.map(singleRowInput(rowIndex = 1))
+
+        assertEquals(listOf(1, 3), result.row!!.playerSlots.map { it.slot })
+        assertEquals("PlayerA", result.fields.single { it.id == "PLAYER_11_1" }.resolvedText)
+        assertEquals("PlayerC", result.fields.single { it.id == "PLAYER_11_3" }.resolvedText)
+        assertEquals("", result.fields.single { it.id == "PLAYER_11_2" }.resolvedText)
+        assertEquals("", result.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun lowerSinglePhysicalRowMapsOnlySlotsTwoAndFour() {
+        val result = mapper.map(singleRowInput(rowIndex = 2))
+
+        assertEquals(listOf(2, 4), result.row!!.playerSlots.map { it.slot })
+        assertEquals("", result.fields.single { it.id == "PLAYER_11_1" }.resolvedText)
+        assertEquals("PlayerA", result.fields.single { it.id == "PLAYER_11_2" }.resolvedText)
+        assertEquals("", result.fields.single { it.id == "PLAYER_11_3" }.resolvedText)
+        assertEquals("PlayerC", result.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun singlePhysicalRowWithOnePlayerRetainsPlayerAndBlankKill() {
+        val result = mapper.map(
+            MatchResultPositionOcrInput(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = 11,
+                cropWidth = 491,
+                cropHeight = 82,
+                blocks = block(line("PlayerA", 70, 10, 160, 30)),
+                rowCrops = listOf(row(1, 0, 41)),
+                placementVerification = unresolved(),
+                killVerifications = emptyMap(),
+            ),
+        )
+
+        assertEquals(listOf(1), result.row!!.playerSlots.map { it.slot })
+        assertEquals("", result.row.playerSlots.single().kill.resolvedText)
+    }
+
+    @Test
     fun strongMiddleKillAnchorsCreateOnePlayerBoundaryAndPreserveTheRemainder() {
         val cases = listOf(
             StrongBoundaryCase("3EliminationsNxfhaccrr", "3", "Nxfhaccrr", MatchResultEliminationPrefixType.EXPLICIT_NUMERIC),
@@ -390,6 +448,21 @@ class MatchResultPositionOcrFieldMapperTest {
             line(right, 410, 10, 480, 30),
         ),
         rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
+        placementVerification = unresolved(),
+        killVerifications = emptyMap(),
+    )
+
+    private fun singleRowInput(rowIndex: Int) = MatchResultPositionOcrInput(
+        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        position = 11,
+        cropWidth = 491,
+        cropHeight = 82,
+        blocks = block(
+            line("PlayerA", 70, if (rowIndex == 1) 10 else 50, 160, if (rowIndex == 1) 30 else 70),
+            line("2EliminationsPlayerC", 205, if (rowIndex == 1) 10 else 50, 350, if (rowIndex == 1) 30 else 70),
+            line("1Eliminations", 410, if (rowIndex == 1) 10 else 50, 480, if (rowIndex == 1) 30 else 70),
+        ),
+        rowCrops = listOf(if (rowIndex == 1) row(1, 0, 41) else row(2, 41, 82)),
         placementVerification = unresolved(),
         killVerifications = emptyMap(),
     )

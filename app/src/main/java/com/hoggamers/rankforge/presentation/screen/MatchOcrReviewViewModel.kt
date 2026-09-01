@@ -828,7 +828,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             rows = rows,
             assignmentRequired = true,
         )
-        return MatchOcrReviewUiState.Ready(
+        val ready = MatchOcrReviewUiState.Ready(
             tournamentId = tournamentId,
             matchId = matchId,
             rowCount = rows.size,
@@ -865,6 +865,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             lobbyPlayers = lobbyPlayers,
             phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
         )
+        return ready
     }
 
     private fun completeManualFallbackReviewState(

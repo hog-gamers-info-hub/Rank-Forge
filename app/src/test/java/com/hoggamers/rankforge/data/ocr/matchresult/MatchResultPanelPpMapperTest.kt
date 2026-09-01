@@ -37,6 +37,127 @@ class MatchResultPanelPpMapperTest {
     }
 
     @Test
+    fun centerInsideButWeakOverlapIsNotAssigned() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(block(line("shot captured.", 0, 226, 166, 251))),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertTrue(result.single().blocks.isEmpty())
+    }
+
+    @Test
+    fun weakOverlapIsRejectedWithoutTextSpecificFiltering() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(block(line("arbitrary overlay", 0, 226, 166, 251))),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertTrue(result.single().blocks.isEmpty())
+    }
+
+    @Test
+    fun fullyContainedPlayerAndEliminationEvidenceIsAssigned() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(
+                block(line("Player", 90, 170, 180, 190)),
+                block(line("1Elimination", 200, 195, 320, 215)),
+            ),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertEquals(
+            listOf("Player", "1Elimination"),
+            result.single().blocks.flatMap { it.lines }.map { it.text },
+        )
+    }
+
+    @Test
+    fun slightOverflowOnEachCropEdgeWithMajorityOverlapIsAssigned() {
+        val cases = listOf(
+            line("top", 110, 158, 140, 180),
+            line("bottom", 110, 222, 140, 244),
+            line("left", 78, 180, 110, 205),
+            line("right", 544, 180, 576, 205),
+        )
+
+        cases.forEach { candidate ->
+            val result = MatchResultPanelPpMapper.map(
+                panelBlocks = listOf(block(candidate)),
+                crops = listOf(crop(12, 81, 161, 573, 242)),
+            )
+
+            assertEquals(listOf(candidate.text), result.single().blocks.single().lines.map { it.text })
+        }
+    }
+
+    @Test
+    fun placementNearStructuralLeftEdgeIsAssigned() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(block(line("12", 82, 170, 92, 190))),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertEquals(listOf("12"), result.single().blocks.single().lines.map { it.text })
+    }
+
+    @Test
+    fun centerOutsideIsNotAssignedEvenWhenThereIsOverlap() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(block(line("outside", 40, 180, 100, 200))),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertTrue(result.single().blocks.isEmpty())
+    }
+
+    @Test
+    fun zeroAreaAndNoOverlapEvidenceAreHandledSafely() {
+        val zeroWidth = line("zero-width", 100, 180, 100, 200)
+        val zeroHeight = line("zero-height", 100, 180, 120, 180)
+        val noOverlap = line("outside", 600, 180, 620, 200)
+
+        listOf(zeroWidth, zeroHeight, noOverlap).forEach { candidate ->
+            val result = MatchResultPanelPpMapper.map(
+                panelBlocks = listOf(block(candidate)),
+                crops = listOf(crop(12, 81, 161, 573, 242)),
+            )
+
+            assertTrue(result.single().blocks.isEmpty())
+        }
+    }
+
+    @Test
+    fun oneLineIsNotAssignedToMultipleDistantCrops() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(block(line("single", 90, 180, 130, 200))),
+            crops = listOf(
+                crop(11, 81, 161, 200, 242),
+                crop(12, 200, 161, 573, 242, MatchResultPositionColumn.RIGHT),
+            ),
+        )
+
+        assertEquals(listOf("single"), result[0].blocks.single().lines.map { it.text })
+        assertTrue(result[1].blocks.isEmpty())
+    }
+
+    @Test
+    fun mergedPlayerEliminationEvidenceRemainsAssigned() {
+        val result = MatchResultPanelPpMapper.map(
+            panelBlocks = listOf(
+                block(line("0Eliminations Slayersexy", 100, 180, 330, 205)),
+                block(line("1EliminationYF", 340, 180, 470, 205)),
+            ),
+            crops = listOf(crop(12, 81, 161, 573, 242)),
+        )
+
+        assertEquals(
+            listOf("0Eliminations Slayersexy", "1EliminationYF"),
+            result.single().blocks.flatMap { it.lines }.map { it.text },
+        )
+    }
+
+    @Test
     fun adjacentVerticalCropsDoNotDuplicateBoundaryNearLine() {
         val result = MatchResultPanelPpMapper.map(
             panelBlocks = listOf(block(line("boundary", 20, 90, 40, 110))),
@@ -57,10 +178,10 @@ class MatchResultPanelPpMapperTest {
 
     @Test
     fun translatedGeometryIsClampedToPositionDimensions() {
-        val line = line("clamped", 80, 90, 180, 170).copy(
+        val line = line("clamped", 95, 95, 155, 155).copy(
             geometry = RawOcrGeometry(
-                boundingBox = RawOcrBoundingBox(80, 90, 180, 170),
-                cornerPoints = listOf(RawOcrPoint(80, 90), RawOcrPoint(180, 170)),
+                boundingBox = RawOcrBoundingBox(95, 95, 155, 155),
+                cornerPoints = listOf(RawOcrPoint(95, 95), RawOcrPoint(155, 155)),
             ),
         )
         val result = MatchResultPanelPpMapper.map(

@@ -306,18 +306,88 @@ class MatchResultPositionLogicalRowClassifierTest {
         assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
     }
 
+    @Test
+    fun explicitlyEnabledSingleUpperRowMapsToRowOneOnly() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(box("upper-one", 25.0, 10), box("upper-two", 26.0, 10)),
+            allowSingleRowFallback = true,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_ONLY, result.diagnostics.classification)
+        assertEquals(listOf(1), result.rowCrops.map { it.rowIndex })
+        assertEquals(2, result.diagnostics.upperCount)
+        assertEquals(0, result.diagnostics.lowerCount)
+    }
+
+    @Test
+    fun explicitlyEnabledSingleLowerRowMapsToRowTwoOnly() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(box("lower-one", 68.0, 10), box("lower-two", 69.0, 10)),
+            allowSingleRowFallback = true,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW2_ONLY, result.diagnostics.classification)
+        assertEquals(listOf(2), result.rowCrops.map { it.rowIndex })
+        assertEquals(0, result.diagnostics.upperCount)
+        assertEquals(2, result.diagnostics.lowerCount)
+    }
+
+    @Test
+    fun enabledSingleRowFallbackStillRejectsCenterOnlyEvidence() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(box("center", 45.0, 10)),
+            allowSingleRowFallback = true,
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    }
+
+    @Test
+    fun enabledSingleRowFallbackKeepsConflictingClustersUnavailable() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(
+                box("upper", 25.0, 10),
+                box("lower", 68.0, 10),
+                box("unrelated", 85.0, 10),
+            ),
+            allowSingleRowFallback = true,
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    }
+
     private fun classifyCustom(
         position: Int,
         cropWidth: Int,
         cropHeight: Int,
         center: Double,
         lines: List<RawOcrLine>,
+        allowSingleRowFallback: Boolean = false,
     ): MatchResultPositionLogicalRowClassification = classifier.classify(
         position = position,
         cropWidth = cropWidth,
         cropHeight = cropHeight,
         slotCenterYLocal = center,
         blocks = listOf(RawOcrBlock("", null, null, RawOcrConfidence.Unavailable, lines)),
+        allowSingleRowFallback = allowSingleRowFallback,
     )
 
     private fun line(text: String, left: Int, top: Int, right: Int, bottom: Int) = RawOcrLine(

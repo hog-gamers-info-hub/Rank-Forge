@@ -7,8 +7,6 @@ import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotCropSaveResult
 import com.hoggamers.rankforge.data.local.NoOpMatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.identityOrNull
-import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultOcrPreviewProcessor
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -296,15 +294,6 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                     }
                     reconciliationScheduler.schedule(expectedOwnerUserId, screenshotOwnerProvider) {
                         uploadCheckpoint.run(identity, expectedOwnerUserId)
-                    }
-                    viewModelScope.launch {
-                        AndroidMatchResultOcrPreviewProcessor(
-                            assetRepository = assetRepository,
-                            localFileResolver = MatchResultOcrPreviewLocalFileResolver(
-                                localImagePreserver::resolveRelativePath,
-                            ),
-                            screenshotOwnerProvider = screenshotOwnerProvider,
-                        ).processAndLog(identity)
                     }
                     draftEdited = false
                     onConfirmed()

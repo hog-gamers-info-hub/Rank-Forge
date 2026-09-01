@@ -26,7 +26,7 @@ object MatchResultPanelPpMapper {
                 val localLines = block.lines.mapIndexedNotNull { lineIndex, line ->
                     val key = LineKey(blockIndex, lineIndex)
                     val panelBounds = line.geometry?.boundingBox ?: return@mapIndexedNotNull null
-                    if (key in assignedLines || !panelBounds.centerIsWithin(crop)) {
+                    if (key in assignedLines || !panelBounds.isAssignedTo(crop)) {
                         return@mapIndexedNotNull null
                     }
                     val localLine = line.toLocal(crop)
@@ -45,12 +45,45 @@ object MatchResultPanelPpMapper {
 
     private data class LineKey(val blockIndex: Int, val lineIndex: Int)
 
-    private fun RawOcrBoundingBox.centerIsWithin(crop: MatchResultPositionCrop): Boolean {
+    private fun RawOcrBoundingBox.isAssignedTo(crop: MatchResultPositionCrop): Boolean {
         val bounds = crop.bounds
-        val centerX = (left + right) / 2.0
-        val centerY = (top + bottom) / 2.0
-        return centerX >= bounds.left && centerX < bounds.right &&
-            centerY >= bounds.top && centerY < bounds.bottom
+        val lineLeft = left.toDouble()
+        val lineTop = top.toDouble()
+        val lineRight = right.toDouble()
+        val lineBottom = bottom.toDouble()
+        val cropLeft = bounds.left.toDouble()
+        val cropTop = bounds.top.toDouble()
+        val cropRight = bounds.right.toDouble()
+        val cropBottom = bounds.bottom.toDouble()
+        if (listOf(
+                lineLeft, lineTop, lineRight, lineBottom,
+                cropLeft, cropTop, cropRight, cropBottom,
+            ).any { !it.isFinite() }
+        ) return false
+        if (lineRight <= lineLeft || lineBottom <= lineTop ||
+            cropRight <= cropLeft || cropBottom <= cropTop
+        ) return false
+
+        val centerX = (lineLeft + lineRight) / 2.0
+        val centerY = (lineTop + lineBottom) / 2.0
+        if (centerX !in cropLeft..<cropRight || centerY !in cropTop..<cropBottom) {
+            return false
+        }
+
+        val intersectionLeft = maxOf(lineLeft, cropLeft)
+        val intersectionTop = maxOf(lineTop, cropTop)
+        val intersectionRight = minOf(lineRight, cropRight)
+        val intersectionBottom = minOf(lineBottom, cropBottom)
+        if (intersectionRight <= intersectionLeft || intersectionBottom <= intersectionTop) {
+            return false
+        }
+
+        val lineArea = (lineRight - lineLeft) * (lineBottom - lineTop)
+        val intersectionArea =
+            (intersectionRight - intersectionLeft) * (intersectionBottom - intersectionTop)
+        val overlapRatio = intersectionArea / lineArea
+        return lineArea.isFinite() && intersectionArea.isFinite() &&
+            overlapRatio.isFinite() && overlapRatio >= MIN_MEANINGFUL_LINE_OVERLAP_RATIO
     }
 
     private fun RawOcrLine.toLocal(crop: MatchResultPositionCrop): RawOcrLine? = copy(
@@ -85,4 +118,6 @@ object MatchResultPanelPpMapper {
     }
 
     private fun RawOcrBoundingBox.isUsable(): Boolean = right > left && bottom > top
+
+    private const val MIN_MEANINGFUL_LINE_OVERLAP_RATIO = 0.50
 }

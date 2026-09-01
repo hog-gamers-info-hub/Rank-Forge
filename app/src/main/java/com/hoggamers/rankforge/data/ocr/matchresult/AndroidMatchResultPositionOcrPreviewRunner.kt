@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrFiel
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrInput
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassifier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassification
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
@@ -91,7 +92,18 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             resolvedSemanticRole = semanticRole
             val allowUpperFallback = semanticRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
                 !hasConfirmedLowerAsset(identity, owner)
-            val generated = when (val result = positionCropGenerator.generate(source, resolved.geometry)) {
+            val processingGeometry = when (
+                val result = positionCropGenerator.calculate(
+                    evidence = observation.evidence,
+                    role = semanticRole,
+                    allowUpperPositionElevenFallback = allowUpperFallback,
+                )
+            ) {
+                is MatchResultPositionCropCalculationResult.Available -> result
+                is MatchResultPositionCropCalculationResult.Unavailable ->
+                    return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(semanticRole)
+            }
+            val generated = when (val result = positionCropGenerator.generate(source, processingGeometry)) {
                 is MatchResultPositionCropGenerationResult.Generated -> result
                 else -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(semanticRole)
             }
@@ -118,6 +130,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         inputBitmap = inputBitmap,
                         role = semanticRole,
                         inputPlan = inputPlan,
+                        allowUpperPositionElevenFallback = allowUpperFallback,
                     )
                     val extraction = semantics.toAcceptedExtraction(semanticRole, allowUpperFallback)
                         ?: return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(semanticRole)
@@ -148,6 +161,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         inputBitmap: Bitmap,
         role: MatchResultScreenshotRole,
         inputPlan: MatchResultPpInputPlan,
+        allowUpperPositionElevenFallback: Boolean,
     ): List<MatchResultPositionSemanticResult> {
         val engine = paddleEngineProvider.getOrCreate()
         val runResult = engine.recognize(inputBitmap)
@@ -158,23 +172,26 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         )
 
         val mapped = MatchResultPanelPpMapper.map(panelBlocks, inputPlan.crops)
-        val semanticResults = mapped.map { evidence -> mapPanelPosition(role, evidence) }
-        val expectedPositions = inputPlan.crops.map { it.position }.sorted()
-        val productionReady = expectedPositions.isNotEmpty() &&
-            semanticResults.size == expectedPositions.size &&
-            semanticResults.all { it.productionReady }
-        if (!productionReady) {
-            throw IllegalStateException("Whole-panel OCR unavailable for role=$role")
+        val semanticResults = mapped.map { evidence ->
+            mapPanelPosition(
+                role = role,
+                evidence = evidence,
+                allowSingleRowFallback = allowUpperPositionElevenFallback && evidence.crop.position == 11,
+            )
         }
-        return semanticResults.map { result ->
-            result.semantic
-                ?: throw IllegalStateException("Whole-panel semantic unavailable for role=$role")
-        }.sortedBy { it.position }
+        val usableSemantics = semanticResults
+            .filter { it.productionReady }
+            .mapNotNull { it.semantic }
+        if (usableSemantics.isEmpty()) {
+            throw IllegalStateException("No usable position OCR for role=$role")
+        }
+        return usableSemantics.sortedBy { it.position }
     }
 
     private fun mapPanelPosition(
         role: MatchResultScreenshotRole,
         evidence: MatchResultPanelPpPositionEvidence,
+        allowSingleRowFallback: Boolean = false,
     ): PanelPositionSemantic {
         val crop = evidence.crop
         val classification = MatchResultPositionLogicalRowClassifier().classify(
@@ -183,6 +200,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             cropHeight = crop.bounds.height,
             slotCenterYLocal = crop.structuralCenterYInSource?.minus(crop.bounds.top),
             blocks = evidence.blocks,
+            allowSingleRowFallback = allowSingleRowFallback,
         )
         val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
             try {
@@ -207,11 +225,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             null
         }
         val localLines = evidence.blocks.sumOf { it.lines.size }
-        val productionReady = localLines > 0 &&
-            classification is MatchResultPositionLogicalRowClassification.Available &&
-            semantic?.fields?.isNotEmpty() == true &&
-            semantic.row?.playerSlots.orEmpty().isNotEmpty() &&
-            semantic.isAutoAcceptable
+        val productionReady = isPpPositionProductionStructurallyReady(
+            localLines = localLines,
+            classification = classification,
+            semantic = semantic,
+        )
         return PanelPositionSemantic(
             semantic = semantic,
             productionReady = productionReady,
@@ -268,9 +286,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
 
 }
 
-class HybridMatchResultOcrPreviewRunner(
-    private val newRoute: MatchResultOcrPreviewRunner,
-    private val legacyRoute: MatchResultOcrPreviewRunner,
+class MatchResultPpOnlyPairReconciliationRunner(
+    private val ppRoute: MatchResultOcrPreviewRunner,
     private val semanticRoleReconciler: MatchResultSemanticRoleReconciler = MatchResultSemanticRoleReconciler(),
 ) : MatchResultOcrPreviewRunner {
     private val lock = Any()
@@ -324,27 +341,30 @@ class HybridMatchResultOcrPreviewRunner(
     private suspend fun runPair(
         identity: MatchResultScreenshotIdentity,
     ): Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult> = coroutineScope {
-        val newResults = MatchResultScreenshotRole.entries.associateWith { role ->
+        val ppResults = MatchResultScreenshotRole.entries.associateWith { role ->
             async {
-                newRoute.process(identity.copy(role = role))
+                ppRoute.process(identity.copy(role = role))
             }
         }.mapValues { (_, deferred) -> deferred.await() }
-        val reconciliation = semanticRoleReconciler.reconcile(newResults)
-        val canonicalNewResults = (reconciliation as? MatchResultSemanticRoleReconciliation.Resolved)?.results
-        if (canonicalNewResults != null && canonicalNewResults.values.all(::isAcceptable)) {
+        val reconciliation = semanticRoleReconciler.reconcile(ppResults)
+        val canonicalPpResults = (reconciliation as? MatchResultSemanticRoleReconciliation.Resolved)?.results
+        if (canonicalPpResults != null && canonicalPpResults.values.all(::isAcceptable)) {
             logAcceptedRoute()
-            return@coroutineScope canonicalNewResults
+            return@coroutineScope canonicalPpResults
         }
-        if (newResults.requiresSemanticSafeFailure(reconciliation)) {
-            return@coroutineScope MatchResultScreenshotRole.entries.associateWith {
+        if (ppResults.requiresSemanticSafeFailure(reconciliation)) {
+            val failures = MatchResultScreenshotRole.entries.associateWith {
                 MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
             }
+            return@coroutineScope failures
         }
-        val legacyResults = MatchResultScreenshotRole.entries.associateWith { role ->
-            legacyRoute.process(identity.copy(role = role))
+        if (canonicalPpResults != null) {
+            val ppFailures = MatchResultScreenshotRole.entries.associateWith { role ->
+                MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(role)
+            }
+            return@coroutineScope ppFailures
         }
-        logFallbackRoute(fallbackReason(newResults))
-        return@coroutineScope legacyResults
+        return@coroutineScope ppResults
     }
 
     private fun Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>
@@ -362,21 +382,8 @@ class HybridMatchResultOcrPreviewRunner(
             return true
         }
         // A complete physical pair with a non-bijective semantic assignment cannot
-        // be safely reinterpreted by the stored-role legacy route.
+        // be safely reinterpreted by physical role.
         return reconciliation is MatchResultSemanticRoleReconciliation.Conflict
-    }
-
-    private fun fallbackReason(
-        results: Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>,
-    ): String = when {
-        results.values.any { it is MatchResultOcrPreviewProcessingResult.Processed } &&
-            results.values.any { !isAcceptable(it) } -> "SEMANTIC_OUTPUT_INVALID"
-        results.values.any {
-            it == MatchResultOcrPreviewProcessingResult.MissingConfirmedCrop ||
-                it == MatchResultOcrPreviewProcessingResult.InvalidCrop ||
-                it == MatchResultOcrPreviewProcessingResult.DecodeFailed
-        } -> "POSITION_CROP_FAILURE"
-        else -> "NEW_ROUTE_FAILURE"
     }
 
     private fun logAcceptedRoute() {
@@ -385,14 +392,6 @@ class HybridMatchResultOcrPreviewRunner(
         }
     }
 
-    private fun logFallbackRoute(reason: String) {
-        runCatching {
-            Log.i(
-                RESULT_OCR_ROUTE_LOG_TAG,
-                "RESULT_OCR_ROUTE route=LEGACY_FULL_SCREENSHOT status=FALLBACK reason=$reason",
-            )
-        }
-    }
 
     private fun isAcceptable(result: MatchResultOcrPreviewProcessingResult): Boolean =
         result is MatchResultOcrPreviewProcessingResult.Processed &&
@@ -413,7 +412,7 @@ class HybridMatchResultOcrPreviewRunner(
     }
 }
 
-private fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
+internal fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
     role: MatchResultScreenshotRole,
     allowUpperFallback: Boolean,
 ): MatchResultOcrExtractionResult? {
@@ -422,15 +421,36 @@ private fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
             if (allowUpperFallback) (1..11).toList() else (1..10).toList()
         MatchResultScreenshotRole.MATCH_RESULT_LOWER -> (11..12).toList()
     }
+    val positions = map { it.position }
     val rows = mapNotNull { it.row }
     if (
-        map { it.position } != expected ||
+        positions.isEmpty() ||
+        any { it.role != role } ||
+        positions.any { it !in expected } ||
+        positions.distinct().size != positions.size ||
         rows.size != size ||
+        rows.map { it.position } != positions ||
         rows.map { it.position }.distinct().size != rows.size
     ) return null
     val fields = flatMap { it.fields }
     if (fields.isEmpty() || rows.isEmpty()) return null
     return MatchResultOcrExtractionResult(role = role, fields = fields, rows = rows)
+}
+
+internal fun isPpPositionProductionStructurallyReady(
+    localLines: Int,
+    classification: MatchResultPositionLogicalRowClassification,
+    semantic: MatchResultPositionSemanticResult?,
+): Boolean {
+    if (localLines <= 0 || classification !is MatchResultPositionLogicalRowClassification.Available) {
+        return false
+    }
+    return semantic != null &&
+        semantic.fields.isNotEmpty() &&
+        semantic.row?.playerSlots.orEmpty().isNotEmpty() &&
+        semantic.structuralIdentityValid &&
+        semantic.placementVerification !is MatchResultNumericVerification.Conflict &&
+        semantic.killVerifications.values.none { it is MatchResultNumericVerification.Conflict }
 }
 
 private fun com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetEntity.confirmedCropOrNull(): OcrNormalizedCropRect? {
