@@ -19,9 +19,10 @@ class MatchLobbyOcrCacheCodec @Inject constructor() {
 
         val slots = decoded.slots
         val slotNumbers = slots.map { it.slotNumber }
-        if (slots.size != REQUIRED_SLOT_COUNT ||
+        if (slots.isEmpty() ||
+            slots.size > REQUIRED_SLOT_COUNT ||
             slotNumbers.distinct().size != slots.size ||
-            APPROVED_SEMANTIC_SLOT_GROUPS.none { it == slotNumbers.toSet() }
+            APPROVED_SEMANTIC_SLOT_GROUPS.none { group -> slotNumbers.all { it in group } }
         ) return null
 
         slots.map { slot ->

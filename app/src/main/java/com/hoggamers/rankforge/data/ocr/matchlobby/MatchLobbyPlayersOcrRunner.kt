@@ -43,7 +43,7 @@ data class MatchLobbyPlayersOcrResult(
     }
 }
 
-const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 10
+const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 12
 
 fun interface MatchLobbyPlayersOcrRunner {
     suspend fun process(tournamentId: String, matchId: String): MatchLobbyPlayersOcrResult
@@ -139,7 +139,10 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
 
     private fun List<MatchLobbyPlayersOcrSlot>.toContribution(): MatchLobbyScreenshotContribution? {
         val slotNumbers = map { it.slotNumber }.toSet()
-        val group = APPROVED_SEMANTIC_SLOT_GROUPS.singleOrNull { it == slotNumbers } ?: return null
+        if (slotNumbers.isEmpty() || slotNumbers.size != size) return null
+        val group = APPROVED_SEMANTIC_SLOT_GROUPS.singleOrNull { group ->
+            slotNumbers.all { it in group }
+        } ?: return null
         return MatchLobbyScreenshotContribution(
             group = LobbyResolvedSlotGroup(
                 tournamentSlotRange = group.toIntRange(),
@@ -173,7 +176,6 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
                 },
             )
         }
-        if (slots.size != RosterVisibleSlotPosition.entries.size) return null
         return slots.toContribution()
     }
 

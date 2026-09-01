@@ -121,6 +121,126 @@ class LobbyPanelPpMapperTest {
     }
 
     @Test
+    fun missingPlayerNameDoesNotMakeTeamUnavailable() {
+        val result = mapped(
+            fragmentsFor(RosterScreenshotPosition.ONE) + fragment("player-one", 110, 70),
+        )
+        val team = result.teams.single { it.crop.detectedSlotNumber == 1 }
+
+        assertEquals(4, team.rowPreviews.size)
+        assertEquals("player-one", team.rowPreviews.first().playerName)
+        assertEquals(null, team.rowPreviews[1].playerName)
+    }
+
+    @Test
+    fun fullyContainedPlayerFragmentRemainsMapped() {
+        val result = mapped(completePanelFragments() + fragmentWithBounds(
+            text = "fully-contained",
+            left = 100,
+            top = 100,
+            right = 200,
+            bottom = 120,
+        ))
+
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 1 }
+                .rowPreviews.any { it.playerName?.contains("fully-contained") == true },
+        )
+    }
+
+    @Test
+    fun mostlyContainedPlayerFragmentRemainsMapped() {
+        val result = mapped(completePanelFragments() + fragmentWithBounds(
+            text = "mostly-contained",
+            left = 280,
+            top = 250,
+            right = 700,
+            bottom = 290,
+        ))
+
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 1 }
+                .rowPreviews.any { it.playerName?.contains("mostly-contained") == true },
+        )
+        assertTrue(
+            result.teams
+                .filterNot { it.crop.detectedSlotNumber == 1 }
+                .none { team -> team.rowPreviews.any { it.playerName?.contains("mostly-contained") == true } },
+        )
+    }
+
+    @Test
+    fun exactlyHalfContainedPlayerFragmentRemainsMapped() {
+        val result = mapped(completePanelFragments() + fragmentWithBounds(
+            text = "exactly-half-contained",
+            left = 300,
+            top = 250,
+            right = 740,
+            bottom = 290,
+        ))
+
+        assertTrue(
+            result.teams.single { it.crop.detectedSlotNumber == 1 }
+                .rowPreviews.any { it.playerName?.contains("exactly-half-contained") == true },
+        )
+    }
+
+    @Test
+    fun lessThanHalfContainedFragmentIsRejectedWithoutPlayerContamination() {
+        val result = mapped(completePanelFragments() + fragmentWithBounds(
+            text = "outside-contamination",
+            left = 300,
+            top = 0,
+            right = 740,
+            bottom = 440,
+        ))
+
+        assertTrue(
+            result.teams.none { team ->
+                team.rowPreviews.any { row ->
+                    row.structuralEvidence?.contains("outside-contamination") == true ||
+                        row.playerName?.contains("outside-contamination") == true
+                }
+            },
+        )
+    }
+
+    @Test
+    fun boundaryCrossingFragmentIsNotDuplicatedIntoNeighboringTeams() {
+        val result = mapped(completePanelFragments() + fragmentWithBounds(
+            text = "cross-team-contamination",
+            left = 100,
+            top = 0,
+            right = 1300,
+            bottom = 440,
+        ))
+
+        assertTrue(
+            result.teams.none { team ->
+                team.rowPreviews.any { row -> row.playerName?.contains("cross-team-contamination") == true }
+            },
+        )
+    }
+
+    @Test
+    fun zeroOrInvalidAreaFragmentIsRejectedSafely() {
+        val malformedFragments = listOf(
+            fragmentWithBounds("zero-width", 100, 100, 100, 120),
+            fragmentWithBounds("negative-width", 200, 100, 100, 120),
+            fragmentWithBounds("zero-height", 100, 100, 200, 100),
+        )
+        val result = mapped(completePanelFragments() + malformedFragments)
+
+        assertTrue(
+            result.teams.none { team ->
+                team.rowPreviews.any { row ->
+                    malformedFragments.any { malformed -> row.playerName?.contains(malformed.text) == true }
+                }
+            },
+        )
+    }
+
+    @Test
     fun twoObservedAnchorsReconstructTheRemainingTeams() {
         val result = mapped(
             completePanelFragments().filterNot { it.text == "3" || it.text == "4" },
@@ -412,6 +532,19 @@ class LobbyPanelPpMapperTest {
         text = text,
         confidence = 0.75f,
         boundingBox = RawOcrBoundingBox(centerX - 20, top, centerX + 20, bottom),
+        readingOrderIndex = nextIndex++,
+    )
+
+    private fun fragmentWithBounds(
+        text: String,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    ) = LobbyPanelPpFragment(
+        text = text,
+        confidence = 0.75f,
+        boundingBox = RawOcrBoundingBox(left, top, right, bottom),
         readingOrderIndex = nextIndex++,
     )
 

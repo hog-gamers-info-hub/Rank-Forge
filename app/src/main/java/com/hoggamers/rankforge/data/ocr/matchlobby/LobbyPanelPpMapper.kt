@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridReconstructor
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyGridReconstructionResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotGridRole
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCrop
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropGeometryCalculator
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropGeometryResult
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterCandidateParseFailure
@@ -34,6 +35,7 @@ data class LobbyPanelPpFragment(
 data class LobbyPanelPpMappedTeam(
     val crop: LobbyTeamCrop,
     val rowPreviews: List<LobbyPlayerRowCropPreview>,
+    val unavailableReason: MatchLobbyTeamCropPreviewUnavailableReason? = null,
 )
 
 sealed interface LobbyPanelPpMappingResult {
@@ -81,6 +83,7 @@ sealed interface LobbyPanelSemanticMappingResult {
  */
 object LobbyPanelPpMapper {
     private const val SLOT_GUTTER_FRACTION = 0.15
+    private const val MIN_FRAGMENT_CROP_OVERLAP = 0.50
 
     /**
      * Resolves semantic screenshot position from structural slot-number evidence.
@@ -208,10 +211,10 @@ object LobbyPanelPpMapper {
                 slotAnchorY = slotAnchorY,
             )
             if (rowGeometry == null) {
-                return unavailable(
-                    MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
-                    fragments,
-                    observedAnchors.size,
+                return@map LobbyPanelPpMappedTeam(
+                    crop = crop,
+                    rowPreviews = emptyList(),
+                    unavailableReason = MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
                 )
             }
             val localPanelFragments = fragments.mapNotNull { fragment ->
@@ -220,6 +223,9 @@ object LobbyPanelPpMapper {
                 if (centerX !in crop.bounds.left..crop.bounds.right ||
                     centerY !in crop.bounds.top..crop.bounds.bottom
                 ) {
+                    return@mapNotNull null
+                }
+                if (!fragment.boundingBox.hasMajorityOverlapWith(crop.bounds)) {
                     return@mapNotNull null
                 }
                 LocalPanelFragment(
@@ -464,6 +470,52 @@ object LobbyPanelPpMapper {
 
     private fun RawOcrBoundingBox.isUsable(): Boolean =
         left >= 0 && top >= 0 && right > left && bottom > top
+
+    private fun RawOcrBoundingBox.hasMajorityOverlapWith(crop: LobbyTeamCropBounds): Boolean {
+        val fragmentLeft = left.toDouble()
+        val fragmentTop = top.toDouble()
+        val fragmentRight = right.toDouble()
+        val fragmentBottom = bottom.toDouble()
+        val fragmentWidth = fragmentRight - fragmentLeft
+        val fragmentHeight = fragmentBottom - fragmentTop
+        val cropWidth = crop.right - crop.left
+        val cropHeight = crop.bottom - crop.top
+        if (
+            listOf(
+                fragmentLeft,
+                fragmentTop,
+                fragmentRight,
+                fragmentBottom,
+                fragmentWidth,
+                fragmentHeight,
+                crop.left,
+                crop.top,
+                crop.right,
+                crop.bottom,
+                cropWidth,
+                cropHeight,
+            ).any { !it.isFinite() } ||
+            fragmentWidth <= 0.0 ||
+            fragmentHeight <= 0.0 ||
+            cropWidth <= 0.0 ||
+            cropHeight <= 0.0
+        ) {
+            return false
+        }
+
+        val intersectionWidth = (minOf(fragmentRight, crop.right) - maxOf(fragmentLeft, crop.left))
+            .takeIf { it > 0.0 }
+            ?: 0.0
+        val intersectionHeight = (minOf(fragmentBottom, crop.bottom) - maxOf(fragmentTop, crop.top))
+            .takeIf { it > 0.0 }
+            ?: 0.0
+        val intersectionArea = intersectionWidth * intersectionHeight
+        val fragmentArea = fragmentWidth * fragmentHeight
+        if (!intersectionArea.isFinite() || !fragmentArea.isFinite() || fragmentArea <= 0.0) {
+            return false
+        }
+        return intersectionArea / fragmentArea >= MIN_FRAGMENT_CROP_OVERLAP
+    }
 
     private val RawOcrBoundingBox.centerX: Double
         get() = (left + right) / 2.0

@@ -61,8 +61,10 @@ class MatchLobbyOcrCacheCodecTest {
     }
 
     @Test
-    fun fewerOrMoreThanFourSlotsAreRejectedAsCacheMiss() {
-        assertNull(codec.decode(codec.encode(slots(1..4).take(3))))
+    fun partialSameGroupSlotsRoundTripAndMixedGroupsAreRejected() {
+        val partial = slots(1..4).take(3)
+
+        assertEquals(partial, codec.decode(codec.encode(partial)))
         assertNull(codec.decode(codec.encode(slots(1..4) + slots(5..5))))
     }
 

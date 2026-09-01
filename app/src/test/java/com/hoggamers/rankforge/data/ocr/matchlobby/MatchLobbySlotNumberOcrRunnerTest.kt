@@ -2,8 +2,10 @@ package com.hoggamers.rankforge.data.ocr.matchlobby
 
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
+import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationFailure
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
@@ -46,6 +48,67 @@ class MatchLobbySlotNumberOcrRunnerTest {
         })
     }
 
+    @Test
+    fun bitmapFailureForOneTeamKeepsTheOtherThreeTeamPreviews() = runTest {
+        assertTeamAvailability(unavailableSlots = setOf(3))
+    }
+
+    @Test
+    fun firstTeamBitmapFailureDoesNotDiscardLaterTeams() = runTest {
+        assertTeamAvailability(unavailableSlots = setOf(1))
+    }
+
+    @Test
+    fun lastTeamBitmapFailureDoesNotDiscardEarlierTeams() = runTest {
+        assertTeamAvailability(unavailableSlots = setOf(4))
+    }
+
+    @Test
+    fun multipleTeamBitmapFailuresKeepEachSuccessfulTeam() = runTest {
+        assertTeamAvailability(unavailableSlots = setOf(2, 4))
+    }
+
+    private fun assertTeamAvailability(unavailableSlots: Set<Int>) {
+        val mapping = LobbyPanelPpMapper.map(
+            panelWidth = 1_000,
+            panelHeight = 900,
+            fragments = (1..4).mapIndexed { index, slot ->
+                panelFragment(
+                    text = slot.toString(),
+                    left = if (index % 2 == 0) 40 else 540,
+                    top = if (index < 2) 210 else 610,
+                    right = if (index % 2 == 0) 80 else 580,
+                    bottom = if (index < 2) 230 else 630,
+                )
+            },
+        ) as LobbyPanelSemanticMappingResult.Available
+        val outcomes = createMatchLobbyTeamCropPreviewOutcomes(
+            panelImage = FakeImage,
+            semanticPosition = RosterScreenshotPosition.ONE,
+            teams = mapping.mapping.teams,
+            factory = MatchLobbyTeamCropPreviewFactory { _, crop ->
+                if (crop.detectedSlotNumber in unavailableSlots) {
+                    throw IllegalStateException("test bitmap failure")
+                }
+                TestTeamCropPreviewImage
+            },
+        )
+
+        assertEquals(RosterVisibleSlotPosition.entries.size, outcomes.size)
+        outcomes.forEach { outcome ->
+            val slotNumber = RosterScreenshotPosition.ONE.tournamentSlotFor(outcome.visibleSlotPosition)
+            if (slotNumber in unavailableSlots) {
+                assertTrue(outcome is MatchLobbyTeamCropPreviewOutcome.Unavailable)
+                assertEquals(
+                    MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
+                    (outcome as MatchLobbyTeamCropPreviewOutcome.Unavailable).reason,
+                )
+            } else {
+                assertTrue(outcome is MatchLobbyTeamCropPreviewOutcome.Available)
+            }
+        }
+    }
+
     private fun runner(
         assets: FakeAssetRepository,
         preparer: RecordingPanelPreparer,
@@ -65,6 +128,10 @@ class MatchLobbySlotNumberOcrRunnerTest {
         assertTrue(result.screenshots.all {
             it is MatchLobbySlotNumberOcrScreenshotResult.Unavailable && it.reason == reason
         })
+    }
+
+    private val ownerProvider = object : ScreenshotOwnerProvider {
+        override suspend fun currentOwnerUserId(): String? = "owner-1"
     }
 
     private fun asset(index: Int) = MatchLobbyScreenshotAssetEntity(
@@ -111,4 +178,24 @@ class MatchLobbySlotNumberOcrRunnerTest {
             )
         }
     }
+
+    private data object TestTeamCropPreviewImage : MatchLobbyTeamCropPreviewImage
+
+    private object FakeImage : com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage {
+        override val width = 1_000
+        override val height = 900
+    }
 }
+
+private fun panelFragment(
+    text: String,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+) = LobbyPanelPpFragment(
+    text = text,
+    confidence = 0.9f,
+    boundingBox = RawOcrBoundingBox(left, top, right, bottom),
+    readingOrderIndex = left + top,
+)

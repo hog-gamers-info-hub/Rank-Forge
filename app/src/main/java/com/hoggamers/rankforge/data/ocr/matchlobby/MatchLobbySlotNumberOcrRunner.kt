@@ -36,6 +36,22 @@ data class MatchLobbyTeamCropPreview(
     val authoritativeTeamSlotNumber: Int = 0,
 )
 
+sealed interface MatchLobbyTeamCropPreviewOutcome {
+    val visibleSlotPosition: RosterVisibleSlotPosition
+
+    data class Available(
+        val preview: MatchLobbyTeamCropPreview,
+    ) : MatchLobbyTeamCropPreviewOutcome {
+        override val visibleSlotPosition: RosterVisibleSlotPosition
+            get() = preview.visibleSlotPosition
+    }
+
+    data class Unavailable(
+        override val visibleSlotPosition: RosterVisibleSlotPosition,
+        val reason: MatchLobbyTeamCropPreviewUnavailableReason,
+    ) : MatchLobbyTeamCropPreviewOutcome
+}
+
 enum class MatchLobbyTeamCropPreviewUnavailableReason {
     REQUIRED_SLOT_NUMBER_UNAVAILABLE,
     SLOT_NUMBER_GEOMETRY_UNAVAILABLE,
@@ -47,12 +63,24 @@ enum class MatchLobbyTeamCropPreviewUnavailableReason {
 sealed interface MatchLobbyTeamCropPreviewResult {
     data class Available(
         val previews: List<MatchLobbyTeamCropPreview>,
+        val unavailable: List<MatchLobbyTeamCropPreviewOutcome.Unavailable> = emptyList(),
     ) : MatchLobbyTeamCropPreviewResult {
         init {
-            require(previews.map { it.visibleSlotPosition } == RosterVisibleSlotPosition.entries) {
-                "Team crop previews must contain every visible slot position exactly once."
+            val positions = previews.map { it.visibleSlotPosition } + unavailable.map { it.visibleSlotPosition }
+            require(positions.size == RosterVisibleSlotPosition.entries.size &&
+                positions.toSet().size == positions.size &&
+                positions.toSet() == RosterVisibleSlotPosition.entries.toSet()
+            ) {
+                "Team crop previews must contain one outcome for every visible slot position."
             }
         }
+
+        val outcomes: List<MatchLobbyTeamCropPreviewOutcome>
+            get() = RosterVisibleSlotPosition.entries.map { visibleSlotPosition ->
+                previews.firstOrNull { it.visibleSlotPosition == visibleSlotPosition }
+                    ?.let(MatchLobbyTeamCropPreviewOutcome::Available)
+                    ?: unavailable.first { it.visibleSlotPosition == visibleSlotPosition }
+            }
     }
 
     data class Unavailable(
@@ -217,30 +245,20 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             is LobbyPanelSemanticMappingResult.Available -> {
                 val semanticPosition = mapping.screenshotPosition
                 val panelMapping = mapping.mapping
-                val previews = try {
-                    MatchLobbyTeamCropPreviewResult.Available(
-                        panelMapping.teams.map { mappedTeam ->
-                            MatchLobbyTeamCropPreview(
-                                visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
-                                detectedSlotNumber = mappedTeam.crop.detectedSlotNumber,
-                                image = teamCropPreviewFactory.create(
-                                    panel.croppedPanelImage,
-                                    mappedTeam.crop,
-                                ),
-                                playerRowPreviews = mappedTeam.rowPreviews,
-                                authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
-                                    mappedTeam.crop.visibleSlotPosition,
-                                ),
-                            )
-                        },
-                    )
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    MatchLobbyTeamCropPreviewResult.Unavailable(
-                        MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
-                    )
-                }
+                val outcomes = createMatchLobbyTeamCropPreviewOutcomes(
+                    panelImage = panel.croppedPanelImage,
+                    semanticPosition = semanticPosition,
+                    teams = panelMapping.teams,
+                    factory = teamCropPreviewFactory,
+                )
+                val previews = MatchLobbyTeamCropPreviewResult.Available(
+                    previews = outcomes.mapNotNull { outcome ->
+                        (outcome as? MatchLobbyTeamCropPreviewOutcome.Available)?.preview
+                    },
+                    unavailable = outcomes.mapNotNull { outcome ->
+                        outcome as? MatchLobbyTeamCropPreviewOutcome.Unavailable
+                    },
+                )
                 LobbyPhysicalProcessingOutcome.Resolved(
                     storedPosition = position,
                     semanticPosition = semanticPosition,
@@ -289,6 +307,42 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         reason: MatchLobbySlotNumberOcrUnavailableReason,
     ): LobbyPhysicalProcessingOutcome.Unavailable =
         LobbyPhysicalProcessingOutcome.Unavailable(position, reason)
+}
+
+internal fun createMatchLobbyTeamCropPreviewOutcomes(
+    panelImage: OcrPreprocessingImage,
+    semanticPosition: RosterScreenshotPosition,
+    teams: List<LobbyPanelPpMappedTeam>,
+    factory: MatchLobbyTeamCropPreviewFactory,
+): List<MatchLobbyTeamCropPreviewOutcome> = teams.map { mappedTeam ->
+    val unavailableReason = mappedTeam.unavailableReason
+    if (unavailableReason != null) {
+        MatchLobbyTeamCropPreviewOutcome.Unavailable(
+            visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
+            reason = unavailableReason,
+        )
+    } else {
+        try {
+            MatchLobbyTeamCropPreviewOutcome.Available(
+                MatchLobbyTeamCropPreview(
+                    visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
+                    detectedSlotNumber = mappedTeam.crop.detectedSlotNumber,
+                    image = factory.create(panelImage, mappedTeam.crop),
+                    playerRowPreviews = mappedTeam.rowPreviews,
+                    authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
+                        mappedTeam.crop.visibleSlotPosition,
+                    ),
+                ),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            MatchLobbyTeamCropPreviewOutcome.Unavailable(
+                visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
+                reason = MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
+            )
+        }
+    }
 }
 
 internal fun interface MatchLobbyTeamCropPreviewFactory {
