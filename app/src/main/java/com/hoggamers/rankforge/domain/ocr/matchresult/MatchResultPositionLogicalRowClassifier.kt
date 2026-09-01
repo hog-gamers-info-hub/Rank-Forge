@@ -167,6 +167,36 @@ class MatchResultPositionLogicalRowClassifier {
 
         val clusters = deriveTwoRowClusters(lines.map { it.candidate }, slotCenterYLocal, tolerance)
         if (clusters == null) {
+            val centeredSingleRow = if (!allowSingleRowFallback) {
+                deriveCenteredSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
+            } else {
+                null
+            }
+            if (centeredSingleRow != null) {
+                val rowCrop = rowCrop(1, lines, cropWidth, cropHeight)
+                if (rowCrop != null) {
+                    val diagnostics = MatchResultPositionLogicalRowDiagnostics(
+                        position = position, positionHeight = cropHeight,
+                        slotCenterYLocal = slotCenterYLocal, medianTextHeight = medianHeight,
+                        derivedTolerance = tolerance, totalMappedLines = totalMappedLines,
+                        placementLinesRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+                        usableLines = lines.size,
+                        upperCount = 0,
+                        centerCount = lines.size,
+                        lowerCount = 0,
+                        classification = MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW,
+                    )
+                    return MatchResultPositionLogicalRowClassification.Available(
+                        rowCrops = listOf(rowCrop),
+                        diagnostics = diagnostics,
+                        blocks = blocks.mapNotNull { block ->
+                            block.copy(lines = block.lines.filter { line ->
+                                lines.any { it.candidate.line === line }
+                            }).takeIf { it.lines.isNotEmpty() }
+                        },
+                    )
+                }
+            }
             val singleRow = if (allowSingleRowFallback) {
                 deriveSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
             } else {
@@ -366,6 +396,18 @@ class MatchResultPositionLogicalRowClassifier {
         if (candidates.isEmpty()) return null
         val centerY = median(candidates.map { it.centerY }) ?: return null
         if (abs(centerY - slotCenterYLocal) <= tolerance) return null
+        if (candidates.any { abs(it.centerY - centerY) > tolerance }) return null
+        return SingleRow(centerY)
+    }
+
+    private fun deriveCenteredSingleRow(
+        candidates: List<Candidate>,
+        slotCenterYLocal: Double,
+        tolerance: Double,
+    ): SingleRow? {
+        if (candidates.isEmpty()) return null
+        val centerY = median(candidates.map { it.centerY }) ?: return null
+        if (abs(centerY - slotCenterYLocal) > tolerance) return null
         if (candidates.any { abs(it.centerY - centerY) > tolerance }) return null
         return SingleRow(centerY)
     }

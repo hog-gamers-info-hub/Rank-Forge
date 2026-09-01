@@ -23,10 +23,45 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
-    fun centerOnlyEvidenceRemainsUnavailable() {
-        val result = classifyResult(line("Player A", 10, 44, 100, 54))
-        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
-        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    fun physicalStyleOnePlayerCenteredRowMapsToRowOne() {
+        val result = classifyCustom(
+            position = 8,
+            cropWidth = 491,
+            cropHeight = 81,
+            center = 40.5,
+            lines = listOf(
+                line("SOUMO`BHAI", 40, 32, 150, 43),
+                line("0 Eliminations", 210, 35, 330, 44),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, result.diagnostics.classification)
+        assertEquals(listOf(1), result.rowCrops.map { it.rowIndex })
+        assertEquals(2, result.diagnostics.centerCount)
+        assertEquals(0, result.diagnostics.upperCount)
+        assertEquals(0, result.diagnostics.lowerCount)
+    }
+
+    @Test
+    fun physicalStyleTwoPlayerCenteredRowMapsToRowOne() {
+        val result = classifyCustom(
+            position = 5,
+            cropWidth = 491,
+            cropHeight = 95,
+            center = 48.0,
+            lines = listOf(
+                line("MG SHYAMLIVE", 40, 41, 150, 52),
+                line("MG BAAZIGAR", 300, 44, 400, 54),
+                line("0 Eliminations", 170, 41, 270, 52),
+                line("1 Eliminations", 410, 44, 480, 55),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, result.diagnostics.classification)
+        assertEquals(listOf(1), result.rowCrops.map { it.rowIndex })
+        assertEquals(4, result.diagnostics.centerCount)
+        assertEquals(0, result.diagnostics.upperCount)
+        assertEquals(0, result.diagnostics.lowerCount)
     }
 
     @Test
@@ -131,6 +166,21 @@ class MatchResultPositionLogicalRowClassifierTest {
         assertEquals(1, result.diagnostics.placementLinesRemoved)
         assertEquals(1, result.diagnostics.usableLines)
         assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+    }
+
+    @Test
+    fun centeredPlacementNumberCannotCreateCenteredSparseResult() {
+        val result = classifyCustom(
+            position = 5,
+            cropWidth = 300,
+            cropHeight = 95,
+            center = 48.0,
+            lines = listOf(line("5", 0, 43, 20, 53)),
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(1, result.diagnostics.placementLinesRemoved)
+        assertEquals(0, result.diagnostics.centerCount)
     }
 
     @Test
