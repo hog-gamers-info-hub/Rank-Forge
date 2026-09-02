@@ -2552,6 +2552,7 @@ private fun StableHeightHorizontalPager(
                 pageSize = androidx.compose.foundation.pager.PageSize.Fill,
                 pageSpacing = RankForgeSpacing.ExtraSmall,
                 verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.Top,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(pageHeight.toDp()),
