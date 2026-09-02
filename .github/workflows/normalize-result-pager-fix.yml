@@ -82,7 +82,6 @@ jobs:
               }
           }
           '''
-          replacement = "\n".join(line[10:] if line.startswith("          ") else line for line in replacement.split("\n"))
 
           updated = text[:start] + replacement + text[end:]
           encoded = updated.encode("utf-8")
