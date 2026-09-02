@@ -17,13 +17,16 @@ object MatchResultLobbyOcrSlotRanker {
     ): ResultLobbySlotMatchResult = ResultLobbySlotMatcher.rank(
         ResultLobbySlotMatchInput(
             resultPosition = resultRow.position,
-            resultPlayerNames = resultRow.playerSlots
-                .sortedBy { playerSlot -> playerSlot.slot }
-                .map { playerSlot ->
-                    playerSlot.player.resolvedText
-                        .ifBlank { playerSlot.player.ocrText }
-                        .takeIf { playerName -> playerName.isNotBlank() }
-                },
+            resultPlayerNames = (1..4).map { logicalPlayerSlot ->
+                resultRow.playerSlots
+                    .firstOrNull { playerSlot -> playerSlot.slot == logicalPlayerSlot }
+                    ?.player
+                    ?.let { player ->
+                        player.resolvedText
+                            .ifBlank { player.ocrText }
+                            .takeIf { playerName -> playerName.isNotBlank() }
+                    }
+            },
             lobbyCandidates = lobbyOcrResult.slots
                 .sortedBy { lobbySlot -> lobbySlot.slotNumber }
                 .map { lobbySlot ->

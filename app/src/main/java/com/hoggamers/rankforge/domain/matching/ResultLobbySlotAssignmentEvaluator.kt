@@ -42,18 +42,36 @@ object ResultLobbySlotAssignmentEvaluator {
             }
             .sortedBy { it.resultPosition }
 
-        val duplicateSlots = orderedMatchResults
-            .mapNotNull { it.automaticAssignedTeamSlot }
-            .groupingBy { it }
-            .eachCount()
-            .filterValues { it > 1 }
-            .keys
+        val duplicateConflictPositions = orderedMatchResults
+            .mapNotNull { matchResult ->
+                matchResult.automaticAssignedTeamSlot?.let { teamSlot ->
+                    teamSlot to matchResult
+                }
+            }
+            .groupBy(
+                keySelector = { (teamSlot, _) -> teamSlot },
+                valueTransform = { (_, matchResult) -> matchResult },
+            )
+            .values
+            .filter { claimants -> claimants.size > 1 }
+            .flatMap { claimants ->
+                val highestVotePercent = claimants.maxOf { it.winningVotePercent ?: Int.MIN_VALUE }
+                val topClaimants = claimants.filter {
+                    (it.winningVotePercent ?: Int.MIN_VALUE) == highestVotePercent
+                }
+                if (topClaimants.size == 1) {
+                    claimants - topClaimants.single()
+                } else {
+                    claimants
+                }
+            }
+            .mapTo(mutableSetOf()) { it.resultPosition }
 
         val rowResults = orderedMatchResults.map { matchResult ->
             val confidenceAssessment = TeamMatchConfidenceTierClassifier.classify(
                 matchResult.rankedCandidates,
             )
-            val hasDuplicateSlot = matchResult.automaticAssignedTeamSlot?.let { it in duplicateSlots } == true
+            val hasDuplicateSlot = matchResult.resultPosition in duplicateConflictPositions
             val decisionReason = if (hasDuplicateSlot) {
                 ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
             } else {

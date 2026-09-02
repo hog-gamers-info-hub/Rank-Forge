@@ -115,6 +115,233 @@ class ResultLobbySlotAssignmentEvaluatorTest {
     }
 
     @Test
+    fun evaluate_uniqueHighestDuplicateVoteKeepsOnlyTheStrongestAutomaticAssignment() {
+        val weaker = rank(
+            resultPosition = 9,
+            resultPlayers = listOf("Alpha5", "R1", "R2", "R3"),
+            lobbyOverrides = mapOf(5 to listOf("Alpha5", "Other5", "Other6", "Other7")),
+        )
+        val stronger = rank(
+            resultPosition = 11,
+            resultPlayers = listOf("Alpha5", "Bravo5", "Charlie5", "R4"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+
+        val result = evaluate(listOf(weaker, stronger))
+        val weakerRow = result.rows.single { it.resultPosition == 9 }
+        val strongerRow = result.rows.single { it.resultPosition == 11 }
+
+        assertEquals(25, weaker.winningVotePercent)
+        assertEquals(75, stronger.winningVotePercent)
+        assertNull(weakerRow.automaticAssignedTeamSlot)
+        assertEquals(ResultLobbySlotDecisionStatus.MANUAL, weakerRow.decisionStatus)
+        assertEquals(ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS, weakerRow.decisionReason)
+        assertEquals(TeamAssignmentSafetyStatus.REVIEW_REQUIRED, weakerRow.assignmentSafety.safetyStatus)
+        assertEquals(5, strongerRow.automaticAssignedTeamSlot)
+        assertEquals(stronger.decisionStatus, strongerRow.decisionStatus)
+        assertEquals(stronger.decisionReason, strongerRow.decisionReason)
+        assertEquals(TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT, strongerRow.assignmentSafety.safetyStatus)
+    }
+
+    @Test
+    fun evaluate_uniqueHighestFiftyPercentDuplicateKeepsItsAutomaticAssignment() {
+        val weaker = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "R1", "R2", "R3"),
+            lobbyOverrides = mapOf(5 to listOf("Alpha5", "Other5", "Other6", "Other7")),
+        )
+        val stronger = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "Bravo5", "R4", "R5"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+
+        val result = evaluate(listOf(weaker, stronger))
+
+        assertEquals(25, weaker.winningVotePercent)
+        assertEquals(50, stronger.winningVotePercent)
+        assertNull(result.rows.single { it.resultPosition == 1 }.automaticAssignedTeamSlot)
+        assertEquals(5, result.rows.single { it.resultPosition == 2 }.automaticAssignedTeamSlot)
+    }
+
+    @Test
+    fun evaluateEqualFiftyPercentDuplicateLeavesBothRowsManual() {
+        val first = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "Bravo5", "R1", "R2"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val second = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "Bravo5", "R3", "R4"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+
+        val result = evaluate(listOf(first, second))
+
+        assertEquals(50, first.winningVotePercent)
+        assertEquals(50, second.winningVotePercent)
+        result.rows.forEach { row ->
+            assertNull(row.automaticAssignedTeamSlot)
+            assertEquals(ResultLobbySlotDecisionStatus.MANUAL, row.decisionStatus)
+            assertEquals(ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS, row.decisionReason)
+        }
+    }
+
+    @Test
+    fun evaluateEqualTwentyFivePercentDuplicateLeavesBothRowsManual() {
+        val first = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "R1", "R2", "R3"),
+            lobbyOverrides = mapOf(5 to listOf("Alpha5", "Other5", "Other6", "Other7")),
+        )
+        val second = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "R4", "R5", "R6"),
+            lobbyOverrides = mapOf(5 to listOf("Alpha5", "Other5", "Other6", "Other7")),
+        )
+
+        val result = evaluate(listOf(first, second))
+
+        assertEquals(25, first.winningVotePercent)
+        assertEquals(25, second.winningVotePercent)
+        assertTrue(result.rows.all { it.automaticAssignedTeamSlot == null })
+        assertTrue(result.rows.all {
+            it.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS &&
+                it.assignmentSafety.safetyStatus == TeamAssignmentSafetyStatus.REVIEW_REQUIRED
+        })
+    }
+
+    @Test
+    fun evaluateThreeDuplicateClaimantsKeepsOnlyUniqueHighestVote() {
+        val highest = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "Bravo5", "Charlie5", "R1"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val middle = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "Bravo5", "R2", "R3"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val lowest = rank(
+            resultPosition = 3,
+            resultPlayers = listOf("Alpha5", "R4", "R5", "R6"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+
+        val result = evaluate(listOf(highest, middle, lowest))
+
+        assertEquals(5, result.rows.single { it.resultPosition == 1 }.automaticAssignedTeamSlot)
+        assertTrue(result.rows.filter { it.resultPosition != 1 }.all {
+            it.automaticAssignedTeamSlot == null &&
+                it.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+        })
+    }
+
+    @Test
+    fun evaluateThreeDuplicateClaimantsWithTopPercentageTieLeavesAllManual() {
+        val first = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "Bravo5", "Charlie5", "R1"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val second = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "Bravo5", "Charlie5", "R2"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val third = rank(
+            resultPosition = 3,
+            resultPlayers = listOf("Alpha5", "R3", "R4", "R5"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+
+        val result = evaluate(listOf(first, second, third))
+
+        assertTrue(result.rows.all {
+            it.automaticAssignedTeamSlot == null &&
+                it.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+        })
+    }
+
+    @Test
+    fun evaluateResolvesIndependentDuplicateGroupsSeparately() {
+        val slotFiveWinner = rank(
+            resultPosition = 1,
+            resultPlayers = listOf("Alpha5", "Bravo5", "Charlie5", "R1"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val slotFiveLoser = rank(
+            resultPosition = 2,
+            resultPlayers = listOf("Alpha5", "R2", "R3", "R4"),
+            lobbyOverrides = mapOf(5 to teamPlayers(5)),
+        )
+        val slotEightWinner = rank(
+            resultPosition = 3,
+            resultPlayers = listOf("Alpha8", "Bravo8", "R5", "R6"),
+            lobbyOverrides = mapOf(8 to teamPlayers(8)),
+        )
+        val slotEightLoser = rank(
+            resultPosition = 4,
+            resultPlayers = listOf("Alpha8", "R7", "R8", "R9"),
+            lobbyOverrides = mapOf(8 to teamPlayers(8)),
+        )
+
+        val result = evaluate(listOf(slotEightLoser, slotFiveLoser, slotEightWinner, slotFiveWinner))
+
+        assertEquals(5, result.rows.single { it.resultPosition == 1 }.automaticAssignedTeamSlot)
+        assertNull(result.rows.single { it.resultPosition == 2 }.automaticAssignedTeamSlot)
+        assertEquals(8, result.rows.single { it.resultPosition == 3 }.automaticAssignedTeamSlot)
+        assertNull(result.rows.single { it.resultPosition == 4 }.automaticAssignedTeamSlot)
+    }
+
+    @Test
+    fun evaluateObservedDeviceConflictKeepsPositionElevenAndDemotesPositionNine() {
+        val lobbyPlayers = listOf(
+            "FLX_RUSER!!",
+            "APX MACHINE",
+            "APX INFERNO",
+            "APX ZENOX",
+        )
+        val positionNine = rank(
+            resultPosition = 9,
+            resultPlayers = listOf("MAFIABOSS", "ELX_RUSER!!", "HACKERBOSS", null),
+            lobbyOverrides = mapOf(5 to lobbyPlayers),
+        )
+        val positionEleven = rank(
+            resultPosition = 11,
+            resultPlayers = listOf("APX ANGELIC", "ABX MACHINE", "APX INFERNO", "APX ZENOX"),
+            lobbyOverrides = mapOf(5 to lobbyPlayers),
+        )
+
+        val result = evaluate(listOf(positionNine, positionEleven))
+        val positionNineRow = result.rows.single { it.resultPosition == 9 }
+        val positionElevenRow = result.rows.single { it.resultPosition == 11 }
+
+        assertEquals(25, positionNine.winningVotePercent)
+        assertTrue(positionEleven.winningVotePercent ?: 0 > positionNine.winningVotePercent ?: 0)
+        assertNull(positionNineRow.automaticAssignedTeamSlot)
+        assertEquals(ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS, positionNineRow.decisionReason)
+        assertEquals(5, positionElevenRow.automaticAssignedTeamSlot)
+        assertEquals(TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT, positionElevenRow.assignmentSafety.safetyStatus)
+    }
+
+    @Test
+    fun evaluateNeverReturnsDuplicateAutomaticTeamSlots() {
+        val matchResults = listOf(
+            rank(1, listOf("Alpha5", "Bravo5", "Charlie5", "R1"), mapOf(5 to teamPlayers(5))),
+            rank(2, listOf("Alpha5", "Bravo5", "R2", "R3"), mapOf(5 to teamPlayers(5))),
+            rank(3, listOf("Alpha8", "Bravo8", "R4", "R5"), mapOf(8 to teamPlayers(8))),
+            rank(4, listOf("Alpha8", "R6", "R7", "R8"), mapOf(8 to teamPlayers(8))),
+        )
+
+        val automaticSlots = evaluate(matchResults).rows.mapNotNull { it.automaticAssignedTeamSlot }
+
+        assertEquals(automaticSlots.distinct(), automaticSlots)
+    }
+
+    @Test
     fun evaluateUnavailableLobbyEvidenceNeverGeneratesAutomaticAssignment() {
         val matchResult = ResultLobbySlotMatcher.rank(
             ResultLobbySlotMatchInput(

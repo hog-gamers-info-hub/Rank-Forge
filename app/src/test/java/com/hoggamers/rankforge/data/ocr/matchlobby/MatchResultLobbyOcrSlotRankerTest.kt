@@ -7,6 +7,8 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,6 +56,72 @@ class MatchResultLobbyOcrSlotRankerTest {
     }
 
     @Test
+    fun rank_preservesFourLogicalSlotsWhenResultPlayerFourIsMissing() {
+        val result = MatchResultLobbyOcrSlotRanker.rank(
+            resultRow = resultRow(
+                position = 7,
+                playerNamesBySlot = mapOf(1 to "P1", 2 to "P2", 3 to "P3"),
+            ),
+            lobbyOcrResult = lobbyResult(overrides = emptyMap()),
+        )
+
+        assertEquals(listOf("P1", "P2", "P3", null), result.resultPlayerNames)
+    }
+
+    @Test
+    fun rank_preservesMissingMiddleResultPlayerSlotWithoutShiftingLaterPlayers() {
+        val result = MatchResultLobbyOcrSlotRanker.rank(
+            resultRow = resultRow(
+                position = 7,
+                playerNamesBySlot = mapOf(1 to "P1", 3 to "P3", 4 to "P4"),
+            ),
+            lobbyOcrResult = lobbyResult(overrides = emptyMap()),
+        )
+
+        assertEquals(listOf("P1", null, "P3", "P4"), result.resultPlayerNames)
+    }
+
+    @Test
+    fun rank_keepsTwoDetectedPlayersEligibleForUniqueAutomaticLobbyVote() {
+        val result = MatchResultLobbyOcrSlotRanker.rank(
+            resultRow = resultRow(
+                position = 7,
+                playerNamesBySlot = mapOf(
+                    1 to "EB-ALPHA.18",
+                    2 to "ydvAbhi",
+                    3 to "KAPPA",
+                ),
+            ),
+            lobbyOcrResult = lobbyResult(
+                overrides = mapOf(
+                    12 to listOf("FB-ALPHA.18", "ydvAbhi☆", "OMEGA", null),
+                ),
+            ),
+        )
+
+        val slotTwelve = result.slotVoteScores.single { it.teamSlot == 12 }
+        assertEquals(listOf("EB-ALPHA.18", "ydvAbhi", "KAPPA", null), result.resultPlayerNames)
+        assertEquals(2, slotTwelve.voteCount)
+        assertEquals(listOf(1, 2), slotTwelve.supportingResultPlayerSlots)
+        assertEquals(ResultLobbySlotDecisionStatus.AUTOMATIC, result.decisionStatus)
+        assertEquals(ResultLobbySlotDecisionReason.UNIQUE_VOTE_WINNER, result.decisionReason)
+        assertEquals(12, result.automaticAssignedTeamSlot)
+    }
+
+    @Test
+    fun rank_allMissingResultPlayersProducesManualNoPlausibleMatch() {
+        val result = MatchResultLobbyOcrSlotRanker.rank(
+            resultRow = resultRow(position = 7, playerNamesBySlot = emptyMap()),
+            lobbyOcrResult = lobbyResult(overrides = emptyMap()),
+        )
+
+        assertEquals(listOf(null, null, null, null), result.resultPlayerNames)
+        assertEquals(ResultLobbySlotDecisionStatus.MANUAL, result.decisionStatus)
+        assertEquals(ResultLobbySlotDecisionReason.NO_PLAUSIBLE_MATCH, result.decisionReason)
+        assertTrue(result.playerSlotVoteEvidence.isEmpty())
+    }
+
+    @Test
     fun rank_unavailableLobbyPlayersContributeNoFabricatedMatches() {
         val result = MatchResultLobbyOcrSlotRanker.rank(
             resultRow = resultRow(
@@ -90,7 +158,10 @@ class MatchResultLobbyOcrSlotRankerTest {
 
     private fun resultRow(
         position: Int,
-        playerNames: List<String?>,
+        playerNames: List<String?> = exactPlayers,
+        playerNamesBySlot: Map<Int, String?> = playerNames.mapIndexed { index, playerName ->
+            index + 1 to playerName
+        }.toMap(),
     ): MatchResultOcrRow = MatchResultOcrRow(
         position = position,
         source = MatchResultOcrRowSource.UPPER_TEMPLATE,
@@ -102,8 +173,7 @@ class MatchResultLobbyOcrSlotRankerTest {
             text = position.toString(),
             status = MatchResultOcrFieldStatus.DIRECT_NUMERIC,
         ),
-        playerSlots = playerNames.mapIndexed { index, playerName ->
-            val playerSlot = index + 1
+        playerSlots = playerNamesBySlot.map { (playerSlot, playerName) ->
             MatchResultOcrPlayerSlot(
                 slot = playerSlot,
                 player = field(
