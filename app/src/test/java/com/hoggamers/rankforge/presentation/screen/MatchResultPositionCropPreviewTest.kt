@@ -28,6 +28,13 @@ class MatchResultPositionCropPreviewTest {
     }
 
     @Test
+    fun lowerPreviewStateForElevenTeamTournamentExposesOnlyPositionEleven() {
+        val state = available(listOf(11))
+
+        assertEquals(listOf(11), state.sortedCrops().map(MatchResultPositionCropPreview::position))
+    }
+
+    @Test
     fun upperAndLowerPreviewStatesRemainIndependent() {
         val previews = defaultMatchResultPositionCropPreviewStates().toMutableMap().apply {
             this[MatchResultScreenshotRole.MATCH_RESULT_UPPER] = available((1..10).toList())

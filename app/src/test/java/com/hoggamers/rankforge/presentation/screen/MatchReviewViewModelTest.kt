@@ -872,6 +872,10 @@ class MatchReviewViewModelTest {
         )
         assertTrue(generator.requests.none(RecordingMatchResultPositionCropPreviewGenerator.Request::allowUpperPositionElevenFallback))
         assertEquals(
+            listOf(12, 12),
+            generator.requests.map(RecordingMatchResultPositionCropPreviewGenerator.Request::activeTeamCount),
+        )
+        assertEquals(
             (1..10).toList(),
             scenario.viewModel.uiState.value.resultPositionCropPreviews
                 .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
@@ -2885,6 +2889,7 @@ class MatchReviewViewModelTest {
             val confirmedCrop: OcrNormalizedCropRect,
             val role: MatchResultScreenshotRole,
             val allowUpperPositionElevenFallback: Boolean,
+            val activeTeamCount: Int?,
         )
 
         val requests = mutableListOf<Request>()
@@ -2894,8 +2899,9 @@ class MatchReviewViewModelTest {
             confirmedCrop: OcrNormalizedCropRect,
             storedRole: MatchResultScreenshotRole,
             allowUpperPositionElevenFallback: Boolean,
+            activeTeamCount: Int?,
         ): MatchResultPositionCropPreviewState {
-            requests += Request(localFile, confirmedCrop, storedRole, allowUpperPositionElevenFallback)
+            requests += Request(localFile, confirmedCrop, storedRole, allowUpperPositionElevenFallback, activeTeamCount)
             return statesByRole[storedRole] ?: MatchResultPositionCropPreviewState.Unavailable(
                 MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
             )

@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
+import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultLowerProcessingFallback
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropGenerationResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropObservationResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultSemanticRoleResolution
@@ -95,6 +96,7 @@ fun interface MatchResultPositionCropPreviewGenerator {
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        activeTeamCount: Int?,
     ): MatchResultPositionCropPreviewState
 }
 
@@ -103,12 +105,14 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
 ) : MatchResultPositionCropPreviewGenerator {
     private val semanticRoleResolver = MatchResultSemanticRoleResolver()
+    private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
 
     override suspend fun generate(
         localFile: File,
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        activeTeamCount: Int?,
     ): MatchResultPositionCropPreviewState = withContext(Dispatchers.IO) {
         val source = decodeConfirmedCrop(localFile, confirmedCrop)
             ?: return@withContext MatchResultPositionCropPreviewState.Unavailable(
@@ -125,18 +129,34 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                     MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
                 )
             }
-            val resolved = when (val result = semanticRoleResolver.resolve(observation.evidence)) {
-                is MatchResultSemanticRoleResolution.Resolved -> result
-                MatchResultSemanticRoleResolution.Unresolved,
-                MatchResultSemanticRoleResolution.Ambiguous,
-                -> return@withContext MatchResultPositionCropPreviewState.Unavailable(
-                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
-                )
+            val semanticResolution = semanticRoleResolver.resolve(observation.evidence)
+            var recoveredGeometry: MatchResultPositionCropCalculationResult.Available? = null
+            val semanticRole = when (semanticResolution) {
+                is MatchResultSemanticRoleResolution.Resolved -> semanticResolution.role
+                MatchResultSemanticRoleResolution.Ambiguous ->
+                    return@withContext MatchResultPositionCropPreviewState.Unavailable(
+                        MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                    )
+                MatchResultSemanticRoleResolution.Unresolved -> {
+                    if (storedRole != MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                        return@withContext MatchResultPositionCropPreviewState.Unavailable(
+                            MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                        )
+                    }
+                    recoveredGeometry = lowerProcessingFallback.recover(
+                        semanticResolution = semanticResolution,
+                        requestedRole = storedRole,
+                        evidence = observation.evidence,
+                        activeTeamCount = activeTeamCount,
+                    ) ?: return@withContext MatchResultPositionCropPreviewState.Unavailable(
+                        MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                    )
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                }
             }
-            val semanticRole = resolved.role
             val allowSemanticUpperFallback = semanticRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
                 allowUpperPositionElevenFallback
-            val geometry = positionCropGenerator.calculate(
+            val geometry = recoveredGeometry ?: positionCropGenerator.calculate(
                 evidence = observation.evidence,
                 role = semanticRole,
                 allowUpperPositionElevenFallback = allowSemanticUpperFallback,
@@ -149,7 +169,11 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                 is MatchResultPositionCropCalculationResult.Available ->
                     positionCropGenerator.generate(source, geometry)
             }
-            generated.toPreviewState(semanticRole, allowSemanticUpperFallback)
+            generated.toPreviewState(
+                semanticRole = semanticRole,
+                allowUpperPositionElevenFallback = allowSemanticUpperFallback,
+                activeTeamCount = activeTeamCount,
+            )
         } finally {
             if (!source.isRecycled) source.recycle()
         }
@@ -188,6 +212,7 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
     private fun MatchResultPositionCropGenerationResult.toPreviewState(
         semanticRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        activeTeamCount: Int?,
     ): MatchResultPositionCropPreviewState = when (this) {
         is MatchResultPositionCropGenerationResult.Generated -> {
             val previews = crops
@@ -204,7 +229,10 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                     positions == (1..10).toList() ||
                         (allowUpperPositionElevenFallback && positions == (1..11).toList())
 
-                MatchResultScreenshotRole.MATCH_RESULT_LOWER -> positions == (11..12).toList()
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER -> positions == when (activeTeamCount) {
+                    11 -> listOf(11)
+                    else -> (11..12).toList()
+                }
             }
             if (hasExpectedPositions) {
                 MatchResultPositionCropPreviewState.Available(previews)
@@ -228,6 +256,7 @@ object NoOpMatchResultPositionCropPreviewGenerator : MatchResultPositionCropPrev
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        activeTeamCount: Int?,
     ): MatchResultPositionCropPreviewState = MatchResultPositionCropPreviewState.Unavailable(
         MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
     )

@@ -73,6 +73,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
@@ -283,6 +284,7 @@ class MatchReviewViewModel @Inject constructor(
                         isAvailable = true,
                         tournamentId = tournamentId,
                         matchId = matchId,
+                        activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
                         matchNumber = match.matchNumber,
                         status = match.status,
                         correctionHistory = match.correctionHistory,
@@ -391,14 +393,16 @@ class MatchReviewViewModel @Inject constructor(
 
     /** Runs the preview-only Result position crop pipeline from the explicit Calculate Points action. */
     fun calculateResultPositionCrops() {
-        if (!_uiState.value.isAvailable) return
-        val lowerAvailable = _uiState.value.resultScreenshots
+        val state = _uiState.value
+        if (!state.isAvailable) return
+        val lowerAvailable = state.resultScreenshots
             .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            .resultPositionCropPreviewInputKey() != null
+            .resultPositionCropPreviewInputKey(activeTeamCount = state.activeTeamCount) != null
         MatchResultScreenshotRole.entries.forEach { storedRole ->
             generateResultPositionCropPreviews(
                 storedRole = storedRole,
                 allowUpperPositionElevenFallback = !lowerAvailable,
+                activeTeamCount = state.activeTeamCount,
             )
         }
     }
@@ -2735,12 +2739,14 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     private fun clearStaleResultPositionCropPreviews() {
+        val activeTeamCount = _uiState.value.activeTeamCount
         val lowerAvailable = _uiState.value.resultScreenshots
             .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            .resultPositionCropPreviewInputKey() != null
+            .resultPositionCropPreviewInputKey(activeTeamCount = activeTeamCount) != null
         MatchResultScreenshotRole.entries.forEach { role ->
             val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
                 allowUpperPositionElevenFallback = !lowerAvailable,
+                activeTeamCount = activeTeamCount,
             )
             if (resultPositionCropInputs[role] != inputKey) {
                 clearResultPositionCropPreviews(role)
@@ -2751,9 +2757,11 @@ class MatchReviewViewModel @Inject constructor(
     private fun generateResultPositionCropPreviews(
         storedRole: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
+        activeTeamCount: Int?,
     ) {
         val inputKey = _uiState.value.resultScreenshots.slot(storedRole).resultPositionCropPreviewInputKey(
             allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+            activeTeamCount = activeTeamCount,
         )
             ?: run {
                 clearResultPositionCropPreviews(storedRole)
@@ -2786,6 +2794,7 @@ class MatchReviewViewModel @Inject constructor(
                         confirmedCrop = crop,
                         storedRole = storedRole,
                         allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
+                        activeTeamCount = activeTeamCount,
                     )
                 }
             } catch (cancellation: CancellationException) {
@@ -2878,6 +2887,7 @@ private fun MutableStateFlow<MatchReviewUiState>.updateSlot(
 
 private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewInputKey(
     allowUpperPositionElevenFallback: Boolean = false,
+    activeTeamCount: Int? = null,
 ): String? {
     val crop = confirmedCrop
     val path = localRelativePath
@@ -2894,6 +2904,7 @@ private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewInputKey(
         crop.right,
         crop.bottom,
         allowUpperPositionElevenFallback,
+        activeTeamCount,
     ).joinToString(":")
 }
 
