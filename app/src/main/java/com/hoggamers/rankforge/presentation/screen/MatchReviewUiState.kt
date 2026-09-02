@@ -161,6 +161,7 @@ data class MatchReviewUiState(
     val isAvailable: Boolean = false,
     val tournamentId: String? = null,
     val matchId: String? = null,
+    val activeTeamCount: Int? = null,
     val matchNumber: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
     val rows: List<MatchReviewRowUiState> = emptyList(),

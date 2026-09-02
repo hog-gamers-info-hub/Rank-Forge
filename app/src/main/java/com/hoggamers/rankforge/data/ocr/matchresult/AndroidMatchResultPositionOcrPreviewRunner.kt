@@ -21,6 +21,8 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanti
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 import java.io.File
 import java.util.concurrent.CancellationException
@@ -28,6 +30,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /** Production panel/ROI PP route. */
@@ -37,9 +40,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
     private val paddleEngineProvider: MatchResultPositionPaddleOcrEngineProvider,
+    private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
     private val semanticRoleResolver: MatchResultSemanticRoleResolver = MatchResultSemanticRoleResolver(),
 ) : MatchResultOcrPreviewRunner {
+    private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
     ): MatchResultOcrPreviewProcessingResult = withContext(Dispatchers.IO) {
@@ -82,17 +87,30 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 MatchResultPositionCropObservationResult.OcrFailed,
                 -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
             }
-            val resolved = when (val result = semanticRoleResolver.resolve(observation.evidence)) {
-                is MatchResultSemanticRoleResolution.Resolved -> result
-                MatchResultSemanticRoleResolution.Unresolved,
-                MatchResultSemanticRoleResolution.Ambiguous,
-                -> return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+            val semanticResolution = semanticRoleResolver.resolve(observation.evidence)
+            var fallbackGeometry: MatchResultPositionCropCalculationResult.Available? = null
+            val semanticRole = when (semanticResolution) {
+                is MatchResultSemanticRoleResolution.Resolved -> semanticResolution.role
+                MatchResultSemanticRoleResolution.Ambiguous ->
+                    return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+                MatchResultSemanticRoleResolution.Unresolved -> {
+                    if (identity.role != MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                        return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+                    }
+                    val activeTeamCount = readActiveTeamCount(identity.tournamentId)
+                    fallbackGeometry = lowerProcessingFallback.recover(
+                        semanticResolution = semanticResolution,
+                        requestedRole = identity.role,
+                        evidence = observation.evidence,
+                        activeTeamCount = activeTeamCount,
+                    ) ?: return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleResolutionFailed
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                }
             }
-            val semanticRole = resolved.role
             resolvedSemanticRole = semanticRole
             val allowUpperFallback = semanticRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
                 !hasConfirmedLowerAsset(identity, owner)
-            val processingGeometry = when (
+            val processingGeometry = fallbackGeometry ?: when (
                 val result = positionCropGenerator.calculate(
                     evidence = observation.evidence,
                     role = semanticRole,
@@ -253,6 +271,17 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         throw cancellation
     } catch (_: Throwable) {
         true
+    }
+
+    private suspend fun readActiveTeamCount(tournamentId: String): Int? = try {
+        observeTournamentSlots(tournamentId)
+            .first()
+            .analyzeTeamSlotParticipation()
+            .activeCount
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        null
     }
 
     private fun decodeCrop(file: File, pixelCrop: OcrPixelCropRect): Bitmap? {

@@ -92,6 +92,8 @@ class MatchResultPositionCropCalculator(
         evidence: MatchResultAutoCropEvidence,
         role: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean = false,
+        expectedLowerPositions: List<Int> = (11..12).toList(),
+        minimumRightPlacementAnchorCount: Int = 0,
     ): MatchResultPositionCropCalculationResult {
         val dimensions = evidence.imageDimensions
 
@@ -114,6 +116,12 @@ class MatchResultPositionCropCalculator(
         if (rightAnchors.isEmpty()) {
             return unavailable(MatchResultPositionCropUnavailableReason.RIGHT_POSITION_ANCHOR_UNAVAILABLE)
         }
+        if (
+            role == MatchResultScreenshotRole.MATCH_RESULT_LOWER &&
+            rightAnchors.count { it.position in 6..10 } < minimumRightPlacementAnchorCount
+        ) {
+            return unavailable(MatchResultPositionCropUnavailableReason.RIGHT_POSITION_ANCHOR_UNAVAILABLE)
+        }
 
         val directLeftPitch = resolveDirectLeftPitch(
             anchorFour = anchorFour,
@@ -125,6 +133,7 @@ class MatchResultPositionCropCalculator(
             anchors = rightAnchors,
             imageWidth = dimensions.width,
             imageHeight = dimensions.height,
+            requireConsistentAnchors = minimumRightPlacementAnchorCount > 0,
         )
 
         val leftPitch = directLeftPitch ?: if (
@@ -223,7 +232,8 @@ class MatchResultPositionCropCalculator(
                 rightAnchors.any { it.position == 11 }
         val rightPositions = when (role) {
             MatchResultScreenshotRole.MATCH_RESULT_UPPER -> 6..10
-            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> 11..12
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> expectedLowerPositions.toIntRangeOrNull()
+                ?: return unavailable(MatchResultPositionCropUnavailableReason.POSITION_RECT_OUT_OF_BOUNDS)
         }
         val rightCrops = buildColumnCrops(
             positions = rightPositions,
@@ -259,7 +269,7 @@ class MatchResultPositionCropCalculator(
                 } else {
                     (1..10).toList()
                 }
-            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> (11..12).toList()
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> expectedLowerPositions
         }
         if (crops.map { it.position } != expectedPositions) {
             return unavailable(MatchResultPositionCropUnavailableReason.POSITION_RECT_OUT_OF_BOUNDS)
@@ -332,6 +342,7 @@ class MatchResultPositionCropCalculator(
         anchors: List<PositionedBox>,
         imageWidth: Int,
         imageHeight: Int,
+        requireConsistentAnchors: Boolean = false,
     ): PitchResolution? {
         val candidates = buildList {
             for (firstIndex in anchors.indices) {
@@ -365,7 +376,25 @@ class MatchResultPositionCropCalculator(
             }.thenBy { it.horizontalDelta }
                 .thenBy { it.positionGap },
         ) ?: return null
+        if (requireConsistentAnchors && !rightAnchorsFitPitch(anchors, selected.pitch)) return null
         return PitchResolution(selected.pitch, selected.source)
+    }
+
+    private fun rightAnchorsFitPitch(
+        anchors: List<PositionedBox>,
+        pitch: Double,
+    ): Boolean {
+        val reference = median(
+            anchors.map { anchor ->
+                anchor.box.centerY() - (anchor.position - anchors.minOf { it.position }) * pitch
+            },
+        ) ?: return false
+        return anchors.all { anchor ->
+            abs(
+                anchor.box.centerY() -
+                    (reference + (anchor.position - anchors.minOf { it.position }) * pitch),
+            ) <= pitch * MAX_RIGHT_ANCHOR_RESIDUAL_PITCH_FRACTION
+        }
     }
 
     private fun buildColumnCrops(
@@ -480,6 +509,12 @@ class MatchResultPositionCropCalculator(
             pitch >= imageHeight * MIN_ROW_PITCH_HEIGHT_FRACTION &&
             pitch <= imageHeight * MAX_ROW_PITCH_HEIGHT_FRACTION
 
+    private fun List<Int>.toIntRangeOrNull(): IntRange? = when (this) {
+        listOf(11) -> 11..11
+        listOf(11, 12) -> 11..12
+        else -> null
+    }
+
     private fun median(values: List<Double>): Double? {
         val sorted = values.filter { it.isFinite() }.sorted()
         if (sorted.isEmpty()) return null
@@ -508,6 +543,7 @@ class MatchResultPositionCropCalculator(
         const val MIN_ROW_PITCH_HEIGHT_FRACTION = 0.03
         const val MAX_ROW_PITCH_HEIGHT_FRACTION = 0.30
         const val MIN_REQUIRED_VISIBLE_ROW_FRACTION = 0.60
+        const val MAX_RIGHT_ANCHOR_RESIDUAL_PITCH_FRACTION = 0.35
     }
 }
 

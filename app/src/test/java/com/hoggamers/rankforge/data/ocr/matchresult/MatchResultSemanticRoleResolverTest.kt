@@ -31,6 +31,86 @@ class MatchResultSemanticRoleResolverTest {
     }
 
     @Test
+    fun exactTwelveInPlacementColumnResolvesLowerWhenElevenIsMissing() {
+        val result = resolver.resolve(
+            lowerAnchoredEvidence(observation("12", 646, 400, 684, 430)),
+        ) as MatchResultSemanticRoleResolution.Resolved
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+    }
+
+    @Test
+    fun exactTwelveOutsidePlacementColumnDoesNotResolveLower() {
+        assertEquals(
+            MatchResultSemanticRoleResolution.Unresolved,
+            resolver.resolve(lowerAnchoredEvidence(observation("12", 200, 400, 238, 430))),
+        )
+    }
+
+    @Test
+    fun shortMisreadAtExpectedPositionTwelveResolvesLower() {
+        val result = resolver.resolve(
+            lowerAnchoredEvidence(observation("1Z", 646, 400, 684, 430)),
+        ) as MatchResultSemanticRoleResolution.Resolved
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+    }
+
+    @Test
+    fun shortTextInPlacementColumnAtWrongVerticalPositionDoesNotResolveLower() {
+        assertEquals(
+            MatchResultSemanticRoleResolution.Unresolved,
+            resolver.resolve(lowerAnchoredEvidence(observation("AB", 646, 320, 684, 350))),
+        )
+    }
+
+    @Test
+    fun shortTextNearExpectedPositionTwelveInWrongColumnDoesNotResolveLower() {
+        assertEquals(
+            MatchResultSemanticRoleResolution.Unresolved,
+            resolver.resolve(lowerAnchoredEvidence(observation("AB", 800, 400, 838, 430))),
+        )
+    }
+
+    @Test
+    fun missingPositionTwelveElementDoesNotResolveLowerFromEmptySpace() {
+        assertEquals(
+            MatchResultSemanticRoleResolution.Unresolved,
+            resolver.resolve(
+                lowerAnchoredEvidence(observation("11", 646, 320, 684, 350)),
+            ),
+        )
+    }
+
+    @Test
+    fun nonConsecutiveAnchorsCanValidateMisreadPositionTwelve() {
+        val evidence = MatchResultAutoCropEvidence(
+            observations = eliminationObservations() + listOf(
+                observation("8", 646, 80, 684, 110),
+                observation("10", 646, 240, 684, 270),
+                observation("1Z", 646, 400, 684, 430),
+            ),
+            imageDimensions = OcrImageDimensions(1_200, 500),
+        )
+
+        val result = resolver.resolve(evidence) as MatchResultSemanticRoleResolution.Resolved
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+    }
+
+    @Test
+    fun upperWithPositionElevenButNoPositionTwelveEvidenceStillResolvesUpper() {
+        val upper = upperEvidence()
+        val result = resolver.resolve(
+            upper.copy(
+                observations = upper.observations + observation("11", 650, 420, 680, 450),
+            ),
+        ) as MatchResultSemanticRoleResolution.Resolved
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.role)
+    }
+
+    @Test
     fun positionElevenFallbackCannotResolveAnUpperRole() {
         val upper = upperEvidence()
         val result = resolver.resolve(
@@ -87,6 +167,17 @@ class MatchResultSemanticRoleResolverTest {
             observation("11", 646, 320, 684, 350),
             observation("12", 646, 400, 684, 430),
         ),
+        imageDimensions = OcrImageDimensions(1_200, 500),
+    )
+
+    private fun lowerAnchoredEvidence(
+        vararg observations: MatchResultAutoCropObservation,
+    ): MatchResultAutoCropEvidence = MatchResultAutoCropEvidence(
+        observations = eliminationObservations() + listOf(
+            observation("8", 646, 80, 684, 110),
+            observation("9", 646, 160, 684, 190),
+            observation("10", 646, 240, 684, 270),
+        ) + observations,
         imageDimensions = OcrImageDimensions(1_200, 500),
     )
 
