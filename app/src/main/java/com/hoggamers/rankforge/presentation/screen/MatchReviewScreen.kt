@@ -2525,44 +2525,44 @@ private fun StableHeightHorizontalPager(
     SubcomposeLayout(modifier = modifier) { constraints ->
         val pageMeasurementConstraints = constraints.copy(minWidth = 0, minHeight = 0)
         val measurementPages = if (pageCount > 0) {
-  val currentPage = state.currentPage.coerceIn(0, pageCount - 1)
-  if (state.isScrollInProgress) {
-      listOf(
-          currentPage,
-          state.targetPage.coerceIn(0, pageCount - 1),
-      ).distinct()
-  } else {
-      listOf(currentPage)
-  }
+            val currentPage = state.currentPage.coerceIn(0, pageCount - 1)
+            if (state.isScrollInProgress) {
+                listOf(
+                    currentPage,
+                    state.targetPage.coerceIn(0, pageCount - 1),
+                ).distinct()
+            } else {
+                listOf(currentPage)
+            }
         } else {
-  emptyList()
+            emptyList()
         }
         val measuredPageHeight = measurementPages.maxOfOrNull { page ->
-  subcompose("measure-page-$page") { pageContent(page) }
-      .map { measurable -> measurable.measure(pageMeasurementConstraints).height }
-      .maxOrNull()
-      ?: 0
+            subcompose("measure-page-$page") { pageContent(page) }
+                .map { measurable -> measurable.measure(pageMeasurementConstraints).height }
+                .maxOrNull()
+                ?: 0
         } ?: 0
         val pageHeight = measuredPageHeight
-  .coerceAtLeast(constraints.minHeight)
-  .let { measured ->
-      if (constraints.hasBoundedHeight) measured.coerceAtMost(constraints.maxHeight) else measured
-  }
+            .coerceAtLeast(constraints.minHeight)
+            .let { measured ->
+                if (constraints.hasBoundedHeight) measured.coerceAtMost(constraints.maxHeight) else measured
+            }
         val pagerConstraints = constraints.copy(minHeight = pageHeight, maxHeight = pageHeight)
         val pager = subcompose("pager") {
-  HorizontalPager(
-      state = state,
-      pageSize = androidx.compose.foundation.pager.PageSize.Fill,
-      pageSpacing = RankForgeSpacing.ExtraSmall,
-      verticalAlignment = Alignment.Top,
-      modifier = Modifier
-          .fillMaxWidth()
-          .height(pageHeight.toDp()),
-      pageContent = { page -> pageContent(page) },
-  )
+            HorizontalPager(
+                state = state,
+                pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+                pageSpacing = RankForgeSpacing.ExtraSmall,
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(pageHeight.toDp()),
+                pageContent = { page -> pageContent(page) },
+            )
         }.single().measure(pagerConstraints)
         layout(pager.width, pageHeight) {
-  pager.place(0, 0)
+            pager.place(0, 0)
         }
     }
 }
