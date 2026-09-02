@@ -2524,7 +2524,20 @@ private fun StableHeightHorizontalPager(
 ) {
     SubcomposeLayout(modifier = modifier) { constraints ->
         val pageMeasurementConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-        val measuredPageHeight = (0 until pageCount).maxOfOrNull { page ->
+        val measurementPages = if (pageCount > 0) {
+            val currentPage = state.currentPage.coerceIn(0, pageCount - 1)
+            if (state.isScrollInProgress) {
+                listOf(
+                    currentPage,
+                    state.targetPage.coerceIn(0, pageCount - 1),
+                ).distinct()
+            } else {
+                listOf(currentPage)
+            }
+        } else {
+            emptyList()
+        }
+        val measuredPageHeight = measurementPages.maxOfOrNull { page ->
             subcompose("measure-page-$page") { pageContent(page) }
                 .map { measurable -> measurable.measure(pageMeasurementConstraints).height }
                 .maxOrNull()
@@ -2541,6 +2554,7 @@ private fun StableHeightHorizontalPager(
                 state = state,
                 pageSize = androidx.compose.foundation.pager.PageSize.Fill,
                 pageSpacing = RankForgeSpacing.ExtraSmall,
+                verticalAlignment = Alignment.Top,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(pageHeight.toDp()),
