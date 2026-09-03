@@ -296,6 +296,10 @@ class MatchReviewViewModel @Inject constructor(
                     val slotsByNumber = slots.associateBy { it.slotNumber }
                     val placementsBySlot = match.placements.associateBy { it.teamSlotNumber }
                     val killsBySlot = match.kills.associateBy { it.teamSlotNumber }
+                    val finalizedParticipantSlotNumbers = match.finalizedParticipantResultsOrNull()
+                        ?.map { result -> result.teamSlotNumber }
+                        ?.toSet()
+                        .orEmpty()
                     val rows = TeamSlot.SLOT_NUMBERS.map { teamSlotNumber ->
                         val slot = slotsByNumber[teamSlotNumber] ?: fallbackSlots.getValue(teamSlotNumber)
                         val draft = draftValues[teamSlotNumber]
@@ -332,6 +336,7 @@ class MatchReviewViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
+                        finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
                         matchNumber = match.matchNumber,
                         status = match.status,
                         correctionHistory = match.correctionHistory,

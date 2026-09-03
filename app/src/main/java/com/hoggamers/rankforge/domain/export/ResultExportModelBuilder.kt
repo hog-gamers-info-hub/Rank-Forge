@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.domain.export
 
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+
 class ResultExportModelBuilder(
     private val matchCsvExporter: MatchCsvExporter = MatchCsvExporter(),
     private val tournamentCsvExporter: TournamentCsvExporter = TournamentCsvExporter(),
@@ -42,7 +44,7 @@ class ResultExportModelBuilder(
 
     private fun MatchExportRow.toResultExportRow(): ResultExportRow =
         ResultExportRow(
-            rank = placement,
+            rank = if (participationStatus == MatchParticipationStatus.NO_SHOW.name) null else rowNumber,
             teamName = teamName,
             win = if (placement == 1) 1 else 0,
             totalKills = kills,

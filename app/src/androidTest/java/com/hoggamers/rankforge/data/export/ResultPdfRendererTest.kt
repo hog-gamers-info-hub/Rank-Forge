@@ -67,6 +67,20 @@ class ResultPdfRendererTest {
         assertEquals(originalRows, model.rows)
     }
 
+    @Test
+    fun variableMatchRowCountsRenderValidOnePagePdfs() {
+        listOf(8, 10, 12).forEach { rowCount ->
+            assertValidPdf(pdfSuccess(renderer.render(matchModel(rowCount = rowCount))))
+        }
+    }
+
+    @Test
+    fun variableTournamentRowCountsRenderValidOnePagePdfs() {
+        listOf(8, 10, 12).forEach { rowCount ->
+            assertValidPdf(pdfSuccess(renderer.render(tournamentModel(rowCount = rowCount))))
+        }
+    }
+
     private fun pdfSuccess(result: ResultPdfRenderResult): ByteArray =
         (result as ResultPdfRenderResult.Success).bytes
 
@@ -109,28 +123,31 @@ class ResultPdfRendererTest {
 
     private fun matchModel(
         longTeamName: String? = null,
+        rowCount: Int = 12,
     ): MatchResultExportModel =
         MatchResultExportModel(
             tournamentName = "Synthetic Cup",
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
-            rows = rows(longTeamName),
+            rows = rows(longTeamName, rowCount),
         )
 
     private fun tournamentModel(
         longTeamName: String? = null,
+        rowCount: Int = 12,
     ): TournamentResultExportModel =
         TournamentResultExportModel(
             tournamentName = "Synthetic Cup",
             finalizedMatchCount = 2,
-            rows = rows(longTeamName),
+            rows = rows(longTeamName, rowCount),
         )
 
     private fun rows(
         longTeamName: String?,
+        rowCount: Int = 12,
     ): List<ResultExportRow> =
-        (1..12).map { rank ->
+        (1..rowCount).map { rank ->
             ResultExportRow(
                 rank = rank,
                 teamName = if (rank == 1 && longTeamName != null) longTeamName else "Team $rank",

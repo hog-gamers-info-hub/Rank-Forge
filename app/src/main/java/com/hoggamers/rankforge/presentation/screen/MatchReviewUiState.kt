@@ -164,6 +164,7 @@ data class MatchReviewUiState(
     val tournamentId: String? = null,
     val matchId: String? = null,
     val activeTeamCount: Int? = null,
+    val finalizedParticipantSlotNumbers: Set<Int> = emptySet(),
     val matchNumber: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
     val rows: List<MatchReviewRowUiState> = emptyList(),
@@ -224,12 +225,18 @@ data class MatchReviewUiState(
     val canPrepareMatchCsvExport: Boolean
         get() = status == MatchStatus.FINALIZED && isValid
 
+    val participantTeamIdentitiesAreValid: Boolean
+        get() = finalizedParticipantSlotNumbers.isNotEmpty() &&
+            finalizedParticipantSlotNumbers.all { participantSlotNumber ->
+                rows.firstOrNull { row -> row.teamSlotNumber == participantSlotNumber }
+                    ?.teamName
+                    ?.isNotBlank() == true
+            }
+
     val canDownloadResult: Boolean
-        get() = status == MatchStatus.FINALIZED &&
-            isValid &&
-            rows.size == 12 &&
-            rows.all { it.teamName.isNotBlank() } &&
-            !resultDownloadUiState.isBusy
+    get() = canPrepareMatchCsvExport &&
+        participantTeamIdentitiesAreValid &&
+        !resultDownloadUiState.isBusy
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT

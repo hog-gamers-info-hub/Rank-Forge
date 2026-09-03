@@ -18,6 +18,7 @@ class MatchReviewUiStateTest {
             state().copy(
                 status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
                 validationErrors = emptyMap(),
+                finalizedParticipantSlotNumbers = (1..12).toSet(),
             ).canDownloadResult,
         )
         assertFalse(
