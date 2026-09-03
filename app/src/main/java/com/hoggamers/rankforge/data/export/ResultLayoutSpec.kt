@@ -12,11 +12,13 @@ object ResultLayoutSpec {
     const val TABLE_HEADER_HEIGHT = 30f
     const val RESULT_ROW_HEIGHT = 30f
     const val RESULT_ROW_COUNT = 12
-    const val TABLE_TOP = 140f
+    const val TABLE_TOP = 122f
 
     const val TITLE_BASELINE = 48f
-    const val TOURNAMENT_BASELINE = 78f
+    const val ORGANIZER_BASELINE = 78f
     const val SUBTITLE_BASELINE = 104f
+    const val SUBTITLE_WITHOUT_ORGANIZER_BASELINE = 104f
+    const val FOOTER_BASELINE = 575f
 
     val COLUMN_WIDTHS = listOf(
         60f,
