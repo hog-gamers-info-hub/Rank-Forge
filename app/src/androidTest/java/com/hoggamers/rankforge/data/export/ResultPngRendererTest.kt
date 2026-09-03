@@ -38,12 +38,31 @@ class ResultPngRendererTest {
     }
 
     @Test
+    fun currentMatchWithoutOrganizerStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(matchModel(organizerName = "")))
+
+        assertPngHeader(bytes)
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
     fun tournamentModelRendersAllTwelveStandingsRows() {
         val result = renderer.render(tournamentModel())
 
         val bytes = pngSuccess(result)
         assertPngHeader(bytes)
         assertDecodedDimensions(bytes)
+    }
+
+    @Test
+    fun variableMatchRowCountsRenderAtExactDimensions() {
+        listOf(8, 10, 12).forEach { rowCount ->
+            val result = renderer.render(matchModel(rowCount = rowCount))
+
+            val bytes = pngSuccess(result)
+            assertPngHeader(bytes)
+            assertDecodedDimensions(bytes)
+        }
     }
 
     @Test
@@ -55,6 +74,29 @@ class ResultPngRendererTest {
         val bytes = pngSuccess(renderer.render(model))
 
         assertTrue(bytes.isNotEmpty())
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
+    fun wholeTournamentWithoutOrganizerStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(tournamentModel(organizerName = "")))
+
+        assertPngHeader(bytes)
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
+    fun longHeaderMetadataRemainsBounded() {
+        val bytes = pngSuccess(
+            renderer.render(
+                tournamentModel(
+                    tournamentName = "A very long tournament name that must remain bounded inside the export page",
+                    organizerName = "A very long organizer name that must remain bounded inside the export page",
+                ),
+            ),
+        )
+
+        assertPngHeader(bytes)
         assertDecodedDimensions(bytes)
     }
 
@@ -94,13 +136,17 @@ class ResultPngRendererTest {
     }
 
     @Test
-    fun invalidRowCountReturnsExplicitFailure() {
-        val result = renderer.render(matchModel().copy(rows = rows(null).dropLast(1)))
+    fun zeroRowsReturnsExplicitFailure() {
+        val result = renderer.render(matchModel().copy(rows = emptyList()))
 
-        assertEquals(
-            ResultRenderFailure.INVALID_ROW_COUNT,
-            (result as ResultPngRenderResult.Failure).reason,
-        )
+        assertEquals(ResultRenderFailure.INVALID_ROW_COUNT, (result as ResultPngRenderResult.Failure).reason)
+    }
+
+    @Test
+    fun rowsAboveMaximumReturnExplicitFailure() {
+        val result = renderer.render(matchModel(rowCount = 13))
+
+        assertEquals(ResultRenderFailure.INVALID_ROW_COUNT, (result as ResultPngRenderResult.Failure).reason)
     }
 
     private fun pngSuccess(result: ResultPngRenderResult): ByteArray =
@@ -123,29 +169,40 @@ class ResultPngRendererTest {
     }
 
     private fun matchModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
+        rowCount: Int = 12,
     ): MatchResultExportModel =
         MatchResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
-            rows = rows(longTeamName),
+            rows = rows(longTeamName, rowCount),
         )
 
     private fun tournamentModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
+        rowCount: Int = 12,
     ): TournamentResultExportModel =
         TournamentResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
-            rows = rows(longTeamName),
+            rows = rows(longTeamName, rowCount),
         )
 
     private fun rows(
         longTeamName: String?,
+        rowCount: Int = 12,
     ): List<ResultExportRow> =
-        (1..12).map { rank ->
+        (1..rowCount).map { rank ->
             ResultExportRow(
                 rank = rank,
                 teamName = if (rank == 1 && longTeamName != null) longTeamName else "Team $rank",

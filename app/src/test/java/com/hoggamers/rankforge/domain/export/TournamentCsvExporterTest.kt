@@ -450,6 +450,50 @@ class TournamentCsvExporterTest {
     }
 
     @Test
+    fun standingsRankUsesTotalPointsBeforeTeamSlot() {
+        val participantResults = listOf(
+            MatchParticipantResult(10, MatchParticipationStatus.PARTICIPATED, 4, 80),
+            MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 3, 32),
+            MatchParticipantResult(7, MatchParticipationStatus.PARTICIPATED, 2, 49),
+            MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 1, 55),
+        )
+
+        val rows = exportSuccess(
+            validInput(
+                matches = listOf(validMatch().copy(participantResults = participantResults)),
+            ),
+        ).dataRows()
+
+        assertEquals(listOf("10", "2", "7", "1"), rows.map { row -> row[TEAM_SLOT_COLUMN] })
+        assertEquals(listOf("1", "2", "3", "4"), rows.map { row -> row[STANDINGS_RANK_COLUMN] })
+    }
+
+    @Test
+    fun participatingZeroPointTeamRemainsInTournamentStandings() {
+        val rows = exportSuccess(
+            validInput(
+                matches = listOf(
+                    validMatch().copy(
+                        participantResults = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                            MatchParticipantResult(
+                                teamSlotNumber = slotNumber,
+                                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                                placement = slotNumber,
+                                kills = 0,
+                            )
+                        },
+                    ),
+                ),
+            ),
+        ).dataRows()
+
+        val zeroPointRow = rows.single { row -> row[TEAM_SLOT_COLUMN] == "12" }
+        assertEquals("1", zeroPointRow[MATCHES_PLAYED_COLUMN])
+        assertEquals("0", zeroPointRow[TOTAL_POINTS_COLUMN])
+        assertEquals("12", zeroPointRow[STANDINGS_RANK_COLUMN])
+    }
+
+    @Test
     fun noShowOnlyTeamsRemainInStandingsWithNullableBestPlacement() {
         val result = exporter.export(
             validInput(

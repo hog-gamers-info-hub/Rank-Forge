@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 enum class ResultRenderFailure {
     INVALID_ROW_COUNT,
@@ -30,8 +31,9 @@ class ResultCanvasRenderer {
     ): ResultCanvasRenderResult = render(
         canvas = canvas,
         tournamentName = model.tournamentName,
-        subtitle = "Match ${model.matchNumber} • ${model.mapName} • " +
-            model.matchDate.format(DATE_FORMATTER),
+        organizerName = model.organizerName,
+        subtitle = "Current match - Match ${model.matchNumber} -- " +
+            model.tournamentDate.format(DATE_FORMATTER),
         rows = model.rows,
     )
 
@@ -41,24 +43,27 @@ class ResultCanvasRenderer {
     ): ResultCanvasRenderResult = render(
         canvas = canvas,
         tournamentName = model.tournamentName,
-        subtitle = "Tournament Standings • ${model.finalizedMatchCount} Finalized Matches",
+        organizerName = model.organizerName,
+        subtitle = "Overall standings -- ${model.tournamentDate.format(DATE_FORMATTER)}",
         rows = model.rows,
     )
 
     private fun render(
         canvas: Canvas,
         tournamentName: String,
+        organizerName: String,
         subtitle: String,
         rows: List<ResultExportRow>,
     ): ResultCanvasRenderResult {
-        if (rows.size != ResultLayoutSpec.RESULT_ROW_COUNT) {
+        if (rows.isEmpty() || rows.size > ResultLayoutSpec.RESULT_ROW_COUNT) {
             return ResultCanvasRenderResult.Failure(ResultRenderFailure.INVALID_ROW_COUNT)
         }
 
         return try {
             canvas.drawColor(Color.WHITE)
-            drawHeader(canvas, tournamentName, subtitle)
+            drawHeader(canvas, tournamentName, organizerName, subtitle)
             drawTable(canvas, rows)
+            drawFooter(canvas)
             ResultCanvasRenderResult.Success
         } catch (_: RuntimeException) {
             ResultCanvasRenderResult.Failure(ResultRenderFailure.RENDERING_FAILED)
@@ -68,26 +73,94 @@ class ResultCanvasRenderer {
     private fun drawHeader(
         canvas: Canvas,
         tournamentName: String,
+        organizerName: String,
         subtitle: String,
     ) {
-        canvas.drawText(
-            "RANK FORGE",
-            ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN,
-            ResultLayoutSpec.TITLE_BASELINE,
-            titlePaint,
+        drawBoundedCenteredText(
+            canvas = canvas,
+            text = tournamentName.trim(),
+            centerX = ResultLayoutSpec.LOGICAL_PAGE_WIDTH / 2f,
+            centerY = ResultLayoutSpec.TITLE_BASELINE,
+            paint = titlePaint,
+            minimumTextSize = MIN_HEADER_TEXT_SIZE,
         )
-        canvas.drawText(
-            tournamentName,
-            ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN,
-            ResultLayoutSpec.TOURNAMENT_BASELINE,
-            tournamentPaint,
-        )
+        val trimmedOrganizerName = organizerName.trim()
+        if (trimmedOrganizerName.isNotEmpty()) {
+            drawBoundedCenteredText(
+                canvas = canvas,
+                text = trimmedOrganizerName,
+                centerX = ResultLayoutSpec.LOGICAL_PAGE_WIDTH / 2f,
+                centerY = ResultLayoutSpec.ORGANIZER_BASELINE,
+                paint = tournamentPaint,
+                minimumTextSize = MIN_ORGANIZER_TEXT_SIZE,
+            )
+        }
         canvas.drawText(
             subtitle,
             ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN,
-            ResultLayoutSpec.SUBTITLE_BASELINE,
+            if (trimmedOrganizerName.isEmpty()) {
+                ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE
+            } else {
+                ResultLayoutSpec.SUBTITLE_BASELINE
+            },
             subtitlePaint,
         )
+    }
+
+    private fun drawFooter(canvas: Canvas) {
+        val point = "Point"
+        val iq = "IQ"
+        val pointWidth = footerPointPaint.measureText(point)
+        val combinedWidth = pointWidth + footerIqPaint.measureText(iq)
+        val startX = ResultLayoutSpec.LOGICAL_PAGE_WIDTH - ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN -
+            combinedWidth
+        canvas.drawText(
+            point,
+            startX,
+            ResultLayoutSpec.FOOTER_BASELINE,
+            footerPointPaint,
+        )
+        canvas.drawText(
+            iq,
+            startX + pointWidth,
+            ResultLayoutSpec.FOOTER_BASELINE,
+            footerIqPaint,
+        )
+    }
+
+    private fun drawBoundedCenteredText(
+        canvas: Canvas,
+        text: String,
+        centerX: Float,
+        centerY: Float,
+        paint: Paint,
+        minimumTextSize: Float,
+    ) {
+        val originalTextSize = paint.textSize
+        var fittedTextSize = originalTextSize
+        paint.textSize = fittedTextSize
+        while (
+            fittedTextSize > minimumTextSize &&
+            paint.measureText(text) > ResultLayoutSpec.TABLE_WIDTH
+        ) {
+            fittedTextSize = maxOf(minimumTextSize, fittedTextSize - HEADER_TEXT_SIZE_STEP)
+            paint.textSize = fittedTextSize
+        }
+
+        var fittedText = text
+        if (paint.measureText(fittedText) > ResultLayoutSpec.TABLE_WIDTH) {
+            var end = fittedText.length
+            while (
+                end > 0 &&
+                paint.measureText(fittedText.substring(0, end) + HEADER_ELLIPSIS) > ResultLayoutSpec.TABLE_WIDTH
+            ) {
+                end--
+            }
+            fittedText = if (end == 0) HEADER_ELLIPSIS else fittedText.substring(0, end) + HEADER_ELLIPSIS
+        }
+
+        drawCenteredText(canvas, fittedText, centerX, centerY, paint)
+        paint.textSize = originalTextSize
     }
 
     private fun drawTable(
@@ -97,7 +170,8 @@ class ResultCanvasRenderer {
         val left = ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN
         val right = left + ResultLayoutSpec.TABLE_WIDTH
         val top = ResultLayoutSpec.TABLE_TOP
-        val bottom = ResultLayoutSpec.TABLE_BOTTOM
+        val bottom = top + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
+            rows.size * ResultLayoutSpec.RESULT_ROW_HEIGHT
         val boundaries = ResultLayoutSpec.COLUMN_BOUNDARIES
 
         canvas.drawRect(
@@ -156,7 +230,7 @@ class ResultCanvasRenderer {
             canvas.drawLine(boundary, top, boundary, bottom, gridPaint)
         }
         canvas.drawLine(left, top + ResultLayoutSpec.TABLE_HEADER_HEIGHT, right, top + ResultLayoutSpec.TABLE_HEADER_HEIGHT, gridPaint)
-        repeat(ResultLayoutSpec.RESULT_ROW_COUNT - 1) { rowIndex ->
+        repeat(rows.size - 1) { rowIndex ->
             val y = top + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
                 (rowIndex + 1) * ResultLayoutSpec.RESULT_ROW_HEIGHT
             canvas.drawLine(left, y, right, y, gridPaint)
@@ -244,25 +318,39 @@ class ResultCanvasRenderer {
     )
 
     private companion object {
-        val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+        val DATE_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+        const val MIN_HEADER_TEXT_SIZE = 16f
+        const val MIN_ORGANIZER_TEXT_SIZE = 9f
+        const val HEADER_TEXT_SIZE_STEP = 0.5f
+        const val HEADER_ELLIPSIS = "…"
         const val TEAM_NAME_TEXT_SIZE = 14f
         const val MIN_TEAM_NAME_TEXT_SIZE = 9f
         const val TEAM_NAME_TEXT_SIZE_STEP = 0.5f
         const val TEAM_NAME_HORIZONTAL_PADDING = 8f
+        val POINTIQ_BLUE = Color.rgb(23, 106, 247)
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(25, 35, 48)
-            textSize = 26f
+            textSize = 30f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val tournamentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(25, 35, 48)
-            textSize = 18f
+            textSize = 16f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val subtitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(82, 92, 105)
             textSize = 14f
+        }
+        val footerPointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 11f
+        }
+        val footerIqPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = POINTIQ_BLUE
+            textSize = 11f
         }
         val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(25, 35, 48)

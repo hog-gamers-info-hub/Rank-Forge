@@ -2,7 +2,9 @@ package com.hoggamers.rankforge.domain.export
 
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
@@ -24,12 +26,19 @@ class ResultExportModelBuilderTest {
 
     @Test
     fun finalizedMatchBuildsWithApprovedMetadata() {
-        val result = builder.buildMatch(validMatchInput())
+        val result = builder.buildMatch(
+            validMatchInput(
+                tournament = validTournament().copy(date = LocalDate.of(2026, 9, 3)),
+                match = validMatch().copy(date = LocalDate.of(2026, 8, 31)),
+            ),
+        )
 
         val model = matchSuccess(result)
         assertEquals("Synthetic Cup", model.tournamentName)
+        assertEquals("Organizer", model.organizerName)
+        assertEquals(LocalDate.of(2026, 9, 3), model.tournamentDate)
         assertEquals(3, model.matchNumber)
-        assertEquals(LocalDate.of(2026, 7, 31), model.matchDate)
+        assertEquals(LocalDate.of(2026, 8, 31), model.matchDate)
         assertEquals("Bermuda", model.mapName)
     }
 
@@ -50,16 +59,37 @@ class ResultExportModelBuilderTest {
 
         assertEquals((1..12).toList(), resultRows.map { row -> row.rank })
         assertEquals("Exact Team Name", resultRows.first().teamName)
-        assertEquals(
-            sourceRows.map { row -> row.placement },
-            resultRows.map { row -> row.rank },
-        )
         sourceRows.zip(resultRows).forEach { (source, result) ->
             assertEquals(source.teamName, result.teamName)
             assertEquals(source.kills, result.totalKills)
             assertEquals(source.placementPoints, result.positionPoints)
             assertEquals(source.totalPoints, result.totalPoints)
         }
+    }
+
+    @Test
+    fun currentMatchRankUsesSequentialTotalPointOrderAndLeavesNoShowBlank() {
+        val participantResults = listOf(
+            MatchParticipantResult(10, MatchParticipationStatus.PARTICIPATED, 4, 80),
+            MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 3, 32),
+            MatchParticipantResult(7, MatchParticipationStatus.PARTICIPATED, 2, 49),
+            MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 1, 55),
+            MatchParticipantResult(12, MatchParticipationStatus.NO_SHOW, null, 0),
+        )
+        val model = matchSuccess(
+            builder.buildMatch(
+                validMatchInput(
+                    match = validMatch().copy(participantResults = participantResults),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("Team 10", "Team 2", "Team 7", "Team 1", "Team 12"), model.rows.map { it.teamName })
+        assertEquals(listOf(1, 2, 3, 4, null), model.rows.map { it.rank })
+        assertEquals(0, model.rows.last().win)
+        assertEquals(0, model.rows.last().totalKills)
+        assertEquals(0, model.rows.last().positionPoints)
+        assertEquals(0, model.rows.last().totalPoints)
     }
 
     @Test
@@ -103,6 +133,8 @@ class ResultExportModelBuilderTest {
         val model = tournamentSuccess(builder.buildTournament(input))
 
         assertEquals("Synthetic Cup", model.tournamentName)
+        assertEquals("Organizer", model.organizerName)
+        assertEquals(LocalDate.of(2026, 7, 31), model.tournamentDate)
         assertEquals(2, model.finalizedMatchCount)
         assertEquals(12, model.rows.size)
     }
@@ -226,9 +258,10 @@ class ResultExportModelBuilderTest {
     private fun validMatchInput(
         match: Match = validMatch(),
         teamSlots: List<TeamSlot> = validTeamSlots(),
+        tournament: Tournament = validTournament(),
     ): MatchCsvExportInput =
         MatchCsvExportInput(
-            tournament = validTournament(),
+            tournament = tournament,
             match = match,
             teamSlots = teamSlots,
             rosterPlayers = validRosterPlayers(),

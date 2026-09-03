@@ -76,9 +76,14 @@ class MatchCsvExporter(
                 setOf(MatchCsvExportFailure.INVALID_ROW_COUNT),
             )
         val rows = participantResults
-            .sortedWith(compareBy< com.hoggamers.rankforge.domain.tournament.MatchParticipantResult> {
-                it.placement ?: Int.MAX_VALUE
-            }.thenBy { it.teamSlotNumber })
+            .sortedWith(
+                compareBy< com.hoggamers.rankforge.domain.tournament.MatchParticipantResult> {
+                    it.isNoShow
+                }
+                    .thenByDescending { it.totalPoints }
+                    .thenBy { it.placement ?: Int.MAX_VALUE }
+                    .thenBy { it.teamSlotNumber },
+            )
             .mapIndexed { index, result ->
                 val players = rosterPlayersBySlot[result.teamSlotNumber].orEmpty()
                 MatchExportRow(
