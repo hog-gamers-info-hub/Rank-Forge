@@ -753,6 +753,13 @@ private fun MatchReviewContent(
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
     val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
+    val explicitlyExcludedResultPositions = (ocrUiState as? MatchOcrReviewUiState.Ready)
+        ?.correctionDraft
+        ?.rows
+        ?.filter { it.isExcluded }
+        ?.map { it.rowIndex + 1 }
+        ?.toSet()
+        .orEmpty()
     val hasCombinedPositionCropPreviews = uiState.resultScreenshots.any { slot ->
         slot.hasSelection() && uiState.resultPositionCropPreviews[slot.role]
             ?.sortedCrops()
@@ -941,6 +948,7 @@ private fun MatchReviewContent(
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = uiState.resultPositionCropPreviews,
+                    explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
@@ -1006,6 +1014,7 @@ private fun MatchReviewContent(
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = uiState.resultPositionCropPreviews,
+                    explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
@@ -1023,6 +1032,7 @@ private fun MatchReviewContent(
             ResultScreenshotSelector(
                 resultScreenshots = uiState.resultScreenshots,
                 resultPositionCropPreviews = uiState.resultPositionCropPreviews,
+                explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
                 isEditable = uiState.isEditable,
                 onSelectScreenshot = onSelectResultScreenshot,
                 onSelectBatch = onSelectResultScreenshotBatch,
@@ -1107,7 +1117,9 @@ private fun MatchReviewContent(
                 onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
             )
         }
-        if (uiState.isEditable) {
+        if (uiState.isEditable &&
+            (showLegacyManualReviewContent || !hasDisplayableResultOcrData)
+        ) {
             Button(
                 onClick = {
                     if (showLegacyManualReviewContent) {
@@ -1148,15 +1160,36 @@ private fun MatchReviewContent(
                 )
             }
         }
+        if (!showLegacyManualReviewContent &&
+            uiState.isEditable &&
+            !hasDisplayableResultOcrData &&
+            showClearResult
+        ) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
+        }
         if (showClearResult) {
-            OutlinedButton(
+            Button(
                 onClick = onClearResult,
                 enabled = !isClearResultInProgress,
+                colors = if (!showLegacyManualReviewContent) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
+                shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
                     .testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
             ) {
-                Text("Clear Result")
+                Text(
+                    "Clear Result",
+                    fontSize = 14.sp,
+                    fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
         }
         if (showLegacyManualReviewContent && uiState.isEditable) {
@@ -2178,6 +2211,7 @@ private fun MatchReviewResultRowsPagerContent(
 private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
     resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
+    explicitlyExcludedResultPositions: Set<Int> = emptySet(),
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onSelectBatch: (() -> Unit)?,
@@ -2203,11 +2237,15 @@ private fun ResultScreenshotSelector(
             ?.let { slot -> role to slot }
     }
     val selectedRoles = selectedPages.map { it.first }
+    val positionCropsByRole = selectedPages.associate { (role, _) ->
+        role to resultPositionCropPreviews[role]
+            ?.sortedCrops()
+            .orEmpty()
+            .filterNot { preview -> preview.position in explicitlyExcludedResultPositions }
+    }
     val positionItems = selectedPages
         .flatMap { (role, _) ->
-            resultPositionCropPreviews[role]
-                ?.sortedCrops()
-                .orEmpty()
+            positionCropsByRole[role].orEmpty()
                 .map { preview -> ResultPositionPageItem(role = role, preview = preview) }
         }
         .groupBy { it.preview.position }
@@ -2276,10 +2314,7 @@ private fun ResultScreenshotSelector(
                         ResultScreenshotPage(
                             screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
                             slot = slot,
-                            positionCropPreviewState = resultPositionCropPreviews[role]
-                                ?: MatchResultPositionCropPreviewState.Unavailable(
-                                    MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
-                                ),
+                            positionCropPreviews = positionCropsByRole[role].orEmpty(),
                             imageAreaHeight = maxResultScreenshotHeight,
                             isEditable = isEditable,
                             showSourceScreenshot = showSourceScreenshot,
@@ -2342,7 +2377,7 @@ private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Floa
 private fun ResultScreenshotPage(
     screenshotNumber: Int,
     slot: MatchResultScreenshotSlotUiState,
-    positionCropPreviewState: MatchResultPositionCropPreviewState,
+    positionCropPreviews: List<MatchResultPositionCropPreview>,
     imageAreaHeight: Dp,
     isEditable: Boolean,
     showSourceScreenshot: Boolean,
@@ -2366,8 +2401,7 @@ private fun ResultScreenshotPage(
     } else {
         null
     }
-    val hasPositionCropPreviews = showPositionCropPreviews &&
-        positionCropPreviewState.sortedCrops().isNotEmpty()
+    val hasPositionCropPreviews = showPositionCropPreviews && positionCropPreviews.isNotEmpty()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2409,7 +2443,7 @@ private fun ResultScreenshotPage(
         }
         if (showPositionCropPreviews && (previewImageUri != null || !showSourceScreenshot)) {
             ResultPositionCropPreviews(
-                items = positionCropPreviewState.sortedCrops().map { preview ->
+                items = positionCropPreviews.map { preview ->
                     ResultPositionPageItem(role = role, preview = preview)
                 },
                 ocrPositionContent = ocrPositionContent,

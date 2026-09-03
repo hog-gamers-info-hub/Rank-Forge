@@ -1877,7 +1877,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun simplifiedInlineFinalizeActionSitsBetweenResultRowsAndOcrReview() {
+    fun simplifiedInlineFinalizeActionSitsAfterResultRows() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -1896,17 +1896,13 @@ class MatchReviewScreenTest {
             .assertCountEquals(1)
         val resultRows = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
         val finalizeAction = composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
-        val ocrReviewAction = composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
 
         resultRows.performScrollTo()
         finalizeAction.performScrollTo().assertIsDisplayed()
-        ocrReviewAction.performScrollTo().assertIsDisplayed()
 
         val resultRowsBounds = resultRows.fetchSemanticsNode().boundsInRoot
         val finalizeBounds = finalizeAction.fetchSemanticsNode().boundsInRoot
-        val ocrReviewBounds = ocrReviewAction.fetchSemanticsNode().boundsInRoot
         assertTrue(finalizeBounds.top >= resultRowsBounds.bottom)
-        assertTrue(finalizeBounds.bottom <= ocrReviewBounds.top)
     }
 
     @Test
@@ -2113,6 +2109,123 @@ class MatchReviewScreenTest {
             assertEquals(0, ocrReviewCount)
             assertEquals(1, calculateCount)
         }
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionWhenReadyOcrRowsExist() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionWhenOnlyReadyResultPreviewRowsExist() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionForRestoredDisplayableOcrState() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState().copy(
+                        evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
+                    ),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun legacyReviewKeepsCalculateActionWhenDisplayableOcrDataExists() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun finalizedReviewHidesCalculateAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -2326,6 +2439,89 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(11))
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun explicitlyExcludedResultRowHidesOnlyItsMatchingPositionCrop() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8)),
+            positions = listOf(8, 9, 10),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "8")
+            .assertCountEquals(2)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun resettingExplicitlyExcludedResultRowRestoresItsExistingPositionCrop() {
+        var ocrUiState by mutableStateOf(
+            ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8)),
+        )
+        val positionCropUiState = positionCropTestUiState(listOf(9))
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = positionCropUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    ocrUiState = ocrUiState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+
+        composeTestRule.runOnIdle {
+            ocrUiState = ocrStateWithCorrectionRows()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun implicitAbsentResultRowDoesNotHideItsPositionCrop() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(implicitlyAbsentRowIndexes = setOf(8)),
+            positions = listOf(9),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun multipleExplicitlyExcludedResultRowsHideOnlyTheirMatchingPositionCrops() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8, 10)),
+            positions = listOf(8, 9, 10, 11, 12),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "8")
+            .assertCountEquals(2)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertCountEquals(2)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
+            .assertCountEquals(2)
     }
 
     @Test
@@ -4194,6 +4390,76 @@ class MatchReviewScreenTest {
         resultScreenshots = resultScreenshots,
         resultPositionCropPreviews = resultPositionCropPreviews,
     )
+
+    private fun setPositionCropVisibilityContent(
+        ocrUiState: MatchOcrReviewUiState.Ready,
+        positions: List<Int>,
+    ) {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = positionCropTestUiState(positions),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    ocrUiState = ocrUiState,
+                )
+            }
+        }
+    }
+
+    private fun positionCropTestUiState(
+        positions: List<Int>,
+    ) = availableState(
+        resultScreenshots = selectedResultScreenshotSlots(),
+        resultPositionCropPreviews = mapOf(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                MatchResultPositionCropPreviewState.Available(
+                    positions.map { position ->
+                        MatchResultPositionCropPreview(
+                            position = position,
+                            image = AndroidMatchResultPositionCropPreviewImage(
+                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                            ),
+                        )
+                    },
+                ),
+        ),
+    )
+
+    private fun ocrStateWithCorrectionRows(
+        excludedRowIndexes: Set<Int> = emptySet(),
+        implicitlyAbsentRowIndexes: Set<Int> = emptySet(),
+    ): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrState()
+        val baseDraft = base.correctionDraft ?: error("Expected correction draft")
+        val rowIndexes = (excludedRowIndexes + implicitlyAbsentRowIndexes).sorted()
+        val correctionRows = rowIndexes.map { rowIndex ->
+            val isImplicitlyAbsent = rowIndex in implicitlyAbsentRowIndexes
+            baseDraft.rows.single().copy(
+                rowIndex = rowIndex,
+                originalPlacementValue = if (isImplicitlyAbsent) "" else "1",
+                originalKillsValue = if (isImplicitlyAbsent) "" else "8",
+                originalAssignedTeamSlotValue = if (isImplicitlyAbsent) "" else "1",
+                placementDraftValue = if (isImplicitlyAbsent) "" else "1",
+                killsDraftValue = if (isImplicitlyAbsent) "" else "8",
+                assignedTeamSlotDraftValue = if (isImplicitlyAbsent) "" else "1",
+                isExcluded = rowIndex in excludedRowIndexes,
+                allPlayersSemanticallyNotDetected = isImplicitlyAbsent,
+            )
+        }
+        return base.copy(
+            rows = emptyList(),
+            rowCount = 0,
+            blockerCount = 0,
+            warningCount = 0,
+            safeRowCount = 0,
+            manualRequiredRowCount = 0,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = false,
+            correctionDraft = baseDraft.copy(rows = correctionRows),
+        )
+    }
 
     private fun allLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
         isLoading = false,
