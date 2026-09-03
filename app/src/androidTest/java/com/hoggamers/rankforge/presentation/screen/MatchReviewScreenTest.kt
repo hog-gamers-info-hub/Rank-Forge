@@ -1877,7 +1877,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun simplifiedInlineFinalizeActionSitsBetweenResultRowsAndOcrReview() {
+    fun simplifiedInlineFinalizeActionSitsAfterResultRows() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -1896,17 +1896,13 @@ class MatchReviewScreenTest {
             .assertCountEquals(1)
         val resultRows = composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
         val finalizeAction = composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
-        val ocrReviewAction = composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
 
         resultRows.performScrollTo()
         finalizeAction.performScrollTo().assertIsDisplayed()
-        ocrReviewAction.performScrollTo().assertIsDisplayed()
 
         val resultRowsBounds = resultRows.fetchSemanticsNode().boundsInRoot
         val finalizeBounds = finalizeAction.fetchSemanticsNode().boundsInRoot
-        val ocrReviewBounds = ocrReviewAction.fetchSemanticsNode().boundsInRoot
         assertTrue(finalizeBounds.top >= resultRowsBounds.bottom)
-        assertTrue(finalizeBounds.bottom <= ocrReviewBounds.top)
     }
 
     @Test
@@ -2113,6 +2109,123 @@ class MatchReviewScreenTest {
             assertEquals(0, ocrReviewCount)
             assertEquals(1, calculateCount)
         }
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionWhenReadyOcrRowsExist() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionWhenOnlyReadyResultPreviewRowsExist() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            rows = listOf(previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = MatchOcrReviewUiState.Empty(
+                        tournamentId = "tournament-id",
+                        matchId = "match-id",
+                        matchResultOcrPreview = preview,
+                    ),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun simplifiedReviewHidesCalculateActionForRestoredDisplayableOcrState() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState().copy(
+                        evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
+                    ),
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun legacyReviewKeepsCalculateActionWhenDisplayableOcrDataExists() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                    showLegacyManualReviewContent = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun finalizedReviewHidesCalculateAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
