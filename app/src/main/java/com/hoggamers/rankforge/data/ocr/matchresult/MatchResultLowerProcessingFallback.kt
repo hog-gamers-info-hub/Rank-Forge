@@ -5,32 +5,42 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCal
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculator
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 
-/** Opt-in recovery used only after semantic role resolution is unresolved. */
+/** Recovery used after a screenshot has already been assigned the lower role. */
 internal class MatchResultLowerProcessingFallback(
     private val calculator: MatchResultPositionCropCalculator = MatchResultPositionCropCalculator(),
+    private val lowerEvidenceResolver: MatchResultLowerEvidenceResolver = MatchResultLowerEvidenceResolver(),
 ) {
     fun recover(
-        semanticResolution: MatchResultSemanticRoleResolution,
-        requestedRole: MatchResultScreenshotRole,
         evidence: MatchResultAutoCropEvidence,
-        activeTeamCount: Int?,
     ): MatchResultPositionCropCalculationResult.Available? {
-        if (
-            semanticResolution !is MatchResultSemanticRoleResolution.Unresolved ||
-            requestedRole != MatchResultScreenshotRole.MATCH_RESULT_LOWER
-        ) return null
-
-        val expectedPositions = when (activeTeamCount) {
-            12 -> listOf(11, 12)
-            11 -> listOf(11)
-            else -> return null
+        val hasExistingPositionTwelveEvidence = lowerEvidenceResolver.hasExistingLowerEvidence(evidence)
+        val minimumAnchorCount = if (hasExistingPositionTwelveEvidence) {
+            0
+        } else {
+            MINIMUM_ANCHOR_COUNT
         }
-        return calculator.calculate(
+        val twelvePositionCalculation = calculator.calculate(
             evidence = evidence,
             role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-            expectedLowerPositions = expectedPositions,
+            expectedLowerPositions = listOf(11, 12),
+            minimumRightPlacementAnchorCount = minimumAnchorCount,
+        )
+        when (twelvePositionCalculation) {
+            is MatchResultPositionCropCalculationResult.Available -> {
+                return twelvePositionCalculation
+            }
+
+            is MatchResultPositionCropCalculationResult.Unavailable -> Unit
+        }
+        if (hasExistingPositionTwelveEvidence) return null
+
+        val elevenPositionCalculation = calculator.calculate(
+            evidence = evidence,
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            expectedLowerPositions = listOf(11),
             minimumRightPlacementAnchorCount = MINIMUM_ANCHOR_COUNT,
-        ) as? MatchResultPositionCropCalculationResult.Available
+        )
+        return elevenPositionCalculation as? MatchResultPositionCropCalculationResult.Available
     }
 
     private companion object {
