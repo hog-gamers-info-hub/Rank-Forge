@@ -178,16 +178,22 @@ object MatchResultOcrPreviewUiStateMapper {
 
         return (1..12).map { expectedPosition ->
             when (val rows = rowsByPosition[expectedPosition]) {
-                null -> placeholderRow(expectedPosition)
+                null -> placeholderRow(
+                    expectedPosition = expectedPosition,
+                    allPlayersSemanticallyNotDetected = true,
+                )
                 else -> rows.singleOrNull()?.toReviewRow() ?: placeholderRow(expectedPosition)
             }
         }
     }
 
     fun manualFallbackRows(): List<MatchOcrReviewRowUiState> =
-        (1..12).map(::placeholderRow)
+        (1..12).map { expectedPosition -> placeholderRow(expectedPosition) }
 
-    private fun placeholderRow(expectedPosition: Int): MatchOcrReviewRowUiState =
+    private fun placeholderRow(
+        expectedPosition: Int,
+        allPlayersSemanticallyNotDetected: Boolean = false,
+    ): MatchOcrReviewRowUiState =
         MatchOcrReviewRowUiState(
             rowIndex = expectedPosition - 1,
             expectedPlacementLabel = expectedPosition.toString(),
@@ -208,6 +214,7 @@ object MatchResultOcrPreviewUiStateMapper {
             originalParsedPlacementValue = null,
             originalParsedKillValue = null,
             originalSuggestedTeamSlot = null,
+            allPlayersSemanticallyNotDetected = allPlayersSemanticallyNotDetected,
         )
 
     private fun MatchResultOcrPreviewRowUiState.toReviewRow(): MatchOcrReviewRowUiState {
@@ -256,6 +263,7 @@ object MatchResultOcrPreviewUiStateMapper {
             originalParsedPlacementValue = placement.toIntOrNull() ?: position,
             originalParsedKillValue = totalKillsOrNull(this, allKillsNumeric, killValues),
             originalSuggestedTeamSlot = null,
+            allPlayersSemanticallyNotDetected = allPlayersSemanticallyNotDetected(),
             playerKillEvidence = slots
                 .sortedBy { it.slot }
                 .filter { it.isPlayerKillApplicable() }
@@ -273,6 +281,20 @@ object MatchResultOcrPreviewUiStateMapper {
         allKillsNumeric: Boolean,
         killValues: List<Int>,
     ): Int? = killValues.sum().takeIf { allKillsNumeric && row.slots.isNotEmpty() }
+
+    private fun MatchResultOcrPreviewRowUiState.allPlayersSemanticallyNotDetected(): Boolean =
+        (1..4).all { slot ->
+            slots.firstOrNull { it.slot == slot }?.isPlayerSemanticallyNotDetected() ?: true
+        }
+
+    private fun MatchResultOcrPreviewSlotUiState.isPlayerSemanticallyNotDetected(): Boolean =
+        runCatching {
+            MatchResultOcrFieldStatus.valueOf(playerStatusLabel.trim())
+        }.getOrNull()?.let { status ->
+            status == MatchResultOcrFieldStatus.EMPTY
+        } ?: playerText.trim().let { text ->
+            text.isBlank() || text == MATCH_RESULT_NOT_DETECTED_PLAYER
+        }
 
     private fun MatchResultOcrRow.toUiState(
         role: MatchResultScreenshotRole,
@@ -333,6 +355,7 @@ data class MatchOcrReviewRowUiState(
     val originalParsedPlacementValue: Int? = null,
     val originalParsedKillValue: Int? = null,
     val originalSuggestedTeamSlot: Int? = null,
+    val allPlayersSemanticallyNotDetected: Boolean = false,
     val playerKillEvidence: List<MatchOcrReviewPlayerKillEvidenceUiState> = emptyList(),
 )
 

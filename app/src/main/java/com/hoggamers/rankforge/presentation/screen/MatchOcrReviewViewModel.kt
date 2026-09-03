@@ -796,7 +796,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 manualReviewRequired = reviewRow?.let {
                     it.blockerLabels.isNotEmpty() || it.warningLabels.isNotEmpty()
                 } ?: row.originallyRequiredManualReview,
-                isExcluded = row.isExcluded,
+                isExcluded = row.isEffectivelyExcluded,
             )
         }
     }

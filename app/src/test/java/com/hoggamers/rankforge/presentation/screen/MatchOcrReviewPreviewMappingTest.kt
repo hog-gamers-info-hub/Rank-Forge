@@ -282,7 +282,8 @@ class MatchOcrReviewPreviewMappingTest {
         assertEquals("", state.correctionDraft?.rows?.get(10)?.placementDraftValue)
         assertEquals("", state.correctionDraft?.rows?.get(10)?.killsDraftValue)
         assertEquals("", state.correctionDraft?.rows?.get(10)?.assignedTeamSlotDraftValue)
-        assertTrue(state.correctionDraft?.rows?.get(10)?.validation?.blockers?.isNotEmpty() == true)
+        assertTrue(state.correctionDraft?.rows?.get(10)?.isImplicitlyAbsent == true)
+        assertTrue(state.correctionDraft?.rows?.get(10)?.validation?.blockers?.isEmpty() == true)
     }
 
     @Test

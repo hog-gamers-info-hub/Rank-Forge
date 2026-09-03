@@ -245,6 +245,7 @@ class MatchOcrReviewViewModelTest {
             "P1 Saved Player, P2 Not detected, P3 Not detected, P4 Not detected",
             row.detectedPlayerNameEvidenceLabel,
         )
+        assertFalse(row.allPlayersSemanticallyNotDetected)
         assertEquals("12", row.suggestedTeamSlotDisplayValue)
         assertEquals("7", row.detectedKillDisplayValue)
         assertEquals(
@@ -255,6 +256,52 @@ class MatchOcrReviewViewModelTest {
         assertEquals(listOf(1), row.playerKillEvidence.map { it.playerSlot })
         assertEquals(listOf(1), state.correctionDraft!!.rows.single().playerKillDrafts.map { it.playerSlot })
         assertEquals(0, resultRunnerCalls)
+    }
+
+    @Test
+    fun fullyAbsentFreshPreviewRowIsEffectivelyExcluded() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            rows = emptyList(),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        val row = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!.last()
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(row))
+
+        assertTrue(row.allPlayersSemanticallyNotDetected)
+        assertTrue(draft.rows.single().isImplicitlyAbsent)
+        assertEquals(0, draft.blockerCount)
+    }
+
+    @Test
+    fun fullyAbsentRestoredCalculatedRowIsEffectivelyExcluded() = runTest(dispatcher) {
+        val evidence = calculatedEvidenceForRestoreTest().copy(
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 12,
+                        sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        slotNumber = null,
+                        playerNames = List(4) { "Not detected" },
+                        playerKills = List(4) { null },
+                        totalKills = null,
+                        placement = null,
+                        playerKillApplicable = List(4) { false },
+                    ),
+                ),
+            ),
+        )
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.restoreCalculatedEvidence(TOURNAMENT_ID, MATCH_ID, evidence)
+        advanceUntilIdle()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.rows.single().allPlayersSemanticallyNotDetected)
+        assertTrue(ready.correctionDraft!!.rows.single().isImplicitlyAbsent)
+        assertEquals(0, ready.correctionDraft.blockerCount)
     }
 
     @Test
@@ -1207,6 +1254,42 @@ class MatchOcrReviewViewModelTest {
         assertEquals(10, evidence.correctionSnapshots.size)
         assertEquals((0..11).toList(), evidence.rows.map { it.rowIndex })
         assertEquals((0..9).toList(), evidence.correctionSnapshots.map { it.rowIndex })
+    }
+
+    @Test
+    fun fullyAbsentRowsRemainStructuralInputsAndFinalizeAsExcludedForEightTeams() = runTest(dispatcher) {
+        val repository = createRepository(activeTeamCount = 8)
+        val rows = correctionRows().map { row ->
+            if (row.rowIndex >= 8) {
+                row.copy(
+                    detectedPlacementDisplayValue = "",
+                    detectedKillDisplayValue = "",
+                    detectedPlayerNameEvidenceLabel = "Unavailable",
+                    suggestedTeamSlotDisplayValue = "",
+                    originalParsedPlacementValue = null,
+                    originalParsedKillValue = null,
+                    originalSuggestedTeamSlot = null,
+                    allPlayersSemanticallyNotDetected = true,
+                )
+            } else {
+                row
+            }
+        }
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = draft, rows = rows))
+
+        assertEquals(12, draft.rows.size)
+        assertEquals(0, draft.blockerCount)
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val finalized = repository.observeMatchById(MATCH_ID).first()!!
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        assertTrue((viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+        assertEquals(8, finalized.placements.size)
+        assertEquals(8, finalized.kills.size)
+        assertEquals(12, evidence.rows.size)
+        assertEquals((0..7).toList(), evidence.correctionSnapshots.map { it.rowIndex })
     }
 
     @Test

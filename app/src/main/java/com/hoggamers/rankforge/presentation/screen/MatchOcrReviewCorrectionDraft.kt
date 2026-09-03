@@ -10,7 +10,7 @@ data class MatchOcrReviewCorrectionDraft(
         get() = rows.any { it.isDirty }
 
     val includedRows: List<MatchOcrReviewRowCorrectionDraft>
-        get() = rows.filterNot { it.isExcluded }
+        get() = rows.filterNot { it.isEffectivelyExcluded }
 
     val excludedCount: Int
         get() = rows.count { it.isExcluded }
@@ -48,9 +48,19 @@ data class MatchOcrReviewRowCorrectionDraft(
     val originallyRequiredManualReview: Boolean,
     val weakConfidenceOrSafetyEvidence: Boolean,
     val isExcluded: Boolean = false,
+    val allPlayersSemanticallyNotDetected: Boolean = false,
     val playerKillDrafts: List<MatchOcrReviewPlayerKillCorrectionDraft> = emptyList(),
     val validation: MatchOcrReviewRowCorrectionValidation,
 ) {
+    val isImplicitlyAbsent: Boolean
+        get() = allPlayersSemanticallyNotDetected &&
+            placementDraftValue.trim().isBlank() &&
+            killsDraftValue.trim().isBlank() &&
+            assignedTeamSlotDraftValue.trim().isBlank()
+
+    val isEffectivelyExcluded: Boolean
+        get() = isExcluded || isImplicitlyAbsent
+
     val isDirty: Boolean
         get() = isExcluded ||
             placementDraftValue != originalPlacementValue ||
@@ -129,6 +139,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                 originallyRequiredManualReview = row.blockerLabels.isNotEmpty() || row.warningLabels.isNotEmpty(),
                 weakConfidenceOrSafetyEvidence = row.hasWeakConfidenceOrSafetyEvidence(),
                 isExcluded = false,
+                allPlayersSemanticallyNotDetected = row.allPlayersSemanticallyNotDetected,
                 playerKillDrafts = playerKillDrafts,
                 validation = MatchOcrReviewRowCorrectionValidation(),
             )
@@ -261,7 +272,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                     blockers += MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT
                 }
 
-                if (!row.isExcluded) {
+                if (!row.isEffectivelyExcluded) {
                     when {
                         placement.isBlank() -> blockers += MatchOcrReviewCorrectionReason.MISSING_PLACEMENT
                         placement.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->

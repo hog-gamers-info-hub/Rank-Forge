@@ -29,6 +29,76 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun fullyAbsentRowIsEffectivelyExcludedWithoutChangingExplicitExclusion() {
+        val draft = initialDraft(listOf(absentRow()))
+
+        assertTrue(draft.rows.single().isImplicitlyAbsent)
+        assertTrue(draft.rows.single().isEffectivelyExcluded)
+        assertFalse(draft.rows.single().isExcluded)
+        assertTrue(draft.rows.single().validation.blockers.isEmpty())
+        assertTrue(draft.rows.single().validation.warnings.isEmpty())
+        assertEquals(0, draft.blockerCount)
+    }
+
+    @Test
+    fun absentRowWithAnyPopulatedFieldKeepsNormalBlockingValidation() {
+        val absent = absentRow()
+
+        val withPlacement = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+            initialDraft(listOf(absent)),
+            0,
+            "9",
+        )
+        val withKills = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+            initialDraft(listOf(absent)),
+            0,
+            "4",
+        )
+        val withTeamSlot = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            initialDraft(listOf(absent)),
+            0,
+            "8",
+        )
+
+        listOf(withPlacement, withKills, withTeamSlot).forEach { draft ->
+            assertFalse(draft.rows.single().isImplicitlyAbsent)
+            assertTrue(draft.rows.single().validation.blockers.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun absentRowWithDetectedPlayerKeepsNormalBlockingValidation() {
+        val detected = absentRow().copy(allPlayersSemanticallyNotDetected = false)
+        val draft = initialDraft(listOf(detected))
+
+        assertFalse(draft.rows.single().isImplicitlyAbsent)
+        assertTrue(draft.rows.single().validation.blockers.isNotEmpty())
+    }
+
+    @Test
+    fun zeroTotalKillsDoesNotQualifyAsImplicitlyAbsent() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+            initialDraft(listOf(absentRow())),
+            0,
+            "0",
+        )
+
+        assertFalse(draft.rows.single().isImplicitlyAbsent)
+        assertTrue(draft.rows.single().validation.blockers.isNotEmpty())
+    }
+
+    @Test
+    fun whitespaceOnlyAbsentFieldsQualifyAsImplicitlyAbsent() {
+        var draft = initialDraft(listOf(absentRow()))
+        draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, 0, "   ")
+        draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "\t")
+        draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(draft, 0, " ")
+
+        assertTrue(draft.rows.single().isImplicitlyAbsent)
+        assertEquals(0, draft.blockerCount)
+    }
+
+    @Test
     fun absentPlayersDoNotCreateIndividualKillValidationBlockers() {
         val row = readyRows().first().copy(
             detectedKillDisplayValue = "5",
@@ -553,6 +623,19 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         rows: List<MatchOcrReviewRowUiState> = readyRows(),
     ): MatchOcrReviewCorrectionDraft =
         MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+
+    private fun absentRow(): MatchOcrReviewRowUiState = readyRows().first().copy(
+        detectedPlacementDisplayValue = "",
+        detectedKillDisplayValue = "",
+        detectedPlayerNameEvidenceLabel = "Unavailable",
+        suggestedTeamSlotDisplayValue = "",
+        originalParsedPlacementValue = null,
+        originalParsedKillValue = null,
+        originalSuggestedTeamSlot = null,
+        allPlayersSemanticallyNotDetected = true,
+        warningLabels = listOf("OCR preview requires manual confirmation"),
+        blockerLabels = listOf("Team assignment: manual team slot required"),
+    )
 
     private fun playerKillDraft(
         firstRowKills: List<String> = listOf("3", "2", "1", "4"),

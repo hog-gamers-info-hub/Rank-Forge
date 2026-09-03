@@ -152,6 +152,9 @@ private fun ResultPositionCalculatedEvidence.toRestoredReviewRow(): MatchOcrRevi
         originalParsedPlacementValue = displayPlacement.toIntOrNull(),
         originalParsedKillValue = totalKills,
         originalSuggestedTeamSlot = slotNumber,
+        allPlayersSemanticallyNotDetected = playerKillApplicability().all { applicable ->
+            !applicable
+        },
         playerKillEvidence = (1..4).filter { slot -> applicability[slot - 1] }.map { slot ->
             MatchOcrReviewPlayerKillEvidenceUiState(
                 playerSlot = slot,
