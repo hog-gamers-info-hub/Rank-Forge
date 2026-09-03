@@ -42,6 +42,12 @@ fun interface MatchResultOcrPreviewRunner {
     ): MatchResultOcrPreviewProcessingResult
 }
 
+internal interface MatchResultPairOcrPreviewRunner : MatchResultOcrPreviewRunner {
+    suspend fun processPair(
+        identities: Map<MatchResultScreenshotRole, MatchResultScreenshotIdentity>,
+    ): Map<MatchResultScreenshotRole, MatchResultOcrPreviewProcessingResult>
+}
+
 fun interface MatchResultOcrPreviewLocalFileResolver {
     fun resolve(relativePath: String): File?
 }

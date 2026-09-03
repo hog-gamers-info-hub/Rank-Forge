@@ -4,79 +4,66 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropObservation
-import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class MatchResultSemanticRoleResolverTest {
-    private val resolver = MatchResultSemanticRoleResolver()
+class MatchResultLowerEvidenceResolverTest {
+    private val resolver = MatchResultLowerEvidenceResolver()
 
     @Test
-    fun upperEvidenceResolvesUpperWithoutStoredRoleInput() {
-        val evidence = upperEvidence()
-
-        repeat(2) {
-            val result = resolver.resolve(evidence) as MatchResultSemanticRoleResolution.Resolved
-            assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.role)
-            assertEquals((1..10).toList(), result.geometry.crops.map { crop -> crop.position })
-        }
+    fun exactPositionTwelveEvidenceIdentifiesLower() {
+        assertEquals(true, resolver.hasExistingLowerEvidence(lowerEvidence()))
     }
 
     @Test
-    fun lowerEvidenceResolvesLower() {
-        val result = resolver.resolve(lowerEvidence()) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
-        assertEquals(listOf(11, 12), result.geometry.crops.map { crop -> crop.position })
-    }
-
-    @Test
-    fun exactTwelveInPlacementColumnResolvesLowerWhenElevenIsMissing() {
-        val result = resolver.resolve(
-            lowerAnchoredEvidence(observation("12", 646, 400, 684, 430)),
-        ) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+    fun exactTwelveInPlacementColumnIdentifiesLowerWhenElevenIsMissing() {
+        assertEquals(
+            true,
+            resolver.hasExistingLowerEvidence(
+                lowerAnchoredEvidence(observation("12", 646, 400, 684, 430)),
+            ),
+        )
     }
 
     @Test
     fun exactTwelveOutsidePlacementColumnDoesNotResolveLower() {
         assertEquals(
-            MatchResultSemanticRoleResolution.Unresolved,
-            resolver.resolve(lowerAnchoredEvidence(observation("12", 200, 400, 238, 430))),
+            false,
+            resolver.hasExistingLowerEvidence(lowerAnchoredEvidence(observation("12", 200, 400, 238, 430))),
         )
     }
 
     @Test
-    fun shortMisreadAtExpectedPositionTwelveResolvesLower() {
-        val result = resolver.resolve(
-            lowerAnchoredEvidence(observation("1Z", 646, 400, 684, 430)),
-        ) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+    fun shortMisreadAtExpectedPositionTwelveIdentifiesLower() {
+        assertEquals(
+            true,
+            resolver.hasExistingLowerEvidence(
+                lowerAnchoredEvidence(observation("1Z", 646, 400, 684, 430)),
+            ),
+        )
     }
 
     @Test
     fun shortTextInPlacementColumnAtWrongVerticalPositionDoesNotResolveLower() {
         assertEquals(
-            MatchResultSemanticRoleResolution.Unresolved,
-            resolver.resolve(lowerAnchoredEvidence(observation("AB", 646, 320, 684, 350))),
+            false,
+            resolver.hasExistingLowerEvidence(lowerAnchoredEvidence(observation("AB", 646, 320, 684, 350))),
         )
     }
 
     @Test
     fun shortTextNearExpectedPositionTwelveInWrongColumnDoesNotResolveLower() {
         assertEquals(
-            MatchResultSemanticRoleResolution.Unresolved,
-            resolver.resolve(lowerAnchoredEvidence(observation("AB", 800, 400, 838, 430))),
+            false,
+            resolver.hasExistingLowerEvidence(lowerAnchoredEvidence(observation("AB", 800, 400, 838, 430))),
         )
     }
 
     @Test
     fun missingPositionTwelveElementDoesNotResolveLowerFromEmptySpace() {
         assertEquals(
-            MatchResultSemanticRoleResolution.Unresolved,
-            resolver.resolve(
+            false,
+            resolver.hasExistingLowerEvidence(
                 lowerAnchoredEvidence(observation("11", 646, 320, 684, 350)),
             ),
         )
@@ -93,74 +80,18 @@ class MatchResultSemanticRoleResolverTest {
             imageDimensions = OcrImageDimensions(1_200, 500),
         )
 
-        val result = resolver.resolve(evidence) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.role)
+        assertEquals(true, resolver.hasExistingLowerEvidence(evidence))
     }
 
     @Test
-    fun upperWithPositionElevenButNoPositionTwelveEvidenceStillResolvesUpper() {
-        val upper = upperEvidence()
-        val result = resolver.resolve(
-            upper.copy(
-                observations = upper.observations + observation("11", 650, 420, 680, 450),
-            ),
-        ) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.role)
-    }
-
-    @Test
-    fun positionElevenFallbackCannotResolveAnUpperRole() {
-        val upper = upperEvidence()
-        val result = resolver.resolve(
-            upper.copy(
-                observations = upper.observations + observation("11", 650, 420, 680, 450),
-            ),
-        ) as MatchResultSemanticRoleResolution.Resolved
-
-        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.role)
-        assertEquals((1..10).toList(), result.geometry.crops.map { crop -> crop.position })
-    }
-
-    @Test
-    fun noValidStructuralEvidenceIsUnresolved() {
+    fun noValidStructuralEvidenceHasNoLowerEvidence() {
         assertEquals(
-            MatchResultSemanticRoleResolution.Unresolved,
-            resolver.resolve(MatchResultAutoCropEvidence(emptyList(), OcrImageDimensions(1_200, 500))),
-        )
-    }
-
-    @Test
-    fun evidenceSatisfyingBothStrictHypothesesIsAmbiguous() {
-        val upper = MatchResultAutoCropEvidence(
-            observations = eliminationObservations() + listOf(
-                observation("4", 50, 320, 75, 350),
-                observation("5", 50, 420, 75, 450),
-                observation("6", 650, 20, 680, 50),
-                observation("7", 650, 90, 680, 120),
-                observation("11", 650, 370, 680, 400),
-                observation("12", 650, 440, 680, 470),
-            ),
-            imageDimensions = OcrImageDimensions(1_200, 500),
-        )
-        assertEquals(
-            MatchResultSemanticRoleResolution.Ambiguous,
-            resolver.resolve(
-                upper,
+            false,
+            resolver.hasExistingLowerEvidence(
+                MatchResultAutoCropEvidence(emptyList(), OcrImageDimensions(1_200, 500)),
             ),
         )
     }
-
-    private fun upperEvidence(): MatchResultAutoCropEvidence = MatchResultAutoCropEvidence(
-        observations = eliminationObservations() + listOf(
-            observation("4", 50, 320, 75, 350),
-            observation("5", 50, 420, 75, 450),
-            observation("6", 650, 20, 680, 50),
-            observation("7", 650, 100, 680, 130),
-        ),
-        imageDimensions = OcrImageDimensions(1_200, 500),
-    )
 
     private fun lowerEvidence(): MatchResultAutoCropEvidence = MatchResultAutoCropEvidence(
         observations = eliminationObservations() + listOf(

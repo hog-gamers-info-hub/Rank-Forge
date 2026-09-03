@@ -4,37 +4,34 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropObservation
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculator
-import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class MatchResultLowerProcessingFallbackTest {
     private val fallback = MatchResultLowerProcessingFallback()
-    private val calculator = MatchResultPositionCropCalculator()
 
     @Test
-    fun unresolvedLowerWithFiveTerminalAnchorsRecoversBothRowsForTwelveTeams() {
-        val result = recover(evidence(*anchors(6, 7, 8, 9, 10)), activeTeamCount = 12)
+    fun lowerWithFiveTerminalAnchorsRecoversBothRowsForTwelveTeams() {
+        val result = recover(evidence(*anchors(6, 7, 8, 9, 10)))
 
         assertEquals(listOf(11, 12), result?.crops?.map { it.position })
     }
 
     @Test
-    fun unresolvedLowerWithNonConsecutiveAnchorsRecoversBothRows() {
-        val result = recover(evidence(*anchors(6, 8, 10)), activeTeamCount = 12)
+    fun lowerWithNonConsecutiveAnchorsRecoversBothRows() {
+        val result = recover(evidence(*anchors(6, 8, 10)))
 
         assertEquals(listOf(11, 12), result?.crops?.map { it.position })
     }
 
     @Test
-    fun unresolvedLowerWithOnlyTwoAnchorsIsRejected() {
-        assertNull(recover(evidence(*anchors(9, 10)), activeTeamCount = 12))
+    fun lowerWithOnlyTwoAnchorsIsRejected() {
+        assertNull(recover(evidence(*anchors(9, 10))))
     }
 
     @Test
-    fun unresolvedLowerWithInconsistentAnchorsIsRejected() {
+    fun lowerWithInconsistentAnchorsIsRejected() {
         assertNull(
             recover(
                 evidence(
@@ -44,94 +41,40 @@ class MatchResultLowerProcessingFallbackTest {
                     observation("9", 646, 265, 684, 295),
                     observation("10", 646, 345, 684, 375),
                 ),
-                activeTeamCount = 12,
             ),
         )
     }
 
     @Test
-    fun unresolvedLowerWithElevenTeamsRecoversOnlyPositionEleven() {
-        val result = recover(evidence(*anchors(6, 7, 8, 9, 10)), activeTeamCount = 11)
+    fun lowerWhenPositionTwelveDoesNotFitRecoversOnlyPositionEleven() {
+        val result = recover(
+            evidence(*anchors(6, 7, 8, 9, 10), imageHeight = 500),
+        )
 
         assertEquals(listOf(11), result?.crops?.map { it.position })
     }
 
     @Test
-    fun unresolvedLowerWithTenOrFewerTeamsIsRejected() {
-        assertNull(recover(evidence(*anchors(6, 7, 8, 9, 10)), activeTeamCount = 10))
-    }
-
-    @Test
-    fun unresolvedLowerWithUnknownTeamCountIsRejected() {
-        assertNull(
-            fallback.recover(
-                semanticResolution = MatchResultSemanticRoleResolution.Unresolved,
-                requestedRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-                evidence = evidence(*anchors(6, 7, 8, 9, 10)),
-                activeTeamCount = null,
-            ),
-        )
-    }
-
-    @Test
-    fun resolvedRoleDoesNotInvokeFallback() {
-        val evidence = evidence(*anchors(6, 7, 8, 9, 10))
-        val geometry = calculator.calculate(
-            evidence = evidence,
-            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-        )
-
-        val result = fallback.recover(
-            semanticResolution = MatchResultSemanticRoleResolution.Resolved(
-                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-                geometry = geometry as com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult.Available,
-            ),
-            requestedRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-            evidence = evidence,
-            activeTeamCount = 12,
-        )
-
-        assertNull(result)
-    }
-
-    @Test
-    fun ambiguousRoleDoesNotInvokeFallback() {
-        assertNull(
-            fallback.recover(
-                semanticResolution = MatchResultSemanticRoleResolution.Ambiguous,
-                requestedRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-                evidence = evidence(*anchors(6, 7, 8, 9, 10)),
-                activeTeamCount = 12,
-            ),
-        )
-    }
-
-    @Test
-    fun unresolvedUpperRequestDoesNotInvokeFallback() {
-        assertNull(
-            fallback.recover(
-                semanticResolution = MatchResultSemanticRoleResolution.Unresolved,
-                requestedRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                evidence = evidence(*anchors(6, 7, 8, 9, 10)),
-                activeTeamCount = 12,
-            ),
+    fun lowerInferenceDoesNotNeedRegisteredTeamCount() {
+        assertEquals(
+            listOf(11, 12),
+            fallback.recover(evidence(*anchors(6, 7, 8, 9, 10)))?.crops?.map { it.position },
         )
     }
 
     private fun recover(
         evidence: MatchResultAutoCropEvidence,
-        activeTeamCount: Int,
     ) = fallback.recover(
-        semanticResolution = MatchResultSemanticRoleResolution.Unresolved,
-        requestedRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
         evidence = evidence,
-        activeTeamCount = activeTeamCount,
     )
 
-    private fun evidence(vararg placementObservations: MatchResultAutoCropObservation) =
+    private fun evidence(
+        vararg placementObservations: MatchResultAutoCropObservation,
+        imageHeight: Int = 720,
+    ) =
         MatchResultAutoCropEvidence(
             observations = eliminationObservations() + placementObservations,
-            imageDimensions = OcrImageDimensions(width = 1_200, height = 720),
+            imageDimensions = OcrImageDimensions(width = 1_200, height = imageHeight),
         )
 
     private fun anchors(vararg positions: Int): Array<out MatchResultAutoCropObservation> =
