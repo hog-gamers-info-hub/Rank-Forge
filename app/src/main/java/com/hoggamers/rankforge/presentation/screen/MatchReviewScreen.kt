@@ -1160,6 +1160,13 @@ private fun MatchReviewContent(
                 )
             }
         }
+        if (!showLegacyManualReviewContent &&
+            uiState.isEditable &&
+            !hasDisplayableResultOcrData &&
+            showClearResult
+        ) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
+        }
         if (showClearResult) {
             Button(
                 onClick = onClearResult,
