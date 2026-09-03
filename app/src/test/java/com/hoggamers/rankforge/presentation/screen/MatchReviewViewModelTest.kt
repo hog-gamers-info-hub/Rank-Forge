@@ -34,6 +34,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotMetadataFailureCode
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataMutationResult
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceRepository
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
@@ -67,8 +69,11 @@ import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -76,6 +81,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
@@ -246,6 +252,132 @@ class MatchReviewViewModelTest {
         assertFalse(viewModel.uiState.value.isSelectedScreenshotValidated)
         assertEquals(ImageValidationError.EMPTY_URI, viewModel.uiState.value.imageValidationError)
         assertFalse(viewModel.uiState.value.isPhotoPickerRequestActive)
+    }
+
+    @Test
+    fun clearResultInvalidatesAnInFlightRestoreBeforeItCanPublish() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val restoreGate = CompletableDeferred<Unit>()
+            val repository = ControlledCalculatedEvidenceRepository(
+                evidence = MatchCalculatedEvidence(),
+                matchId = matchId,
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = repository,
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(restoreGate),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+
+            viewModel.load(TOURNAMENT_ID, matchId)
+            runCurrent()
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.CHECKING,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+
+            viewModel.clearResult()
+            runCurrent()
+            restoreGate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.CLEARED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+            assertNull(repository.evidence)
+            assertEquals(1, repository.deleteCalls)
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun calculatedEvidenceRestorePublishesNormallyWhenNotCleared() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val repository = ControlledCalculatedEvidenceRepository(
+                evidence = MatchCalculatedEvidence(),
+                matchId = matchId,
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = repository,
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(
+                    CompletableDeferred<Unit>().also { it.complete(Unit) },
+                ),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.RESTORED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun clearingThenCalculatingAgainAllowsAFreshRestore() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            repository.createDraftMatch(
+                Match(
+                    id = "fresh-match-id",
+                    tournamentId = TOURNAMENT_ID,
+                    matchNumber = 2,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                ),
+            )
+            val evidenceRepository = ControlledCalculatedEvidenceRepository(
+                evidence = MatchCalculatedEvidence(),
+                matchId = matchId,
+            )
+            val restorer = DelayedCalculatedEvidencePreviewRestorer(
+                CompletableDeferred<Unit>().also { it.complete(Unit) },
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = evidenceRepository,
+                calculatedEvidencePreviewRestorer = restorer,
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+            viewModel.clearResult()
+            advanceUntilIdle()
+            assertEquals(CalculatedEvidenceRestoreStatus.CLEARED, viewModel.uiState.value.calculatedEvidenceRestoreStatus)
+
+            viewModel.calculateResultPositionCrops()
+            advanceUntilIdle()
+            assertNotNull(evidenceRepository.evidence)
+
+            viewModel.load(TOURNAMENT_ID, "fresh-match-id")
+            advanceUntilIdle()
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.RESTORED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+        } finally {
+            schedulerScope.cancel()
+        }
     }
 
     @Test
@@ -2685,6 +2817,10 @@ class MatchReviewViewModelTest {
         matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
             NoOpMatchResultPositionCropPreviewGenerator,
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
+        calculatedEvidenceRepository: MatchCalculatedEvidenceRepository? = null,
+        calculatedEvidencePreviewRestorer: MatchCalculatedEvidencePreviewRestorer? = null,
+        calculatedEvidenceSaveScheduler: ScreenshotReconciliationScheduler =
+            ScreenshotReconciliationScheduler(),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
@@ -2711,6 +2847,9 @@ class MatchReviewViewModelTest {
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
         matchResultPositionCropPreviewGenerator = matchResultPositionCropPreviewGenerator,
         finalizedMatchCloudSync = finalizedMatchCloudSync,
+        matchCalculatedEvidenceRepository = calculatedEvidenceRepository,
+        matchCalculatedEvidencePreviewRestorer = calculatedEvidencePreviewRestorer,
+        calculatedEvidenceSaveScheduler = calculatedEvidenceSaveScheduler,
         )
 
     private fun batchReviewViewModel(
@@ -3308,6 +3447,60 @@ class MatchReviewViewModelTest {
 
         override suspend fun deleteByTournamentId(tournamentId: String) {
             metadata.value = null
+        }
+    }
+
+    private class ControlledCalculatedEvidenceRepository(
+        var evidence: MatchCalculatedEvidence?,
+        var matchId: String? = null,
+    ) : MatchCalculatedEvidenceRepository {
+        var deleteCalls = 0
+
+        override suspend fun save(
+            ownerUserId: String,
+            tournamentId: String,
+            matchId: String,
+            evidence: MatchCalculatedEvidence,
+        ): Boolean {
+            this.evidence = evidence
+            this.matchId = matchId
+            return true
+        }
+
+        override suspend fun read(
+            ownerUserId: String,
+            tournamentId: String,
+            matchId: String,
+        ): MatchCalculatedEvidence? = evidence?.takeIf { this.matchId == matchId }
+
+        override suspend fun delete(
+            ownerUserId: String,
+            tournamentId: String,
+            matchId: String,
+        ): Boolean {
+            if (this.matchId != matchId) return false
+            deleteCalls++
+            evidence = null
+            this.matchId = null
+            return true
+        }
+    }
+
+    private class DelayedCalculatedEvidencePreviewRestorer(
+        private val gate: CompletableDeferred<Unit>,
+    ) : MatchCalculatedEvidencePreviewRestorer {
+        override suspend fun restore(
+            tournamentId: String,
+            matchId: String,
+            ownerUserId: String,
+            evidence: MatchCalculatedEvidence,
+        ): RestoredMatchCalculatedEvidencePreviews {
+            withContext(NonCancellable) { gate.await() }
+            return RestoredMatchCalculatedEvidencePreviews(
+                lobbyTeamCropPreviewsByScreenshotIndex = emptyMap(),
+                resultPositionCropPreviews = defaultMatchResultPositionCropPreviewStates(),
+                lobbyTeamNamesBySlot = emptyMap(),
+            )
         }
     }
 }

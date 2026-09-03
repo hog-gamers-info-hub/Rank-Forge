@@ -13,6 +13,7 @@ import com.hoggamers.rankforge.domain.ocr.review.OcrReviewField
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewFieldType
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewSeverity
 import com.hoggamers.rankforge.domain.ocr.review.OcrReviewStatus
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -101,6 +102,7 @@ sealed interface MatchOcrReviewUiState {
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
         val phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
+        val evidenceSource: MatchOcrReviewEvidenceSource = MatchOcrReviewEvidenceSource.LIVE,
     ) : MatchOcrReviewUiState
 
     data class Empty(
@@ -117,6 +119,11 @@ sealed interface MatchOcrReviewUiState {
         val message: String,
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
     ) : MatchOcrReviewUiState
+}
+
+enum class MatchOcrReviewEvidenceSource {
+    LIVE,
+    RESTORED_CALCULATED,
 }
 
 object MatchResultOcrPreviewUiStateMapper {
@@ -251,6 +258,7 @@ object MatchResultOcrPreviewUiStateMapper {
             originalSuggestedTeamSlot = null,
             playerKillEvidence = slots
                 .sortedBy { it.slot }
+                .filter { it.isPlayerKillApplicable() }
                 .map { slot ->
                     MatchOcrReviewPlayerKillEvidenceUiState(
                         playerSlot = slot.slot,
@@ -287,6 +295,17 @@ object MatchResultOcrPreviewUiStateMapper {
             killStatusLabel = kill.status.name,
         )
 }
+
+/**
+ * OCR status is authoritative for production preview rows. The text fallback only supports
+ * older/synthetic UI fixtures whose status label predates the enum-valued label.
+ */
+internal fun MatchResultOcrPreviewSlotUiState.isPlayerKillApplicable(): Boolean =
+    runCatching {
+        MatchResultOcrFieldStatus.valueOf(playerStatusLabel.trim())
+    }.getOrNull()?.let { status ->
+        status != MatchResultOcrFieldStatus.EMPTY
+    } ?: playerText.trim().isNotBlank()
 
 data class MatchOcrReviewRowUiState(
     val rowIndex: Int,

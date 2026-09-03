@@ -705,3 +705,34 @@ data class MatchCorrectionEntity(
     @ColumnInfo(name = "corrected_placements") val correctedPlacements: String,
     @ColumnInfo(name = "corrected_kills") val correctedKills: String,
 )
+
+@Entity(
+    tableName = "match_calculated_evidence",
+    foreignKeys = [
+        ForeignKey(
+            entity = MatchEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["match_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["tournament_id"]),
+        Index(value = ["owner_user_id"]),
+    ],
+)
+data class MatchCalculatedEvidenceEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "match_id")
+    val matchId: String,
+    @ColumnInfo(name = "tournament_id")
+    val tournamentId: String,
+    @ColumnInfo(name = "owner_user_id")
+    val ownerUserId: String,
+    @ColumnInfo(name = "lobby_evidence_json")
+    val lobbyEvidenceJson: String,
+    @ColumnInfo(name = "result_evidence_json")
+    val resultEvidenceJson: String,
+    @ColumnInfo(name = "saved_at")
+    val savedAt: Long,
+)

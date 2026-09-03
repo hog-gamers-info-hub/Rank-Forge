@@ -1,0 +1,2292 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 20,
+    "identityHash": "ce3317c58cef947c1affeb92082f6418",
+    "entities": [
+      {
+        "tableName": "rank_forge_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "tournaments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `date` TEXT NOT NULL, `organizer_name` TEXT NOT NULL, `organizer_contact_number` TEXT NOT NULL, `status` TEXT NOT NULL, `creation_order` INTEGER NOT NULL DEFAULT 0, `last_updated_epoch_millis` INTEGER, `owner_user_id` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "organizerName",
+            "columnName": "organizer_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "organizerContactNumber",
+            "columnName": "organizer_contact_number",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationOrder",
+            "columnName": "creation_order",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "lastUpdatedEpochMillis",
+            "columnName": "last_updated_epoch_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tournaments_owner_user_id",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tournaments_owner_user_id` ON `${TABLE_NAME}` (`owner_user_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "team_slots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `slot_number` INTEGER NOT NULL, `team_name` TEXT NOT NULL, PRIMARY KEY(`tournament_id`, `slot_number`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slotNumber",
+            "columnName": "slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamName",
+            "columnName": "team_name",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_team_slots_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_team_slots_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "roster_players",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `slot_number` INTEGER NOT NULL, `roster_position` INTEGER NOT NULL, `display_name` TEXT NOT NULL, PRIMARY KEY(`tournament_id`, `slot_number`, `roster_position`), FOREIGN KEY(`tournament_id`, `slot_number`) REFERENCES `team_slots`(`tournament_id`, `slot_number`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slotNumber",
+            "columnName": "slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rosterPosition",
+            "columnName": "roster_position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "slot_number",
+            "roster_position"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_roster_players_tournament_id_slot_number",
+            "unique": false,
+            "columnNames": [
+              "tournament_id",
+              "slot_number"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_roster_players_tournament_id_slot_number` ON `${TABLE_NAME}` (`tournament_id`, `slot_number`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "team_slots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id",
+              "slot_number"
+            ],
+            "referencedColumns": [
+              "tournament_id",
+              "slot_number"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "matches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `match_number` INTEGER NOT NULL, `date` TEXT NOT NULL, `map_name` TEXT NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchNumber",
+            "columnName": "match_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mapName",
+            "columnName": "map_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_matches_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_placements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_placements_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_placements_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_kills",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `kills` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kills",
+            "columnName": "kills",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_kills_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_kills_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_participant_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `participation_status` TEXT NOT NULL, `placement` INTEGER, `kills` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "participationStatus",
+            "columnName": "participation_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placement",
+            "columnName": "placement",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "kills",
+            "columnName": "kills",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_participant_results_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_participant_results_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          },
+          {
+            "name": "index_match_participant_results_match_id_placement",
+            "unique": true,
+            "columnNames": [
+              "match_id",
+              "placement"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_match_participant_results_match_id_placement` ON `${TABLE_NAME}` (`match_id`, `placement`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_draft_values",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `team_slot_number` INTEGER NOT NULL, `placement_input` TEXT NOT NULL, `kills_input` TEXT NOT NULL, PRIMARY KEY(`match_id`, `team_slot_number`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotNumber",
+            "columnName": "team_slot_number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placementInput",
+            "columnName": "placement_input",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "killsInput",
+            "columnName": "kills_input",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "team_slot_number"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_draft_values_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_draft_values_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_corrections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `correction_index` INTEGER NOT NULL, `previous_placements` TEXT NOT NULL, `previous_kills` TEXT NOT NULL, `corrected_placements` TEXT NOT NULL, `corrected_kills` TEXT NOT NULL, PRIMARY KEY(`match_id`, `correction_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionIndex",
+            "columnName": "correction_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previousPlacements",
+            "columnName": "previous_placements",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previousKills",
+            "columnName": "previous_kills",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedPlacements",
+            "columnName": "corrected_placements",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedKills",
+            "columnName": "corrected_kills",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "correction_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_corrections_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_corrections_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sync_queue_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `operationType` TEXT NOT NULL, `tournamentId` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `failureCategory` TEXT, `attemptCount` INTEGER NOT NULL, `owner_user_id` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationType",
+            "columnName": "operationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournamentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCategory",
+            "columnName": "failureCategory",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_queue_entries_owner_user_id_createdAtEpochMillis_id",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id",
+              "createdAtEpochMillis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_createdAtEpochMillis_id` ON `${TABLE_NAME}` (`owner_user_id`, `createdAtEpochMillis`, `id`)"
+          },
+          {
+            "name": "index_sync_queue_entries_owner_user_id_operationType_tournamentId_status_createdAtEpochMillis_id",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id",
+              "operationType",
+              "tournamentId",
+              "status",
+              "createdAtEpochMillis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_operationType_tournamentId_status_createdAtEpochMillis_id` ON `${TABLE_NAME}` (`owner_user_id`, `operationType`, `tournamentId`, `status`, `createdAtEpochMillis`, `id`)"
+          },
+          {
+            "name": "index_sync_queue_entries_owner_user_id_tournamentId",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id",
+              "tournamentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_tournamentId` ON `${TABLE_NAME}` (`owner_user_id`, `tournamentId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_revisions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `local_revision` INTEGER NOT NULL, `base_cloud_revision` INTEGER, PRIMARY KEY(`tournament_id`))",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRevision",
+            "columnName": "local_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseCloudRevision",
+            "columnName": "base_cloud_revision",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id"
+          ]
+        }
+      },
+      {
+        "tableName": "deletion_intents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`target_type` TEXT NOT NULL, `target_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `owner_user_id` TEXT NOT NULL, `phase` TEXT NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`target_type`, `target_id`))",
+        "fields": [
+          {
+            "fieldPath": "targetType",
+            "columnName": "target_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "target_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "target_type",
+            "target_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_deletion_intents_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_deletion_intents_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_deletion_intents_phase",
+            "unique": false,
+            "columnNames": [
+              "phase"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_deletion_intents_phase` ON `${TABLE_NAME}` (`phase`)"
+          }
+        ]
+      },
+      {
+        "tableName": "screenshot_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `owner_user_id` TEXT NOT NULL, `local_relative_path` TEXT NOT NULL, `file_extension` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `storage_bucket` TEXT, `storage_object_path` TEXT, `local_status` TEXT NOT NULL, `upload_status` TEXT NOT NULL, `upload_failure_code` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `preserved_at` INTEGER NOT NULL, `uploaded_at` INTEGER, `revision` INTEGER NOT NULL, PRIMARY KEY(`match_id`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRelativePath",
+            "columnName": "local_relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileExtension",
+            "columnName": "file_extension",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageBucket",
+            "columnName": "storage_bucket",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "storageObjectPath",
+            "columnName": "storage_object_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "localStatus",
+            "columnName": "local_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadStatus",
+            "columnName": "upload_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadFailureCode",
+            "columnName": "upload_failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preservedAt",
+            "columnName": "preserved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadedAt",
+            "columnName": "uploaded_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_screenshot_metadata_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_screenshot_metadata_owner_user_id",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_owner_user_id` ON `${TABLE_NAME}` (`owner_user_id`)"
+          },
+          {
+            "name": "index_screenshot_metadata_sha256",
+            "unique": false,
+            "columnNames": [
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_sha256` ON `${TABLE_NAME}` (`sha256`)"
+          },
+          {
+            "name": "index_screenshot_metadata_upload_status",
+            "unique": false,
+            "columnNames": [
+              "upload_status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenshot_metadata_upload_status` ON `${TABLE_NAME}` (`upload_status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_result_screenshot_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `match_id` TEXT NOT NULL, `screenshot_kind` TEXT NOT NULL, `screenshot_role` TEXT NOT NULL, `owner_user_id` TEXT NOT NULL, `local_relative_path` TEXT NOT NULL, `file_extension` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `original_width` INTEGER NOT NULL, `original_height` INTEGER NOT NULL, `byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `local_status` TEXT NOT NULL, `upload_status` TEXT NOT NULL, `upload_failure_code` TEXT, `storage_bucket` TEXT, `storage_object_path` TEXT, `crop_profile_id` TEXT, `crop_left` REAL, `crop_top` REAL, `crop_right` REAL, `crop_bottom` REAL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `preserved_at` INTEGER NOT NULL, `uploaded_at` INTEGER, `revision` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `screenshot_role`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshotKind",
+            "columnName": "screenshot_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshotRole",
+            "columnName": "screenshot_role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRelativePath",
+            "columnName": "local_relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileExtension",
+            "columnName": "file_extension",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalWidth",
+            "columnName": "original_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalHeight",
+            "columnName": "original_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localStatus",
+            "columnName": "local_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadStatus",
+            "columnName": "upload_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadFailureCode",
+            "columnName": "upload_failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "storageBucket",
+            "columnName": "storage_bucket",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "storageObjectPath",
+            "columnName": "storage_object_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cropProfileId",
+            "columnName": "crop_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preservedAt",
+            "columnName": "preserved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadedAt",
+            "columnName": "uploaded_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "screenshot_role"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_result_screenshot_assets_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_match_result_screenshot_assets_sha256",
+            "unique": false,
+            "columnNames": [
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_sha256` ON `${TABLE_NAME}` (`sha256`)"
+          },
+          {
+            "name": "index_match_result_screenshot_assets_upload_status",
+            "unique": false,
+            "columnNames": [
+              "upload_status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_result_screenshot_assets_upload_status` ON `${TABLE_NAME}` (`upload_status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_result_ocr_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `match_id` TEXT NOT NULL, `screenshot_role` TEXT NOT NULL, `screenshot_sha256` TEXT NOT NULL, `original_width` INTEGER NOT NULL, `original_height` INTEGER NOT NULL, `crop_profile_id` TEXT NOT NULL, `crop_left` REAL NOT NULL, `crop_top` REAL NOT NULL, `crop_right` REAL NOT NULL, `crop_bottom` REAL NOT NULL, `ocr_pipeline_version` INTEGER NOT NULL, `processed_payload_json` TEXT NOT NULL, `cached_at` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `screenshot_role`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshotRole",
+            "columnName": "screenshot_role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshotSha256",
+            "columnName": "screenshot_sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalWidth",
+            "columnName": "original_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalHeight",
+            "columnName": "original_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropProfileId",
+            "columnName": "crop_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ocrPipelineVersion",
+            "columnName": "ocr_pipeline_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedPayloadJson",
+            "columnName": "processed_payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "screenshot_role"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_result_ocr_cache_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_result_ocr_cache_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_lobby_ocr_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `match_id` TEXT NOT NULL, `lobby_screenshot_index` INTEGER NOT NULL, `screenshot_sha256` TEXT NOT NULL, `original_width` INTEGER NOT NULL, `original_height` INTEGER NOT NULL, `crop_profile_id` TEXT NOT NULL, `crop_left` REAL NOT NULL, `crop_top` REAL NOT NULL, `crop_right` REAL NOT NULL, `crop_bottom` REAL NOT NULL, `ocr_pipeline_version` INTEGER NOT NULL, `processed_payload_json` TEXT NOT NULL, `cached_at` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `lobby_screenshot_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lobbyScreenshotIndex",
+            "columnName": "lobby_screenshot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshotSha256",
+            "columnName": "screenshot_sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalWidth",
+            "columnName": "original_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalHeight",
+            "columnName": "original_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropProfileId",
+            "columnName": "crop_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ocrPipelineVersion",
+            "columnName": "ocr_pipeline_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedPayloadJson",
+            "columnName": "processed_payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "lobby_screenshot_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_lobby_ocr_cache_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_lobby_ocr_cache_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_lobby_screenshot_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `match_id` TEXT NOT NULL, `lobby_screenshot_index` INTEGER NOT NULL, `owner_user_id` TEXT NOT NULL, `local_relative_path` TEXT NOT NULL, `file_extension` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `original_width` INTEGER NOT NULL, `original_height` INTEGER NOT NULL, `byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `local_status` TEXT NOT NULL, `upload_status` TEXT NOT NULL, `upload_failure_code` TEXT, `storage_bucket` TEXT, `storage_object_path` TEXT, `crop_profile_id` TEXT, `crop_left` REAL, `crop_top` REAL, `crop_right` REAL, `crop_bottom` REAL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `preserved_at` INTEGER NOT NULL, `uploaded_at` INTEGER, `revision` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `lobby_screenshot_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lobbyScreenshotIndex",
+            "columnName": "lobby_screenshot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRelativePath",
+            "columnName": "local_relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileExtension",
+            "columnName": "file_extension",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalWidth",
+            "columnName": "original_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalHeight",
+            "columnName": "original_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localStatus",
+            "columnName": "local_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadStatus",
+            "columnName": "upload_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadFailureCode",
+            "columnName": "upload_failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "storageBucket",
+            "columnName": "storage_bucket",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "storageObjectPath",
+            "columnName": "storage_object_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cropProfileId",
+            "columnName": "crop_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preservedAt",
+            "columnName": "preserved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadedAt",
+            "columnName": "uploaded_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "lobby_screenshot_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_lobby_screenshot_assets_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_lobby_screenshot_assets_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_match_lobby_screenshot_assets_sha256",
+            "unique": false,
+            "columnNames": [
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_lobby_screenshot_assets_sha256` ON `${TABLE_NAME}` (`sha256`)"
+          },
+          {
+            "name": "index_match_lobby_screenshot_assets_upload_status",
+            "unique": false,
+            "columnNames": [
+              "upload_status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_lobby_screenshot_assets_upload_status` ON `${TABLE_NAME}` (`upload_status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "tournament_lobby_template_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `lobby_screenshot_index` INTEGER NOT NULL, `owner_user_id` TEXT NOT NULL, `local_relative_path` TEXT NOT NULL, `file_extension` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `original_width` INTEGER NOT NULL, `original_height` INTEGER NOT NULL, `byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `crop_profile_id` TEXT NOT NULL, `crop_left` REAL NOT NULL, `crop_top` REAL NOT NULL, `crop_right` REAL NOT NULL, `crop_bottom` REAL NOT NULL, `source_match_id` TEXT NOT NULL, `saved_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`tournament_id`, `lobby_screenshot_index`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lobbyScreenshotIndex",
+            "columnName": "lobby_screenshot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRelativePath",
+            "columnName": "local_relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileExtension",
+            "columnName": "file_extension",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalWidth",
+            "columnName": "original_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalHeight",
+            "columnName": "original_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropProfileId",
+            "columnName": "crop_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceMatchId",
+            "columnName": "source_match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedAt",
+            "columnName": "saved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "lobby_screenshot_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tournament_lobby_template_assets_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tournament_lobby_template_assets_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_tournament_lobby_template_assets_sha256",
+            "unique": false,
+            "columnNames": [
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tournament_lobby_template_assets_sha256` ON `${TABLE_NAME}` (`sha256`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "roster_screenshot_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tournament_id` TEXT NOT NULL, `roster_screenshot_index` INTEGER NOT NULL, `local_relative_path` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `validation_status` TEXT NOT NULL, `crop_left` REAL, `crop_top` REAL, `crop_right` REAL, `crop_bottom` REAL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`tournament_id`, `roster_screenshot_index`), FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rosterScreenshotIndex",
+            "columnName": "roster_screenshot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRelativePath",
+            "columnName": "local_relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "validationStatus",
+            "columnName": "validation_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropLeft",
+            "columnName": "crop_left",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropTop",
+            "columnName": "crop_top",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropRight",
+            "columnName": "crop_right",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cropBottom",
+            "columnName": "crop_bottom",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tournament_id",
+            "roster_screenshot_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_roster_screenshot_metadata_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_roster_screenshot_metadata_sha256",
+            "unique": false,
+            "columnNames": [
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_roster_screenshot_metadata_sha256` ON `${TABLE_NAME}` (`sha256`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tournaments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tournament_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_ocr_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `source_screenshot_id` TEXT, `preserved_at` INTEGER NOT NULL, `provenance` TEXT NOT NULL, PRIMARY KEY(`match_id`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceScreenshotId",
+            "columnName": "source_screenshot_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "preservedAt",
+            "columnName": "preserved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_ocr_evidence_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_ocr_evidence_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_ocr_row_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `row_index` INTEGER NOT NULL, `original_ocr_text` TEXT, `original_placement` INTEGER, `original_kills` INTEGER, `original_suggested_team_slot` INTEGER, `confidence_summary` TEXT, `safety_summary` TEXT, `manual_review_required` INTEGER NOT NULL, PRIMARY KEY(`match_id`, `row_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rowIndex",
+            "columnName": "row_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalOcrText",
+            "columnName": "original_ocr_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "originalPlacement",
+            "columnName": "original_placement",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "originalKills",
+            "columnName": "original_kills",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "originalSuggestedTeamSlot",
+            "columnName": "original_suggested_team_slot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "confidenceSummary",
+            "columnName": "confidence_summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "safetySummary",
+            "columnName": "safety_summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualReviewRequired",
+            "columnName": "manual_review_required",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "row_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_ocr_row_evidence_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_ocr_row_evidence_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          },
+          {
+            "name": "index_match_ocr_row_evidence_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_ocr_row_evidence_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_ocr_correction_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `row_index` INTEGER NOT NULL, `corrected_placement` INTEGER NOT NULL, `corrected_kills` INTEGER NOT NULL, `corrected_team_slot` INTEGER NOT NULL, `placement_changed` INTEGER NOT NULL, `kills_changed` INTEGER NOT NULL, `team_slot_changed` INTEGER NOT NULL, `preserved_at` INTEGER NOT NULL, `provenance` TEXT NOT NULL, PRIMARY KEY(`match_id`, `row_index`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rowIndex",
+            "columnName": "row_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedPlacement",
+            "columnName": "corrected_placement",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedKills",
+            "columnName": "corrected_kills",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctedTeamSlot",
+            "columnName": "corrected_team_slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placementChanged",
+            "columnName": "placement_changed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "killsChanged",
+            "columnName": "kills_changed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSlotChanged",
+            "columnName": "team_slot_changed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preservedAt",
+            "columnName": "preserved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id",
+            "row_index"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_ocr_correction_snapshots_match_id",
+            "unique": false,
+            "columnNames": [
+              "match_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_match_id` ON `${TABLE_NAME}` (`match_id`)"
+          },
+          {
+            "name": "index_match_ocr_correction_snapshots_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_ocr_correction_snapshots_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "match_calculated_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`match_id` TEXT NOT NULL, `tournament_id` TEXT NOT NULL, `owner_user_id` TEXT NOT NULL, `lobby_evidence_json` TEXT NOT NULL, `result_evidence_json` TEXT NOT NULL, `saved_at` INTEGER NOT NULL, PRIMARY KEY(`match_id`), FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "matchId",
+            "columnName": "match_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tournamentId",
+            "columnName": "tournament_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "owner_user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lobbyEvidenceJson",
+            "columnName": "lobby_evidence_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultEvidenceJson",
+            "columnName": "result_evidence_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedAt",
+            "columnName": "saved_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "match_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_match_calculated_evidence_tournament_id",
+            "unique": false,
+            "columnNames": [
+              "tournament_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_calculated_evidence_tournament_id` ON `${TABLE_NAME}` (`tournament_id`)"
+          },
+          {
+            "name": "index_match_calculated_evidence_owner_user_id",
+            "unique": false,
+            "columnNames": [
+              "owner_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_match_calculated_evidence_owner_user_id` ON `${TABLE_NAME}` (`owner_user_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "matches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "match_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ce3317c58cef947c1affeb92082f6418')"
+    ]
+  }
+}

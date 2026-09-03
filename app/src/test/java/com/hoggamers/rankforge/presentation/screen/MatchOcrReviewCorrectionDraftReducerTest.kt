@@ -29,6 +29,50 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun absentPlayersDoNotCreateIndividualKillValidationBlockers() {
+        val row = readyRows().first().copy(
+            detectedKillDisplayValue = "5",
+            originalParsedKillValue = 5,
+            playerKillEvidence = emptyList(),
+        )
+
+        val draft = initialDraft(listOf(row))
+
+        assertTrue(draft.rows.single().playerKillDrafts.isEmpty())
+        assertFalse(draft.rows.single().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+    }
+
+    @Test
+    fun detectedPlayerWithBlankKillStillBlocksValidation() {
+        val row = readyRows().first().copy(
+            detectedKillDisplayValue = "",
+            originalParsedKillValue = null,
+            playerKillEvidence = listOf(
+                MatchOcrReviewPlayerKillEvidenceUiState(1, ""),
+                MatchOcrReviewPlayerKillEvidenceUiState(3, "4"),
+            ),
+        )
+
+        val draft = initialDraft(listOf(row))
+
+        assertEquals(listOf(1, 3), draft.rows.single().playerKillDrafts.map { it.playerSlot })
+        assertTrue(draft.rows.single().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+    }
+
+    @Test
+    fun manualPositionKillAndTeamSlotRemainValidWithoutIndividualPlayerKills() {
+        var draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
+            MatchResultOcrPreviewUiStateMapper.manualFallbackRows(),
+        )
+        draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(draft, 0, "1")
+        draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "5")
+        draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(draft, 0, "1")
+
+        assertTrue(draft.rows.first().playerKillDrafts.isEmpty())
+        assertTrue(draft.rows.first().validation.blockers.isEmpty())
+    }
+
+    @Test
     fun excludingOneRowPreservesStructuralRowsAndMarksDraftDirty() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 10)
 

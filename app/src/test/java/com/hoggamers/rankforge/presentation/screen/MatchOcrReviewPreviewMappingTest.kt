@@ -66,6 +66,11 @@ class MatchOcrReviewPreviewMappingTest {
         ) as MatchResultOcrPreviewUiState.Ready
 
         assertEquals((1..10).toList(), result.rows.map { it.position })
+        assertEquals(
+            listOf(1),
+            MatchResultOcrPreviewUiStateMapper.toReviewRows(result)!!.first().playerKillEvidence
+                .map { it.playerSlot },
+        )
     }
 
     @Test
@@ -102,6 +107,33 @@ class MatchOcrReviewPreviewMappingTest {
         assertEquals(listOf(11, 12), result.rows.map { it.position })
         assertEquals(1, result.ignoredLowerRows.size)
         assertEquals(1, result.manualReviewRows.size)
+    }
+
+    @Test
+    fun detectedOnlyPlayerSlotsCreateIndividualKillEvidenceWithoutPositionalShifting() {
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+            rows = listOf(
+                previewRow(
+                    position = 12,
+                    role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    slots = listOf(
+                        previewSlot(1, "P1", "2"),
+                        previewSlot(2, "", "").copy(
+                            playerStatusLabel = MatchResultOcrFieldStatus.EMPTY.name,
+                        ),
+                        previewSlot(3, "P3", "4"),
+                    ),
+                ),
+            ),
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+        )
+
+        val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![11]
+
+        assertEquals(listOf(1, 3), reviewRow.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("2", "4"), reviewRow.playerKillEvidence.map { it.originalKillsValue })
     }
 
     @Test

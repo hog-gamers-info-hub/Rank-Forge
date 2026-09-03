@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultSemanticRoleResol
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.io.File
 import javax.inject.Inject
@@ -34,6 +35,8 @@ data class AndroidMatchResultPositionCropPreviewImage(
 data class MatchResultPositionCropPreview(
     val position: Int,
     val image: MatchResultPositionCropPreviewImage,
+    val geometry: MatchResultPositionCrop? = null,
+    val sourceScreenshotRole: MatchResultScreenshotRole? = null,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -179,35 +182,10 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
         }
     }
 
-    private fun decodeConfirmedCrop(
+    internal fun decodeConfirmedCrop(
         localFile: File,
         crop: OcrNormalizedCropRect,
-    ): Bitmap? {
-        if (!localFile.isFile || !localFile.canRead() || localFile.length() <= 0L) return null
-        val decoded = BitmapFactory.decodeFile(localFile.path) ?: return null
-        return try {
-            val dimensions = OcrImageDimensions.from(decoded.width, decoded.height) ?: return null
-            val bounds = crop.toPixelRectOrNull(dimensions) ?: return null
-            val extracted = Bitmap.createBitmap(
-                decoded,
-                bounds.left,
-                bounds.top,
-                bounds.width,
-                bounds.height,
-            )
-            try {
-                extracted.copy(Bitmap.Config.ARGB_8888, false)
-            } finally {
-                if (extracted !== decoded && !extracted.isRecycled) extracted.recycle()
-            }
-        } catch (_: IllegalArgumentException) {
-            null
-        } catch (_: OutOfMemoryError) {
-            null
-        } finally {
-            if (!decoded.isRecycled) decoded.recycle()
-        }
-    }
+    ): Bitmap? = decodeConfirmedCropForRestoration(localFile, crop)
 
     private fun MatchResultPositionCropGenerationResult.toPreviewState(
         semanticRole: MatchResultScreenshotRole,
@@ -221,6 +199,8 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                     MatchResultPositionCropPreview(
                         position = crop.geometry.position,
                         image = AndroidMatchResultPositionCropPreviewImage(crop.bitmap),
+                        geometry = crop.geometry,
+                        sourceScreenshotRole = semanticRole,
                     )
                 }
             val positions = previews.map(MatchResultPositionCropPreview::position)
@@ -247,6 +227,37 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
         else -> MatchResultPositionCropPreviewState.Unavailable(
             MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
         )
+    }
+}
+
+/** Decodes only the already-confirmed parent crop; no OCR or geometry detection is performed. */
+internal fun decodeConfirmedCropForRestoration(
+    localFile: File,
+    crop: OcrNormalizedCropRect,
+): Bitmap? {
+    if (!localFile.isFile || !localFile.canRead() || localFile.length() <= 0L) return null
+    val decoded = BitmapFactory.decodeFile(localFile.path) ?: return null
+    return try {
+        val dimensions = OcrImageDimensions.from(decoded.width, decoded.height) ?: return null
+        val bounds = crop.toPixelRectOrNull(dimensions) ?: return null
+        val extracted = Bitmap.createBitmap(
+            decoded,
+            bounds.left,
+            bounds.top,
+            bounds.width,
+            bounds.height,
+        )
+        try {
+            extracted.copy(Bitmap.Config.ARGB_8888, false)
+        } finally {
+            if (extracted !== decoded && !extracted.isRecycled) extracted.recycle()
+        }
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: OutOfMemoryError) {
+        null
+    } finally {
+        if (!decoded.isRecycled) decoded.recycle()
     }
 }
 

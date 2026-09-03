@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultAutoCropPr
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleOcrEngineProvider
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrEngineProvider
 import com.hoggamers.rankforge.presentation.screen.AndroidMatchResultPositionCropPreviewGenerator
+import com.hoggamers.rankforge.presentation.screen.AndroidMatchCalculatedEvidencePreviewRestorer
+import com.hoggamers.rankforge.presentation.screen.MatchCalculatedEvidencePreviewRestorer
 import com.hoggamers.rankforge.presentation.screen.MatchResultPositionCropPreviewGenerator
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidRosterOcrPanelPreparer
 import com.hoggamers.rankforge.data.ocr.preprocessing.RoomRosterOcrSourceProvider
@@ -67,6 +69,12 @@ abstract class OcrDataBindingsModule {
     abstract fun bindMatchResultPositionCropPreviewGenerator(
         generator: AndroidMatchResultPositionCropPreviewGenerator,
     ): MatchResultPositionCropPreviewGenerator
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchCalculatedEvidencePreviewRestorer(
+        restorer: AndroidMatchCalculatedEvidencePreviewRestorer,
+    ): MatchCalculatedEvidencePreviewRestorer
 
     @Binds
     @Singleton

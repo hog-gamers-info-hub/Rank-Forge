@@ -369,6 +369,41 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun clearResultActionIsVisibleAndInvokesOnlyClearCallback() {
+        var clearCount = 0
+        var calculateCount = 0
+        val originalState = availableState(resultScreenshots = allResultReadySlots())
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = originalState,
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onCalculatePoints = { calculateCount++ },
+                    showClearResult = true,
+                    onClearResult = { clearCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(1, clearCount)
+            assertEquals(0, calculateCount)
+            assertEquals("7", originalState.rows.first().placementInput)
+            assertEquals("3", originalState.rows.first().killsInput)
+        }
+    }
+
+    @Test
     fun calculatedOcrDetailsRemainVisibleAfterCalculatingStateRecomposition() {
         var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
         composeTestRule.setContent {

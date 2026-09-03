@@ -127,7 +127,25 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
         source: Bitmap,
         geometry: MatchResultPositionCropCalculationResult.Available,
     ): MatchResultPositionCropGenerationResult = withContext(Dispatchers.Default) {
-        generateBitmaps(source, geometry)
+        generateBitmaps(source, geometry.crops, geometry)
+    }
+
+    /** Rasterizes persisted bounds only; it deliberately does not observe or calculate geometry. */
+    suspend fun generate(
+        source: Bitmap,
+        crops: List<MatchResultPositionCrop>,
+    ): MatchResultPositionCropGenerationResult = withContext(Dispatchers.Default) {
+        generateBitmaps(
+            source = source,
+            crops = crops,
+            geometry = MatchResultPositionCropCalculationResult.Available(
+                crops = crops,
+                leftRowPitch = null,
+                rightRowPitch = 0.0,
+                leftPitchSource = null,
+                rightPitchSource = com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionPitchSource.RECOVERED_FROM_RIGHT,
+            ),
+        )
     }
 
     suspend fun generate(
@@ -156,11 +174,12 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
 
     private fun generateBitmaps(
         source: Bitmap,
+        crops: List<MatchResultPositionCrop>,
         geometry: MatchResultPositionCropCalculationResult.Available,
     ): MatchResultPositionCropGenerationResult {
         val generated = mutableListOf<MatchResultPositionBitmapCrop>()
         try {
-            geometry.crops.forEach { crop ->
+            crops.forEach { crop ->
                 val extracted = Bitmap.createBitmap(
                     source,
                     crop.bounds.left,

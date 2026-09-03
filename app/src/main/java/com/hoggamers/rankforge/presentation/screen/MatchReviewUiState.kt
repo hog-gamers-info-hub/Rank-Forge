@@ -1,5 +1,7 @@
 ﻿package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
+import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
@@ -205,6 +207,11 @@ data class MatchReviewUiState(
     val resultScreenshots: List<MatchResultScreenshotSlotUiState> = defaultMatchResultScreenshotSlots(),
     val resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState> =
         defaultMatchResultPositionCropPreviewStates(),
+    val calculatedEvidenceRestoreStatus: CalculatedEvidenceRestoreStatus =
+        CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+    val restoredCalculatedEvidence: MatchCalculatedEvidence? = null,
+    val restoredLobbyTeamCropPreviews: Map<Int, MatchLobbyTeamCropPreviewResult> = emptyMap(),
+    val restoredLobbyTeamNamesBySlot: Map<Int, String> = emptyMap(),
     val pendingResultScreenshotCropBatch: MatchResultScreenshotCropBatch? = null,
     val resultScreenshotMultiPhotoPickerRequest: MatchResultScreenshotMultiPhotoPickerRequest? = null,
 ) {
@@ -236,6 +243,15 @@ data class MatchReviewUiState(
             !matchId.isNullOrBlank() &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_UPPER) &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+}
+
+enum class CalculatedEvidenceRestoreStatus {
+    NOT_REQUESTED,
+    CHECKING,
+    NOT_FOUND,
+    RESTORED,
+    CLEARED,
+    FAILED,
 }
 
 sealed interface ResultDownloadUiState {

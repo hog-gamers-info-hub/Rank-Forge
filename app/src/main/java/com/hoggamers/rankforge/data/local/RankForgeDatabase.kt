@@ -50,8 +50,9 @@ interface RankForgeStateDao {
         MatchOcrEvidenceEntity::class,
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
+        MatchCalculatedEvidenceEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -76,6 +77,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun tournamentLobbyTemplateAssetDao(): TournamentLobbyTemplateAssetDao
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
     abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
+    abstract fun matchCalculatedEvidenceDao(): MatchCalculatedEvidenceDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -657,6 +659,33 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_sync_queue_entries_owner_user_id_tournamentId` " +
                         "ON `sync_queue_entries` (`owner_user_id`, `tournamentId`)",
+                )
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `match_calculated_evidence` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `lobby_evidence_json` TEXT NOT NULL,
+                        `result_evidence_json` TEXT NOT NULL,
+                        `saved_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`match_id`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_calculated_evidence_tournament_id` " +
+                        "ON `match_calculated_evidence` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_match_calculated_evidence_owner_user_id` " +
+                        "ON `match_calculated_evidence` (`owner_user_id`)",
                 )
             }
         }

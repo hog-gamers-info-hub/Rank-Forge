@@ -110,6 +110,7 @@ const val MATCH_REVIEW_ISSUES_STATUS_TEST_TAG = "match_review_issues_status"
 const val MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG = "match_review_placements_action"
 const val MATCH_REVIEW_KILLS_ACTION_TEST_TAG = "match_review_kills_action"
 const val MATCH_REVIEW_DETAILS_ACTION_TEST_TAG = "match_review_details_action"
+const val MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG = "match_review_clear_result_action"
 const val MATCH_REVIEW_DELETE_ACTION_TEST_TAG = "match_review_delete_action"
 const val MATCH_REVIEW_DELETE_DIALOG_TEST_TAG = "match_review_delete_dialog"
 const val MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG = "match_review_delete_confirm_action"
@@ -247,20 +248,55 @@ fun MatchReviewRoute(
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
     val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
-    LaunchedEffect(tournamentId, matchId, uiState.isAvailable, uiState.status) {
+    val calculatedEvidenceSaveStatus by viewModel.calculatedEvidenceSaveStatus.collectAsStateWithLifecycle()
+    val hasCalculatedEvidenceRecord by viewModel.hasCalculatedEvidenceRecord.collectAsStateWithLifecycle()
+    fun saveAcceptedResultCorrections() {
+        viewModel.saveAcceptedResultCorrections(resolvedOcrReviewViewModel.uiState.value)
+    }
+    LaunchedEffect(tournamentId, matchId, uiState.resultPositionCropPreviews, ocrUiState) {
+        viewModel.saveCalculatedEvidenceIfReady(ocrUiState)
+    }
+    LaunchedEffect(
+        tournamentId,
+        matchId,
+        uiState.isAvailable,
+        uiState.status,
+        uiState.calculatedEvidenceRestoreStatus,
+        uiState.restoredCalculatedEvidence,
+    ) {
         if (uiState.isAvailable) {
             if (uiState.status == MatchStatus.FINALIZED) {
                 resolvedOcrReviewViewModel.loadHistoricalEvidence(tournamentId, matchId)
-            } else {
-                resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+            } else when (uiState.calculatedEvidenceRestoreStatus) {
+                CalculatedEvidenceRestoreStatus.RESTORED -> uiState.restoredCalculatedEvidence?.let { evidence ->
+                    resolvedOcrReviewViewModel.restoreCalculatedEvidence(tournamentId, matchId, evidence)
+                }
+                 CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                 CalculatedEvidenceRestoreStatus.FAILED,
+                 CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+                 -> resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+                 CalculatedEvidenceRestoreStatus.CLEARED -> {
+                     resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(tournamentId, matchId)
+                     resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+                 }
+                 CalculatedEvidenceRestoreStatus.CHECKING -> Unit
             }
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, tournamentId, matchId, uiState.isAvailable, uiState.status) {
+    DisposableEffect(
+        lifecycleOwner,
+        tournamentId,
+        matchId,
+        uiState.isAvailable,
+        uiState.status,
+        uiState.calculatedEvidenceRestoreStatus,
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME && uiState.isAvailable &&
-                uiState.status != MatchStatus.FINALIZED
+                uiState.status != MatchStatus.FINALIZED &&
+                uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.RESTORED &&
+                uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.CHECKING
             ) {
                 resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
             }
@@ -443,6 +479,12 @@ fun MatchReviewRoute(
                 )
             }
         },
+        showClearResult = uiState.isEditable &&
+            (hasCalculatedEvidenceRecord ||
+                calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.SAVING ||
+                calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING),
+        isClearResultInProgress = calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING,
+        onClearResult = viewModel::clearResult,
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
@@ -477,13 +519,31 @@ fun MatchReviewRoute(
         ),
         ocrCacheAvailability = ocrCacheAvailability,
         ocrUiState = ocrUiState,
-        onOcrPlacementChanged = resolvedOcrReviewViewModel::onPlacementChanged,
-        onOcrKillsChanged = resolvedOcrReviewViewModel::onKillsChanged,
-        onOcrPlayerKillsChanged = resolvedOcrReviewViewModel::onPlayerKillsChanged,
-        onOcrAssignedTeamSlotChanged = resolvedOcrReviewViewModel::onAssignedTeamSlotChanged,
+        onOcrPlacementChanged = { rowIndex, value ->
+            resolvedOcrReviewViewModel.onPlacementChanged(rowIndex, value)
+            saveAcceptedResultCorrections()
+        },
+        onOcrKillsChanged = { rowIndex, value ->
+            resolvedOcrReviewViewModel.onKillsChanged(rowIndex, value)
+            saveAcceptedResultCorrections()
+        },
+        onOcrPlayerKillsChanged = { rowIndex, playerSlot, value ->
+            resolvedOcrReviewViewModel.onPlayerKillsChanged(rowIndex, playerSlot, value)
+            saveAcceptedResultCorrections()
+        },
+        onOcrAssignedTeamSlotChanged = { rowIndex, value ->
+            resolvedOcrReviewViewModel.onAssignedTeamSlotChanged(rowIndex, value)
+            saveAcceptedResultCorrections()
+        },
         onExcludeOcrRow = resolvedOcrReviewViewModel::onExcludeRow,
-        onOcrResetRowCorrection = resolvedOcrReviewViewModel::onResetRowCorrection,
-        onOcrResetAllCorrections = resolvedOcrReviewViewModel::onResetAllCorrections,
+        onOcrResetRowCorrection = { rowIndex ->
+            resolvedOcrReviewViewModel.onResetRowCorrection(rowIndex)
+            saveAcceptedResultCorrections()
+        },
+        onOcrResetAllCorrections = {
+            resolvedOcrReviewViewModel.onResetAllCorrections()
+            saveAcceptedResultCorrections()
+        },
         onOcrFinalize = resolvedOcrReviewViewModel::onFinalizeOcrCorrection,
         onOcrConfirmFinalizeWarnings = resolvedOcrReviewViewModel::onConfirmFinalizeWarnings,
         onOcrDismissFinalizeWarnings = resolvedOcrReviewViewModel::onDismissFinalizeWarnings,
@@ -498,6 +558,9 @@ fun MatchReviewScreen(
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit = {},
     onCalculatePoints: () -> Unit = {},
+    showClearResult: Boolean = false,
+    isClearResultInProgress: Boolean = false,
+    onClearResult: () -> Unit = {},
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
@@ -553,6 +616,9 @@ fun MatchReviewScreen(
             onEnterKills = onEnterKills,
             onOpenOcrReview = onOpenOcrReview,
             onCalculatePoints = onCalculatePoints,
+            showClearResult = showClearResult,
+            isClearResultInProgress = isClearResultInProgress,
+            onClearResult = onClearResult,
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
@@ -601,6 +667,9 @@ private fun MatchReviewContent(
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit,
     onCalculatePoints: () -> Unit,
+    showClearResult: Boolean,
+    isClearResultInProgress: Boolean,
+    onClearResult: () -> Unit,
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
@@ -663,7 +732,7 @@ private fun MatchReviewContent(
     val hasDisplayableResultOcrData = shouldShowInlineOcrDetails &&
         ocrUiState.hasDisplayableResultOcrData()
     val hasLobbyPlayerOcrEvidence = shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()
-    val lobbyTeamCropPreviewsByScreenshotIndex = (ocrUiState as? MatchOcrReviewUiState.Ready)
+    val liveLobbyTeamCropPreviewsByScreenshotIndex = (ocrUiState as? MatchOcrReviewUiState.Ready)
         ?.phase1LobbySlotNumberOcr
         ?.screenshots
         ?.filterIsInstance<com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrScreenshotResult.Processed>()
@@ -671,6 +740,10 @@ private fun MatchReviewContent(
             screenshot.screenshotPosition.index to screenshot.teamCropPreviews
         }
         .orEmpty()
+    val lobbyTeamCropPreviewsByScreenshotIndex = liveLobbyTeamCropPreviewsByScreenshotIndex
+        .ifEmpty { uiState.restoredLobbyTeamCropPreviews }
+    val lobbyTeamNamesBySlot = uiState.rows.associate { row -> row.teamSlotNumber to row.teamName } +
+        uiState.restoredLobbyTeamNamesBySlot
     val hasProcessedLobbyOcrData = lobbyTeamCropPreviewsByScreenshotIndex.values.any { result ->
         (result as? MatchLobbyTeamCropPreviewResult.Available)
             ?.previews
@@ -830,8 +903,7 @@ private fun MatchReviewContent(
             ) {
                 CompositionLocalProvider(
                     LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
-                    LocalMatchLobbyTeamNames provides uiState.rows
-                        .associate { row -> row.teamSlotNumber to row.teamName },
+                    LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
                     LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
                 ) {
                     matchLobbyScreenshotIntake()
@@ -889,8 +961,7 @@ private fun MatchReviewContent(
             ) {
                 CompositionLocalProvider(
                     LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
-                    LocalMatchLobbyTeamNames provides uiState.rows
-                        .associate { row -> row.teamSlotNumber to row.teamName },
+                    LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
                     LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
                 ) {
                     matchLobbyScreenshotIntake()
@@ -1075,6 +1146,17 @@ private fun MatchReviewContent(
                     fontSize = 14.sp,
                     fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
                 )
+            }
+        }
+        if (showClearResult) {
+            OutlinedButton(
+                onClick = onClearResult,
+                enabled = !isClearResultInProgress,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
+            ) {
+                Text("Clear Result")
             }
         }
         if (showLegacyManualReviewContent && uiState.isEditable) {

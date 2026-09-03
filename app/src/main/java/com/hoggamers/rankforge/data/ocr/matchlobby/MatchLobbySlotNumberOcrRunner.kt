@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidBitmapOcrImage
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCrop
+import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropBounds
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
@@ -34,6 +35,7 @@ data class MatchLobbyTeamCropPreview(
     val image: MatchLobbyTeamCropPreviewImage,
     val playerRowPreviews: List<LobbyPlayerRowCropPreview> = emptyList(),
     val authoritativeTeamSlotNumber: Int = 0,
+    val bounds: LobbyTeamCropBounds? = null,
 )
 
 sealed interface MatchLobbyTeamCropPreviewOutcome {
@@ -332,6 +334,7 @@ internal fun createMatchLobbyTeamCropPreviewOutcomes(
                     authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
                         mappedTeam.crop.visibleSlotPosition,
                     ),
+                    bounds = mappedTeam.crop.bounds,
                 ),
             )
         } catch (cancellation: CancellationException) {
@@ -356,16 +359,22 @@ private object AndroidMatchLobbyTeamCropPreviewFactory : MatchLobbyTeamCropPrevi
     override fun create(
         panelImage: OcrPreprocessingImage,
         crop: LobbyTeamCrop,
-    ): MatchLobbyTeamCropPreviewImage {
-        val source = (panelImage as? AndroidBitmapOcrImage)?.bitmap
-            ?: throw IllegalStateException("Prepared panel bitmap is unavailable.")
-        val left = kotlin.math.floor(crop.bounds.left).toInt()
-        val top = kotlin.math.floor(crop.bounds.top).toInt()
-        val right = kotlin.math.ceil(crop.bounds.right).toInt()
-        val bottom = kotlin.math.ceil(crop.bounds.bottom).toInt()
-        val cropped = Bitmap.createBitmap(source, left, top, right - left, bottom - top)
-        val preview = cropped.copy(Bitmap.Config.ARGB_8888, false) ?: cropped
-        if (preview !== cropped && !cropped.isRecycled) cropped.recycle()
-        return AndroidMatchLobbyTeamCropPreviewImage(preview)
-    }
+    ): MatchLobbyTeamCropPreviewImage = createAndroidMatchLobbyTeamCropPreviewImage(panelImage, crop)
+}
+
+/** Reuses the production team-crop rasterization without invoking any OCR or geometry work. */
+internal fun createAndroidMatchLobbyTeamCropPreviewImage(
+    panelImage: OcrPreprocessingImage,
+    crop: LobbyTeamCrop,
+): MatchLobbyTeamCropPreviewImage {
+    val source = (panelImage as? AndroidBitmapOcrImage)?.bitmap
+        ?: throw IllegalStateException("Prepared panel bitmap is unavailable.")
+    val left = kotlin.math.floor(crop.bounds.left).toInt()
+    val top = kotlin.math.floor(crop.bounds.top).toInt()
+    val right = kotlin.math.ceil(crop.bounds.right).toInt()
+    val bottom = kotlin.math.ceil(crop.bounds.bottom).toInt()
+    val cropped = Bitmap.createBitmap(source, left, top, right - left, bottom - top)
+    val preview = cropped.copy(Bitmap.Config.ARGB_8888, false) ?: cropped
+    if (preview !== cropped && !cropped.isRecycled) cropped.recycle()
+    return AndroidMatchLobbyTeamCropPreviewImage(preview)
 }

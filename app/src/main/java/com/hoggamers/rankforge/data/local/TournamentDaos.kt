@@ -1408,6 +1408,38 @@ interface MatchOcrEvidenceDao {
 }
 
 @Dao
+interface MatchCalculatedEvidenceDao {
+    @Query(
+        "SELECT evidence.* FROM match_calculated_evidence evidence " +
+            "INNER JOIN matches ON matches.id = evidence.match_id " +
+            "INNER JOIN tournaments ON tournaments.id = matches.tournament_id " +
+            "WHERE evidence.match_id = :matchId " +
+            "AND evidence.tournament_id = :tournamentId " +
+            "AND evidence.owner_user_id = :ownerUserId " +
+            "AND matches.tournament_id = :tournamentId " +
+            "AND tournaments.owner_user_id = :ownerUserId",
+    )
+    suspend fun readByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): MatchCalculatedEvidenceEntity?
+
+    @Upsert
+    suspend fun upsert(entity: MatchCalculatedEvidenceEntity)
+
+    @Query(
+        "DELETE FROM match_calculated_evidence " +
+            "WHERE match_id = :matchId AND tournament_id = :tournamentId AND owner_user_id = :ownerUserId",
+    )
+    suspend fun deleteByOwner(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+    ): Int
+}
+
+@Dao
 interface MatchPlacementDao {
     @Query(
         """
