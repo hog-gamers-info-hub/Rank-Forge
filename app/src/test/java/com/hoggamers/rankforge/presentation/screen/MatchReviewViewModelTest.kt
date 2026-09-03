@@ -2376,6 +2376,40 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun eightFinalizedParticipantIdentitiesAllowResultDownload() = runTest {
+        val participantSlots = setOf(1, 2, 4, 5, 6, 8, 10, 12)
+        saveFinalizedMatchForNamedSlots(participantSlots)
+        val coordinator = RecordingResultDownloadCoordinator()
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertEquals(participantSlots, viewModel.uiState.value.finalizedParticipantSlotNumbers)
+        assertTrue(viewModel.uiState.value.canDownloadResult)
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertEquals(1, coordinator.requests.size)
+    }
+
+    @Test
+    fun tenFinalizedParticipantIdentitiesIgnoreBlankStructuralSlots() = runTest {
+        val participantSlots = (1..10).toSet()
+        saveFinalizedMatchForNamedSlots(participantSlots)
+        val coordinator = RecordingResultDownloadCoordinator()
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.canDownloadResult)
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertEquals(1, coordinator.requests.size)
+    }
+
+    @Test
     fun participantAwareFinalizedMatchWithNoShowsRemainsDownloadable() = runTest {
         repository.saveTeamNames(
             TOURNAMENT_ID,
@@ -2410,6 +2444,41 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, coordinator.requests.size)
+    }
+
+    @Test
+    fun missingNoShowIdentityBlocksResultDownload() = runTest {
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.finalizeDraftMatch(
+            matchId = matchId,
+            placements = (1..10).map { slotNumber ->
+                com.hoggamers.rankforge.domain.tournament.MatchPlacement(
+                    teamSlotNumber = slotNumber,
+                    position = slotNumber,
+                )
+            },
+            kills = (1..10).map { slotNumber ->
+                com.hoggamers.rankforge.domain.tournament.MatchKill(
+                    teamSlotNumber = slotNumber,
+                    kills = 0,
+                )
+            },
+        )
+        repository.saveTeamNames(TOURNAMENT_ID, mapOf(11 to ""))
+        val coordinator = RecordingResultDownloadCoordinator()
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.canDownloadResult)
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+
+        assertTrue(coordinator.requests.isEmpty())
+        assertEquals(ResultDownloadUiState.Idle, viewModel.uiState.value.resultDownloadUiState)
     }
 
     @Test
@@ -2785,6 +2854,31 @@ class MatchReviewViewModelTest {
                 com.hoggamers.rankforge.domain.tournament.MatchKill(
                     teamSlotNumber = slotNumber,
                     kills = slotNumber - 1,
+                )
+            },
+        )
+    }
+
+    private suspend fun saveFinalizedMatchForNamedSlots(participantSlots: Set<Int>) {
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber in participantSlots) "Team $slotNumber" else ""
+            },
+        )
+        val orderedSlots = participantSlots.sorted()
+        repository.finalizeDraftMatch(
+            matchId = matchId,
+            placements = orderedSlots.mapIndexed { index, slotNumber ->
+                com.hoggamers.rankforge.domain.tournament.MatchPlacement(
+                    teamSlotNumber = slotNumber,
+                    position = index + 1,
+                )
+            },
+            kills = orderedSlots.map { slotNumber ->
+                com.hoggamers.rankforge.domain.tournament.MatchKill(
+                    teamSlotNumber = slotNumber,
+                    kills = 0,
                 )
             },
         )

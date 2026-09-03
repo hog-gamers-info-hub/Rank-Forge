@@ -51,7 +51,7 @@ class ResultCanvasRenderer {
         subtitle: String,
         rows: List<ResultExportRow>,
     ): ResultCanvasRenderResult {
-        if (rows.size != ResultLayoutSpec.RESULT_ROW_COUNT) {
+        if (rows.isEmpty() || rows.size > ResultLayoutSpec.RESULT_ROW_COUNT) {
             return ResultCanvasRenderResult.Failure(ResultRenderFailure.INVALID_ROW_COUNT)
         }
 
@@ -97,7 +97,8 @@ class ResultCanvasRenderer {
         val left = ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN
         val right = left + ResultLayoutSpec.TABLE_WIDTH
         val top = ResultLayoutSpec.TABLE_TOP
-        val bottom = ResultLayoutSpec.TABLE_BOTTOM
+        val bottom = top + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
+            rows.size * ResultLayoutSpec.RESULT_ROW_HEIGHT
         val boundaries = ResultLayoutSpec.COLUMN_BOUNDARIES
 
         canvas.drawRect(
@@ -156,7 +157,7 @@ class ResultCanvasRenderer {
             canvas.drawLine(boundary, top, boundary, bottom, gridPaint)
         }
         canvas.drawLine(left, top + ResultLayoutSpec.TABLE_HEADER_HEIGHT, right, top + ResultLayoutSpec.TABLE_HEADER_HEIGHT, gridPaint)
-        repeat(ResultLayoutSpec.RESULT_ROW_COUNT - 1) { rowIndex ->
+        repeat(rows.size - 1) { rowIndex ->
             val y = top + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
                 (rowIndex + 1) * ResultLayoutSpec.RESULT_ROW_HEIGHT
             canvas.drawLine(left, y, right, y, gridPaint)

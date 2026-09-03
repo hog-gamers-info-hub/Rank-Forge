@@ -223,6 +223,69 @@ class MatchCsvExporterTest {
     }
 
     @Test
+    fun noShowRowsFollowAllParticipatedRowsInTeamSlotOrder() {
+        val noShowSlots = setOf(3, 12)
+        val participatedSlots = TeamSlot.SLOT_NUMBERS.filterNot { it in noShowSlots }
+        val result = exporter.buildMatchRows(
+            validInput(
+                match = validMatch().copy(
+                    participantResults = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                        if (slotNumber in noShowSlots) {
+                            MatchParticipantResult(slotNumber, MatchParticipationStatus.NO_SHOW, null, 0)
+                        } else {
+                            MatchParticipantResult(
+                                slotNumber,
+                                MatchParticipationStatus.PARTICIPATED,
+                                participatedSlots.indexOf(slotNumber) + 1,
+                                0,
+                            )
+                        }
+                    },
+                ),
+            ),
+        ) as MatchExportRowsResult.Success
+
+        assertEquals(
+            participatedSlots + noShowSlots.sorted(),
+            result.rows.map { row -> row.teamSlot },
+        )
+        result.rows.take(participatedSlots.size).forEach { row ->
+            assertEquals(MatchParticipationStatus.PARTICIPATED.name, row.participationStatus)
+        }
+        result.rows.takeLast(noShowSlots.size).forEach { row ->
+            assertEquals(MatchParticipationStatus.NO_SHOW.name, row.participationStatus)
+            assertEquals(0, row.kills)
+            assertEquals(0, row.placementPoints)
+            assertEquals(0, row.killPoints)
+            assertEquals(0, row.totalPoints)
+        }
+    }
+
+    @Test
+    fun participatedZeroPointRowIsNotClassifiedAsNoShow() {
+        val result = exporter.buildMatchRows(
+            validInput(
+                match = validMatch().copy(
+                    participantResults = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                        MatchParticipantResult(
+                            teamSlotNumber = slotNumber,
+                            participationStatus = MatchParticipationStatus.PARTICIPATED,
+                            placement = slotNumber,
+                            kills = 0,
+                        )
+                    },
+                ),
+            ),
+        ) as MatchExportRowsResult.Success
+
+        val lastRow = result.rows.last()
+        assertEquals(12, lastRow.teamSlot)
+        assertEquals(MatchParticipationStatus.PARTICIPATED.name, lastRow.participationStatus)
+        assertEquals(12, lastRow.placement)
+        assertEquals(0, lastRow.totalPoints)
+    }
+
+    @Test
     fun repeatedTenTeamExportIsDeterministic() {
         val input = validInput(
             match = validMatch(activeCount = 10),
@@ -272,25 +335,27 @@ class MatchCsvExporterTest {
     }
 
     @Test
-    fun exportedRowsAreOrderedByPlacementAscending() {
+    fun exportedRowsAreOrderedByTotalPointsWithPlacementTieBreak() {
         val input = validInput(
-            match = validMatch(
-                placements = TeamSlot.SLOT_NUMBERS.reversed().map { slotNumber ->
-                    MatchPlacement(
-                        teamSlotNumber = slotNumber,
-                        position = slotNumber,
-                    )
-                },
+            match = validMatch().copy(
+                participantResults = listOf(
+                    MatchParticipantResult(10, MatchParticipationStatus.PARTICIPATED, 4, 80),
+                    MatchParticipantResult(1, MatchParticipationStatus.PARTICIPATED, 3, 32),
+                    MatchParticipantResult(7, MatchParticipationStatus.PARTICIPATED, 2, 49),
+                    MatchParticipantResult(2, MatchParticipationStatus.PARTICIPATED, 1, 55),
+                ),
             ),
         )
 
-        val placementColumnValues = exportSuccess(input).dataRows().map { row -> row[PLACEMENT_COLUMN] }
+        val rows = (exporter.buildMatchRows(input) as MatchExportRowsResult.Success).rows
 
-        assertEquals(TeamSlot.SLOT_NUMBERS.map { it.toString() }, placementColumnValues)
+        assertEquals(listOf(10, 2, 7, 1), rows.map { row -> row.teamSlot })
+        assertEquals(listOf(1, 2, 3, 4), rows.map { row -> row.rowNumber })
+        assertEquals(listOf(4, 1, 2, 3), rows.map { row -> row.placement })
     }
 
     @Test
-    fun rowNumbersFollowExportedPlacementOrder() {
+    fun rowNumbersFollowExportedRankingOrder() {
         val rowNumberColumnValues = exportSuccess(validInput()).dataRows().map { row -> row[ROW_NUMBER_COLUMN] }
 
         assertEquals(TeamSlot.SLOT_NUMBERS.map { it.toString() }, rowNumberColumnValues)
