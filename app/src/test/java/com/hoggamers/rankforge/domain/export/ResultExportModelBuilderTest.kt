@@ -26,12 +26,19 @@ class ResultExportModelBuilderTest {
 
     @Test
     fun finalizedMatchBuildsWithApprovedMetadata() {
-        val result = builder.buildMatch(validMatchInput())
+        val result = builder.buildMatch(
+            validMatchInput(
+                tournament = validTournament().copy(date = LocalDate.of(2026, 9, 3)),
+                match = validMatch().copy(date = LocalDate.of(2026, 8, 31)),
+            ),
+        )
 
         val model = matchSuccess(result)
         assertEquals("Synthetic Cup", model.tournamentName)
+        assertEquals("Organizer", model.organizerName)
+        assertEquals(LocalDate.of(2026, 9, 3), model.tournamentDate)
         assertEquals(3, model.matchNumber)
-        assertEquals(LocalDate.of(2026, 7, 31), model.matchDate)
+        assertEquals(LocalDate.of(2026, 8, 31), model.matchDate)
         assertEquals("Bermuda", model.mapName)
     }
 
@@ -126,6 +133,8 @@ class ResultExportModelBuilderTest {
         val model = tournamentSuccess(builder.buildTournament(input))
 
         assertEquals("Synthetic Cup", model.tournamentName)
+        assertEquals("Organizer", model.organizerName)
+        assertEquals(LocalDate.of(2026, 7, 31), model.tournamentDate)
         assertEquals(2, model.finalizedMatchCount)
         assertEquals(12, model.rows.size)
     }
@@ -249,9 +258,10 @@ class ResultExportModelBuilderTest {
     private fun validMatchInput(
         match: Match = validMatch(),
         teamSlots: List<TeamSlot> = validTeamSlots(),
+        tournament: Tournament = validTournament(),
     ): MatchCsvExportInput =
         MatchCsvExportInput(
-            tournament = validTournament(),
+            tournament = tournament,
             match = match,
             teamSlots = teamSlots,
             rosterPlayers = validRosterPlayers(),

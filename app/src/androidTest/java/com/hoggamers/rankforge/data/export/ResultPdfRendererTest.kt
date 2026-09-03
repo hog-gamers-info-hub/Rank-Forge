@@ -44,6 +44,11 @@ class ResultPdfRendererTest {
     }
 
     @Test
+    fun currentMatchWithoutOrganizerStillRendersOnePage() {
+        assertValidPdf(pdfSuccess(renderer.render(matchModel(organizerName = ""))))
+    }
+
+    @Test
     fun wholeTournamentPdfIsValidOnePage842By595Document() {
         val model = tournamentModel()
         val original = model.copy(rows = model.rows.toList())
@@ -65,6 +70,25 @@ class ResultPdfRendererTest {
 
         assertValidPdf(bytes)
         assertEquals(originalRows, model.rows)
+    }
+
+    @Test
+    fun wholeTournamentWithoutOrganizerStillRendersOnePage() {
+        assertValidPdf(pdfSuccess(renderer.render(tournamentModel(organizerName = ""))))
+    }
+
+    @Test
+    fun longHeaderMetadataRendersWithinValidPdf() {
+        assertValidPdf(
+            pdfSuccess(
+                renderer.render(
+                    matchModel(
+                        tournamentName = "A very long tournament name that must remain bounded inside the export page",
+                        organizerName = "A very long organizer name that must remain bounded inside the export page",
+                    ),
+                ),
+            ),
+        )
     }
 
     @Test
@@ -122,11 +146,15 @@ class ResultPdfRendererTest {
     }
 
     private fun matchModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): MatchResultExportModel =
         MatchResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
@@ -134,11 +162,15 @@ class ResultPdfRendererTest {
         )
 
     private fun tournamentModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): TournamentResultExportModel =
         TournamentResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
             rows = rows(longTeamName, rowCount),
         )

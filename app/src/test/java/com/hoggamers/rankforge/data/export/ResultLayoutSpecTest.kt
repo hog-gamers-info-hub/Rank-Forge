@@ -39,6 +39,12 @@ class ResultLayoutSpecTest {
     fun fixedRowsAndHeaderFitInsideLogicalPage() {
         assertEquals(12, ResultLayoutSpec.RESULT_ROW_COUNT)
         assertTrue(ResultLayoutSpec.TABLE_BOTTOM <= ResultLayoutSpec.LOGICAL_PAGE_HEIGHT)
+        assertTrue(ResultLayoutSpec.TABLE_TOP > ResultLayoutSpec.SUBTITLE_BASELINE)
+        assertTrue(ResultLayoutSpec.TABLE_TOP > ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE)
+        assertTrue(ResultLayoutSpec.TABLE_TOP - ResultLayoutSpec.SUBTITLE_BASELINE < 36f)
+        assertTrue(ResultLayoutSpec.TABLE_TOP - ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE < 36f)
+        assertTrue(ResultLayoutSpec.TABLE_BOTTOM < ResultLayoutSpec.FOOTER_BASELINE)
+        assertTrue(ResultLayoutSpec.FOOTER_BASELINE < ResultLayoutSpec.LOGICAL_PAGE_HEIGHT)
         assertTrue(
             ResultLayoutSpec.TABLE_TOP + ResultLayoutSpec.TABLE_HEADER_HEIGHT +
                 ResultLayoutSpec.RESULT_ROW_COUNT * ResultLayoutSpec.RESULT_ROW_HEIGHT <=

@@ -38,6 +38,14 @@ class ResultPngRendererTest {
     }
 
     @Test
+    fun currentMatchWithoutOrganizerStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(matchModel(organizerName = "")))
+
+        assertPngHeader(bytes)
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
     fun tournamentModelRendersAllTwelveStandingsRows() {
         val result = renderer.render(tournamentModel())
 
@@ -66,6 +74,29 @@ class ResultPngRendererTest {
         val bytes = pngSuccess(renderer.render(model))
 
         assertTrue(bytes.isNotEmpty())
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
+    fun wholeTournamentWithoutOrganizerStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(tournamentModel(organizerName = "")))
+
+        assertPngHeader(bytes)
+        assertDecodedDimensions(bytes)
+    }
+
+    @Test
+    fun longHeaderMetadataRemainsBounded() {
+        val bytes = pngSuccess(
+            renderer.render(
+                tournamentModel(
+                    tournamentName = "A very long tournament name that must remain bounded inside the export page",
+                    organizerName = "A very long organizer name that must remain bounded inside the export page",
+                ),
+            ),
+        )
+
+        assertPngHeader(bytes)
         assertDecodedDimensions(bytes)
     }
 
@@ -138,11 +169,15 @@ class ResultPngRendererTest {
     }
 
     private fun matchModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): MatchResultExportModel =
         MatchResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
@@ -150,11 +185,15 @@ class ResultPngRendererTest {
         )
 
     private fun tournamentModel(
+        tournamentName: String = "Synthetic Cup",
+        organizerName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): TournamentResultExportModel =
         TournamentResultExportModel(
-            tournamentName = "Synthetic Cup",
+            tournamentName = tournamentName,
+            organizerName = organizerName,
+            tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
             rows = rows(longTeamName, rowCount),
         )

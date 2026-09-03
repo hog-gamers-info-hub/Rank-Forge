@@ -163,6 +163,8 @@ class ResultFileSaverTest {
     private fun matchModel(): MatchResultExportModel =
         MatchResultExportModel(
             tournamentName = "HOG Championship",
+            organizerName = "Organizer",
+            tournamentDate = LocalDate.of(2026, 8, 20),
             matchNumber = 1,
             matchDate = LocalDate.of(2026, 8, 20),
             mapName = "Bermuda",
@@ -172,6 +174,8 @@ class ResultFileSaverTest {
     private fun tournamentModel(): TournamentResultExportModel =
         TournamentResultExportModel(
             tournamentName = "HOG Championship",
+            organizerName = "Organizer",
+            tournamentDate = LocalDate.of(2026, 8, 20),
             finalizedMatchCount = 2,
             rows = rows(),
         )
