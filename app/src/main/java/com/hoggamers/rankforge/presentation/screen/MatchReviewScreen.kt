@@ -1161,14 +1161,28 @@ private fun MatchReviewContent(
             }
         }
         if (showClearResult) {
-            OutlinedButton(
+            Button(
                 onClick = onClearResult,
                 enabled = !isClearResultInProgress,
+                colors = if (!showLegacyManualReviewContent) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
+                shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
                     .testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
             ) {
-                Text("Clear Result")
+                Text(
+                    "Clear Result",
+                    fontSize = 14.sp,
+                    fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
         }
         if (showLegacyManualReviewContent && uiState.isEditable) {
