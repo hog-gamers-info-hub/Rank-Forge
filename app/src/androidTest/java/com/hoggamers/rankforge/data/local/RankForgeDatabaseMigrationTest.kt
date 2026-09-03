@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(19, cursor.getInt(0))
+                assertEquals(20, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -109,6 +109,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'match_result_ocr_cache'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'match_calculated_evidence'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -272,6 +278,62 @@ class RankForgeDatabaseMigrationTest {
             "index_sync_queue_entries_owner_user_id_operationType_tournamentId_status_createdAtEpochMillis_id",
             "index_sync_queue_entries_owner_user_id_tournamentId",
         ).forEach { index -> assertTrue(migrated.hasIndex(index)) }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion19AddsCalculatedEvidenceWithoutDroppingExistingRoomData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 19).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, date, organizer_name, organizer_contact_number, status, creation_order, owner_user_id) " +
+                    "VALUES ('tournament-calculated', 'Calculated Cup', '2026-09-02', 'Organizer', '123', " +
+                    "'CONFIRMED', 1, 'owner-calculated')",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-calculated', 'tournament-calculated', 1, '2026-09-02', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO sync_queue_entries " +
+                    "(id, operationType, tournamentId, createdAtEpochMillis, status, failureCategory, attemptCount, owner_user_id) " +
+                    "VALUES ('queue-calculated', 'DRAFT_MATCH_SYNC', 'tournament-calculated', 1, " +
+                    "'PENDING', NULL, 0, 'owner-calculated')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            20,
+            true,
+            RankForgeDatabase.MIGRATION_19_20,
+        )
+
+        assertTrue(migrated.hasTable("match_calculated_evidence"))
+        assertTrue(migrated.hasIndex("index_match_calculated_evidence_tournament_id"))
+        assertTrue(migrated.hasIndex("index_match_calculated_evidence_owner_user_id"))
+        migrated.query("SELECT id FROM matches WHERE id = 'match-calculated'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        migrated.query("SELECT id FROM sync_queue_entries WHERE id = 'queue-calculated'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        migrated.query("PRAGMA table_info(match_calculated_evidence)").use { cursor ->
+            val columns = buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            assertEquals(
+                setOf(
+                    "match_id",
+                    "tournament_id",
+                    "owner_user_id",
+                    "lobby_evidence_json",
+                    "result_evidence_json",
+                    "saved_at",
+                ),
+                columns,
+            )
+        }
         migrated.close()
     }
 

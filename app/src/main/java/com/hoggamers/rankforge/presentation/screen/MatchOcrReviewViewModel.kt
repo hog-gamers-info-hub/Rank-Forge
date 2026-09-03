@@ -477,6 +477,42 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    /** Restores saved calculated values only; this path never invokes an OCR runner. */
+    fun restoreCalculatedEvidence(
+        tournamentId: String,
+        matchId: String,
+        evidence: com.hoggamers.rankforge.data.local.MatchCalculatedEvidence,
+    ) {
+        val key = "$tournamentId:$matchId:calculated"
+        if (loadedMatchKey == key && _uiState.value !is MatchOcrReviewUiState.Loading) return
+        loadedMatchKey = key
+        cacheLoadJob?.cancel()
+        previewJob?.cancel()
+        _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
+        cacheLoadJob = viewModelScope.launch {
+            _uiState.value = evidence.toRestoredOcrReviewUiState(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot,
+            )
+        }
+    }
+
+    /** Clears the calculated display before the normal cache-only fallback is loaded. */
+    fun clearCalculatedEvidenceDisplay(tournamentId: String, matchId: String) {
+        val current = _uiState.value
+        if (current.tournamentId() != tournamentId || current.matchId() != matchId) return
+        cacheLoadJob?.cancel()
+        previewJob?.cancel()
+        loadedMatchKey = "$tournamentId:$matchId"
+        val teamNamesBySlot = (current as? MatchOcrReviewUiState.Ready)?.teamNamesBySlot.orEmpty()
+        _uiState.value = MatchOcrReviewUiState.Empty(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            teamNamesBySlot = teamNamesBySlot,
+        )
+    }
+
     fun loadHistoricalEvidence(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId:historical"
         if (loadedMatchKey == matchKey && _uiState.value !is MatchOcrReviewUiState.Loading) return
@@ -1005,6 +1041,22 @@ class MatchOcrReviewViewModel @Inject constructor(
             teamNamesBySlot = teamNamesBySlot,
         )
     }
+}
+
+private fun MatchOcrReviewUiState.tournamentId(): String? = when (this) {
+    is MatchOcrReviewUiState.Calculating -> tournamentId
+    is MatchOcrReviewUiState.Empty -> tournamentId
+    is MatchOcrReviewUiState.Error -> tournamentId
+    is MatchOcrReviewUiState.Ready -> tournamentId
+    MatchOcrReviewUiState.Loading -> null
+}
+
+private fun MatchOcrReviewUiState.matchId(): String? = when (this) {
+    is MatchOcrReviewUiState.Calculating -> matchId
+    is MatchOcrReviewUiState.Empty -> matchId
+    is MatchOcrReviewUiState.Error -> matchId
+    is MatchOcrReviewUiState.Ready -> matchId
+    MatchOcrReviewUiState.Loading -> null
 }
 
 private val NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER = MatchResultOcrPreviewRunner {

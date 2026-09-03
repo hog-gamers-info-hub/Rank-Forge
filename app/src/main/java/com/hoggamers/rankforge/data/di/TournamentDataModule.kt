@@ -11,6 +11,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Clock
 import javax.inject.Singleton
 import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceDao
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceRepository
+import com.hoggamers.rankforge.data.local.RoomMatchCalculatedEvidenceRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheDao
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheDao
@@ -78,6 +81,12 @@ import com.hoggamers.rankforge.domain.auth.AuthRepository
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class TournamentDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindMatchCalculatedEvidenceRepository(
+        repository: RoomMatchCalculatedEvidenceRepository,
+    ): MatchCalculatedEvidenceRepository
+
     @Binds
     @Singleton
     abstract fun bindTournamentRepository(
@@ -175,6 +184,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_16_17,
         RankForgeDatabase.MIGRATION_17_18,
         RankForgeDatabase.MIGRATION_18_19,
+        RankForgeDatabase.MIGRATION_19_20,
     ).build()
 
     @Provides
@@ -243,6 +253,12 @@ object TournamentDataProvidersModule {
     fun provideMatchOcrEvidenceDao(
         database: RankForgeDatabase,
     ): MatchOcrEvidenceDao = database.matchOcrEvidenceDao()
+
+    @Provides
+    @Singleton
+    fun provideMatchCalculatedEvidenceDao(
+        database: RankForgeDatabase,
+    ): MatchCalculatedEvidenceDao = database.matchCalculatedEvidenceDao()
 
     @Provides
     @Singleton

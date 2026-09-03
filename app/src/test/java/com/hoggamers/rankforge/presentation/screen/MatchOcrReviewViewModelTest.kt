@@ -6,6 +6,11 @@ import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleRes
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReadResult
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
+import com.hoggamers.rankforge.data.local.LobbyCalculatedEvidence
+import com.hoggamers.rankforge.data.local.LobbyTeamCalculatedEvidence
+import com.hoggamers.rankforge.data.local.ResultCalculatedEvidence
+import com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrPlayer
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrRunner
@@ -213,6 +218,46 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun calculatedEvidenceRestoresReviewValuesWithoutRunningOcr() = runTest(dispatcher) {
+        var resultRunnerCalls = 0
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                resultRunnerCalls++
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+            screenshotOwnerProvider = ownerProvider,
+        )
+
+        viewModel.restoreCalculatedEvidence(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            evidence = calculatedEvidenceForRestoreTest(),
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val row = state.rows.single()
+        val preview = state.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
+        assertEquals(MatchOcrReviewEvidenceSource.RESTORED_CALCULATED, state.evidenceSource)
+        assertEquals(
+            "P1 Saved Player, P2 Not detected, P3 Not detected, P4 Not detected",
+            row.detectedPlayerNameEvidenceLabel,
+        )
+        assertEquals("12", row.suggestedTeamSlotDisplayValue)
+        assertEquals("7", row.detectedKillDisplayValue)
+        assertEquals(
+            listOf("Saved Player", "Not detected", "Not detected", "Not detected"),
+            preview.rows.single().slots.map { it.playerText },
+        )
+        assertEquals(listOf("2", "", "", ""), preview.rows.single().slots.map { it.killText })
+        assertEquals(listOf(1), row.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf(1), state.correctionDraft!!.rows.single().playerKillDrafts.map { it.playerSlot })
+        assertEquals(0, resultRunnerCalls)
+    }
+
+    @Test
     fun completeResultCacheWithoutLobbyRestoresResultOnlyReviewState() = runTest(dispatcher) {
         val repository = createRepository()
         val cachedResult = MatchOcrCacheReadResult(
@@ -236,6 +281,44 @@ class MatchOcrReviewViewModelTest {
         assertTrue(state.rows.all { it.originalSuggestedTeamSlot == null })
         assertTrue(state.rows.none { it.resultLobbyVoteEvidencePresent })
         assertTrue(state.correctionDraft!!.rows.all { it.assignedTeamSlotDraftValue.isBlank() })
+        assertTrue(state.rows.all { it.playerKillEvidence.isNotEmpty() })
+    }
+
+    @Test
+    fun cachedResultWithMissingPlayerKeepsLogicalPlayerKillSlots() = runTest(dispatcher) {
+        val partialResult = completeResultRoleResults().map { roleResult ->
+            if (roleResult.role != MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+                roleResult
+            } else {
+                val processed = roleResult.result as MatchResultOcrPreviewProcessingResult.Processed
+                roleResult.copy(
+                    result = processed.copy(
+                        extraction = processed.extraction.copy(
+                            rows = processed.extraction.rows.map { row ->
+                                if (row.position == 1) row.copy(playerSlots = row.playerSlots.take(3)) else row
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(createRepository()),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(
+                    availability = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE,
+                    resultRoleResults = partialResult,
+                    lobbyResult = MatchLobbyPlayersOcrResult.unavailable(),
+                )
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(listOf(1, 2, 3), state.rows.first().playerKillEvidence.map { it.playerSlot })
     }
 
     @Test
@@ -1907,6 +1990,40 @@ class MatchOcrReviewViewModelTest {
         } else {
             MatchResultOcrFieldStatus.DIRECT_TEXT
         },
+    )
+
+    private fun calculatedEvidenceForRestoreTest(): MatchCalculatedEvidence = MatchCalculatedEvidence(
+        lobby = LobbyCalculatedEvidence(
+            teams = listOf(
+                LobbyTeamCalculatedEvidence(
+                    slotNumber = 12,
+                    teamName = "Team 12",
+                    sourceScreenshotIndex = 3,
+                    cropLeft = 1.0,
+                    cropTop = 2.0,
+                    cropRight = 30.0,
+                    cropBottom = 40.0,
+                    playerNames = listOf("Lobby P1", null, null, null),
+                ),
+            ),
+        ),
+        result = ResultCalculatedEvidence(
+            positions = listOf(
+                ResultPositionCalculatedEvidence(
+                    position = 12,
+                    sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    cropLeft = 1,
+                    cropTop = 2,
+                    cropRight = 30,
+                    cropBottom = 40,
+                    slotNumber = 12,
+                    teamName = "Team 12",
+                    playerNames = listOf("Saved Player", null, null, null),
+                    playerKills = listOf(2, null, null, null),
+                    totalKills = 7,
+                ),
+            ),
+        ),
     )
 
     private companion object {
