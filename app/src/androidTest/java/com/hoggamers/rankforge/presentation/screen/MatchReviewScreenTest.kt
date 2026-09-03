@@ -2329,6 +2329,89 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun explicitlyExcludedResultRowHidesOnlyItsMatchingPositionCrop() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8)),
+            positions = listOf(8, 9, 10),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "8")
+            .assertCountEquals(2)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun resettingExplicitlyExcludedResultRowRestoresItsExistingPositionCrop() {
+        var ocrUiState by mutableStateOf(
+            ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8)),
+        )
+        val positionCropUiState = positionCropTestUiState(listOf(9))
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = positionCropUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    ocrUiState = ocrUiState,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+
+        composeTestRule.runOnIdle {
+            ocrUiState = ocrStateWithCorrectionRows()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun implicitAbsentResultRowDoesNotHideItsPositionCrop() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(implicitlyAbsentRowIndexes = setOf(8)),
+            positions = listOf(9),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun multipleExplicitlyExcludedResultRowsHideOnlyTheirMatchingPositionCrops() {
+        setPositionCropVisibilityContent(
+            ocrUiState = ocrStateWithCorrectionRows(excludedRowIndexes = setOf(8, 10)),
+            positions = listOf(8, 9, 10, 11, 12),
+        )
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "8")
+            .assertCountEquals(2)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+            .assertCountEquals(2)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
+            .assertCountEquals(2)
+    }
+
+    @Test
     fun inlineOcrDetailsRemainVisibleAfterMatchFinalization() {
         var openedCount = 0
         var matchState by mutableStateOf(
@@ -4194,6 +4277,76 @@ class MatchReviewScreenTest {
         resultScreenshots = resultScreenshots,
         resultPositionCropPreviews = resultPositionCropPreviews,
     )
+
+    private fun setPositionCropVisibilityContent(
+        ocrUiState: MatchOcrReviewUiState.Ready,
+        positions: List<Int>,
+    ) {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = positionCropTestUiState(positions),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    ocrUiState = ocrUiState,
+                )
+            }
+        }
+    }
+
+    private fun positionCropTestUiState(
+        positions: List<Int>,
+    ) = availableState(
+        resultScreenshots = selectedResultScreenshotSlots(),
+        resultPositionCropPreviews = mapOf(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                MatchResultPositionCropPreviewState.Available(
+                    positions.map { position ->
+                        MatchResultPositionCropPreview(
+                            position = position,
+                            image = AndroidMatchResultPositionCropPreviewImage(
+                                Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
+                            ),
+                        )
+                    },
+                ),
+        ),
+    )
+
+    private fun ocrStateWithCorrectionRows(
+        excludedRowIndexes: Set<Int> = emptySet(),
+        implicitlyAbsentRowIndexes: Set<Int> = emptySet(),
+    ): MatchOcrReviewUiState.Ready {
+        val base = inlineOcrState()
+        val baseDraft = base.correctionDraft ?: error("Expected correction draft")
+        val rowIndexes = (excludedRowIndexes + implicitlyAbsentRowIndexes).sorted()
+        val correctionRows = rowIndexes.map { rowIndex ->
+            val isImplicitlyAbsent = rowIndex in implicitlyAbsentRowIndexes
+            baseDraft.rows.single().copy(
+                rowIndex = rowIndex,
+                originalPlacementValue = if (isImplicitlyAbsent) "" else "1",
+                originalKillsValue = if (isImplicitlyAbsent) "" else "8",
+                originalAssignedTeamSlotValue = if (isImplicitlyAbsent) "" else "1",
+                placementDraftValue = if (isImplicitlyAbsent) "" else "1",
+                killsDraftValue = if (isImplicitlyAbsent) "" else "8",
+                assignedTeamSlotDraftValue = if (isImplicitlyAbsent) "" else "1",
+                isExcluded = rowIndex in excludedRowIndexes,
+                allPlayersSemanticallyNotDetected = isImplicitlyAbsent,
+            )
+        }
+        return base.copy(
+            rows = emptyList(),
+            rowCount = 0,
+            blockerCount = 0,
+            warningCount = 0,
+            safeRowCount = 0,
+            manualRequiredRowCount = 0,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = false,
+            correctionDraft = baseDraft.copy(rows = correctionRows),
+        )
+    }
 
     private fun allLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
         isLoading = false,
