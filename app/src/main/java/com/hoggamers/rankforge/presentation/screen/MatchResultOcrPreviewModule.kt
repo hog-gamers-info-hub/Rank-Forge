@@ -17,7 +17,6 @@ import com.hoggamers.rankforge.domain.matching.ResultLobbySlotVoteScore
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
-import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,7 +35,6 @@ object MatchResultOcrPreviewModule {
         screenshotOwnerProvider: ScreenshotOwnerProvider,
         positionCropGenerator: AndroidMatchResultPositionCropGenerator,
         paddleEngineProvider: com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrEngineProvider,
-        observeTournamentSlots: ObserveTournamentSlotsUseCase,
     ): MatchResultOcrPreviewRunner {
         val ppPositionRunner = AndroidMatchResultPositionOcrPreviewRunner(
             assetRepository = assetRepository,
@@ -46,7 +44,6 @@ object MatchResultOcrPreviewModule {
             screenshotOwnerProvider = screenshotOwnerProvider,
             positionCropGenerator = positionCropGenerator,
             paddleEngineProvider = paddleEngineProvider,
-            observeTournamentSlots = observeTournamentSlots,
         )
         val ppPairRunner = MatchResultPpOnlyPairReconciliationRunner(
             ppRoute = ppPositionRunner,

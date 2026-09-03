@@ -2,70 +2,83 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculator
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import kotlin.math.abs
 
-sealed interface MatchResultSemanticRoleResolution {
-    data class Resolved(
-        val role: MatchResultScreenshotRole,
-        val geometry: MatchResultPositionCropCalculationResult.Available,
-    ) : MatchResultSemanticRoleResolution
-
-    data object Unresolved : MatchResultSemanticRoleResolution
-    data object Ambiguous : MatchResultSemanticRoleResolution
+internal object MatchResultScreenshotRoleAssignment {
+    fun forSingleScreenshot(): MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER
 }
 
-/** Resolves Result role from one already-collected ML Kit evidence set. */
-class MatchResultSemanticRoleResolver(
-    private val calculator: MatchResultPositionCropCalculator = MatchResultPositionCropCalculator(),
+sealed interface MatchResultPairSemanticRoleResolution {
+    data class Resolved(
+        val firstRole: MatchResultScreenshotRole,
+        val secondRole: MatchResultScreenshotRole,
+    ) : MatchResultPairSemanticRoleResolution
+
+    data object Unresolved : MatchResultPairSemanticRoleResolution
+}
+
+/** Pair-only role resolution. It assigns LOWER from evidence and the other screenshot as UPPER. */
+class MatchResultPairSemanticRoleResolver(
+    private val lowerEvidenceResolver: MatchResultLowerEvidenceResolver = MatchResultLowerEvidenceResolver(),
 ) {
-    fun resolve(evidence: MatchResultAutoCropEvidence): MatchResultSemanticRoleResolution {
-        val candidates = MatchResultScreenshotRole.entries.mapNotNull { role ->
-            val geometry = calculateStrictGeometry(evidence, role) ?: return@mapNotNull null
-            role to geometry
+    fun resolve(
+        first: MatchResultAutoCropEvidence,
+        second: MatchResultAutoCropEvidence,
+    ): MatchResultPairSemanticRoleResolution {
+        val firstHasLowerEvidence = lowerEvidenceResolver.hasExistingLowerEvidence(first)
+        val secondHasLowerEvidence = lowerEvidenceResolver.hasExistingLowerEvidence(second)
+        if (firstHasLowerEvidence != secondHasLowerEvidence) {
+            return MatchResultPairSemanticRoleResolution.Resolved(
+                firstRole = if (firstHasLowerEvidence) {
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                } else {
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                },
+                secondRole = if (firstHasLowerEvidence) {
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                } else {
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                },
+            )
         }
-        return when (candidates.size) {
-            1 -> {
-                val (role, geometry) = candidates.single()
-                MatchResultSemanticRoleResolution.Resolved(role, geometry)
+
+        val firstAnchors = lowerEvidenceResolver.resolvePairRightPlacementAnchors(first)
+        val secondAnchors = lowerEvidenceResolver.resolvePairRightPlacementAnchors(second)
+        var firstLowerVotes = 0
+        var secondLowerVotes = 0
+        for (position in 6..11) {
+            val firstCenterY = firstAnchors[position]
+            val secondCenterY = secondAnchors[position]
+            if (firstCenterY == null || secondCenterY == null) continue
+            when {
+                firstCenterY < secondCenterY -> firstLowerVotes++
+                secondCenterY < firstCenterY -> secondLowerVotes++
             }
-            0 -> MatchResultSemanticRoleResolution.Unresolved
-            else -> MatchResultSemanticRoleResolution.Ambiguous
+        }
+        return when {
+            firstLowerVotes > secondLowerVotes -> MatchResultPairSemanticRoleResolution.Resolved(
+                firstRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                secondRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            )
+            secondLowerVotes > firstLowerVotes -> MatchResultPairSemanticRoleResolution.Resolved(
+                firstRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                secondRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            )
+            else -> MatchResultPairSemanticRoleResolution.Unresolved
         }
     }
+}
 
-    private fun calculateStrictGeometry(
-        evidence: MatchResultAutoCropEvidence,
-        role: MatchResultScreenshotRole,
-    ): MatchResultPositionCropCalculationResult.Available? {
-        if (!hasRoleEvidence(evidence, role)) return null
-        val result = calculator.calculate(
-            evidence = evidence,
-            role = role,
-            // Position 11 may never make a lower screenshot look upper.
-            allowUpperPositionElevenFallback = false,
-        ) as? MatchResultPositionCropCalculationResult.Available ?: return null
-        val expected = when (role) {
-            MatchResultScreenshotRole.MATCH_RESULT_UPPER -> (1..10).toList()
-            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> (11..12).toList()
-        }
-        return result.takeIf { geometry -> geometry.crops.map { it.position } == expected }
-    }
+/** Identifies only existing lower-screenshot evidence from one ML Kit observation set. */
+class MatchResultLowerEvidenceResolver {
+    internal fun hasExistingLowerEvidence(evidence: MatchResultAutoCropEvidence): Boolean =
+        hasLowerRoleEvidence(evidence, evidence.observations.map { it.text.trim() }.toSet())
 
-    private fun hasRoleEvidence(
+    internal fun resolvePairRightPlacementAnchors(
         evidence: MatchResultAutoCropEvidence,
-        role: MatchResultScreenshotRole,
-    ): Boolean {
-        val exactTexts = evidence.observations.map { it.text.trim() }.toSet()
-        return when (role) {
-            MatchResultScreenshotRole.MATCH_RESULT_UPPER ->
-                // Existing upper recovery allows either left anchor when the other is missed.
-                exactTexts.contains("4") || exactTexts.contains("5")
-            MatchResultScreenshotRole.MATCH_RESULT_LOWER -> hasLowerRoleEvidence(evidence, exactTexts)
-        }
-    }
+    ): Map<Int, Double> = resolveRightPlacementAnchors(evidence)
+        .associate { anchor -> anchor.position to anchor.box.centerY() }
 
     private fun hasLowerRoleEvidence(
         evidence: MatchResultAutoCropEvidence,
