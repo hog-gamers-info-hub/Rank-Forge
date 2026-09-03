@@ -1117,7 +1117,9 @@ private fun MatchReviewContent(
                 onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
             )
         }
-        if (uiState.isEditable) {
+        if (uiState.isEditable &&
+            (showLegacyManualReviewContent || !hasDisplayableResultOcrData)
+        ) {
             Button(
                 onClick = {
                     if (showLegacyManualReviewContent) {
