@@ -9,6 +9,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinate
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinateSource
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.io.File
 import java.io.FileOutputStream
@@ -77,6 +81,61 @@ class CustomDesignSetupScreenTest {
             }
             composeTestRule
                 .onNodeWithTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG)
+                .assertIsDisplayed()
+            assertEquals(
+                0,
+                composeTestRule
+                    .onAllNodesWithTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG)
+                    .fetchSemanticsNodes()
+                    .size,
+            )
+        } finally {
+            imageFile.delete()
+        }
+    }
+
+    @Test
+    fun decodedImageWithGridGeometryShowsOverlayNode() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val imageFile = File.createTempFile("custom-design-grid", ".png", context.cacheDir)
+        FileOutputStream(imageFile).use { output ->
+            Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+                .compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+
+        try {
+            composeTestRule.setContent {
+                RankForgeTheme {
+                    CustomDesignSetupScreen(
+                        uiState = CustomDesignSetupUiState(
+                            selectedImageReference = imageFile.toURI().toString(),
+                            sourceImageWidth = 2,
+                            sourceImageHeight = 3,
+                            gridGeometry = CustomDesignGridGeometry(
+                                sourceWidth = 2,
+                                sourceHeight = 3,
+                                columnX = mapOf(CustomDesignAnchorField.TEAM_NAME to 1f),
+                                rowY = mapOf(
+                                    1 to CustomDesignRowCoordinate(
+                                        y = 1f,
+                                        source = CustomDesignRowCoordinateSource.OCR,
+                                    ),
+                                ),
+                                estimatedRowStep = null,
+                            ),
+                        ),
+                    )
+                }
+            }
+
+            composeTestRule.waitUntil(timeoutMillis = 5_000) {
+                composeTestRule
+                    .onAllNodesWithTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeTestRule
+                .onNodeWithTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG)
                 .assertIsDisplayed()
         } finally {
             imageFile.delete()
