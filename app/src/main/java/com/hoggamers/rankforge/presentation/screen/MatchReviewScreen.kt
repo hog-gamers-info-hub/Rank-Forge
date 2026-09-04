@@ -251,6 +251,10 @@ fun MatchReviewRoute(
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
     val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
+    val customDesignFormatAvailabilityViewModel =
+        hiltViewModel<CustomDesignFormatAvailabilityViewModel>()
+    val customDesignFormatAvailabilityUiState by
+        customDesignFormatAvailabilityViewModel.uiState.collectAsStateWithLifecycle()
     val calculatedEvidenceSaveStatus by viewModel.calculatedEvidenceSaveStatus.collectAsStateWithLifecycle()
     val hasCalculatedEvidenceRecord by viewModel.hasCalculatedEvidenceRecord.collectAsStateWithLifecycle()
     fun saveAcceptedResultCorrections() {
@@ -287,6 +291,11 @@ fun MatchReviewRoute(
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, customDesignFormatAvailabilityViewModel) {
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            customDesignFormatAvailabilityViewModel.refresh()
+        }
+    }
     DisposableEffect(
         lifecycleOwner,
         tournamentId,
@@ -296,12 +305,15 @@ fun MatchReviewRoute(
         uiState.calculatedEvidenceRestoreStatus,
     ) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && uiState.isAvailable &&
-                uiState.status != MatchStatus.FINALIZED &&
-                uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.RESTORED &&
-                uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.CHECKING
-            ) {
-                resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                customDesignFormatAvailabilityViewModel.refresh()
+                if (uiState.isAvailable &&
+                    uiState.status != MatchStatus.FINALIZED &&
+                    uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.RESTORED &&
+                    uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.CHECKING
+                ) {
+                    resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -523,6 +535,7 @@ fun MatchReviewRoute(
             cacheAvailability = ocrCacheAvailability,
             ocrUiState = ocrUiState,
         ),
+        customDesignFormatAvailabilityUiState = customDesignFormatAvailabilityUiState,
         ocrCacheAvailability = ocrCacheAvailability,
         ocrUiState = ocrUiState,
         onOcrPlacementChanged = { rowIndex, value ->
@@ -592,6 +605,8 @@ fun MatchReviewScreen(
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     showLegacyManualReviewContent: Boolean = false,
     showInlineOcrDetails: Boolean = false,
+    customDesignFormatAvailabilityUiState: CustomDesignFormatAvailabilityUiState =
+        CustomDesignFormatAvailabilityUiState(),
     ocrCacheAvailability: MatchOcrCacheAvailability = MatchOcrCacheAvailability.UNKNOWN,
     ocrUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
@@ -649,6 +664,7 @@ fun MatchReviewScreen(
             matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
             showLegacyManualReviewContent = showLegacyManualReviewContent,
             showInlineOcrDetails = showInlineOcrDetails,
+            customDesignFormatAvailabilityUiState = customDesignFormatAvailabilityUiState,
             ocrReviewOpened = ocrReviewOpened,
             onOcrReviewOpenedChange = { ocrReviewOpened = it },
             ocrCacheAvailability = ocrCacheAvailability,
@@ -703,6 +719,7 @@ private fun MatchReviewContent(
     matchLobbyScreenshotIntake: @Composable () -> Unit,
     showLegacyManualReviewContent: Boolean,
     showInlineOcrDetails: Boolean,
+    customDesignFormatAvailabilityUiState: CustomDesignFormatAvailabilityUiState,
     ocrReviewOpened: Boolean,
     onOcrReviewOpenedChange: (Boolean) -> Unit,
     ocrCacheAvailability: MatchOcrCacheAvailability,
