@@ -60,4 +60,25 @@ class MatchCalculatedEvidenceCodecTest {
 
         assertEquals(result, codec.decodeResult(codec.encodeResult(result)))
     }
+
+    @Test
+    fun legacyResultPayloadDefaultsToNoExcludedSourcePositions() {
+        val payload = """
+            {
+              "positions": []
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList<Int>(), codec.decodeResult(payload)?.excludedSourcePositions)
+    }
+
+    @Test
+    fun roundTripPreservesExcludedSourcePositions() {
+        val result = ResultCalculatedEvidence(
+            positions = emptyList(),
+            excludedSourcePositions = listOf(4, 9),
+        )
+
+        assertEquals(result, codec.decodeResult(codec.encodeResult(result)))
+    }
 }

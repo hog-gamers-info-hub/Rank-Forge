@@ -365,6 +365,7 @@ class MatchReviewViewModelTest {
             viewModel.calculateResultPositionCrops()
             advanceUntilIdle()
             assertNotNull(evidenceRepository.evidence)
+            assertEquals(emptyList<Int>(), evidenceRepository.evidence!!.result.excludedSourcePositions)
 
             viewModel.load(TOURNAMENT_ID, "fresh-match-id")
             advanceUntilIdle()

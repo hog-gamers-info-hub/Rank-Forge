@@ -34,7 +34,13 @@ internal object MatchCalculatedEvidenceMapper {
 
         return MatchCalculatedEvidence(
             lobby = LobbyCalculatedEvidence(teams = lobbyTeams),
-            result = ResultCalculatedEvidence(positions = resultPositions),
+            result = ResultCalculatedEvidence(
+                positions = resultPositions,
+                excludedSourcePositions = ocrState.correctionDraft?.rows
+                    ?.filter { it.isExcluded }
+                    ?.map { it.rowIndex + 1 }
+                    .orEmpty(),
+            ),
         )
     }
 
@@ -127,7 +133,12 @@ internal object MatchCalculatedEvidenceMapper {
             )
         }
         return evidence.copy(
-            result = evidence.result.copy(positions = updatedPositions),
+            result = evidence.result.copy(
+                positions = updatedPositions,
+                excludedSourcePositions = correctionDraft.rows
+                    .filter { it.isExcluded }
+                    .map { it.rowIndex + 1 },
+            ),
         )
     }
 

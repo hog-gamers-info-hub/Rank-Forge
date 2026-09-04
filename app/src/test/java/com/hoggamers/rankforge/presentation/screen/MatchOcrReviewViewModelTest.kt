@@ -1257,6 +1257,39 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun excludedMiddleSourceRowProducesContiguousOfficialPlacements() = runTest(dispatcher) {
+        val repository = createRepository(activeTeamCount = 11)
+        val rows = correctionRows().map { row ->
+            if (row.rowIndex == 11) {
+                row.copy(
+                    suggestedTeamSlotDisplayValue = "4",
+                    originalSuggestedTeamSlot = 4,
+                )
+            } else {
+                row
+            }
+        }
+        val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+            MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
+            rowIndex = 3,
+        )
+        val viewModel = viewModelWith(
+            repository,
+            readyState(correctionDraft = draft, rows = rows),
+        )
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val finalized = repository.observeMatchById(MATCH_ID).first()!!
+        val positionsByTeamSlot = finalized.placements.associateBy { it.teamSlotNumber }
+        assertEquals(11, finalized.placements.size)
+        assertEquals((1..11).toList(), finalized.placements.map { it.position }.sorted())
+        assertEquals(4, positionsByTeamSlot.getValue(5).position)
+        assertEquals(11, positionsByTeamSlot.getValue(4).position)
+    }
+
+    @Test
     fun fullyAbsentRowsRemainStructuralInputsAndFinalizeAsExcludedForEightTeams() = runTest(dispatcher) {
         val repository = createRepository(activeTeamCount = 8)
         val rows = correctionRows().map { row ->
