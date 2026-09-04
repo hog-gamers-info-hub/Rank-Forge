@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetectionResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
@@ -59,6 +60,63 @@ class CustomDesignSetupViewModel @Inject constructor(
 
     fun onTotalPointsChanged(value: String) {
         updateLabels { it.copy(totalPointsLabel = value) }
+    }
+
+    fun setManualColumnX(
+        field: CustomDesignAnchorField,
+        sourceX: Float,
+    ) {
+        val sourceWidth = _uiState.value.sourceImageWidth ?: return
+        if (!sourceX.isFinite() || sourceX !in 0f..sourceWidth.toFloat()) return
+        _uiState.update { state ->
+            val overrides = state.manualGridOverrides.copy(
+                columnX = state.manualGridOverrides.columnX + (field to sourceX),
+            )
+            state.copy(manualGridOverrides = overrides)
+        }
+    }
+
+    fun setManualRowY(
+        rank: Int,
+        sourceY: Float,
+    ) {
+        val sourceHeight = _uiState.value.sourceImageHeight ?: return
+        if (rank !in CUSTOM_DESIGN_RANK_RANGE ||
+            !sourceY.isFinite() ||
+            sourceY !in 0f..sourceHeight.toFloat()
+        ) {
+            return
+        }
+        _uiState.update { state ->
+            val overrides = state.manualGridOverrides.copy(
+                rowY = state.manualGridOverrides.rowY + (rank to sourceY),
+            )
+            state.copy(manualGridOverrides = overrides)
+        }
+    }
+
+    fun clearManualColumnX(field: CustomDesignAnchorField) {
+        _uiState.update { state ->
+            state.copy(
+                manualGridOverrides = state.manualGridOverrides.copy(
+                    columnX = state.manualGridOverrides.columnX - field,
+                ),
+            )
+        }
+    }
+
+    fun clearManualRowY(rank: Int) {
+        _uiState.update { state ->
+            state.copy(
+                manualGridOverrides = state.manualGridOverrides.copy(
+                    rowY = state.manualGridOverrides.rowY - rank,
+                ),
+            )
+        }
+    }
+
+    fun clearManualGridOverrides() {
+        _uiState.update { it.copy(manualGridOverrides = CustomDesignGridOverrides()) }
     }
 
     fun requestPhotoPicker() {
@@ -136,7 +194,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                     sourceImageHeight = metadata.height,
                     isImageValidationInProgress = false,
                     imageValidationError = null,
-                ).withDraft().resetOcr()
+                ).withDraft().resetOcr(clearManualGridOverrides = true)
             }
             _uiState.value.draft?.let { draft -> startOcr(draft) }
         }
@@ -148,7 +206,11 @@ class CustomDesignSetupViewModel @Inject constructor(
                 imageValidationError = null,
                 photoPickerError = null,
             ).withDraft()
-            if (nextState.draft == null) nextState.resetOcr() else nextState
+            if (nextState.draft == null) {
+                nextState.resetOcr(clearManualGridOverrides = false)
+            } else {
+                nextState
+            }
         }
         val currentState = _uiState.value
         val cachedDocument = rawOcrDocument
@@ -234,14 +296,23 @@ class CustomDesignSetupViewModel @Inject constructor(
         }
     }
 
-    private fun CustomDesignSetupUiState.resetOcr(): CustomDesignSetupUiState {
+    private fun CustomDesignSetupUiState.resetOcr(
+        clearManualGridOverrides: Boolean,
+    ): CustomDesignSetupUiState {
         ocrJob?.cancel()
         ocrGeneration += 1
-        rawOcrDocument = null
+        if (clearManualGridOverrides) {
+            rawOcrDocument = null
+        }
         return copy(
             ocrStatus = CustomDesignOcrStatus.IDLE,
             ocrAnchors = null,
             gridGeometry = null,
+            manualGridOverrides = if (clearManualGridOverrides) {
+                CustomDesignGridOverrides()
+            } else {
+                manualGridOverrides
+            },
         )
     }
 

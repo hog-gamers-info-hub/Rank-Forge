@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrAnchors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 
 enum class CustomDesignLabelField {
     TEAM_NAME,
@@ -41,6 +42,7 @@ data class CustomDesignSetupUiState(
     val ocrStatus: CustomDesignOcrStatus = CustomDesignOcrStatus.IDLE,
     val ocrAnchors: CustomDesignOcrAnchors? = null,
     val gridGeometry: CustomDesignGridGeometry? = null,
+    val manualGridOverrides: CustomDesignGridOverrides = CustomDesignGridOverrides(),
 ) {
     val hasUsableDraft: Boolean
         get() = draft != null

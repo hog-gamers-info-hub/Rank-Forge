@@ -78,6 +78,28 @@ class CustomDesignSourceToPreviewTransformTest {
 
         assertEquals(472.75f, transform.mapX(945.5f), 0.00001f)
         assertEquals(172.5f, transform.mapY(345f), 0.00001f)
+        assertEquals(945.5f, transform.unmapX(472.75f), 0.00001f)
+        assertEquals(345f, transform.unmapY(172.5f), 0.00001f)
+    }
+
+    @Test
+    fun removesVerticalLetterboxDuringInverseMapping() {
+        val transform = transform(1080, 1080, 400f, 600f)
+
+        assertEquals(0f, transform.unmapX(transform.offsetX), 0.00001f)
+        assertEquals(1080f, transform.unmapX(transform.offsetX + transform.displayedWidth), 0.00001f)
+        assertEquals(0f, transform.unmapY(transform.offsetY), 0.00001f)
+        assertEquals(1080f, transform.unmapY(transform.offsetY + transform.displayedHeight), 0.00001f)
+        assertEquals(540f, transform.unmapY(transform.mapY(540f)), 0.00001f)
+    }
+
+    @Test
+    fun removesHorizontalLetterboxDuringInverseMapping() {
+        val transform = transform(1080, 1080, 600f, 400f)
+
+        assertEquals(0f, transform.unmapX(transform.offsetX), 0.00001f)
+        assertEquals(1080f, transform.unmapX(transform.offsetX + transform.displayedWidth), 0.00001f)
+        assertEquals(540f, transform.unmapX(transform.mapX(540f)), 0.00001f)
     }
 
     private fun transform(

@@ -225,6 +225,82 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun manualUpdatesAreValidatedAndDoNotRerunOcr() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        val automaticWin = viewModel.uiState.value.gridGeometry
+            ?.columnX
+            ?.get(CustomDesignAnchorField.WIN)
+
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 700f)
+        viewModel.setManualRowY(2, 410f)
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, -1f)
+        viewModel.setManualRowY(2, Float.NaN)
+        viewModel.setManualRowY(0, 200f)
+
+        assertEquals(700f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
+        assertEquals(410f, viewModel.uiState.value.manualGridOverrides.rowY[2])
+        assertEquals(automaticWin, viewModel.uiState.value.gridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
+        assertEquals(1, runner.sources.size)
+    }
+
+    @Test
+    fun clearingManualOverrideFallsBackToAutomaticCoordinate() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithGridRows()))
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 700f)
+        viewModel.setManualRowY(2, 410f)
+
+        viewModel.clearManualColumnX(CustomDesignAnchorField.WIN)
+        viewModel.clearManualRowY(2)
+
+        assertFalse(viewModel.uiState.value.manualGridOverrides.columnX.containsKey(CustomDesignAnchorField.WIN))
+        assertFalse(viewModel.uiState.value.manualGridOverrides.rowY.containsKey(2))
+    }
+
+    @Test
+    fun manualOverridesSurviveTemporaryBlankLabelAndLabelRematch() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 700f)
+        viewModel.setManualRowY(2, 410f)
+
+        viewModel.onWinChanged("")
+        assertEquals(700f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
+        assertEquals(null, viewModel.uiState.value.gridGeometry)
+
+        viewModel.onWinChanged("WINS")
+
+        assertEquals(700f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
+        assertEquals(410f, viewModel.uiState.value.manualGridOverrides.rowY[2])
+        assertEquals(1, runner.sources.size)
+    }
+
+    @Test
+    fun selectingDifferentImageClearsManualOverrides() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithGridRows()))
+
+        selectImage(viewModel, "content://picker/first")
+        advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 700f)
+        viewModel.setManualRowY(2, 410f)
+
+        selectImage(viewModel, "content://picker/second")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.manualGridOverrides.columnX.isEmpty())
+        assertTrue(viewModel.uiState.value.manualGridOverrides.rowY.isEmpty())
+    }
+
+    @Test
     fun changingImageInvalidatesCachedOcrAndStartsNewRun() = runTest {
         val runner = FakeCustomDesignOcrRunner()
         val viewModel = viewModel(runner = runner)
@@ -289,12 +365,14 @@ class CustomDesignSetupViewModelTest {
         runCurrent()
         second.complete(documentWithGridRows(winLeft = 700))
         advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 800f)
         first.complete(documentWithGridRows(winLeft = 100))
         advanceUntilIdle()
 
         assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
         assertEquals(710f, viewModel.uiState.value.ocrAnchors?.columnX?.get(CustomDesignAnchorField.WIN))
         assertEquals(710f, viewModel.uiState.value.gridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
+        assertEquals(800f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
     }
 
     private fun viewModel(
