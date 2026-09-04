@@ -476,6 +476,14 @@
     <string name="match_review_download_choose_format">Choose Format</string>
     <string name="match_review_download_pdf">PDF</string>
     <string name="match_review_download_png">Image (PNG)</string>
+    <string name="match_review_download_custom_design">Custom Design</string>
+    <string name="custom_design_setup_title">Custom Design Setup</string>
+    <string name="custom_design_team_name_label">Team Name</string>
+    <string name="custom_design_win_label">Win</string>
+    <string name="custom_design_total_kills_label">Total Kills</string>
+    <string name="custom_design_position_points_label">Position Points</string>
+    <string name="custom_design_total_points_label">Total Points</string>
+    <string name="custom_design_upload_action">Upload Custom Design</string>
     <string name="match_review_download_generating">Generating result.</string>
     <string name="match_review_download_saving">Saving result.</string>
     <string name="match_review_download_saved_to_downloads">%1$s saved to Downloads/Rank Forge.</string>
