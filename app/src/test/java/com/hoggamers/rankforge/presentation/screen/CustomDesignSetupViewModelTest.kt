@@ -1,0 +1,281 @@
+package com.hoggamers.rankforge.presentation.screen
+
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrGeometry
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class CustomDesignSetupViewModelTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun uploadRequestRejectsEveryBlankLabelBeforeOpeningPicker() {
+        val viewModel = viewModel()
+
+        viewModel.requestPhotoPicker()
+
+        assertEquals(
+            CustomDesignLabelField.entries.toSet(),
+            viewModel.uiState.value.validationErrors,
+        )
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertFalse(viewModel.uiState.value.hasUsableDraft)
+    }
+
+    @Test
+    fun exactTypedLabelsAreRetainedAndValidLabelsAllowPickerLaunch() {
+        val viewModel = viewModel()
+        val labels = listOf(" TEAM NAME ", "Win", "ELIM.", "POS.", "TOTAL")
+
+        viewModel.onTeamNameChanged(labels[0])
+        viewModel.onWinChanged(labels[1])
+        viewModel.onTotalKillsChanged(labels[2])
+        viewModel.onPositionPointsChanged(labels[3])
+        viewModel.onTotalPointsChanged(labels[4])
+        viewModel.requestPhotoPicker()
+
+        val state = viewModel.uiState.value
+        assertEquals(labels[0], state.teamNameLabel)
+        assertEquals(labels[1], state.winLabel)
+        assertEquals(labels[2], state.totalKillsLabel)
+        assertEquals(labels[3], state.positionPointsLabel)
+        assertEquals(labels[4], state.totalPointsLabel)
+        assertTrue(state.validationErrors.isEmpty())
+        assertTrue(state.isPhotoPickerLaunchPending)
+    }
+
+    @Test
+    fun validImageSelectionCreatesDraftWithSourceDimensionsAndExactLabels() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val viewModel = viewModel(
+            ImageCandidateMetadataReader {
+                ImageCandidateReadResult.Metadata(
+                    mimeType = "image/png",
+                    width = 1080,
+                    height = 1350,
+                )
+            },
+            runner = runner,
+        )
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("ELIM.")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://picker/custom-design")
+
+        advanceUntilIdle()
+
+        assertEquals("content://picker/custom-design", viewModel.uiState.value.selectedImageReference)
+        assertEquals(1080, viewModel.uiState.value.sourceImageWidth)
+        assertEquals(1350, viewModel.uiState.value.sourceImageHeight)
+        assertEquals(
+            CustomDesignDraft(
+                imageReference = "content://picker/custom-design",
+                imageWidth = 1080,
+                imageHeight = 1350,
+                teamNameLabel = "TEAM NAME",
+                winLabel = "WIN",
+                totalKillsLabel = "ELIM.",
+                positionPointsLabel = "POS.",
+                totalPointsLabel = "TOTAL",
+            ),
+            viewModel.uiState.value.draft,
+        )
+        assertEquals(1, runner.sources.size)
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+    }
+
+    @Test
+    fun ocrResultPopulatesPartialAnchorState() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithHeader("WIN", 700))
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+        assertEquals(1, viewModel.uiState.value.ocrAnchors?.columnX?.size)
+    }
+
+    @Test
+    fun ocrFailurePreservesTheUsableDraft() = runTest {
+        val runner = FakeCustomDesignOcrRunner(failure = IllegalStateException("engine failure"))
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.hasUsableDraft)
+        assertEquals(CustomDesignOcrStatus.FAILED, viewModel.uiState.value.ocrStatus)
+        assertEquals("content://picker/custom-design", viewModel.uiState.value.draft?.imageReference)
+        assertEquals(1080, viewModel.uiState.value.draft?.imageWidth)
+    }
+
+    @Test
+    fun changingLabelsRematchesCachedOcrWithoutRunningEngineAgain() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithHeader("WIN", 700))
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.onWinChanged("WINS")
+
+        assertEquals(1, runner.sources.size)
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+        assertTrue(viewModel.uiState.value.ocrAnchors?.columnX?.isEmpty() == true)
+        assertEquals("WINS", viewModel.uiState.value.draft?.winLabel)
+    }
+
+    @Test
+    fun changingImageInvalidatesCachedOcrAndStartsNewRun() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel, "content://picker/first")
+        advanceUntilIdle()
+        selectImage(viewModel, "content://picker/second")
+        advanceUntilIdle()
+
+        assertEquals(2, runner.sources.size)
+        assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+    }
+
+    @Test
+    fun staleOcrResultCannotOverwriteNewerImageState() = runTest {
+        val first = CompletableDeferred<CustomDesignRawOcrDocument>()
+        val second = CompletableDeferred<CustomDesignRawOcrDocument>()
+        val runner = object : CustomDesignOcrRunner {
+            val sources = mutableListOf<CustomDesignOcrSource>()
+
+            override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+                sources += source
+                return if (sources.size == 1) {
+                    withContext(NonCancellable) { first.await() }
+                } else {
+                    second.await()
+                }
+            }
+        }
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel, "content://picker/first")
+        runCurrent()
+        selectImage(viewModel, "content://picker/second")
+        runCurrent()
+        second.complete(documentWithHeader("WIN", 700))
+        advanceUntilIdle()
+        first.complete(documentWithHeader("WIN", 100))
+        advanceUntilIdle()
+
+        assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
+        assertEquals(710f, viewModel.uiState.value.ocrAnchors?.columnX?.values?.single())
+    }
+
+    private fun viewModel(
+        readResult: ImageCandidateMetadataReader = ImageCandidateMetadataReader {
+            ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1350)
+        },
+        runner: CustomDesignOcrRunner = FakeCustomDesignOcrRunner(),
+    ) = CustomDesignSetupViewModel(
+        imageCandidateValidator = ImageCandidateValidator(readResult),
+        customDesignOcrRunner = runner,
+        customDesignAnchorDetector = com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector(),
+    )
+
+    private fun selectImage(
+        viewModel: CustomDesignSetupViewModel,
+        uri: String = "content://picker/custom-design",
+    ) {
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("ELIM.")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult(uri)
+    }
+
+    private class FakeCustomDesignOcrRunner(
+        private val document: CustomDesignRawOcrDocument = CustomDesignRawOcrDocument(1080, 1350, emptyList()),
+        private val failure: Throwable? = null,
+    ) : CustomDesignOcrRunner {
+        val sources = mutableListOf<CustomDesignOcrSource>()
+
+        override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+            sources += source
+            failure?.let { throw it }
+            return document
+        }
+    }
+
+    private fun documentWithHeader(text: String, left: Int) = CustomDesignRawOcrDocument(
+        sourceWidth = 1080,
+        sourceHeight = 1350,
+        blocks = listOf(
+            RawOcrBlock(
+                text = text,
+                geometry = null,
+                recognizedLanguage = null,
+                confidence = RawOcrConfidence.Unavailable,
+                lines = listOf(
+                    RawOcrLine(
+                        text = text,
+                        geometry = null,
+                        recognizedLanguage = null,
+                        confidence = RawOcrConfidence.Unavailable,
+                        elements = listOf(
+                            RawOcrElement(
+                                text = text,
+                                geometry = RawOcrGeometry(
+                                    boundingBox = RawOcrBoundingBox(left, 100, left + 20, 120),
+                                    cornerPoints = null,
+                                ),
+                                recognizedLanguage = null,
+                                confidence = RawOcrConfidence.Unavailable,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+}
