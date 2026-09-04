@@ -34,7 +34,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -46,7 +48,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
@@ -327,6 +333,7 @@ private fun CustomDesignGridOverlay(
     val latestGeometry by rememberUpdatedState(geometry)
     val latestOnManualColumnXChanged by rememberUpdatedState(onManualColumnXChanged)
     val latestOnManualRowYChanged by rememberUpdatedState(onManualRowYChanged)
+    val textMeasurer = rememberTextMeasurer()
     val hitTolerancePx = with(LocalDensity.current) {
         CUSTOM_DESIGN_GRID_HIT_TOLERANCE_DP.dp.toPx()
     }
@@ -406,6 +413,15 @@ private fun CustomDesignGridOverlay(
         ) ?: return@Canvas
         val lineColor = Color(0xFFD0D0D0)
         val strokeWidth = 1.dp.toPx()
+        val labelStyle = TextStyle(
+            color = Color.White,
+            fontSize = 8.sp,
+        )
+        val labelHorizontalPadding = 3.dp.toPx()
+        val labelVerticalPadding = 2.dp.toPx()
+        val labelCornerRadius = 2.dp.toPx()
+        val upperLevelOffset = 4.dp.toPx()
+        val lowerLevelOffset = 28.dp.toPx()
 
         clipRect(
             left = transform.offsetX,
@@ -431,7 +447,83 @@ private fun CustomDesignGridOverlay(
                     strokeWidth = strokeWidth,
                 )
             }
+            customDesignSemanticColumnLabels(geometry).forEach { label ->
+                val previewX = transform.mapX(label.sourceX)
+                val textLayout = textMeasurer.measure(
+                    text = label.text,
+                    style = labelStyle,
+                    maxLines = 1,
+                )
+                val boxWidth = textLayout.size.width + labelHorizontalPadding * 2f
+                val boxHeight = textLayout.size.height + labelVerticalPadding * 2f
+                val maxBoxX = (
+                    transform.offsetX + transform.displayedWidth - boxWidth
+                    ).coerceAtLeast(transform.offsetX)
+                val boxX = (previewX - boxWidth / 2f)
+                    .coerceIn(transform.offsetX, maxBoxX)
+                val requestedBoxY = when (label.level) {
+                    CustomDesignSemanticColumnLabelLevel.UPPER -> transform.offsetY + upperLevelOffset
+                    CustomDesignSemanticColumnLabelLevel.LOWER -> transform.offsetY + lowerLevelOffset
+                }
+                val maxBoxY = (
+                    transform.offsetY + transform.displayedHeight - boxHeight
+                    ).coerceAtLeast(transform.offsetY)
+                val boxY = requestedBoxY.coerceIn(transform.offsetY, maxBoxY)
+                drawRoundRect(
+                    color = Color.Black,
+                    topLeft = Offset(boxX, boxY),
+                    size = Size(boxWidth, boxHeight),
+                    cornerRadius = CornerRadius(labelCornerRadius, labelCornerRadius),
+                )
+                drawText(
+                    textLayoutResult = textLayout,
+                    topLeft = Offset(
+                        boxX + labelHorizontalPadding,
+                        boxY + labelVerticalPadding,
+                    ),
+                )
+            }
         }
+    }
+}
+
+internal enum class CustomDesignSemanticColumnLabelLevel {
+    UPPER,
+    LOWER,
+}
+
+internal data class CustomDesignSemanticColumnLabel(
+    val field: CustomDesignAnchorField,
+    val sourceX: Float,
+    val level: CustomDesignSemanticColumnLabelLevel,
+) {
+    val text: String
+        get() = this.field.name
+}
+
+internal fun customDesignSemanticColumnLabels(
+    geometry: CustomDesignEffectiveGridGeometry,
+): List<CustomDesignSemanticColumnLabel> {
+    val levelByField = geometry.columnX.entries
+        .sortedWith(
+            compareBy<Map.Entry<CustomDesignAnchorField, Float>> { it.value }
+                .thenBy { it.key.ordinal },
+        )
+        .mapIndexed { index, entry ->
+            entry.key to if (index % 2 == 0) {
+                CustomDesignSemanticColumnLabelLevel.UPPER
+            } else {
+                CustomDesignSemanticColumnLabelLevel.LOWER
+            }
+        }
+        .toMap()
+
+    return geometry.columnX.map { (field, sourceX) ->
+        CustomDesignSemanticColumnLabel(
+            field = field,
+            sourceX = sourceX,
+            level = checkNotNull(levelByField[field]),
+        )
     }
 }
 
