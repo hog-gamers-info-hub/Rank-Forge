@@ -12,6 +12,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -37,14 +40,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import java.io.IOException
@@ -99,6 +107,8 @@ fun CustomDesignSetupRoute(
         onPositionPointsChanged = viewModel::onPositionPointsChanged,
         onTotalPointsChanged = viewModel::onTotalPointsChanged,
         onUploadCustomDesign = viewModel::requestPhotoPicker,
+        onManualColumnXChanged = viewModel::setManualColumnX,
+        onManualRowYChanged = viewModel::setManualRowY,
     )
 }
 
@@ -111,6 +121,8 @@ fun CustomDesignSetupScreen(
     onPositionPointsChanged: (String) -> Unit = {},
     onTotalPointsChanged: (String) -> Unit = {},
     onUploadCustomDesign: () -> Unit = {},
+    onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit = { _, _ -> },
+    onManualRowYChanged: (Int, Float) -> Unit = { _, _ -> },
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -129,7 +141,12 @@ fun CustomDesignSetupScreen(
                 imageReference = imageReference,
                 sourceWidth = uiState.sourceImageWidth,
                 sourceHeight = uiState.sourceImageHeight,
-                gridGeometry = uiState.gridGeometry,
+                gridGeometry = resolveCustomDesignEffectiveGridGeometry(
+                    automatic = uiState.gridGeometry,
+                    overrides = uiState.manualGridOverrides,
+                ),
+                onManualColumnXChanged = onManualColumnXChanged,
+                onManualRowYChanged = onManualRowYChanged,
                 modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG),
             )
         }
@@ -235,7 +252,9 @@ private fun CustomDesignImagePreview(
     imageReference: String,
     sourceWidth: Int?,
     sourceHeight: Int?,
-    gridGeometry: CustomDesignGridGeometry?,
+    gridGeometry: CustomDesignEffectiveGridGeometry?,
+    onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit,
+    onManualRowYChanged: (Int, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val contentResolver = LocalContext.current.contentResolver
@@ -279,6 +298,8 @@ private fun CustomDesignImagePreview(
                 ) {
                     CustomDesignGridOverlay(
                         geometry = gridGeometry,
+                        onManualColumnXChanged = onManualColumnXChanged,
+                        onManualRowYChanged = onManualRowYChanged,
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG),
@@ -291,10 +312,85 @@ private fun CustomDesignImagePreview(
 
 @Composable
 private fun CustomDesignGridOverlay(
-    geometry: CustomDesignGridGeometry,
+    geometry: CustomDesignEffectiveGridGeometry,
+    onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit,
+    onManualRowYChanged: (Int, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier = modifier) {
+    val latestGeometry by rememberUpdatedState(geometry)
+    val latestOnManualColumnXChanged by rememberUpdatedState(onManualColumnXChanged)
+    val latestOnManualRowYChanged by rememberUpdatedState(onManualRowYChanged)
+    val hitTolerancePx = with(LocalDensity.current) {
+        CUSTOM_DESIGN_GRID_HIT_TOLERANCE_DP.dp.toPx()
+    }
+
+    Canvas(
+        modifier = modifier.pointerInput(hitTolerancePx) {
+            awaitEachGesture {
+                val down = awaitFirstDown(
+                    requireUnconsumed = false,
+                    pass = PointerEventPass.Initial,
+                )
+                val currentGeometry = latestGeometry
+                val transform = SourceToPreviewTransform.fit(
+                    sourceWidth = currentGeometry.sourceWidth,
+                    sourceHeight = currentGeometry.sourceHeight,
+                    containerWidth = size.width.toFloat(),
+                    containerHeight = size.height.toFloat(),
+                ) ?: return@awaitEachGesture
+                val candidates = findCustomDesignGridHitCandidates(
+                    pointer = down.position,
+                    geometry = currentGeometry,
+                    transform = transform,
+                    hitTolerancePx = hitTolerancePx,
+                )
+                var selection: CustomDesignGridSelection? = null
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id }
+                        ?: return@awaitEachGesture
+                    if (!change.pressed) return@awaitEachGesture
+
+                    val dragDelta = change.position - down.position
+                    if (selection == null) {
+                        val touchSlop = viewConfiguration.touchSlop
+                        val dragDistanceSquared =
+                            dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y
+                        if (dragDistanceSquared < touchSlop * touchSlop) continue
+                        selection = chooseCustomDesignGridSelection(candidates, dragDelta)
+                            ?: return@awaitEachGesture
+                    }
+
+                    change.consume()
+                    val selected = checkNotNull(selection)
+                    when (selected) {
+                        is CustomDesignGridSelection.Column -> {
+                            val sourceX = customDesignColumnSourceX(
+                                previewX = change.position.x,
+                                transform = transform,
+                                sourceWidth = currentGeometry.sourceWidth,
+                            ) ?: continue
+                            latestOnManualColumnXChanged(selected.field, sourceX)
+                        }
+                        is CustomDesignGridSelection.Row -> {
+                            val sourceY = customDesignRowSourceY(
+                                previewY = change.position.y,
+                                transform = transform,
+                                sourceHeight = currentGeometry.sourceHeight,
+                            ) ?: continue
+                            constrainCustomDesignRowSourceY(
+                                rank = selected.rank,
+                                sourceY = sourceY,
+                                geometry = currentGeometry,
+                            )?.let { constrainedY ->
+                                latestOnManualRowYChanged(selected.rank, constrainedY)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) {
         val transform = SourceToPreviewTransform.fit(
             sourceWidth = geometry.sourceWidth,
             sourceHeight = geometry.sourceHeight,
@@ -319,8 +415,8 @@ private fun CustomDesignGridOverlay(
                     strokeWidth = strokeWidth,
                 )
             }
-            geometry.rowY.values.forEach { row ->
-                val previewY = transform.mapY(row.y)
+            geometry.rowY.values.forEach { sourceY ->
+                val previewY = transform.mapY(sourceY)
                 drawLine(
                     color = lineColor,
                     start = Offset(transform.offsetX, previewY),

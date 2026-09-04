@@ -13,6 +13,18 @@ data class SourceToPreviewTransform(
 
     fun mapY(sourceY: Float): Float = offsetY + sourceY * scale
 
+    fun unmapX(previewX: Float): Float = (previewX - offsetX) / scale
+
+    fun unmapY(previewY: Float): Float = (previewY - offsetY) / scale
+
+    fun containsPreviewPoint(x: Float, y: Float): Boolean =
+        x.isFinite() &&
+            y.isFinite() &&
+            x >= offsetX &&
+            x <= offsetX + displayedWidth &&
+            y >= offsetY &&
+            y <= offsetY + displayedHeight
+
     fun mapPoint(sourceX: Float, sourceY: Float): Offset =
         Offset(x = mapX(sourceX), y = mapY(sourceY))
 
