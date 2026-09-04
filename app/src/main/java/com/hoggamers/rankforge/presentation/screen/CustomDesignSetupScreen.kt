@@ -10,13 +10,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -28,8 +31,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -38,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import java.io.IOException
@@ -52,6 +59,7 @@ const val CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG = "custom_design_position
 const val CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG = "custom_design_total_points_field"
 const val CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG = "custom_design_upload_action"
 const val CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG = "custom_design_image_preview"
+const val CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG = "custom_design_grid_overlay"
 const val CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG = "custom_design_image_error"
 
 @Composable
@@ -119,6 +127,9 @@ fun CustomDesignSetupScreen(
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             CustomDesignImagePreview(
                 imageReference = imageReference,
+                sourceWidth = uiState.sourceImageWidth,
+                sourceHeight = uiState.sourceImageHeight,
+                gridGeometry = uiState.gridGeometry,
                 modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG),
             )
         }
@@ -222,6 +233,9 @@ private fun CustomDesignLabelInput(
 @Composable
 private fun CustomDesignImagePreview(
     imageReference: String,
+    sourceWidth: Int?,
+    sourceHeight: Int?,
+    gridGeometry: CustomDesignGridGeometry?,
     modifier: Modifier = Modifier,
 ) {
     val contentResolver = LocalContext.current.contentResolver
@@ -235,14 +249,85 @@ private fun CustomDesignImagePreview(
         modifier = modifier.fillMaxWidth(),
     ) {
         bitmap?.let { previewBitmap ->
-            Image(
-                bitmap = previewBitmap.asImageBitmap(),
-                contentDescription = stringResource(R.string.custom_design_setup_title),
-                contentScale = ContentScale.Fit,
+            val previewAspectRatio = if (
+                sourceWidth != null &&
+                sourceHeight != null &&
+                sourceWidth > 0 &&
+                sourceHeight > 0
+            ) {
+                sourceWidth.toFloat() / sourceHeight.toFloat()
+            } else {
+                previewBitmap.width.toFloat() / previewBitmap.height.toFloat()
+            }
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 320.dp),
-            )
+                    .aspectRatio(previewAspectRatio),
+            ) {
+                Image(
+                    bitmap = previewBitmap.asImageBitmap(),
+                    contentDescription = stringResource(R.string.custom_design_setup_title),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (
+                    gridGeometry != null &&
+                    sourceWidth != null &&
+                    sourceHeight != null &&
+                    gridGeometry.sourceWidth == sourceWidth &&
+                    gridGeometry.sourceHeight == sourceHeight
+                ) {
+                    CustomDesignGridOverlay(
+                        geometry = gridGeometry,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomDesignGridOverlay(
+    geometry: CustomDesignGridGeometry,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val transform = SourceToPreviewTransform.fit(
+            sourceWidth = geometry.sourceWidth,
+            sourceHeight = geometry.sourceHeight,
+            containerWidth = size.width,
+            containerHeight = size.height,
+        ) ?: return@Canvas
+        val lineColor = Color(0xFFD0D0D0)
+        val strokeWidth = 1.dp.toPx()
+
+        clipRect(
+            left = transform.offsetX,
+            top = transform.offsetY,
+            right = transform.offsetX + transform.displayedWidth,
+            bottom = transform.offsetY + transform.displayedHeight,
+        ) {
+            geometry.columnX.values.forEach { sourceX ->
+                val previewX = transform.mapX(sourceX)
+                drawLine(
+                    color = lineColor,
+                    start = Offset(previewX, transform.offsetY),
+                    end = Offset(previewX, transform.offsetY + transform.displayedHeight),
+                    strokeWidth = strokeWidth,
+                )
+            }
+            geometry.rowY.values.forEach { row ->
+                val previewY = transform.mapY(row.y)
+                drawLine(
+                    color = lineColor,
+                    start = Offset(transform.offsetX, previewY),
+                    end = Offset(transform.offsetX + transform.displayedWidth, previewY),
+                    strokeWidth = strokeWidth,
+                )
+            }
         }
     }
 }
