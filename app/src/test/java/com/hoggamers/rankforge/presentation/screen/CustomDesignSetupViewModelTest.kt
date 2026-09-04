@@ -1,5 +1,16 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveFailure
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveRequest
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveResult
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreResult
+import com.hoggamers.rankforge.data.cloud.RestoredCustomDesign
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteResult
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
@@ -7,7 +18,10 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocumen
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinateSource
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
@@ -61,6 +75,86 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun initialDiscoveryNoneLeavesFreshStateUnchanged() = runTest {
+        val viewModel = viewModel(
+            discoveryAction = CustomDesignSavedIdDiscoveryAction {
+                CustomDesignSavedIdDiscoveryResult.None
+            },
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignSetupUiState(), viewModel.uiState.value)
+    }
+
+    @Test
+    fun initialDiscoveryFoundRestoresExactlyOnceWithoutRunningOcr() = runTest {
+        val design = restoredDesign()
+        var restoreCalls = 0
+        val runner = FakeCustomDesignOcrRunner()
+        val viewModel = viewModel(
+            runner = runner,
+            discoveryAction = CustomDesignSavedIdDiscoveryAction {
+                CustomDesignSavedIdDiscoveryResult.Found(design.customDesignId)
+            },
+            restoreAction = CustomDesignRestoreAction {
+                restoreCalls += 1
+                CustomDesignRestoreResult.Success(design)
+            },
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(1, restoreCalls)
+        assertEquals(design.customDesignId, viewModel.uiState.value.savedCustomDesignId)
+        assertEquals(0, runner.sources.size)
+    }
+
+    @Test
+    fun ambiguousInitialDiscoveryDoesNotRestore() = runTest {
+        var restoreCalls = 0
+        val viewModel = viewModel(
+            discoveryAction = CustomDesignSavedIdDiscoveryAction {
+                CustomDesignSavedIdDiscoveryResult.Ambiguous
+            },
+            restoreAction = CustomDesignRestoreAction {
+                restoreCalls += 1
+                CustomDesignRestoreResult.Failed(
+                    com.hoggamers.rankforge.data.cloud.CustomDesignRestoreFailure.READ_FAILED,
+                )
+            },
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(0, restoreCalls)
+        assertEquals(CustomDesignSetupUiState(), viewModel.uiState.value)
+    }
+
+    @Test
+    fun discoveryResultAfterUserSelectedImageIsIgnored() = runTest {
+        val result = CompletableDeferred<CustomDesignSavedIdDiscoveryResult>()
+        var restoreCalls = 0
+        val design = restoredDesign()
+        val viewModel = viewModel(
+            discoveryAction = CustomDesignSavedIdDiscoveryAction { result.await() },
+            restoreAction = CustomDesignRestoreAction {
+                restoreCalls += 1
+                CustomDesignRestoreResult.Success(design)
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        result.complete(CustomDesignSavedIdDiscoveryResult.Found(design.customDesignId))
+        advanceUntilIdle()
+
+        assertEquals(0, restoreCalls)
+        assertEquals(null, viewModel.uiState.value.savedCustomDesignId)
+        assertEquals("content://picker/custom-design", viewModel.uiState.value.selectedImageReference)
+    }
+
+    @Test
     fun exactTypedLabelsAreRetainedAndValidLabelsAllowPickerLaunch() {
         val viewModel = viewModel()
         val labels = listOf(" TEAM NAME ", "Win", "ELIM.", "POS.", "TOTAL")
@@ -80,6 +174,60 @@ class CustomDesignSetupViewModelTest {
         assertEquals(labels[4], state.totalPointsLabel)
         assertTrue(state.validationErrors.isEmpty())
         assertTrue(state.isPhotoPickerLaunchPending)
+    }
+
+    @Test
+    fun uploadRequestWithoutImagePreservesExistingLabelValidation() {
+        val viewModel = viewModel()
+
+        viewModel.requestPhotoPicker()
+
+        assertEquals(
+            CustomDesignLabelField.entries.toSet(),
+            viewModel.uiState.value.validationErrors,
+        )
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+    }
+
+    @Test
+    fun saveActionWithoutImageDoesNotLaunchPhotoPicker() {
+        var saveCalls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                saveCalls += 1
+                CustomDesignSaveResult.Success("unexpected", "unexpected")
+            },
+        )
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("ELIM.")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+
+        viewModel.onSaveActionRequested()
+
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertEquals(0, saveCalls)
+    }
+
+    @Test
+    fun saveActionWithUnsavedImageInvokesCloudSaveOnce() = runTest {
+        var saveCalls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                saveCalls += 1
+                CustomDesignSaveResult.Success("saved-id", "saved-path")
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.onSaveActionRequested()
+        advanceUntilIdle()
+
+        assertEquals(1, saveCalls)
+        assertEquals(CustomDesignSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
     }
 
     @Test
@@ -408,16 +556,447 @@ class CustomDesignSetupViewModelTest {
         assertEquals(800f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
     }
 
+    @Test
+    fun saveUsesExactLabelsAndEffectiveManualGeometryWithoutRerunningOcr() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        var calls = 0
+        var captured: CustomDesignSaveRequest? = null
+        val viewModel = viewModel(
+            runner = runner,
+            saveAction = CustomDesignSaveAction { request ->
+                calls += 1
+                captured = request
+                CustomDesignSaveResult.Success("saved-id", "saved-path")
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 700f)
+        viewModel.setManualRowY(2, 410f)
+        viewModel.saveNewCustomDesign()
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+        assertEquals("saved-id", viewModel.uiState.value.savedCustomDesignId)
+        assertEquals(1, calls)
+        assertEquals(1, runner.sources.size)
+        assertEquals(
+            CustomDesignOcrLabels("TEAM NAME", "WIN", "ELIM.", "POS.", "TOTAL"),
+            captured?.labels,
+        )
+        assertEquals(700f, captured?.effectiveGridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
+        assertEquals(410f, captured?.effectiveGridGeometry?.rowY?.get(2))
+
+        viewModel.saveNewCustomDesign()
+        advanceUntilIdle()
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun saveWithoutVerifiedDraftDoesNotInvokeCloudAction() {
+        var calls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                calls += 1
+                CustomDesignSaveResult.Success("saved-id", "saved-path")
+            },
+        )
+
+        viewModel.saveNewCustomDesign()
+
+        assertEquals(CustomDesignSaveStatus.FAILED, viewModel.uiState.value.saveStatus)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun successfulDeleteClearsSavedStateWithoutRerunningOcr() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val design = restoredDesign()
+        var deleteCalls = 0
+        val viewModel = viewModel(
+            runner = runner,
+            restoreAction = CustomDesignRestoreAction {
+                CustomDesignRestoreResult.Success(design)
+            },
+            deleteAction = CustomDesignDeleteAction {
+                deleteCalls += 1
+                CustomDesignDeleteResult.Success
+            },
+        )
+
+        viewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+        viewModel.deleteSavedCustomDesign()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, deleteCalls)
+        assertEquals(CustomDesignDeleteStatus.DELETED, state.deleteStatus)
+        assertEquals(null, state.savedCustomDesignId)
+        assertEquals(null, state.selectedImageReference)
+        assertEquals(null, state.draft)
+        assertEquals("", state.teamNameLabel)
+        assertEquals(null, state.sourceImageWidth)
+        assertEquals(null, state.sourceImageHeight)
+        assertEquals(CustomDesignSaveStatus.IDLE, state.saveStatus)
+        assertEquals(CustomDesignRestoreStatus.IDLE, state.restoreStatus)
+        assertEquals(CustomDesignOcrStatus.IDLE, state.ocrStatus)
+        assertEquals(null, state.ocrAnchors)
+        assertEquals(null, state.gridGeometry)
+        assertEquals(0, runner.sources.size)
+    }
+
+    @Test
+    fun failedDeletePreservesStateAndCanBeRetried() = runTest {
+        val design = restoredDesign()
+        var deleteCalls = 0
+        val viewModel = viewModel(
+            restoreAction = CustomDesignRestoreAction {
+                CustomDesignRestoreResult.Success(design)
+            },
+            deleteAction = CustomDesignDeleteAction {
+                deleteCalls += 1
+                if (deleteCalls == 1) {
+                    CustomDesignDeleteResult.Failed(
+                        com.hoggamers.rankforge.data.cloud.CustomDesignDeleteFailure.STORAGE_DELETE,
+                    )
+                } else {
+                    CustomDesignDeleteResult.Success
+                }
+            },
+        )
+
+        viewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+        val before = viewModel.uiState.value
+        viewModel.deleteSavedCustomDesign()
+        advanceUntilIdle()
+        val afterFailure = viewModel.uiState.value
+        assertEquals(CustomDesignDeleteStatus.FAILED, afterFailure.deleteStatus)
+        assertEquals(before.savedCustomDesignId, afterFailure.savedCustomDesignId)
+        assertEquals(before.draft, afterFailure.draft)
+        assertEquals(before.manualGridOverrides, afterFailure.manualGridOverrides)
+
+        viewModel.deleteSavedCustomDesign()
+        advanceUntilIdle()
+        assertEquals(2, deleteCalls)
+        assertEquals(CustomDesignDeleteStatus.DELETED, viewModel.uiState.value.deleteStatus)
+        assertEquals(null, viewModel.uiState.value.savedCustomDesignId)
+    }
+
+    @Test
+    fun deleteIsIgnoredForUnsavedDesignAndDuplicateWhileDeleting() = runTest {
+        var deleteCalls = 0
+        val pending = CompletableDeferred<CustomDesignDeleteResult>()
+        val viewModel = viewModel(
+            deleteAction = CustomDesignDeleteAction {
+                deleteCalls += 1
+                pending.await()
+            },
+        )
+
+        viewModel.deleteSavedCustomDesign()
+        assertEquals(0, deleteCalls)
+
+        val design = restoredDesign()
+        val restoredViewModel = viewModel(
+            restoreAction = CustomDesignRestoreAction { CustomDesignRestoreResult.Success(design) },
+            deleteAction = CustomDesignDeleteAction {
+                deleteCalls += 1
+                pending.await()
+            },
+        )
+        restoredViewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+        restoredViewModel.deleteSavedCustomDesign()
+        restoredViewModel.deleteSavedCustomDesign()
+        runCurrent()
+        assertEquals(1, deleteCalls)
+        assertEquals(CustomDesignDeleteStatus.DELETING, restoredViewModel.uiState.value.deleteStatus)
+        pending.complete(CustomDesignDeleteResult.Success)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun concurrentSaveAttemptsInvokeCloudActionOnlyOnce() = runTest {
+        val result = CompletableDeferred<CustomDesignSaveResult>()
+        var calls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                calls += 1
+                result.await()
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.saveNewCustomDesign()
+        viewModel.saveNewCustomDesign()
+        runCurrent()
+
+        assertEquals(CustomDesignSaveStatus.SAVING, viewModel.uiState.value.saveStatus)
+        assertEquals(1, calls)
+        result.complete(CustomDesignSaveResult.Success("saved-id", "saved-path"))
+        advanceUntilIdle()
+        assertEquals(CustomDesignSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+    }
+
+    @Test
+    fun failedCloudSaveDoesNotPublishSavedState() = runTest {
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                CustomDesignSaveResult.Failed(CustomDesignSaveFailure.DATABASE_INSERT)
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.saveNewCustomDesign()
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignSaveStatus.FAILED, viewModel.uiState.value.saveStatus)
+        assertEquals(null, viewModel.uiState.value.savedCustomDesignId)
+    }
+
+    @Test
+    fun restoreHydratesExactDesignWithoutRunningOcr() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val design = restoredDesign()
+        var restoreCalls = 0
+        val viewModel = viewModel(
+            runner = runner,
+            restoreAction = CustomDesignRestoreAction { id ->
+                restoreCalls += 1
+                assertEquals(design.customDesignId, id)
+                CustomDesignRestoreResult.Success(design)
+            },
+        )
+
+        viewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, restoreCalls)
+        assertEquals(0, runner.sources.size)
+        assertEquals(CustomDesignRestoreStatus.RESTORED, state.restoreStatus)
+        assertEquals(CustomDesignSaveStatus.SAVED, state.saveStatus)
+        assertEquals(design.customDesignId, state.savedCustomDesignId)
+        assertEquals(design.localImageReference, state.selectedImageReference)
+        assertEquals(design.sourceWidth, state.sourceImageWidth)
+        assertEquals(design.sourceHeight, state.sourceImageHeight)
+        assertEquals(design.labels.teamName, state.teamNameLabel)
+        assertEquals(design.labels.win, state.winLabel)
+        assertEquals(design.labels.totalKills, state.totalKillsLabel)
+        assertEquals(design.labels.positionPoints, state.positionPointsLabel)
+        assertEquals(design.labels.totalPoints, state.totalPointsLabel)
+        assertEquals(CustomDesignOcrStatus.IDLE, state.ocrStatus)
+        assertEquals(null, state.ocrAnchors)
+        assertEquals(null, state.gridGeometry)
+        assertEquals(design.geometry.columnX, state.manualGridOverrides.columnX)
+        assertEquals(design.geometry.rowY, state.manualGridOverrides.rowY)
+        assertEquals(
+            design.geometry,
+            resolveCustomDesignEffectiveGridGeometry(state.editableGridGeometry, state.manualGridOverrides),
+        )
+    }
+
+    @Test
+    fun restoredDesignIsImmutableAndCannotStartSavePickerOrOcr() = runTest {
+        val design = restoredDesign()
+        var saves = 0
+        val viewModel = viewModel(
+            runner = FakeCustomDesignOcrRunner(),
+            saveAction = CustomDesignSaveAction {
+                saves += 1
+                CustomDesignSaveResult.Success("unexpected", "unexpected")
+            },
+            restoreAction = CustomDesignRestoreAction {
+                CustomDesignRestoreResult.Success(design)
+            },
+        )
+
+        viewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged("changed")
+        viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 1f)
+        viewModel.setManualRowY(1, 1f)
+        viewModel.clearManualGridOverrides()
+        viewModel.requestPhotoPicker()
+        viewModel.onSaveActionRequested()
+        viewModel.saveNewCustomDesign()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(design.labels.teamName, state.teamNameLabel)
+        assertEquals(design.geometry.columnX, state.manualGridOverrides.columnX)
+        assertEquals(design.geometry.rowY, state.manualGridOverrides.rowY)
+        assertFalse(state.isPhotoPickerLaunchPending)
+        assertEquals(0, saves)
+        assertEquals(CustomDesignRestoreStatus.RESTORED, state.restoreStatus)
+    }
+
+    @Test
+    fun saveActionIsIgnoredWhileSaving() = runTest {
+        val result = CompletableDeferred<CustomDesignSaveResult>()
+        var saveCalls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                saveCalls += 1
+                result.await()
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.onSaveActionRequested()
+        viewModel.onSaveActionRequested()
+        runCurrent()
+
+        assertEquals(1, saveCalls)
+        assertEquals(CustomDesignSaveStatus.SAVING, viewModel.uiState.value.saveStatus)
+        result.complete(CustomDesignSaveResult.Success("saved-id", "saved-path"))
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun saveActionIsIgnoredWhileRestoring() = runTest {
+        val result = CompletableDeferred<CustomDesignRestoreResult>()
+        var saveCalls = 0
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                saveCalls += 1
+                CustomDesignSaveResult.Success("unexpected", "unexpected")
+            },
+            restoreAction = CustomDesignRestoreAction { result.await() },
+        )
+
+        viewModel.restoreSavedCustomDesign("a2000000-0000-0000-0000-000000000001")
+        runCurrent()
+        viewModel.onSaveActionRequested()
+
+        assertEquals(CustomDesignRestoreStatus.RESTORING, viewModel.uiState.value.restoreStatus)
+        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertEquals(0, saveCalls)
+        result.complete(
+            CustomDesignRestoreResult.Failed(
+                com.hoggamers.rankforge.data.cloud.CustomDesignRestoreFailure.READ_FAILED,
+            ),
+        )
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun failedRestorePreservesExistingStateWithoutPartialHydration() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val viewModel = viewModel(
+            runner = runner,
+            restoreAction = CustomDesignRestoreAction {
+                CustomDesignRestoreResult.Failed(
+                    com.hoggamers.rankforge.data.cloud.CustomDesignRestoreFailure.READ_FAILED,
+                )
+            },
+        )
+        selectImage(viewModel)
+        advanceUntilIdle()
+        val before = viewModel.uiState.value
+
+        viewModel.restoreSavedCustomDesign("a2000000-0000-0000-0000-000000000001")
+        advanceUntilIdle()
+
+        val after = viewModel.uiState.value
+        assertEquals(CustomDesignRestoreStatus.FAILED, after.restoreStatus)
+        assertEquals(before.draft, after.draft)
+        assertEquals(before.selectedImageReference, after.selectedImageReference)
+        assertEquals(before.teamNameLabel, after.teamNameLabel)
+        assertEquals(before.manualGridOverrides, after.manualGridOverrides)
+    }
+
+    @Test
+    fun staleOcrCannotOverwriteRestoredDesign() = runTest {
+        val pending = CompletableDeferred<CustomDesignRawOcrDocument>()
+        val runner = object : CustomDesignOcrRunner {
+            var calls = 0
+
+            override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+                calls += 1
+                return withContext(NonCancellable) { pending.await() }
+            }
+        }
+        val design = restoredDesign()
+        val viewModel = viewModel(
+            runner = runner,
+            restoreAction = CustomDesignRestoreAction {
+                CustomDesignRestoreResult.Success(design)
+            },
+        )
+
+        selectImage(viewModel)
+        runCurrent()
+        viewModel.restoreSavedCustomDesign(design.customDesignId)
+        advanceUntilIdle()
+        pending.complete(documentWithGridRows(winLeft = 100))
+        advanceUntilIdle()
+
+        assertEquals(1, runner.calls)
+        assertEquals(design.customDesignId, viewModel.uiState.value.savedCustomDesignId)
+        assertEquals(design.localImageReference, viewModel.uiState.value.selectedImageReference)
+        assertEquals(CustomDesignOcrStatus.IDLE, viewModel.uiState.value.ocrStatus)
+        assertEquals(null, viewModel.uiState.value.ocrAnchors)
+        assertEquals(null, viewModel.uiState.value.gridGeometry)
+    }
+
+    private fun restoredDesign() = RestoredCustomDesign(
+        customDesignId = "a2000000-0000-0000-0000-000000000001",
+        ownerUserId = "a1000000-0000-0000-0000-000000000001",
+        localImageReference = "D:/app/files/custom-designs/users/a1000000-0000-0000-0000-000000000001/a2000000-0000-0000-0000-000000000001/original.png",
+        sourceWidth = 1080,
+        sourceHeight = 1350,
+        labels = CustomDesignOcrLabels(" TEAM NAME ", "WIN", "ELIM.", "POS.", "TOTAL"),
+        geometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = 1080,
+            sourceHeight = 1350,
+            columnX = linkedMapOf(
+                CustomDesignAnchorField.TEAM_NAME to 900f,
+                CustomDesignAnchorField.WIN to 100f,
+                CustomDesignAnchorField.TOTAL_KILLS to 700f,
+                CustomDesignAnchorField.POSITION_POINTS to 300f,
+                CustomDesignAnchorField.TOTAL_POINTS to 500f,
+            ),
+            rowY = (1..12).associateWith { it * 100f },
+        ),
+    )
+
     private fun viewModel(
         readResult: ImageCandidateMetadataReader = ImageCandidateMetadataReader {
             ImageCandidateReadResult.Metadata("image/png", width = 1080, height = 1350)
         },
         runner: CustomDesignOcrRunner = FakeCustomDesignOcrRunner(),
+        saveAction: CustomDesignSaveAction = CustomDesignSaveAction {
+            CustomDesignSaveResult.Success("saved-id", "saved-path")
+        },
+        restoreAction: CustomDesignRestoreAction = CustomDesignRestoreAction {
+            CustomDesignRestoreResult.Failed(
+                com.hoggamers.rankforge.data.cloud.CustomDesignRestoreFailure.NOT_FOUND,
+            )
+        },
+        deleteAction: CustomDesignDeleteAction = CustomDesignDeleteAction {
+            CustomDesignDeleteResult.Failed(
+                com.hoggamers.rankforge.data.cloud.CustomDesignDeleteFailure.DATABASE_DELETE,
+            )
+        },
+        discoveryAction: CustomDesignSavedIdDiscoveryAction = CustomDesignSavedIdDiscoveryAction {
+            CustomDesignSavedIdDiscoveryResult.None
+        },
     ) = CustomDesignSetupViewModel(
         imageCandidateValidator = ImageCandidateValidator(readResult),
         customDesignOcrRunner = runner,
         customDesignAnchorDetector = CustomDesignAnchorDetector(),
         customDesignGridBuilder = CustomDesignGridBuilder(),
+        customDesignSaveAction = saveAction,
+        customDesignRestoreAction = restoreAction,
+        customDesignDeleteAction = deleteAction,
+        customDesignSavedIdDiscoveryAction = discoveryAction,
     )
 
     private fun selectImage(

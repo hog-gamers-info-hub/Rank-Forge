@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -27,7 +29,7 @@ class CustomDesignSetupScreenTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun showsOnlyTheFiveLabelFieldsAndUploadAction() {
+    fun noImageShowsOnlyUploadAction() {
         var uploadCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -44,13 +46,194 @@ class CustomDesignSetupScreenTest {
         ).forEach { tag ->
             composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
         }
-        composeTestRule
+        val uploadAction = composeTestRule
             .onNodeWithTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
-            .performClick()
+            .assertIsEnabled()
+        uploadAction.performClick()
 
         composeTestRule.runOnIdle { assertEquals(1, uploadCount) }
+        assertEquals(
+            0,
+            composeTestRule
+                .onAllNodesWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
+                .fetchSemanticsNodes()
+                .size,
+        )
+        assertEquals(
+            0,
+            composeTestRule
+                .onAllNodesWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
+                .fetchSemanticsNodes()
+                .size,
+        )
+    }
+
+    @Test
+    fun selectedUnsavedImageShowsOnlySave() {
+        var saveCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(
+                    uiState = CustomDesignSetupUiState(selectedImageReference = "content://selected"),
+                    onSaveActionRequested = { saveCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, saveCount) }
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
+    }
+
+    @Test
+    fun savedDesignEnablesDelete() {
+        var deleteCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(
+                    uiState = CustomDesignSetupUiState(
+                        savedCustomDesignId = "a2000000-0000-0000-0000-000000000001",
+                        saveStatus = CustomDesignSaveStatus.SAVED,
+                        restoreStatus = CustomDesignRestoreStatus.RESTORED,
+                    ),
+                    onDeleteActionRequested = { deleteCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.runOnIdle { assertEquals(1, deleteCount) }
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
+    }
+
+    @Test
+    fun restoredDesignShowsOnlyImageAndDelete() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val imageFile = File.createTempFile("custom-design-restored", ".png", context.cacheDir)
+        FileOutputStream(imageFile).use { output ->
+            Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+                .compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+
+        try {
+            composeTestRule.setContent {
+                RankForgeTheme {
+                    CustomDesignSetupScreen(
+                        uiState = CustomDesignSetupUiState(
+                            teamNameLabel = "TEAM NAME",
+                            winLabel = "WIN",
+                            totalKillsLabel = "ELIM.",
+                            positionPointsLabel = "POS.",
+                            totalPointsLabel = "TOTAL",
+                            selectedImageReference = imageFile.toURI().toString(),
+                            sourceImageWidth = 2,
+                            sourceImageHeight = 3,
+                            savedCustomDesignId = "a2000000-0000-0000-0000-000000000001",
+                            saveStatus = CustomDesignSaveStatus.SAVED,
+                            restoreStatus = CustomDesignRestoreStatus.RESTORED,
+                            gridGeometry = CustomDesignGridGeometry(
+                                sourceWidth = 2,
+                                sourceHeight = 3,
+                                columnX = mapOf(CustomDesignAnchorField.TEAM_NAME to 1f),
+                                rowY = mapOf(
+                                    1 to CustomDesignRowCoordinate(
+                                        y = 1f,
+                                        source = CustomDesignRowCoordinateSource.OCR,
+                                    ),
+                                ),
+                                estimatedRowStep = null,
+                            ),
+                        ),
+                    )
+                }
+            }
+
+            composeTestRule.waitUntil(timeoutMillis = 5_000) {
+                composeTestRule
+                    .onAllNodesWithTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeTestRule.onNodeWithTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG)
+                .assertIsDisplayed()
+            composeTestRule.onNodeWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
+                .performScrollTo()
+                .assertIsDisplayed()
+
+            listOf(
+                CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG,
+                CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG,
+                CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG,
+            ).forEach { tag ->
+                assertEquals(
+                    0,
+                    composeTestRule.onAllNodesWithTag(tag).fetchSemanticsNodes().size,
+                )
+            }
+        } finally {
+            imageFile.delete()
+        }
+    }
+
+    @Test
+    fun deletingDesignDisablesBothActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(
+                    uiState = CustomDesignSetupUiState(
+                        savedCustomDesignId = "a2000000-0000-0000-0000-000000000001",
+                        saveStatus = CustomDesignSaveStatus.SAVED,
+                        restoreStatus = CustomDesignRestoreStatus.RESTORED,
+                        deleteStatus = CustomDesignDeleteStatus.DELETING,
+                    ),
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
+                .fetchSemanticsNodes().size,
+        )
     }
 
     @Test
@@ -136,6 +319,18 @@ class CustomDesignSetupScreenTest {
             }
             composeTestRule
                 .onNodeWithTag(CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG)
+                .assertIsDisplayed()
+            listOf(
+                CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
+            ).forEach { tag ->
+                composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
+            }
+            composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
+                .performScrollTo()
                 .assertIsDisplayed()
         } finally {
             imageFile.delete()

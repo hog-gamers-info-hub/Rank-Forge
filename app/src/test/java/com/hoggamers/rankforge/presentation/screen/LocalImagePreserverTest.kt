@@ -119,6 +119,49 @@ class LocalImagePreserverTest {
     }
 
     @Test
+    fun cleanupCustomDesignRemovesOnlyItsOwnedFilesAndDirectory() = runTest {
+        val root = Files.createTempDirectory("rank-forge-custom-design-cleanup").toFile()
+        val preserver = LocalImagePreserver(
+            appPrivateRoot = root,
+            sourceStreamOpener = ImageSourceStreamOpener { null },
+            mimeTypeReader = ImageSourceMimeTypeReader { null },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val owner = "a1000000-0000-0000-0000-000000000001"
+        val design = "a2000000-0000-0000-0000-000000000001"
+        val otherDesign = "a2000000-0000-0000-0000-000000000002"
+        val target = preserver.customDesignPreservedFile(owner, design, "png")
+        val targetDirectory = checkNotNull(target.parentFile)
+        targetDirectory.mkdirs()
+        listOf("original.png", "original.jpg", "original.webp", "original-123.tmp").forEach { name ->
+            File(targetDirectory, name).writeText(name)
+        }
+        val unrelated = File(targetDirectory, "keep.txt").apply { writeText("keep") }
+        val other = preserver.customDesignPreservedFile(owner, otherDesign, "png").apply {
+            parentFile?.mkdirs()
+            writeText("other")
+        }
+        val otherUser = preserver.customDesignPreservedFile(
+            "b1000000-0000-0000-0000-000000000001",
+            design,
+            "png",
+        ).apply {
+            parentFile?.mkdirs()
+            writeText("other-user")
+        }
+
+        assertEquals(LocalImageCleanupResult.Failed, preserver.cleanupCustomDesign(owner, "invalid"))
+        assertEquals(LocalImageCleanupResult.Failed, preserver.cleanupCustomDesign(owner, design))
+        assertTrue(unrelated.exists())
+        unrelated.delete()
+        assertEquals(LocalImageCleanupResult.Cleaned, preserver.cleanupCustomDesign(owner, design))
+        assertFalse(targetDirectory.exists())
+        assertTrue(other.exists())
+        assertTrue(otherUser.exists())
+        assertEquals(LocalImageCleanupResult.Cleaned, preserver.cleanupCustomDesign(owner, design))
+    }
+
+    @Test
     fun partialCleanupFailureLeavesRemainingFileForRetry() = runTest {
         val operations = TestFileOperations().apply { failDeleteAfter = 1 }
         val preserver = preserver(byteArrayOf(1), "image/png", operations)

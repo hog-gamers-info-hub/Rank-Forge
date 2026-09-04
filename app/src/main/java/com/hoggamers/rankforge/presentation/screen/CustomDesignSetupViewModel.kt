@@ -4,6 +4,17 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.BuildConfig
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteFailure
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteResult
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveFailure
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveRequest
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveResult
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreResult
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetectionResult
@@ -16,6 +27,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -34,32 +46,284 @@ class CustomDesignSetupViewModel @Inject constructor(
     private val customDesignOcrRunner: CustomDesignOcrRunner,
     private val customDesignAnchorDetector: CustomDesignAnchorDetector,
     private val customDesignGridBuilder: CustomDesignGridBuilder,
+    private val customDesignSaveAction: CustomDesignSaveAction,
+    private val customDesignRestoreAction: CustomDesignRestoreAction,
+    private val customDesignDeleteAction: CustomDesignDeleteAction,
+    private val customDesignSavedIdDiscoveryAction: CustomDesignSavedIdDiscoveryAction,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CustomDesignSetupUiState())
     val uiState: StateFlow<CustomDesignSetupUiState> = _uiState.asStateFlow()
 
     private var imageValidationJob: Job? = null
+    private var imageValidationGeneration = 0L
     private var ocrJob: Job? = null
     private var rawOcrDocument: CustomDesignRawOcrDocument? = null
     private var ocrGeneration = 0L
+    private var saveJob: Job? = null
+    private var saveGeneration = 0L
+    private var restoreJob: Job? = null
+    private var restoreGeneration = 0L
+    private var deleteJob: Job? = null
+    private var deleteGeneration = 0L
+    private var discoveryJob: Job? = null
+
+    init {
+        discoverAndRestoreSavedCustomDesign()
+    }
+
+    private fun discoverAndRestoreSavedCustomDesign() {
+        discoveryJob = viewModelScope.launch {
+            val result = try {
+                customDesignSavedIdDiscoveryAction.find()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            if (_uiState.value != CustomDesignSetupUiState()) return@launch
+            if (result is CustomDesignSavedIdDiscoveryResult.Found) {
+                restoreSavedCustomDesign(result.customDesignId)
+            }
+        }
+    }
+
+    fun onSaveActionRequested() {
+        val state = _uiState.value
+        if (state.selectedImageReference == null ||
+            state.savedCustomDesignId != null ||
+            state.saveStatus == CustomDesignSaveStatus.SAVING ||
+            state.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            state.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            state.isImageValidationInProgress ||
+            state.isPhotoPickerLaunchPending
+        ) return
+
+        saveNewCustomDesign()
+    }
+
+    fun saveNewCustomDesign() {
+        val state = _uiState.value
+        if (state.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            state.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            state.saveStatus == CustomDesignSaveStatus.SAVING ||
+            state.savedCustomDesignId != null ||
+            state.isImageValidationInProgress ||
+            state.isPhotoPickerLaunchPending
+        ) return
+        val draft = state.draft
+        val currentSourceWidth = state.sourceImageWidth
+        val currentSourceHeight = state.sourceImageHeight
+        if (draft == null || currentSourceWidth == null || currentSourceHeight == null) {
+            _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.FAILED) }
+            return
+        }
+        val request = CustomDesignSaveRequest(
+            imageReference = draft.imageReference,
+            draftSourceWidth = draft.imageWidth,
+            draftSourceHeight = draft.imageHeight,
+            currentSourceWidth = currentSourceWidth,
+            currentSourceHeight = currentSourceHeight,
+            labels = CustomDesignOcrLabels(
+                teamName = draft.teamNameLabel,
+                win = draft.winLabel,
+                totalKills = draft.totalKillsLabel,
+                positionPoints = draft.positionPointsLabel,
+                totalPoints = draft.totalPointsLabel,
+            ),
+            effectiveGridGeometry = resolveCustomDesignEffectiveGridGeometry(
+                editable = state.editableGridGeometry,
+                overrides = state.manualGridOverrides,
+            ),
+        )
+        val generation = ++saveGeneration
+        _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.SAVING) }
+        saveJob = viewModelScope.launch {
+            val result = try {
+                customDesignSaveAction.save(request)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                CustomDesignSaveResult.Failed(CustomDesignSaveFailure.DATABASE_INSERT)
+            }
+            if (generation != saveGeneration) return@launch
+            _uiState.update {
+                when (result) {
+                    is CustomDesignSaveResult.Success -> it.copy(
+                        saveStatus = CustomDesignSaveStatus.SAVED,
+                        savedCustomDesignId = result.customDesignId,
+                    )
+                    is CustomDesignSaveResult.Failed -> it.copy(
+                        saveStatus = CustomDesignSaveStatus.FAILED,
+                    )
+                }
+            }
+        }
+    }
+
+    fun restoreSavedCustomDesign(customDesignId: String) {
+        if (customDesignId.isBlank() ||
+            _uiState.value.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            _uiState.value.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            _uiState.value.savedCustomDesignId != null
+        ) return
+        imageValidationJob?.cancel()
+        ocrJob?.cancel()
+        saveJob?.cancel()
+        imageValidationGeneration += 1
+        ocrGeneration += 1
+        saveGeneration += 1
+        rawOcrDocument = null
+        val generation = ++restoreGeneration
+        _uiState.update { it.copy(restoreStatus = CustomDesignRestoreStatus.RESTORING) }
+        restoreJob = viewModelScope.launch {
+            val result = try {
+                customDesignRestoreAction.restore(customDesignId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            if (generation != restoreGeneration) return@launch
+            when (result) {
+                is CustomDesignRestoreResult.Success -> {
+                    val design = result.design
+                    val editable = CustomDesignEditableGridInitializer.initialize(
+                        sourceWidth = design.sourceWidth,
+                        sourceHeight = design.sourceHeight,
+                        automatic = null,
+                    ) ?: return@launch
+                    rawOcrDocument = null
+                    _uiState.update {
+                        it.copy(
+                            teamNameLabel = design.labels.teamName,
+                            winLabel = design.labels.win,
+                            totalKillsLabel = design.labels.totalKills,
+                            positionPointsLabel = design.labels.positionPoints,
+                            totalPointsLabel = design.labels.totalPoints,
+                            selectedImageReference = design.localImageReference,
+                            sourceImageWidth = design.sourceWidth,
+                            sourceImageHeight = design.sourceHeight,
+                            draft = CustomDesignDraft(
+                                imageReference = design.localImageReference,
+                                imageWidth = design.sourceWidth,
+                                imageHeight = design.sourceHeight,
+                                teamNameLabel = design.labels.teamName,
+                                winLabel = design.labels.win,
+                                totalKillsLabel = design.labels.totalKills,
+                                positionPointsLabel = design.labels.positionPoints,
+                                totalPointsLabel = design.labels.totalPoints,
+                            ),
+                            validationErrors = emptySet(),
+                            imageValidationError = null,
+                            photoPickerError = null,
+                            isPhotoPickerLaunchPending = false,
+                            isImageValidationInProgress = false,
+                            ocrStatus = CustomDesignOcrStatus.IDLE,
+                            ocrAnchors = null,
+                            gridGeometry = null,
+                            editableGridGeometry = editable,
+                            manualGridOverrides = CustomDesignGridOverrides(
+                                columnX = design.geometry.columnX,
+                                rowY = design.geometry.rowY,
+                            ),
+                            saveStatus = CustomDesignSaveStatus.SAVED,
+                            savedCustomDesignId = design.customDesignId,
+                            restoreStatus = CustomDesignRestoreStatus.RESTORED,
+                            deleteStatus = CustomDesignDeleteStatus.IDLE,
+                        )
+                    }
+                }
+                is CustomDesignRestoreResult.Failed,
+                null,
+                -> _uiState.update { it.copy(restoreStatus = CustomDesignRestoreStatus.FAILED) }
+            }
+        }
+    }
+
+    fun deleteSavedCustomDesign() {
+        val state = _uiState.value
+        val customDesignId = state.savedCustomDesignId ?: return
+        if (state.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            state.saveStatus == CustomDesignSaveStatus.SAVING ||
+            state.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            state.isImageValidationInProgress ||
+            state.isPhotoPickerLaunchPending
+        ) return
+
+        imageValidationJob?.cancel()
+        ocrJob?.cancel()
+        imageValidationGeneration += 1
+        ocrGeneration += 1
+        saveGeneration += 1
+        rawOcrDocument = null
+        val generation = ++deleteGeneration
+        _uiState.update { it.copy(deleteStatus = CustomDesignDeleteStatus.DELETING) }
+        deleteJob = viewModelScope.launch {
+            val result = try {
+                customDesignDeleteAction.delete(customDesignId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                CustomDesignDeleteResult.Failed(CustomDesignDeleteFailure.DATABASE_DELETE)
+            }
+            if (generation != deleteGeneration) return@launch
+            when (result) {
+                CustomDesignDeleteResult.Success -> _uiState.update {
+                    it.copy(
+                        teamNameLabel = "",
+                        winLabel = "",
+                        totalKillsLabel = "",
+                        positionPointsLabel = "",
+                        totalPointsLabel = "",
+                        selectedImageReference = null,
+                        sourceImageWidth = null,
+                        sourceImageHeight = null,
+                        draft = null,
+                        validationErrors = emptySet(),
+                        imageValidationError = null,
+                        photoPickerError = null,
+                        isPhotoPickerLaunchPending = false,
+                        isImageValidationInProgress = false,
+                        ocrStatus = CustomDesignOcrStatus.IDLE,
+                        ocrAnchors = null,
+                        gridGeometry = null,
+                        editableGridGeometry = null,
+                        manualGridOverrides = CustomDesignGridOverrides(),
+                        saveStatus = CustomDesignSaveStatus.IDLE,
+                        savedCustomDesignId = null,
+                        restoreStatus = CustomDesignRestoreStatus.IDLE,
+                        deleteStatus = CustomDesignDeleteStatus.DELETED,
+                    )
+                }
+                is CustomDesignDeleteResult.Failed -> _uiState.update {
+                    it.copy(deleteStatus = CustomDesignDeleteStatus.FAILED)
+                }
+            }
+        }
+    }
 
     fun onTeamNameChanged(value: String) {
+        if (isRestoreLocked()) return
         updateLabels { it.copy(teamNameLabel = value) }
     }
 
     fun onWinChanged(value: String) {
+        if (isRestoreLocked()) return
         updateLabels { it.copy(winLabel = value) }
     }
 
     fun onTotalKillsChanged(value: String) {
+        if (isRestoreLocked()) return
         updateLabels { it.copy(totalKillsLabel = value) }
     }
 
     fun onPositionPointsChanged(value: String) {
+        if (isRestoreLocked()) return
         updateLabels { it.copy(positionPointsLabel = value) }
     }
 
     fun onTotalPointsChanged(value: String) {
+        if (isRestoreLocked()) return
         updateLabels { it.copy(totalPointsLabel = value) }
     }
 
@@ -67,6 +331,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         field: CustomDesignAnchorField,
         sourceX: Float,
     ) {
+        if (isRestoreLocked()) return
         val sourceWidth = _uiState.value.sourceImageWidth ?: return
         if (!sourceX.isFinite() || sourceX !in 0f..sourceWidth.toFloat()) return
         _uiState.update { state ->
@@ -81,6 +346,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         rank: Int,
         sourceY: Float,
     ) {
+        if (isRestoreLocked()) return
         val sourceHeight = _uiState.value.sourceImageHeight ?: return
         if (rank !in CUSTOM_DESIGN_RANK_RANGE ||
             !sourceY.isFinite() ||
@@ -97,6 +363,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     }
 
     fun clearManualColumnX(field: CustomDesignAnchorField) {
+        if (isRestoreLocked()) return
         _uiState.update { state ->
             state.copy(
                 manualGridOverrides = state.manualGridOverrides.copy(
@@ -107,6 +374,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     }
 
     fun clearManualRowY(rank: Int) {
+        if (isRestoreLocked()) return
         _uiState.update { state ->
             state.copy(
                 manualGridOverrides = state.manualGridOverrides.copy(
@@ -117,12 +385,18 @@ class CustomDesignSetupViewModel @Inject constructor(
     }
 
     fun clearManualGridOverrides() {
+        if (isRestoreLocked()) return
         _uiState.update { it.copy(manualGridOverrides = CustomDesignGridOverrides()) }
     }
 
     fun requestPhotoPicker() {
         val currentState = _uiState.value
-        if (currentState.isPhotoPickerLaunchPending || currentState.isImageValidationInProgress) {
+        if (currentState.savedCustomDesignId != null ||
+            currentState.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            currentState.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            currentState.isPhotoPickerLaunchPending ||
+            currentState.isImageValidationInProgress
+        ) {
             return
         }
         val validationErrors = currentState.requiredLabelErrors()
@@ -150,8 +424,12 @@ class CustomDesignSetupViewModel @Inject constructor(
     }
 
     fun onPhotoPickerResult(selectedUri: String?) {
+        if (isRestoreLocked()) return
         val uri = selectedUri?.takeIf { it.isNotBlank() } ?: return
         imageValidationJob?.cancel()
+        val validationGeneration = ++imageValidationGeneration
+        saveJob?.cancel()
+        saveGeneration += 1
         _uiState.update {
             it.copy(
                 isImageValidationInProgress = true,
@@ -178,6 +456,7 @@ class CustomDesignSetupViewModel @Inject constructor(
             } else {
                 null
             }
+            if (validationGeneration != imageValidationGeneration) return@launch
             if (validation is ImageCandidateValidationResult.Invalid || metadata == null) {
                 _uiState.update {
                     it.copy(
@@ -195,22 +474,37 @@ class CustomDesignSetupViewModel @Inject constructor(
                     sourceImageHeight = metadata.height,
                     isImageValidationInProgress = false,
                     imageValidationError = null,
-                ).withDraft().resetOcr(clearManualGridOverrides = true)
+                ).withDraft().resetOcr(clearManualGridOverrides = true).copy(
+                    saveStatus = CustomDesignSaveStatus.IDLE,
+                    savedCustomDesignId = null,
+                    restoreStatus = CustomDesignRestoreStatus.IDLE,
+                    deleteStatus = CustomDesignDeleteStatus.IDLE,
+                )
             }
             _uiState.value.draft?.let { draft -> startOcr(draft) }
         }
     }
 
     private fun updateLabels(transform: (CustomDesignSetupUiState) -> CustomDesignSetupUiState) {
+        if (_uiState.value.saveStatus == CustomDesignSaveStatus.SAVING) {
+            saveJob?.cancel()
+            saveGeneration += 1
+        }
         _uiState.update { current ->
             val nextState = transform(current).copy(
                 imageValidationError = null,
                 photoPickerError = null,
+                restoreStatus = CustomDesignRestoreStatus.IDLE,
             ).withDraft()
-            if (nextState.draft == null) {
-                nextState.resetOcr(clearManualGridOverrides = false)
+            val nextStateWithSaveStatus = if (current.savedCustomDesignId == null) {
+                nextState.copy(saveStatus = CustomDesignSaveStatus.IDLE)
             } else {
-                nextState
+                nextState.copy(saveStatus = CustomDesignSaveStatus.SAVED)
+            }
+            if (nextState.draft == null) {
+                nextStateWithSaveStatus.resetOcr(clearManualGridOverrides = false)
+            } else {
+                nextStateWithSaveStatus
             }
         }
         val currentState = _uiState.value
@@ -224,6 +518,11 @@ class CustomDesignSetupViewModel @Inject constructor(
             }
         }
     }
+
+    private fun isRestoreLocked(): Boolean =
+        _uiState.value.savedCustomDesignId != null ||
+            _uiState.value.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            _uiState.value.deleteStatus == CustomDesignDeleteStatus.DELETING
 
     private fun startOcr(draft: CustomDesignDraft) {
         ocrJob?.cancel()

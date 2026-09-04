@@ -14,6 +14,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -163,6 +164,67 @@ class LocalImagePreserver(
         extension = extension,
         bytes = bytes,
     )
+
+    suspend fun restoreCustomDesignImage(
+        ownerUserId: String,
+        customDesignId: String,
+        extension: String,
+        bytes: ByteArray,
+    ): LocalImagePreservationResult {
+        if (!isCanonicalUuid(ownerUserId) || !isCanonicalUuid(customDesignId) ||
+            extension !in CUSTOM_DESIGN_EXTENSIONS
+        ) {
+            return LocalImagePreservationResult.Failed(LocalImagePreservationFailure.COPY_FAILED)
+        }
+        val directory = customDesignDirectory(ownerUserId, customDesignId)
+        val targetFile = File(directory, "original.$extension")
+        return try {
+            restoreBytesToDirectory(
+                directory = directory,
+                extension = extension,
+                bytes = bytes,
+            )
+        } catch (cancellation: CancellationException) {
+            delete(targetFile)
+            throw cancellation
+        }
+    }
+
+    suspend fun cleanupCustomDesign(
+        ownerUserId: String,
+        customDesignId: String,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (!isCanonicalUuid(ownerUserId) || !isCanonicalUuid(customDesignId)) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        val directory = customDesignDirectory(ownerUserId, customDesignId)
+        if (!directory.exists()) return@withContext LocalImageCleanupResult.Cleaned
+        if (!directory.isDirectory) return@withContext LocalImageCleanupResult.Failed
+
+        val files = listFilesOrNull(directory)
+            ?: return@withContext LocalImageCleanupResult.Failed
+        val ownedFiles = files.filter { file ->
+            file.name in CUSTOM_DESIGN_ORIGINAL_FILES || file.name.endsWith(TEMPORARY_SUFFIX)
+        }
+        if (!deleteFiles(ownedFiles)) return@withContext LocalImageCleanupResult.Failed
+
+        val remaining = listFilesOrNull(directory)
+            ?: return@withContext LocalImageCleanupResult.Failed
+        if (remaining.isNotEmpty()) return@withContext LocalImageCleanupResult.Failed
+        if (directory.exists() && !deleteFile(directory)) return@withContext LocalImageCleanupResult.Failed
+        LocalImageCleanupResult.Cleaned
+    }
+
+    fun customDesignPreservedFile(
+        ownerUserId: String,
+        customDesignId: String,
+        extension: String,
+    ): File {
+        require(isCanonicalUuid(ownerUserId)) { "Custom Design owner must be a canonical UUID." }
+        require(isCanonicalUuid(customDesignId)) { "Custom Design ID must be a canonical UUID." }
+        require(extension in CUSTOM_DESIGN_EXTENSIONS) { "Unsupported Custom Design extension." }
+        return File(customDesignDirectory(ownerUserId, customDesignId), "original.$extension")
+    }
 
     suspend fun snapshotLobbyTemplate(
         tournamentId: String,
@@ -756,6 +818,12 @@ class LocalImagePreserver(
         "${encodeSegment(tournamentId)}/lobby-template/${encodeSegment(generation)}",
     )
 
+    private fun customDesignDirectory(ownerUserId: String, customDesignId: String): File =
+        File(
+            File(File(File(appPrivateRoot, CUSTOM_DESIGNS_DIRECTORY), "users"), ownerUserId),
+            customDesignId,
+        )
+
     private fun roleDirectoryName(role: MatchResultScreenshotRole): String = when (role) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER -> "upper"
         MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "lower"
@@ -813,7 +881,13 @@ class LocalImagePreserver(
 
     private companion object {
         const val SCREENSHOTS_DIRECTORY = "screenshots"
+        const val CUSTOM_DESIGNS_DIRECTORY = "custom-designs"
         const val TEMPORARY_SUFFIX = ".tmp"
+        val CUSTOM_DESIGN_EXTENSIONS = setOf("png", "jpg", "webp")
+        val CUSTOM_DESIGN_ORIGINAL_FILES = setOf("original.png", "original.jpg", "original.webp")
+
+        fun isCanonicalUuid(value: String): Boolean =
+            runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
 
         fun extensionFor(mimeType: String?): String? = when (mimeType?.lowercase(Locale.ROOT)) {
             "image/png" -> "png"

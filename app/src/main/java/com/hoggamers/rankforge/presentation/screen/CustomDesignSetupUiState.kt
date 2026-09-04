@@ -6,6 +6,27 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridGeometry
 
+enum class CustomDesignSaveStatus {
+    IDLE,
+    SAVING,
+    SAVED,
+    FAILED,
+}
+
+enum class CustomDesignRestoreStatus {
+    IDLE,
+    RESTORING,
+    RESTORED,
+    FAILED,
+}
+
+enum class CustomDesignDeleteStatus {
+    IDLE,
+    DELETING,
+    DELETED,
+    FAILED,
+}
+
 enum class CustomDesignLabelField {
     TEAM_NAME,
     WIN,
@@ -45,6 +66,10 @@ data class CustomDesignSetupUiState(
     val gridGeometry: CustomDesignGridGeometry? = null,
     val editableGridGeometry: CustomDesignEditableGridGeometry? = null,
     val manualGridOverrides: CustomDesignGridOverrides = CustomDesignGridOverrides(),
+    val saveStatus: CustomDesignSaveStatus = CustomDesignSaveStatus.IDLE,
+    val savedCustomDesignId: String? = null,
+    val restoreStatus: CustomDesignRestoreStatus = CustomDesignRestoreStatus.IDLE,
+    val deleteStatus: CustomDesignDeleteStatus = CustomDesignDeleteStatus.IDLE,
 ) {
     val hasUsableDraft: Boolean
         get() = draft != null

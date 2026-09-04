@@ -60,6 +60,20 @@ import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplaceme
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRepository
 import com.hoggamers.rankforge.data.cloud.CloudStorageObjectDeleter
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudStorageObjectDeleter
+import com.hoggamers.rankforge.data.cloud.CustomDesignImagePreparer
+import com.hoggamers.rankforge.data.cloud.AndroidCustomDesignImagePreparer
+import com.hoggamers.rankforge.data.cloud.CustomDesignStorageUploader
+import com.hoggamers.rankforge.data.cloud.SupabaseCustomDesignStorageUploader
+import com.hoggamers.rankforge.data.cloud.CustomDesignTemplateCloudDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseCustomDesignTemplateCloudDataSource
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSaveCoordinator
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreCoordinator
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteCoordinator
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryAction
+import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryCoordinator
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionRepository
 import com.hoggamers.rankforge.data.cloud.TournamentRosterCloudReplacementRemoteDataSource
@@ -75,6 +89,48 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class CloudUploadDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignImagePreparer(
+        preparer: AndroidCustomDesignImagePreparer,
+    ): CustomDesignImagePreparer
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignStorageUploader(
+        uploader: SupabaseCustomDesignStorageUploader,
+    ): CustomDesignStorageUploader
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignTemplateCloudDataSource(
+        dataSource: SupabaseCustomDesignTemplateCloudDataSource,
+    ): CustomDesignTemplateCloudDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignSaveAction(
+        coordinator: CustomDesignSaveCoordinator,
+    ): CustomDesignSaveAction
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignRestoreAction(
+        coordinator: CustomDesignRestoreCoordinator,
+    ): CustomDesignRestoreAction
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignDeleteAction(
+        coordinator: CustomDesignDeleteCoordinator,
+    ): CustomDesignDeleteAction
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignSavedIdDiscoveryAction(
+        coordinator: CustomDesignSavedIdDiscoveryCoordinator,
+    ): CustomDesignSavedIdDiscoveryAction
+
     @Binds
     @Singleton
     abstract fun bindCloudStorageObjectDeleter(

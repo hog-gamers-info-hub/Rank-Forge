@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -24,9 +25,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -73,9 +77,15 @@ const val CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG = "custom_design_total_kills_
 const val CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG = "custom_design_position_points_field"
 const val CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG = "custom_design_total_points_field"
 const val CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG = "custom_design_upload_action"
+const val CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG = "custom_design_save_action"
+const val CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG = "custom_design_delete_action"
 const val CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG = "custom_design_image_preview"
 const val CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG = "custom_design_grid_overlay"
 const val CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG = "custom_design_image_error"
+
+private val CustomDesignPointIqBlue = Color(0xFF176AF7)
+private val CustomDesignPointIqDanger = Color(0xFFD92D3A)
+private val CustomDesignPointIqDangerContainer = Color(0xFFFFF5F5)
 
 @Composable
 fun CustomDesignSetupRoute(
@@ -114,6 +124,8 @@ fun CustomDesignSetupRoute(
         onPositionPointsChanged = viewModel::onPositionPointsChanged,
         onTotalPointsChanged = viewModel::onTotalPointsChanged,
         onUploadCustomDesign = viewModel::requestPhotoPicker,
+        onSaveActionRequested = viewModel::saveNewCustomDesign,
+        onDeleteActionRequested = viewModel::deleteSavedCustomDesign,
         onManualColumnXChanged = viewModel::setManualColumnX,
         onManualRowYChanged = viewModel::setManualRowY,
     )
@@ -128,9 +140,12 @@ fun CustomDesignSetupScreen(
     onPositionPointsChanged: (String) -> Unit = {},
     onTotalPointsChanged: (String) -> Unit = {},
     onUploadCustomDesign: () -> Unit = {},
+    onSaveActionRequested: () -> Unit = {},
+    onDeleteActionRequested: () -> Unit = {},
     onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit = { _, _ -> },
     onManualRowYChanged: (Int, Float) -> Unit = { _, _ -> },
 ) {
+    val isRestored = uiState.restoreStatus == CustomDesignRestoreStatus.RESTORED
     val editableGridGeometry = uiState.editableGridGeometry
         ?: CustomDesignEditableGridInitializer.initialize(
             sourceWidth = uiState.sourceImageWidth ?: 0,
@@ -154,85 +169,142 @@ fun CustomDesignSetupScreen(
                 imageReference = imageReference,
                 sourceWidth = uiState.sourceImageWidth,
                 sourceHeight = uiState.sourceImageHeight,
-                gridGeometry = resolveCustomDesignEffectiveGridGeometry(
-                    editable = editableGridGeometry,
-                    overrides = uiState.manualGridOverrides,
-                ),
+                gridGeometry = if (isRestored) {
+                    null
+                } else {
+                    resolveCustomDesignEffectiveGridGeometry(
+                        editable = editableGridGeometry,
+                        overrides = uiState.manualGridOverrides,
+                    )
+                },
                 onManualColumnXChanged = onManualColumnXChanged,
                 onManualRowYChanged = onManualRowYChanged,
                 modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG),
             )
         }
+        if (!isRestored) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            CustomDesignLabelInput(
+                value = uiState.teamNameLabel,
+                onValueChange = onTeamNameChanged,
+                label = stringResource(R.string.custom_design_team_name_label),
+                testTag = CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
+                isError = CustomDesignLabelField.TEAM_NAME in uiState.validationErrors,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            CustomDesignLabelInput(
+                value = uiState.winLabel,
+                onValueChange = onWinChanged,
+                label = stringResource(R.string.custom_design_win_label),
+                testTag = CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
+                isError = CustomDesignLabelField.WIN in uiState.validationErrors,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            CustomDesignLabelInput(
+                value = uiState.totalKillsLabel,
+                onValueChange = onTotalKillsChanged,
+                label = stringResource(R.string.custom_design_total_kills_label),
+                testTag = CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
+                isError = CustomDesignLabelField.TOTAL_KILLS in uiState.validationErrors,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            CustomDesignLabelInput(
+                value = uiState.positionPointsLabel,
+                onValueChange = onPositionPointsChanged,
+                label = stringResource(R.string.custom_design_position_points_label),
+                testTag = CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
+                isError = CustomDesignLabelField.POSITION_POINTS in uiState.validationErrors,
+            )
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            CustomDesignLabelInput(
+                value = uiState.totalPointsLabel,
+                onValueChange = onTotalPointsChanged,
+                label = stringResource(R.string.custom_design_total_points_label),
+                testTag = CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
+                isError = CustomDesignLabelField.TOTAL_POINTS in uiState.validationErrors,
+            )
+            uiState.validationErrors.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    text = stringResource(R.string.required_field_error),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            uiState.imageValidationError?.let { error ->
+                Text(
+                    text = stringResource(error.toCustomDesignMessageRes()),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
+                )
+            }
+            uiState.photoPickerError?.let { error ->
+                Text(
+                    text = stringResource(error.toCustomDesignMessageRes()),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        CustomDesignLabelInput(
-            value = uiState.teamNameLabel,
-            onValueChange = onTeamNameChanged,
-            label = stringResource(R.string.custom_design_team_name_label),
-            testTag = CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
-            isError = CustomDesignLabelField.TEAM_NAME in uiState.validationErrors,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        CustomDesignLabelInput(
-            value = uiState.winLabel,
-            onValueChange = onWinChanged,
-            label = stringResource(R.string.custom_design_win_label),
-            testTag = CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
-            isError = CustomDesignLabelField.WIN in uiState.validationErrors,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        CustomDesignLabelInput(
-            value = uiState.totalKillsLabel,
-            onValueChange = onTotalKillsChanged,
-            label = stringResource(R.string.custom_design_total_kills_label),
-            testTag = CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
-            isError = CustomDesignLabelField.TOTAL_KILLS in uiState.validationErrors,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        CustomDesignLabelInput(
-            value = uiState.positionPointsLabel,
-            onValueChange = onPositionPointsChanged,
-            label = stringResource(R.string.custom_design_position_points_label),
-            testTag = CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
-            isError = CustomDesignLabelField.POSITION_POINTS in uiState.validationErrors,
-        )
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-        CustomDesignLabelInput(
-            value = uiState.totalPointsLabel,
-            onValueChange = onTotalPointsChanged,
-            label = stringResource(R.string.custom_design_total_points_label),
-            testTag = CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
-            isError = CustomDesignLabelField.TOTAL_POINTS in uiState.validationErrors,
-        )
-        uiState.validationErrors.takeIf { it.isNotEmpty() }?.let {
-            Text(
-                text = stringResource(R.string.required_field_error),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        uiState.imageValidationError?.let { error ->
-            Text(
-                text = stringResource(error.toCustomDesignMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
-            )
-        }
-        uiState.photoPickerError?.let { error ->
-            Text(
-                text = stringResource(error.toCustomDesignMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
-            )
-        }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        Button(
-            onClick = onUploadCustomDesign,
-            enabled = !uiState.isImageValidationInProgress &&
-                !uiState.isPhotoPickerLaunchPending,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG),
-        ) {
-            Text(stringResource(R.string.custom_design_upload_action))
+        val actionBusy = uiState.saveStatus == CustomDesignSaveStatus.SAVING ||
+            uiState.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+            uiState.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+            uiState.isImageValidationInProgress ||
+            uiState.isPhotoPickerLaunchPending
+        val saveEnabled = uiState.selectedImageReference != null &&
+            uiState.savedCustomDesignId == null &&
+            !actionBusy
+        val deleteEnabled = uiState.savedCustomDesignId != null && !actionBusy
+        when {
+            uiState.savedCustomDesignId != null -> OutlinedButton(
+                onClick = onDeleteActionRequested,
+                enabled = deleteEnabled,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = CustomDesignPointIqDangerContainer,
+                    contentColor = CustomDesignPointIqDanger,
+                    disabledContainerColor = CustomDesignPointIqDangerContainer.copy(alpha = 0.55f),
+                    disabledContentColor = CustomDesignPointIqDanger.copy(alpha = 0.45f),
+                ),
+                border = BorderStroke(1.dp, CustomDesignPointIqDanger.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(R.string.custom_design_delete_action),
+                    fontSize = 14.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+            }
+            uiState.selectedImageReference != null -> Button(
+                onClick = onSaveActionRequested,
+                enabled = saveEnabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CustomDesignPointIqBlue,
+                    disabledContainerColor = CustomDesignPointIqBlue.copy(alpha = 0.45f),
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(R.string.custom_design_save_action),
+                    fontSize = 14.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+            }
+            else -> Button(
+                onClick = onUploadCustomDesign,
+                enabled = !actionBusy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.custom_design_upload_action))
+            }
         }
     }
 }
