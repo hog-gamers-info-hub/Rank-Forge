@@ -136,6 +136,8 @@ const val MATCH_REVIEW_DOWNLOAD_SCOPE_CANCEL_TEST_TAG = "match_review_download_s
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG = "match_review_download_format_dialog"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG = "match_review_download_format_pdf"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG = "match_review_download_format_png"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG =
+    "match_review_download_format_custom_design"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG = "match_review_download_format_back"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG = "match_review_download_format_confirm"
 const val MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG = "match_review_download_status"
@@ -226,6 +228,7 @@ fun MatchReviewRoute(
     onOpenOcrReview: (String, String) -> Unit,
     onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
     onStartCorrection: (String, String) -> Unit,
+    onOpenCustomDesignSetup: (String, String, ResultDownloadScope) -> Unit = { _, _, _ -> },
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     lobbyScreenshotIntakeViewModel: MatchLobbyScreenshotIntakeViewModel? = null,
     showLegacyManualReviewContent: Boolean = false,
@@ -490,6 +493,9 @@ fun MatchReviewRoute(
         onPrepareCsvExport = viewModel::prepareCsvExport,
         onPrepareGoogleSheetsExport = viewModel::prepareGoogleSheetsExport,
         onRequestResultDownload = viewModel::requestResultDownload,
+        onOpenCustomDesignSetup = { scope ->
+            onOpenCustomDesignSetup(tournamentId, matchId, scope)
+        },
         onFinalize = viewModel::finalizeMatch,
         onDeleteMatch = viewModel::deleteMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
@@ -566,6 +572,7 @@ fun MatchReviewScreen(
     onPrepareCsvExport: () -> Unit = {},
     onPrepareGoogleSheetsExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
+    onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit = {},
     onFinalize: () -> Unit = {},
     onDeleteMatch: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
@@ -624,6 +631,7 @@ fun MatchReviewScreen(
             onPrepareCsvExport = onPrepareCsvExport,
             onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
             onRequestResultDownload = onRequestResultDownload,
+            onOpenCustomDesignSetup = onOpenCustomDesignSetup,
             onFinalize = onFinalize,
             onDeleteMatch = onDeleteMatch,
             onSelectScreenshot = onSelectScreenshot,
@@ -675,6 +683,7 @@ private fun MatchReviewContent(
     onPrepareCsvExport: () -> Unit,
     onPrepareGoogleSheetsExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
+    onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit,
     onFinalize: () -> Unit,
     onDeleteMatch: () -> Unit,
     onSelectScreenshot: () -> Unit,
@@ -715,7 +724,7 @@ private fun MatchReviewContent(
     var showResultScopeDialog by remember { mutableStateOf(false) }
     var showResultFormatDialog by remember { mutableStateOf(false) }
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
-    var selectedResultFormat by remember { mutableStateOf<ResultExportFileFormat?>(null) }
+    var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
         lobbySlots = lobbyUiState.slots,
@@ -1492,7 +1501,14 @@ private fun MatchReviewContent(
                 val format = selectedResultFormat
                 if (scope != null && format != null) {
                     showResultFormatDialog = false
-                    onRequestResultDownload(scope, format)
+                    when (format) {
+                        ResultDownloadFormatOption.PDF ->
+                            onRequestResultDownload(scope, ResultExportFileFormat.PDF)
+                        ResultDownloadFormatOption.PNG ->
+                            onRequestResultDownload(scope, ResultExportFileFormat.PNG)
+                        ResultDownloadFormatOption.CUSTOM_DESIGN ->
+                            onOpenCustomDesignSetup(scope)
+                    }
                 }
             },
         )
@@ -1577,8 +1593,8 @@ private fun ResultDownloadScopeDialog(
 
 @Composable
 private fun ResultDownloadFormatDialog(
-    selectedFormat: ResultExportFileFormat?,
-    onFormatSelected: (ResultExportFileFormat) -> Unit,
+    selectedFormat: ResultDownloadFormatOption?,
+    onFormatSelected: (ResultDownloadFormatOption) -> Unit,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
@@ -1591,15 +1607,21 @@ private fun ResultDownloadFormatDialog(
             Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall)) {
                 ResultDownloadRadioRow(
                     label = stringResource(R.string.match_review_download_pdf),
-                    selected = selectedFormat == ResultExportFileFormat.PDF,
-                    onClick = { onFormatSelected(ResultExportFileFormat.PDF) },
+                    selected = selectedFormat == ResultDownloadFormatOption.PDF,
+                    onClick = { onFormatSelected(ResultDownloadFormatOption.PDF) },
                     testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG,
                 )
                 ResultDownloadRadioRow(
                     label = stringResource(R.string.match_review_download_png),
-                    selected = selectedFormat == ResultExportFileFormat.PNG,
-                    onClick = { onFormatSelected(ResultExportFileFormat.PNG) },
+                    selected = selectedFormat == ResultDownloadFormatOption.PNG,
+                    onClick = { onFormatSelected(ResultDownloadFormatOption.PNG) },
                     testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG,
+                )
+                ResultDownloadRadioRow(
+                    label = stringResource(R.string.match_review_download_custom_design),
+                    selected = selectedFormat == ResultDownloadFormatOption.CUSTOM_DESIGN,
+                    onClick = { onFormatSelected(ResultDownloadFormatOption.CUSTOM_DESIGN) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
                 )
             }
         },
@@ -1621,6 +1643,12 @@ private fun ResultDownloadFormatDialog(
             }
         },
     )
+}
+
+private enum class ResultDownloadFormatOption {
+    PDF,
+    PNG,
+    CUSTOM_DESIGN,
 }
 
 @Composable

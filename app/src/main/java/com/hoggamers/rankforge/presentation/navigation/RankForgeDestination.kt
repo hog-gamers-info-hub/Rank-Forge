@@ -72,6 +72,13 @@ data class MatchReviewDestination(
 )
 
 @Serializable
+data class CustomDesignSetupDestination(
+    val tournamentId: String,
+    val matchId: String,
+    val downloadScope: String,
+)
+
+@Serializable
 data class MatchResultScreenshotCropDestination(
     val tournamentId: String,
     val matchId: String,

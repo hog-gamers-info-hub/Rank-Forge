@@ -4087,6 +4087,37 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun customDesignSelectionOpensSetupForSelectedScope() {
+        var selectedScope: ResultDownloadScope? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenCustomDesignSetup = { selectedScope = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(ResultDownloadScope.WHOLE_TOURNAMENT, selectedScope)
+        }
+    }
+
+    @Test
     fun downloadScopeCancelDoesNotStartWork() {
         var requestCount = 0
         composeTestRule.setContent {

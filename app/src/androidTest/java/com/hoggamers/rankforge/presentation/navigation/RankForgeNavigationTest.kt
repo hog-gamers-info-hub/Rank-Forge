@@ -100,6 +100,7 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewViewModel
@@ -269,6 +270,48 @@ class RankForgeNavigationTest {
 
     private companion object {
         const val OPEN_ROSTER_SCREENSHOT_CROP_TEST_TAG = "open_roster_screenshot_crop"
+    }
+
+    @Test
+    fun customDesignSetupDestinationShowsSetupScreen() {
+        val listViewModel = TournamentListViewModel(
+            ObserveTournamentsUseCase(InMemoryTournamentRepository()),
+        )
+        lateinit var navController: NavHostController
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    authUiState = AuthUiState(isSignedIn = true),
+                    listViewModel = listViewModel,
+                )
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            navController.navigate(
+                CustomDesignSetupDestination(
+                    tournamentId = "tournament-id",
+                    matchId = "match-id",
+                    downloadScope = "CURRENT_MATCH",
+                ),
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                CustomDesignSetupDestination(
+                    tournamentId = "tournament-id",
+                    matchId = "match-id",
+                    downloadScope = "CURRENT_MATCH",
+                ),
+                navController.currentBackStackEntry?.toRoute<CustomDesignSetupDestination>(),
+            )
+        }
     }
 
     @Test

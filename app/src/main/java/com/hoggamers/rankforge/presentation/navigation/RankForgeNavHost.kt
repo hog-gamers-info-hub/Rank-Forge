@@ -51,6 +51,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchKillRoute
 import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
+import com.hoggamers.rankforge.presentation.screen.CustomDesignSetupRoute
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
@@ -679,6 +680,15 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
+                        navController.navigate(
+                            CustomDesignSetupDestination(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                downloadScope = scope.name,
+                            ),
+                        )
+                    },
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     lobbyScreenshotIntakeViewModel = lobbyScreenshotIntakeViewModel,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
@@ -694,6 +704,15 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
+                        navController.navigate(
+                            CustomDesignSetupDestination(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                downloadScope = scope.name,
+                            ),
+                        )
+                    },
                     matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
                     lobbyScreenshotIntakeViewModel = lobbyScreenshotIntakeViewModel,
                     showLegacyManualReviewContent = showLegacyManualReviewContent,
@@ -701,6 +720,9 @@ fun RankForgeNavHost(
                     ocrReviewViewModel = ocrReviewViewModel,
                 )
             }
+        }
+        composable<CustomDesignSetupDestination> {
+            CustomDesignSetupRoute(onBack = { navController.popBackStack() })
         }
         composable<MatchLobbyScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchLobbyScreenshotCropDestination>()
