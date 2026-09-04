@@ -4,6 +4,10 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinateSource
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrElement
@@ -135,6 +139,21 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun completedOcrAlsoPopulatesDerivedGridGeometry() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithGridRows()))
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+
+        val grid = viewModel.uiState.value.gridGeometry
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+        assertEquals(1080, grid?.sourceWidth)
+        assertEquals(1350, grid?.sourceHeight)
+        assertEquals(CustomDesignRowCoordinateSource.OCR, grid?.rowY?.get(2)?.source)
+        assertEquals(CustomDesignRowCoordinateSource.INTERPOLATED, grid?.rowY?.get(4)?.source)
+    }
+
+    @Test
     fun ocrFailurePreservesTheUsableDraft() = runTest {
         val runner = FakeCustomDesignOcrRunner(failure = IllegalStateException("engine failure"))
         val viewModel = viewModel(runner = runner)
@@ -146,6 +165,32 @@ class CustomDesignSetupViewModelTest {
         assertEquals(CustomDesignOcrStatus.FAILED, viewModel.uiState.value.ocrStatus)
         assertEquals("content://picker/custom-design", viewModel.uiState.value.draft?.imageReference)
         assertEquals(1080, viewModel.uiState.value.draft?.imageWidth)
+        assertEquals(null, viewModel.uiState.value.gridGeometry)
+    }
+
+    @Test
+    fun laterOcrFailureClearsExistingGridButPreservesDraft() = runTest {
+        val runner = object : CustomDesignOcrRunner {
+            var calls = 0
+
+            override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+                calls += 1
+                if (calls == 1) return documentWithGridRows()
+                throw IllegalStateException("engine failure")
+            }
+        }
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel, "content://picker/first")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.gridGeometry != null)
+
+        selectImage(viewModel, "content://picker/second")
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignOcrStatus.FAILED, viewModel.uiState.value.ocrStatus)
+        assertEquals(null, viewModel.uiState.value.gridGeometry)
+        assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
     }
 
     @Test
@@ -164,6 +209,22 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun labelOnlyRematchRebuildsGridWithoutRunningEngineAgain() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.gridGeometry?.rowY?.containsKey(4) == true)
+
+        viewModel.onWinChanged("WINS")
+
+        assertEquals(1, runner.sources.size)
+        assertTrue(viewModel.uiState.value.gridGeometry?.rowY?.containsKey(4) == true)
+        assertFalse(CustomDesignAnchorField.WIN in viewModel.uiState.value.gridGeometry!!.columnX)
+    }
+
+    @Test
     fun changingImageInvalidatesCachedOcrAndStartsNewRun() = runTest {
         val runner = FakeCustomDesignOcrRunner()
         val viewModel = viewModel(runner = runner)
@@ -176,6 +237,32 @@ class CustomDesignSetupViewModelTest {
         assertEquals(2, runner.sources.size)
         assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
         assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+    }
+
+    @Test
+    fun changingImageInvalidatesOldGridBeforeNewOcrCompletes() = runTest {
+        val second = CompletableDeferred<CustomDesignRawOcrDocument>()
+        val runner = object : CustomDesignOcrRunner {
+            var calls = 0
+
+            override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+                calls += 1
+                return if (calls == 1) documentWithGridRows() else second.await()
+            }
+        }
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel, "content://picker/first")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.gridGeometry != null)
+
+        selectImage(viewModel, "content://picker/second")
+        runCurrent()
+        assertEquals(null, viewModel.uiState.value.gridGeometry)
+
+        second.complete(documentWithGridRows(winLeft = 720))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.gridGeometry != null)
     }
 
     @Test
@@ -200,13 +287,14 @@ class CustomDesignSetupViewModelTest {
         runCurrent()
         selectImage(viewModel, "content://picker/second")
         runCurrent()
-        second.complete(documentWithHeader("WIN", 700))
+        second.complete(documentWithGridRows(winLeft = 700))
         advanceUntilIdle()
-        first.complete(documentWithHeader("WIN", 100))
+        first.complete(documentWithGridRows(winLeft = 100))
         advanceUntilIdle()
 
         assertEquals("content://picker/second", viewModel.uiState.value.draft?.imageReference)
-        assertEquals(710f, viewModel.uiState.value.ocrAnchors?.columnX?.values?.single())
+        assertEquals(710f, viewModel.uiState.value.ocrAnchors?.columnX?.get(CustomDesignAnchorField.WIN))
+        assertEquals(710f, viewModel.uiState.value.gridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
     }
 
     private fun viewModel(
@@ -217,7 +305,8 @@ class CustomDesignSetupViewModelTest {
     ) = CustomDesignSetupViewModel(
         imageCandidateValidator = ImageCandidateValidator(readResult),
         customDesignOcrRunner = runner,
-        customDesignAnchorDetector = com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector(),
+        customDesignAnchorDetector = CustomDesignAnchorDetector(),
+        customDesignGridBuilder = CustomDesignGridBuilder(),
     )
 
     private fun selectImage(
@@ -277,5 +366,55 @@ class CustomDesignSetupViewModelTest {
                 ),
             ),
         ),
+    )
+
+    private fun documentWithGridRows(winLeft: Int = 450) = CustomDesignRawOcrDocument(
+        sourceWidth = 1080,
+        sourceHeight = 1350,
+        blocks = listOf(
+            block(
+                line(element("TEAM NAME", 300, 100, 400, 120)),
+                line(element("WIN", winLeft, 100, winLeft + 20, 120)),
+                line(element("ELIM.", 520, 100, 570, 120)),
+                line(element("POS.", 650, 100, 700, 120)),
+                line(element("TOTAL", 780, 100, 830, 120)),
+                line(element("2", 100, 300, 120, 330)),
+                line(element("3", 100, 354, 120, 384)),
+                line(element("5", 100, 461, 120, 491)),
+                line(element("6", 100, 515, 120, 545)),
+            ),
+        ),
+    )
+
+    private fun block(vararg lines: RawOcrLine) = RawOcrBlock(
+        text = lines.joinToString(" ") { it.text },
+        geometry = null,
+        recognizedLanguage = null,
+        confidence = RawOcrConfidence.Unavailable,
+        lines = lines.toList(),
+    )
+
+    private fun line(element: RawOcrElement) = RawOcrLine(
+        text = element.text,
+        geometry = null,
+        recognizedLanguage = null,
+        confidence = RawOcrConfidence.Unavailable,
+        elements = listOf(element),
+    )
+
+    private fun element(
+        text: String,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    ) = RawOcrElement(
+        text = text,
+        geometry = RawOcrGeometry(
+            boundingBox = RawOcrBoundingBox(left, top, right, bottom),
+            cornerPoints = null,
+        ),
+        recognizedLanguage = null,
+        confidence = RawOcrConfidence.Unavailable,
     )
 }

@@ -7,6 +7,8 @@ import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetectionResult
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
@@ -29,6 +31,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     private val imageCandidateValidator: ImageCandidateValidator,
     private val customDesignOcrRunner: CustomDesignOcrRunner,
     private val customDesignAnchorDetector: CustomDesignAnchorDetector,
+    private val customDesignGridBuilder: CustomDesignGridBuilder,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CustomDesignSetupUiState())
     val uiState: StateFlow<CustomDesignSetupUiState> = _uiState.asStateFlow()
@@ -168,6 +171,7 @@ class CustomDesignSetupViewModel @Inject constructor(
             it.copy(
                 ocrStatus = CustomDesignOcrStatus.PROCESSING,
                 ocrAnchors = null,
+                gridGeometry = null,
             )
         }
         ocrJob = viewModelScope.launch {
@@ -199,6 +203,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         it.copy(
                             ocrStatus = CustomDesignOcrStatus.FAILED,
                             ocrAnchors = null,
+                            gridGeometry = null,
                         )
                     }
                 }
@@ -217,11 +222,14 @@ class CustomDesignSetupViewModel @Inject constructor(
             labels = draft.ocrLabels(),
             blocks = document.blocks,
         )
+        val gridGeometry = customDesignGridBuilder.build(detection)
         logDetection(detection)
+        logGridGeometry(gridGeometry)
         _uiState.update {
             it.copy(
                 ocrStatus = CustomDesignOcrStatus.COMPLETED,
                 ocrAnchors = detection.anchors,
+                gridGeometry = gridGeometry,
             )
         }
     }
@@ -233,6 +241,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         return copy(
             ocrStatus = CustomDesignOcrStatus.IDLE,
             ocrAnchors = null,
+            gridGeometry = null,
         )
     }
 
@@ -276,6 +285,19 @@ class CustomDesignSetupViewModel @Inject constructor(
         }
         debugLog("COLUMNS ${anchors.columnX}")
         debugLog("ROWS ${anchors.rowY}")
+    }
+
+    private fun logGridGeometry(geometry: CustomDesignGridGeometry) {
+        if (!BuildConfig.DEBUG) return
+        debugLog("GRID rowStep=${geometry.estimatedRowStep}")
+        (1..12).forEach { rank ->
+            val row = geometry.rowY[rank]
+            if (row == null) {
+                debugLog("GRID ROW $rank UNRESOLVED")
+            } else {
+                debugLog("GRID ROW $rank y=${row.y} source=${row.source}")
+            }
+        }
     }
 
     private fun debugLog(message: String) {
