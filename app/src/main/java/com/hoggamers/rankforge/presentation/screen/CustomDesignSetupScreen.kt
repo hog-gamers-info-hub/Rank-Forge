@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridInitializer
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -124,6 +125,12 @@ fun CustomDesignSetupScreen(
     onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit = { _, _ -> },
     onManualRowYChanged: (Int, Float) -> Unit = { _, _ -> },
 ) {
+    val editableGridGeometry = uiState.editableGridGeometry
+        ?: CustomDesignEditableGridInitializer.initialize(
+            sourceWidth = uiState.sourceImageWidth ?: 0,
+            sourceHeight = uiState.sourceImageHeight ?: 0,
+            automatic = uiState.gridGeometry,
+        )
     RankForgeScreenContainer(
         modifier = Modifier
             .testTag(CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG)
@@ -142,7 +149,7 @@ fun CustomDesignSetupScreen(
                 sourceWidth = uiState.sourceImageWidth,
                 sourceHeight = uiState.sourceImageHeight,
                 gridGeometry = resolveCustomDesignEffectiveGridGeometry(
-                    automatic = uiState.gridGeometry,
+                    editable = editableGridGeometry,
                     overrides = uiState.manualGridOverrides,
                 ),
                 onManualColumnXChanged = onManualColumnXChanged,

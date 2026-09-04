@@ -166,6 +166,39 @@ class CustomDesignSetupViewModelTest {
         assertEquals("content://picker/custom-design", viewModel.uiState.value.draft?.imageReference)
         assertEquals(1080, viewModel.uiState.value.draft?.imageWidth)
         assertEquals(null, viewModel.uiState.value.gridGeometry)
+        assertEquals(5, viewModel.uiState.value.editableGridGeometry?.columnX?.size)
+        assertEquals(12, viewModel.uiState.value.editableGridGeometry?.rowY?.size)
+    }
+
+    @Test
+    fun ocrSuccessWithMissingHeaderStillCreatesCompleteEditableColumns() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithHeader("WIN", 700)))
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.gridGeometry?.columnX?.size)
+        assertEquals(5, viewModel.uiState.value.editableGridGeometry?.columnX?.size)
+        assertEquals(12, viewModel.uiState.value.editableGridGeometry?.rowY?.size)
+    }
+
+    @Test
+    fun manualCorrectionOnFallbackLineSurvivesOcrFailure() = runTest {
+        val viewModel = viewModel(
+            runner = FakeCustomDesignOcrRunner(
+                failure = IllegalStateException("engine failure"),
+            ),
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.setManualColumnX(CustomDesignAnchorField.TOTAL_KILLS, 777f)
+        viewModel.setManualRowY(7, 888f)
+
+        assertEquals(777f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.TOTAL_KILLS])
+        assertEquals(888f, viewModel.uiState.value.manualGridOverrides.rowY[7])
+        assertEquals(5, viewModel.uiState.value.editableGridGeometry?.columnX?.size)
+        assertEquals(12, viewModel.uiState.value.editableGridGeometry?.rowY?.size)
     }
 
     @Test
