@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.ocr.DefaultMlKitTextRecognizerFactory
+import com.hoggamers.rankforge.data.ocr.customdesign.AndroidCustomDesignOcrRunner
 import com.hoggamers.rankforge.data.ocr.MlKitOcrEngine
 import com.hoggamers.rankforge.data.ocr.MlKitOcrEngineImpl
 import com.hoggamers.rankforge.data.ocr.MlKitOcrTextRecognizer
@@ -19,6 +20,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchResultPositionCropPrevie
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidRosterOcrPanelPreparer
 import com.hoggamers.rankforge.data.ocr.preprocessing.RoomRosterOcrSourceProvider
 import com.hoggamers.rankforge.domain.ocr.OcrTextRecognizer
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.extraction.RosterRawOcrExtractor
 import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
@@ -40,6 +42,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class OcrDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindCustomDesignOcrRunner(
+        runner: AndroidCustomDesignOcrRunner,
+    ): CustomDesignOcrRunner
+
     @Binds
     @Singleton
     abstract fun bindOcrTextRecognizer(
