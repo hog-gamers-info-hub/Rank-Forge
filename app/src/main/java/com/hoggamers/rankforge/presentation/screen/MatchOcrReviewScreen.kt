@@ -722,23 +722,6 @@ private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPrevie
         },
     )
 
-private fun MatchResultOcrPreviewRowUiState.allPlayersAreNotDetected(): Boolean =
-    (1..4).all { slot ->
-        slots
-            .firstOrNull { it.slot == slot }
-            ?.playerText
-            ?.trim()
-            .isNullOrBlank()
-    }
-
-private fun MatchOcrReviewRowUiState.allDisplayedPlayersAreNotDetected(
-    previewRow: MatchResultOcrPreviewRowUiState?,
-): Boolean = if (isSyntheticManualPlaceholder()) {
-    true
-} else {
-    (previewRow ?: toCompactPreviewRow()).allPlayersAreNotDetected()
-}
-
 @Composable
 private fun CompactPlayerRow(
     previewRow: MatchResultOcrPreviewRowUiState,
@@ -1025,7 +1008,7 @@ internal fun MatchOcrReviewRow(
     val compactResetTestTag = compactResetCallback?.let { MatchOcrReviewTestTags.resetRow(row.rowIndex) }
     val excludeRowCallback = onExcludeRow
     val compactDeleteCallback: (() -> Unit)? = if (
-        excludeRowCallback != null && row.allDisplayedPlayersAreNotDetected(previewRow)
+        excludeRowCallback != null
     ) {
         { excludeRowCallback(row.rowIndex) }
     } else {

@@ -37,6 +37,8 @@ data class LobbyTeamCalculatedEvidence(
 @Serializable
 data class ResultCalculatedEvidence(
     val positions: List<ResultPositionCalculatedEvidence> = emptyList(),
+    /** Source positions explicitly excluded from finalization; absent in legacy payloads. */
+    val excludedSourcePositions: List<Int> = emptyList(),
 ) {
     init {
         require(positions.size <= 12) { "Result calculated evidence cannot contain more than 12 positions." }

@@ -270,6 +270,58 @@ class MatchCalculatedEvidenceMapperTest {
         assertEquals("Team 8", corrected.result.positions.single { it.position == 12 }.teamName)
     }
 
+    @Test
+    fun mapsExplicitExclusionsWithoutDroppingResultEvidence() {
+        val (reviewState, ocrState) = mapperInput()
+        val excluded = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(
+                reviewState,
+                ocrState.withCorrection { draft ->
+                    MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 11)
+                },
+            ),
+        )
+
+        assertEquals(listOf(12), excluded.result.excludedSourcePositions)
+        assertEquals(12, excluded.result.positions.single { it.position == 12 }.position)
+        assertEquals(11, excluded.result.positions.single { it.position == 12 }.cropLeft)
+    }
+
+    @Test
+    fun restoresExplicitExclusionsWhileKeepingCropPreviewGeometry() {
+        val evidence = MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 4,
+                        sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        cropLeft = 10,
+                        cropTop = 20,
+                        cropRight = 30,
+                        cropBottom = 40,
+                        playerNames = listOf("P1", "P2", "P3", "P4"),
+                        playerKillApplicable = List(4) { true },
+                        playerKills = List(4) { 1 },
+                        totalKills = 4,
+                        placement = 4,
+                    ),
+                ),
+                excludedSourcePositions = listOf(4),
+            ),
+        )
+
+        val restored = evidence.toRestoredOcrReviewUiState(
+            tournamentId = "tournament-1",
+            matchId = "match-1",
+            teamNamesBySlot = emptyMap(),
+        ) as MatchOcrReviewUiState.Ready
+
+        assertTrue(restored.correctionDraft!!.rows.single().isExcluded)
+        val preview = restored.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
+        assertEquals(listOf(4), preview.rows.map { it.position })
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, preview.rows.single().role)
+    }
+
     private fun MatchOcrReviewUiState.Ready.withCorrection(
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft,
     ): MatchOcrReviewUiState.Ready {

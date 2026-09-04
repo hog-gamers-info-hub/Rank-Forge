@@ -777,11 +777,20 @@ class MatchOcrReviewViewModel @Inject constructor(
         reviewRows: List<MatchOcrReviewRowUiState>,
     ): List<FinalizeOcrCorrectionRowInput> {
         val reviewRowsByIndex = reviewRows.associateBy { it.rowIndex }
+        val officialPlacementBySourceRowIndex = rows
+            .filterNot { it.isEffectivelyExcluded }
+            .sortedBy { it.rowIndex }
+            .mapIndexed { officialIndex, row -> row.rowIndex to officialIndex + 1 }
+            .toMap()
         return rows.map { row ->
             val reviewRow = reviewRowsByIndex[row.rowIndex]
             FinalizeOcrCorrectionRowInput(
                 rowIndex = row.rowIndex,
-                correctedPlacement = row.placementDraftValue,
+                correctedPlacement = if (row.isEffectivelyExcluded) {
+                    row.placementDraftValue
+                } else {
+                    officialPlacementBySourceRowIndex[row.rowIndex]?.toString().orEmpty()
+                },
                 correctedKills = row.killsDraftValue,
                 correctedTeamSlotNumber = row.assignedTeamSlotDraftValue,
                 warnings = row.validation.warnings.mapNotNull { it.toFinalizeWarning() }.toSet(),

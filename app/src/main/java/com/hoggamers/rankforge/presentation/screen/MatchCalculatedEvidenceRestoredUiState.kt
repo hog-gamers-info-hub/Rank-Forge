@@ -12,6 +12,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
     matchId: String,
     teamNamesBySlot: Map<Int, String>,
 ): MatchOcrReviewUiState {
+    val excludedSourcePositions = result.excludedSourcePositions
     val positions = result.positions.sortedBy { it.position }
     if (positions.isEmpty()) {
         return MatchOcrReviewUiState.Empty(
@@ -38,6 +39,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
                     placementDraftValue = row.detectedPlacementDisplayValue,
                     killsDraftValue = row.detectedKillDisplayValue,
                     assignedTeamSlotDraftValue = row.suggestedTeamSlotDisplayValue,
+                    isExcluded = draft.rowIndex + 1 in excludedSourcePositions,
                 )
             },
         ),
