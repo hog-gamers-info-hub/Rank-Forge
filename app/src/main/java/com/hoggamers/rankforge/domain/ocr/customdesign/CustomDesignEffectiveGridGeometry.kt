@@ -8,6 +8,22 @@ data class CustomDesignEffectiveGridGeometry(
 )
 
 fun resolveCustomDesignEffectiveGridGeometry(
+    editable: CustomDesignEditableGridGeometry?,
+    overrides: CustomDesignGridOverrides,
+): CustomDesignEffectiveGridGeometry? = editable?.let { geometry ->
+    CustomDesignEffectiveGridGeometry(
+        sourceWidth = geometry.sourceWidth,
+        sourceHeight = geometry.sourceHeight,
+        columnX = geometry.columnX.mapValues { (field, coordinate) ->
+            overrides.columnX[field] ?: coordinate.x
+        },
+        rowY = geometry.rowY.mapValues { (rank, coordinate) ->
+            overrides.rowY[rank] ?: coordinate.y
+        },
+    )
+}
+
+fun resolveCustomDesignEffectiveGridGeometry(
     automatic: CustomDesignGridGeometry?,
     overrides: CustomDesignGridOverrides,
 ): CustomDesignEffectiveGridGeometry? = automatic?.let { geometry ->

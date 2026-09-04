@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetecti
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridInitializer
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
@@ -266,6 +267,11 @@ class CustomDesignSetupViewModel @Inject constructor(
                             ocrStatus = CustomDesignOcrStatus.FAILED,
                             ocrAnchors = null,
                             gridGeometry = null,
+                            editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
+                                sourceWidth = draft.imageWidth,
+                                sourceHeight = draft.imageHeight,
+                                automatic = null,
+                            ),
                         )
                     }
                 }
@@ -292,6 +298,11 @@ class CustomDesignSetupViewModel @Inject constructor(
                 ocrStatus = CustomDesignOcrStatus.COMPLETED,
                 ocrAnchors = detection.anchors,
                 gridGeometry = gridGeometry,
+                editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
+                    sourceWidth = draft.imageWidth,
+                    sourceHeight = draft.imageHeight,
+                    automatic = gridGeometry,
+                ),
             )
         }
     }
@@ -308,6 +319,11 @@ class CustomDesignSetupViewModel @Inject constructor(
             ocrStatus = CustomDesignOcrStatus.IDLE,
             ocrAnchors = null,
             gridGeometry = null,
+            editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
+                sourceWidth = sourceImageWidth ?: 0,
+                sourceHeight = sourceImageHeight ?: 0,
+                automatic = null,
+            ),
             manualGridOverrides = if (clearManualGridOverrides) {
                 CustomDesignGridOverrides()
             } else {
