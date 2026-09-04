@@ -147,7 +147,7 @@ object CustomDesignEditableGridInitializer {
             }
         }
 
-        val step = automatic?.estimatedRowStep?.takeIf { it.isFinite() && it > 0f }
+        val step = estimateOcrRowStep(automaticRows)
         val firstAutomatic = orderedAutomaticRows.first()
         val leadingRanks = (1 until firstAutomatic.key).toList()
         val leadingEstimates = step?.let { spacing ->
@@ -205,6 +205,34 @@ object CustomDesignEditableGridInitializer {
         }
     }
 
+    private fun estimateOcrRowStep(
+        automaticRows: Map<Int, CustomDesignRowCoordinate>,
+    ): Float? {
+        val ocrRows = automaticRows
+            .filterValues { it.source == CustomDesignRowCoordinateSource.OCR }
+            .entries
+            .sortedBy { it.key }
+        if (ocrRows.size < 2) return null
+
+        val candidates = buildList {
+            for (leftIndex in ocrRows.indices) {
+                for (rightIndex in leftIndex + 1 until ocrRows.size) {
+                    val left = ocrRows[leftIndex]
+                    val right = ocrRows[rightIndex]
+                    val rankDelta = right.key - left.key
+                    val yDelta = right.value.y - left.value.y
+                    if (rankDelta > 0 && yDelta > 0f) {
+                        val candidate = yDelta / rankDelta.toFloat()
+                        if (candidate.isFinite() && candidate > 0f) {
+                            add(candidate)
+                        }
+                    }
+                }
+            }
+        }
+        return candidates.medianOrNull()?.takeIf { it.isFinite() && it > 0f }
+    }
+
     private fun fillFallbackRows(
         result: MutableMap<Int, CustomDesignEditableRowCoordinate>,
         ranks: List<Int>,
@@ -241,4 +269,14 @@ object CustomDesignEditableGridInitializer {
 
     private const val LAST_RANK = 12
     private val RANK_RANGE = 1..LAST_RANK
+}
+
+private fun List<Float>.medianOrNull(): Float? {
+    if (isEmpty()) return null
+    val sorted = sorted()
+    return if (sorted.size % 2 == 1) {
+        sorted[sorted.size / 2]
+    } else {
+        (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
+    }
 }

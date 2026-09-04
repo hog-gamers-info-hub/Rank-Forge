@@ -97,6 +97,19 @@ class CustomDesignAnchorDetectorTest {
     }
 
     @Test
+    fun leadingZeroRanksResolveToTheSameRanksAsNormalFormatting() {
+        val normal = detectRanks((1..12).map { it.toString() })
+        val leadingZero = detectRanks((1..12).map { "%02d".format(it) })
+        val mixed = detectRanks(
+            listOf("01", "2", "03", "4", "05", "6", "07", "8", "09", "10", "11", "12"),
+        )
+
+        assertEquals((1..12).toSet(), normal)
+        assertEquals(normal, leadingZero)
+        assertEquals(normal, mixed)
+    }
+
+    @Test
     fun cornerGeometryUsesAveragePointCenter() {
         val anchors = detector.detect(
             1080,
@@ -189,6 +202,18 @@ class CustomDesignAnchorDetectorTest {
         positionPoints: String = "POS.",
         totalPoints: String = "TOTAL",
     ) = CustomDesignOcrLabels(teamName, win, totalKills, positionPoints, totalPoints)
+
+    private fun detectRanks(rankTexts: List<String>): Set<Int> = detector.detect(
+        1080,
+        1350,
+        labels(win = "WIN"),
+        block(
+            line(element("WIN", 300, 100, 340, 120)),
+            *rankTexts.mapIndexed { index, text ->
+                line(element(text, 100, 200 + index * 50, 120, 230 + index * 50))
+            }.toTypedArray(),
+        ),
+    ).rowY.keys
 
     private fun block(vararg lines: RawOcrLine) = listOf(
         RawOcrBlock(

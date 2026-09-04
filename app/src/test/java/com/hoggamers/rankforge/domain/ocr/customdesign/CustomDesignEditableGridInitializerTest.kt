@@ -143,7 +143,7 @@ class CustomDesignEditableGridInitializerTest {
                 3 to row(300f, CustomDesignRowCoordinateSource.OCR),
                 10 to row(1000f, CustomDesignRowCoordinateSource.OCR),
             ),
-            estimatedRowStep = 100f,
+            estimatedRowStep = null,
         )
 
         val editable = initialize(automatic)
@@ -154,6 +154,56 @@ class CustomDesignEditableGridInitializerTest {
         assertEquals(1200f, editable.rowY[12]?.y)
         assertTrue(editable.rowY[1]?.source == CustomDesignEditableCoordinateSource.ESTIMATED)
         assertTrue(editable.rowY[12]?.source == CustomDesignEditableCoordinateSource.ESTIMATED)
+    }
+
+    @Test
+    fun multipleOcrPairsUseMedianRankAwareSpacing() {
+        val automatic = automaticGeometry().copy(
+            rowY = mapOf(
+                3 to row(300f, CustomDesignRowCoordinateSource.OCR),
+                4 to row(351f, CustomDesignRowCoordinateSource.OCR),
+                6 to row(450f, CustomDesignRowCoordinateSource.OCR),
+            ),
+            estimatedRowStep = 999f,
+        )
+
+        val editable = initialize(automatic)
+
+        assertEquals(200f, editable.rowY[1]?.y)
+        assertEquals(250f, editable.rowY[2]?.y)
+        assertEquals(500f, editable.rowY[7]?.y)
+        assertEquals(750f, editable.rowY[12]?.y)
+    }
+
+    @Test
+    fun oneAutomaticRowPreservesExactYAndFallsBackForRemainingRows() {
+        val editable = initialize(
+            automaticGeometry().copy(
+                rowY = mapOf(6 to row(611f, CustomDesignRowCoordinateSource.OCR)),
+                estimatedRowStep = 100f,
+            ),
+        )
+
+        assertEquals(611f, editable.rowY[6]?.y)
+        assertEquals(CustomDesignEditableCoordinateSource.AUTOMATIC, editable.rowY[6]?.source)
+        assertTrue((1..5).all { editable.rowY[it]?.source == CustomDesignEditableCoordinateSource.FALLBACK })
+        assertTrue((7..12).all { editable.rowY[it]?.source == CustomDesignEditableCoordinateSource.FALLBACK })
+    }
+
+    @Test
+    fun reversedAutomaticRowsUseSafeCompleteFallback() {
+        val editable = initialize(
+            automaticGeometry().copy(
+                rowY = mapOf(
+                    4 to row(600f, CustomDesignRowCoordinateSource.OCR),
+                    5 to row(550f, CustomDesignRowCoordinateSource.OCR),
+                ),
+            ),
+        )
+
+        assertEquals((1..12).toSet(), editable.rowY.keys)
+        assertTrue(editable.rowY.values.all { it.source == CustomDesignEditableCoordinateSource.FALLBACK })
+        assertTrue(editable.rowY.values.zipWithNext().all { (left, right) -> left.y < right.y })
     }
 
     @Test
