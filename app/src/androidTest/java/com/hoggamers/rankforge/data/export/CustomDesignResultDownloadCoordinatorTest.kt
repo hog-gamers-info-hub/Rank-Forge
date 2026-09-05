@@ -12,6 +12,7 @@ import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportInput
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -39,6 +40,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         var composedReference: String? = null
         var composedRows: List<ResultExportRow>? = null
         var composedGeometry: CustomDesignEffectiveGridGeometry? = null
+        var composedTextColors: CustomDesignColumnTextColors? = null
         var savedBytes: ByteArray? = null
         var savedFormat: ResultExportFileFormat? = null
         val bitmap = Bitmap.createBitmap(17, 19, Bitmap.Config.ARGB_8888)
@@ -48,10 +50,11 @@ class CustomDesignResultDownloadCoordinatorTest {
                 CustomDesignRestoreResult.Success(restoredDesign())
             },
             resolveRows = { CustomDesignResultRowsResult.Success(rows) },
-            composeBitmap = { reference, resolvedRows, geometry ->
+            composeBitmap = { reference, resolvedRows, geometry, textColors ->
                 composedReference = reference
                 composedRows = resolvedRows
                 composedGeometry = geometry
+                composedTextColors = textColors
                 CustomDesignBitmapComposeResult.Success(bitmap)
             },
             saveFile = { bytes, _, format ->
@@ -70,6 +73,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         assertEquals("file:///restored/custom-design.png", composedReference)
         assertEquals(rows, composedRows)
         assertEquals(restoredDesign().geometry, composedGeometry)
+        assertEquals(restoredDesign().textColors, composedTextColors)
         assertEquals(ResultExportFileFormat.PNG, savedFormat)
         assertTrue(bitmap.isRecycled)
         val encodedBytes = checkNotNull(savedBytes)
@@ -95,7 +99,7 @@ class CustomDesignResultDownloadCoordinatorTest {
                 receivedRequest = request
                 CustomDesignResultRowsResult.Success(rows)
             },
-            composeBitmap = { _, resolvedRows, _ ->
+            composeBitmap = { _, resolvedRows, _, _ ->
                 receivedRows = resolvedRows
                 CustomDesignBitmapComposeResult.Success(bitmap)
             },
@@ -159,7 +163,7 @@ class CustomDesignResultDownloadCoordinatorTest {
     fun compositionFailureDoesNotSave() {
         var saves = 0
         val coordinator = coordinator(
-            composeBitmap = { _, _, _ ->
+            composeBitmap = { _, _, _, _ ->
                 CustomDesignBitmapComposeResult.Failure(CustomDesignBitmapComposeFailure.RENDER_FAILED)
             },
             saveFile = { _, _, _ ->
@@ -181,7 +185,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         var saves = 0
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888).apply { recycle() }
         val coordinator = coordinator(
-            composeBitmap = { _, _, _ -> CustomDesignBitmapComposeResult.Success(bitmap) },
+            composeBitmap = { _, _, _, _ -> CustomDesignBitmapComposeResult.Success(bitmap) },
             saveFile = { _, _, _ ->
                 saves++
                 ResultFileSaveResult.Success(Uri.EMPTY, "unexpected.png")
@@ -202,7 +206,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         var savingCalls = 0
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeBitmap = { _, _, _ -> CustomDesignBitmapComposeResult.Success(bitmap) },
+            composeBitmap = { _, _, _, _ -> CustomDesignBitmapComposeResult.Success(bitmap) },
             saveFile = { saved, _, format ->
                 assertEquals(ResultExportFileFormat.PNG, format)
                 assertFalse(saved.isEmpty())
@@ -236,7 +240,8 @@ class CustomDesignResultDownloadCoordinatorTest {
             String,
             List<ResultExportRow>,
             CustomDesignEffectiveGridGeometry,
-        ) -> CustomDesignBitmapComposeResult = { _, _, _ ->
+            CustomDesignColumnTextColors,
+        ) -> CustomDesignBitmapComposeResult = { _, _, _, _ ->
             CustomDesignBitmapComposeResult.Failure(CustomDesignBitmapComposeFailure.RENDER_FAILED)
         },
         saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult = { _, _, _ ->
@@ -262,6 +267,15 @@ class CustomDesignResultDownloadCoordinatorTest {
             columnX = CustomDesignAnchorField.entries.associateWith { 1f },
             rowY = (1..12).associateWith { it.toFloat() },
         ),
+        textColors = CustomDesignColumnTextColors.fromMap(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to "#112233",
+                CustomDesignAnchorField.WIN to "#223344",
+                CustomDesignAnchorField.TOTAL_KILLS to "#334455",
+                CustomDesignAnchorField.POSITION_POINTS to "#445566",
+                CustomDesignAnchorField.TOTAL_POINTS to "#556677",
+            ),
+        )!!,
     )
 
     private fun currentMatchRequest() = ResultDownloadRequest.CurrentMatch(

@@ -2,10 +2,12 @@ package com.hoggamers.rankforge.data.export
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +27,7 @@ class CustomDesignCanvasRendererTest {
                 renderer.render(canvas, rows(1), geometry()),
             )
             assertEquals(5, canvas.texts.size)
+            assertTrue(canvas.texts.all { it.color == Color.BLACK })
         } finally {
             canvas.recycle()
         }
@@ -86,6 +89,44 @@ class CustomDesignCanvasRendererTest {
             assertEquals(700f, canvas.texts[2].centerX, 0.01f)
             assertEquals(300f, canvas.texts[3].centerX, 0.01f)
             assertEquals(500f, canvas.texts[4].centerX, 0.01f)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun semanticColorsFollowFieldsEvenWhenColumnsAreCrossed() {
+        val canvas = RecordingCanvas()
+        val colors = CustomDesignColumnTextColors.fromMap(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to "#112233",
+                CustomDesignAnchorField.WIN to "#223344",
+                CustomDesignAnchorField.TOTAL_KILLS to "#334455",
+                CustomDesignAnchorField.POSITION_POINTS to "#445566",
+                CustomDesignAnchorField.TOTAL_POINTS to "#556677",
+            ),
+        )!!
+        val crossed = geometry(
+            columnX = linkedMapOf(
+                CustomDesignAnchorField.TEAM_NAME to 900f,
+                CustomDesignAnchorField.WIN to 100f,
+                CustomDesignAnchorField.TOTAL_KILLS to 700f,
+                CustomDesignAnchorField.POSITION_POINTS to 300f,
+                CustomDesignAnchorField.TOTAL_POINTS to 500f,
+            ),
+        )
+        try {
+            assertEquals(
+                CustomDesignCanvasRenderResult.Success,
+                renderer.render(canvas, rows(1), crossed, colors),
+            )
+            assertEquals(
+                listOf("#112233", "#223344", "#334455", "#445566", "#556677")
+                    .map(Color::parseColor),
+                canvas.texts.map { it.color },
+            )
+            assertEquals(900f, canvas.texts[0].centerX, 0.01f)
+            assertEquals(100f, canvas.texts[1].centerX, 0.01f)
         } finally {
             canvas.recycle()
         }
@@ -246,6 +287,7 @@ class CustomDesignCanvasRendererTest {
             val width = paint.measureText(text)
             texts += DrawnText(
                 text = text,
+                color = paint.color,
                 centerX = x + width / 2f,
                 centerY = y + (paint.ascent() + paint.descent()) / 2f,
             )
@@ -259,6 +301,7 @@ class CustomDesignCanvasRendererTest {
 
     private data class DrawnText(
         val text: String,
+        val color: Int,
         val centerX: Float,
         val centerY: Float,
     )

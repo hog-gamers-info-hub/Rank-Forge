@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader
 import com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
@@ -50,6 +51,16 @@ class CustomDesignRestoreCoordinatorTest {
         assertEquals(900f, design.geometry.columnX[CustomDesignAnchorField.TEAM_NAME])
         assertEquals(100f, design.geometry.columnX[CustomDesignAnchorField.WIN])
         assertEquals((1..12).associateWith { it * 100f }, design.geometry.rowY)
+        assertEquals(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to "#112233",
+                CustomDesignAnchorField.WIN to "#223344",
+                CustomDesignAnchorField.TOTAL_KILLS to "#334455",
+                CustomDesignAnchorField.POSITION_POINTS to "#445566",
+                CustomDesignAnchorField.TOTAL_POINTS to "#556677",
+            ),
+            design.textColors.asMap(),
+        )
     }
 
     @Test
@@ -191,6 +202,56 @@ class CustomDesignRestoreCoordinatorTest {
         )
     }
 
+    @Test
+    fun legacyNullColorsUseBlackAndInvalidOrIncompleteColorsAreRejected() {
+        val valid = payload(byteArrayOf(1, 2, 3, 4))
+        assertEquals(
+            CustomDesignColumnTextColors.allBlack(),
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = null),
+                designId,
+                ownerId,
+            )?.textColors,
+        )
+        assertTrue(
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = buildJsonObject {
+                    put("TEAM_NAME", "#11223")
+                    put("WIN", "#223344")
+                    put("TOTAL_KILLS", "#334455")
+                    put("POSITION_POINTS", "#445566")
+                    put("TOTAL_POINTS", "#556677")
+                }),
+                designId,
+                ownerId,
+            ) == null,
+        )
+        assertTrue(
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = buildJsonObject {
+                    put("TEAM_NAME", "#112233")
+                    put("WIN", "#223344")
+                    put("TOTAL_KILLS", "#334455")
+                    put("POSITION_POINTS", "#445566")
+                    put("TOTAL_POINTS", "#556677")
+                    put("EXTRA", "#000000")
+                }),
+                designId,
+                ownerId,
+            ) == null,
+        )
+        assertTrue(
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = buildJsonObject {
+                    put("TEAM_NAME", "#112233")
+                    put("WIN", "#223344")
+                }),
+                designId,
+                ownerId,
+            ) == null,
+        )
+    }
+
     private fun coordinator(
         root: File = temporaryRoot(),
         events: MutableList<String> = mutableListOf(),
@@ -269,6 +330,13 @@ class CustomDesignRestoreCoordinatorTest {
         },
         rowsJson = buildJsonObject {
             (1..12).forEach { put(it.toString(), it * 100) }
+        },
+        textColorsJson = buildJsonObject {
+            put("TEAM_NAME", "#112233")
+            put("WIN", "#223344")
+            put("TOTAL_KILLS", "#334455")
+            put("POSITION_POINTS", "#445566")
+            put("TOTAL_POINTS", "#556677")
         },
     )
 

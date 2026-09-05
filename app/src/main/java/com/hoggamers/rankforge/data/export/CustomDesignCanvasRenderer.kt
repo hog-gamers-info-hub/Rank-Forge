@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 
 enum class CustomDesignCanvasRenderFailure {
@@ -29,6 +30,7 @@ class CustomDesignCanvasRenderer {
         canvas: Canvas,
         rows: List<ResultExportRow>,
         geometry: CustomDesignEffectiveGridGeometry,
+        textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
     ): CustomDesignCanvasRenderResult {
         validate(geometry, rows)?.let { return CustomDesignCanvasRenderResult.Failure(it) }
 
@@ -40,30 +42,35 @@ class CustomDesignCanvasRenderer {
                     text = row.teamName,
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME),
                     centerY = sourceY,
+                    color = textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
                 )
                 drawCenteredText(
                     canvas = canvas,
                     text = row.win.toString(),
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.WIN),
                     centerY = sourceY,
+                    color = textColors.colorFor(CustomDesignAnchorField.WIN),
                 )
                 drawCenteredText(
                     canvas = canvas,
                     text = row.totalKills.toString(),
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TOTAL_KILLS),
                     centerY = sourceY,
+                    color = textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS),
                 )
                 drawCenteredText(
                     canvas = canvas,
                     text = row.positionPoints.toString(),
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.POSITION_POINTS),
                     centerY = sourceY,
+                    color = textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS),
                 )
                 drawCenteredText(
                     canvas = canvas,
                     text = row.totalPoints.toString(),
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TOTAL_POINTS),
                     centerY = sourceY,
+                    color = textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS),
                 )
             }
             CustomDesignCanvasRenderResult.Success
@@ -106,7 +113,9 @@ class CustomDesignCanvasRenderer {
         text: String,
         centerX: Float,
         centerY: Float,
+        color: String,
     ) {
+        paint.color = Color.parseColor(color)
         val textWidth = paint.measureText(text)
         val baseline = centerY - (paint.ascent() + paint.descent()) / 2f
         canvas.drawText(text, centerX - textWidth / 2f, baseline, paint)

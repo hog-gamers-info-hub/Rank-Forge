@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import io.github.jan.supabase.auth.auth
@@ -20,6 +21,7 @@ data class CustomDesignSaveRequest(
     val currentSourceHeight: Int,
     val labels: CustomDesignOcrLabels,
     val effectiveGridGeometry: CustomDesignEffectiveGridGeometry?,
+    val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
 )
 
 enum class CustomDesignSaveFailure {
@@ -198,6 +200,11 @@ class CustomDesignSaveCoordinator internal constructor(
             },
             rowsJson = buildJsonObject {
                 (1..12).forEach { rank -> put(rank.toString(), geometry.rowY.getValue(rank).toDouble()) }
+            },
+            textColorsJson = buildJsonObject {
+                CustomDesignAnchorField.entries.forEach { field ->
+                    put(field.name, textColors.colorFor(field))
+                }
             },
         )
     }

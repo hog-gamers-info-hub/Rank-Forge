@@ -26,6 +26,7 @@ data class CustomDesignTemplateCloudPayload(
     @SerialName("labels_json") val labelsJson: JsonObject,
     @SerialName("columns_json") val columnsJson: JsonObject,
     @SerialName("rows_json") val rowsJson: JsonObject,
+    @SerialName("text_colors_json") val textColorsJson: JsonObject? = null,
 )
 
 enum class CustomDesignTemplateCloudFailure {

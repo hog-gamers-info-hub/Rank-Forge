@@ -2,7 +2,9 @@ package com.hoggamers.rankforge.data.cloud
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +27,24 @@ class SupabaseCustomDesignTemplateCloudDataSourceTest {
         assertEquals(setOf("teamName", "win", "totalKills", "positionPoints", "totalPoints"), captured!!.labelsJson.keys)
         assertEquals(setOf("TEAM_NAME", "WIN", "TOTAL_KILLS", "POSITION_POINTS", "TOTAL_POINTS"), captured!!.columnsJson.keys)
         assertEquals((1..12).map(Int::toString).toSet(), captured!!.rowsJson.keys)
+        assertEquals(
+            setOf("TEAM_NAME", "WIN", "TOTAL_KILLS", "POSITION_POINTS", "TOTAL_POINTS"),
+            captured!!.textColorsJson!!.keys,
+        )
+    }
+
+    @Test
+    fun payloadSerializesTextColorsUnderTheCloudColumnWithExactKeys() {
+        val encoded = Json.encodeToJsonElement(
+            CustomDesignTemplateCloudPayload.serializer(),
+            payload(ownerId),
+        ).jsonObject
+
+        assertEquals(
+            setOf("TEAM_NAME", "WIN", "TOTAL_KILLS", "POSITION_POINTS", "TOTAL_POINTS"),
+            encoded.getValue("text_colors_json").jsonObject.keys,
+        )
+        assertEquals("#112233", encoded.getValue("text_colors_json").jsonObject.getValue("TEAM_NAME").toString().trim('"'))
     }
 
     @Test
@@ -242,6 +262,13 @@ class SupabaseCustomDesignTemplateCloudDataSourceTest {
         },
         rowsJson = buildJsonObject {
             (1..12).forEach { put(it.toString(), it * 100) }
+        },
+        textColorsJson = buildJsonObject {
+            put("TEAM_NAME", "#112233")
+            put("WIN", "#223344")
+            put("TOTAL_KILLS", "#334455")
+            put("POSITION_POINTS", "#445566")
+            put("TOTAL_POINTS", "#556677")
         },
     )
 }

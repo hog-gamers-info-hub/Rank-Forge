@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
@@ -36,6 +37,7 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
         String,
         List<ResultExportRow>,
         CustomDesignEffectiveGridGeometry,
+        CustomDesignColumnTextColors,
     ) -> CustomDesignBitmapComposeResult,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
 ) : CustomDesignResultDownloadCoordinator {
@@ -109,7 +111,12 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
             -> return null
         }
         val bitmap = when (
-            val result = composeBitmap(design.localImageReference, rows, design.geometry)
+            val result = composeBitmap(
+                design.localImageReference,
+                rows,
+                design.geometry,
+                design.textColors,
+            )
         ) {
             is CustomDesignBitmapComposeResult.Success -> result.bitmap
             is CustomDesignBitmapComposeResult.Failure -> return null

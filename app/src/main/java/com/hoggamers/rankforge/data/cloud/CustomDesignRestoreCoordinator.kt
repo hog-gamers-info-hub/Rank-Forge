@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreservationResult
@@ -28,6 +29,7 @@ data class VerifiedCustomDesignTemplate(
     val sourceHeight: Int,
     val labels: CustomDesignOcrLabels,
     val geometry: CustomDesignEffectiveGridGeometry,
+    val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
 )
 
 enum class CustomDesignRestoreFailure {
@@ -54,6 +56,7 @@ data class RestoredCustomDesign(
     val sourceHeight: Int,
     val labels: CustomDesignOcrLabels,
     val geometry: CustomDesignEffectiveGridGeometry,
+    val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
 )
 
 fun interface CustomDesignRestoreAction {
@@ -161,6 +164,7 @@ class CustomDesignRestoreCoordinator internal constructor(
                     sourceHeight = verified.sourceHeight,
                     labels = verified.labels,
                     geometry = verified.geometry,
+                    textColors = verified.textColors,
                 ),
             )
         } catch (cancellation: CancellationException) {
@@ -204,6 +208,12 @@ internal object CustomDesignTemplateValidator {
                 payload.imageExtension,
             )
         ) return null
+
+        val textColors = if (payload.textColorsJson == null) {
+            CustomDesignColumnTextColors.allBlack()
+        } else {
+            parseTextColors(payload.textColorsJson) ?: return null
+        }
 
         val labels = labelKeys.associateWith { key ->
             (payload.labelsJson[key] as? JsonPrimitive)
@@ -252,7 +262,21 @@ internal object CustomDesignTemplateValidator {
                 columnX = columns,
                 rowY = rows,
             ),
+            textColors = textColors,
         )
+    }
+
+    private fun parseTextColors(
+        json: kotlinx.serialization.json.JsonObject,
+    ): CustomDesignColumnTextColors? {
+        if (json.keys != columnKeys) return null
+        val values = linkedMapOf<CustomDesignAnchorField, String>()
+        for (field in CustomDesignAnchorField.entries) {
+            val value = json[field.name] as? JsonPrimitive
+            if (value == null || !value.isString) return null
+            values[field] = value.content
+        }
+        return CustomDesignColumnTextColors.fromMap(values)
     }
 
     private fun kotlinx.serialization.json.JsonElement.finiteNumber(): Double? =

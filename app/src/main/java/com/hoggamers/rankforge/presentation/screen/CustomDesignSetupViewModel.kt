@@ -17,6 +17,7 @@ import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetectionResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
@@ -134,6 +135,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 editable = state.editableGridGeometry,
                 overrides = state.manualGridOverrides,
             ),
+            textColors = state.textColors,
         )
         val generation = ++saveGeneration
         _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.SAVING) }
@@ -206,6 +208,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                             totalKillsLabel = design.labels.totalKills,
                             positionPointsLabel = design.labels.positionPoints,
                             totalPointsLabel = design.labels.totalPoints,
+                            textColors = design.textColors,
                             selectedImageReference = design.localImageReference,
                             sourceImageWidth = design.sourceWidth,
                             sourceImageHeight = design.sourceHeight,
@@ -281,6 +284,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         totalKillsLabel = "",
                         positionPointsLabel = "",
                         totalPointsLabel = "",
+                        textColors = CustomDesignColumnTextColors.allBlack(),
                         selectedImageReference = null,
                         sourceImageWidth = null,
                         sourceImageHeight = null,

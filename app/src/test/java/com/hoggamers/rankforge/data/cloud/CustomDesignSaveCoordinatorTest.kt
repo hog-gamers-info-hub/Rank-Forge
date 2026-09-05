@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import java.io.File
@@ -28,6 +29,11 @@ class CustomDesignSaveCoordinatorTest {
         assertEquals(ownerId, captured.inserted.single().userId)
         assertEquals(700.0, captured.inserted.single().columnsJson["TEAM_NAME"]?.toString()?.toDouble())
         assertEquals(200.0, captured.inserted.single().columnsJson["WIN"]?.toString()?.toDouble())
+        assertEquals(
+            setOf("TEAM_NAME", "WIN", "TOTAL_KILLS", "POSITION_POINTS", "TOTAL_POINTS"),
+            captured.inserted.single().textColorsJson?.keys,
+        )
+        assertEquals("#112233", captured.inserted.single().textColorsJson?.get("TEAM_NAME")?.toString()?.trim('"'))
     }
 
     @Test
@@ -114,6 +120,15 @@ class CustomDesignSaveCoordinatorTest {
         currentSourceHeight = 1350,
         labels = CustomDesignOcrLabels("TEAM NAME", "WIN", "ELIM.", "POS.", "TOTAL"),
         effectiveGridGeometry = validGeometry(),
+        textColors = CustomDesignColumnTextColors.fromMap(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to "#112233".lowercase(),
+                CustomDesignAnchorField.WIN to "#223344".lowercase(),
+                CustomDesignAnchorField.TOTAL_KILLS to "#334455".lowercase(),
+                CustomDesignAnchorField.POSITION_POINTS to "#445566".lowercase(),
+                CustomDesignAnchorField.TOTAL_POINTS to "#556677".lowercase(),
+            ),
+        )!!,
     )
 
     private fun validGeometry() = CustomDesignEffectiveGridGeometry(

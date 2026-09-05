@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import com.hoggamers.rankforge.domain.export.ResultExportRow
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import java.io.File
 import java.io.FileInputStream
@@ -33,6 +34,7 @@ class CustomDesignBitmapComposer(
         imageReference: String,
         rows: List<ResultExportRow>,
         geometry: CustomDesignEffectiveGridGeometry,
+        textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
     ): CustomDesignBitmapComposeResult {
         val sourceFile = validatedSourceFile(imageReference)
             ?: return CustomDesignBitmapComposeResult.Failure(
@@ -86,7 +88,7 @@ class CustomDesignBitmapComposer(
         return try {
             val canvas = Canvas(composedBitmap)
             canvas.drawBitmap(decodedSource, 0f, 0f, null)
-            when (renderer.render(canvas, rows, geometry)) {
+            when (renderer.render(canvas, rows, geometry, textColors)) {
                 CustomDesignCanvasRenderResult.Success ->
                     CustomDesignBitmapComposeResult.Success(composedBitmap)
                 is CustomDesignCanvasRenderResult.Failure -> {

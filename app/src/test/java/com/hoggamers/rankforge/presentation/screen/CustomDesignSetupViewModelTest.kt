@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorDetector
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridBuilder
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
@@ -621,6 +622,7 @@ class CustomDesignSetupViewModelTest {
         )
         assertEquals(700f, captured?.effectiveGridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
         assertEquals(410f, captured?.effectiveGridGeometry?.rowY?.get(2))
+        assertEquals(CustomDesignColumnTextColors.allBlack(), captured?.textColors)
 
         viewModel.saveNewCustomDesign()
         advanceUntilIdle()
@@ -824,6 +826,7 @@ class CustomDesignSetupViewModelTest {
         assertEquals(design.labels.totalKills, state.totalKillsLabel)
         assertEquals(design.labels.positionPoints, state.positionPointsLabel)
         assertEquals(design.labels.totalPoints, state.totalPointsLabel)
+        assertEquals(design.textColors, state.textColors)
         assertEquals(CustomDesignOcrStatus.IDLE, state.ocrStatus)
         assertEquals(null, state.ocrAnchors)
         assertEquals(null, state.gridGeometry)
@@ -999,6 +1002,15 @@ class CustomDesignSetupViewModelTest {
             ),
             rowY = (1..12).associateWith { it * 100f },
         ),
+        textColors = CustomDesignColumnTextColors.fromMap(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to "#112233",
+                CustomDesignAnchorField.WIN to "#223344",
+                CustomDesignAnchorField.TOTAL_KILLS to "#334455",
+                CustomDesignAnchorField.POSITION_POINTS to "#445566",
+                CustomDesignAnchorField.TOTAL_POINTS to "#556677",
+            ),
+        )!!,
     )
 
     private fun viewModel(

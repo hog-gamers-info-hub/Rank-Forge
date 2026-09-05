@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 
 enum class CustomDesignSaveStatus {
     IDLE,
@@ -52,6 +53,7 @@ data class CustomDesignSetupUiState(
     val totalKillsLabel: String = "",
     val positionPointsLabel: String = "",
     val totalPointsLabel: String = "",
+    val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
     val selectedImageReference: String? = null,
     val sourceImageWidth: Int? = null,
     val sourceImageHeight: Int? = null,
