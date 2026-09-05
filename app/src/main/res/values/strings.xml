@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Rank-Forge</string>
-    <string name="foundation_title">Rank-Forge</string>
+    <string name="app_name">PointIQ</string>
+    <string name="foundation_title">PointIQ</string>
     <string name="foundation_description">Android application foundation</string>
     <string name="foundation_version">Version 0.1.0</string>
     <string name="open_tournament_creation">Create tournament</string>
@@ -43,7 +43,7 @@
     <string name="auth_password_updated_message">Password updated. Sign in with your new password.</string>
     <string name="auth_login_action">Login</string>
     <string name="auth_signup_action">Sign up</string>
-    <string name="auth_brand_name">Rank-Forge</string>
+    <string name="auth_brand_name">PointIQ</string>
     <string name="auth_login_heading">Welcome back</string>
     <string name="auth_log_in_action">Log in</string>
     <string name="auth_signup_heading">Create your account</string>
@@ -492,7 +492,7 @@
     <string name="custom_design_upload_action">Upload Custom Design</string>
     <string name="match_review_download_generating">Generating result.</string>
     <string name="match_review_download_saving">Saving result.</string>
-    <string name="match_review_download_saved_to_downloads">%1$s saved to Downloads/Rank Forge.</string>
+    <string name="match_review_download_saved_to_downloads">%1$s saved to Downloads/PointIQ.</string>
     <string name="match_review_download_saved_successfully">%1$s saved successfully.</string>
     <string name="match_review_download_generation_failed">Unable to generate result.</string>
     <string name="match_review_download_save_failed">Unable to save result.</string>
