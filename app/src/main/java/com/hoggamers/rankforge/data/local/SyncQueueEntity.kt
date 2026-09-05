@@ -47,4 +47,7 @@ interface SyncQueueDao {
     suspend fun deleteByTournamentId(tournamentId: String)
     @androidx.room.Query("DELETE FROM sync_queue_entries WHERE tournamentId = :tournamentId AND owner_user_id = :ownerUserId")
     suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String)
+
+    @androidx.room.Query("DELETE FROM sync_queue_entries WHERE owner_user_id = :ownerUserId")
+    suspend fun deleteByOwner(ownerUserId: String)
 }

@@ -81,6 +81,9 @@ interface DeletionIntentDao {
         ownerUserId: String,
     ): Boolean
 
+    @Query("DELETE FROM deletion_intents WHERE owner_user_id = :ownerUserId")
+    suspend fun deleteByOwner(ownerUserId: String)
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM deletion_intents " +
             "WHERE target_type = 'TOURNAMENT' AND target_id = :tournamentId " +

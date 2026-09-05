@@ -13,6 +13,9 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionMarker
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
@@ -68,6 +71,7 @@ class AuthViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FakeAuthRepository
     private lateinit var accountDeletionRepository: FakeAccountDeletionRepository
+    private lateinit var accountDeletionLocalCleanupRepository: FakeAccountDeletionLocalCleanupRepository
     private var recoveryCalls = 0
     private var foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
 
@@ -76,6 +80,7 @@ class AuthViewModelTest {
         Dispatchers.setMain(dispatcher)
         repository = FakeAuthRepository()
         accountDeletionRepository = FakeAccountDeletionRepository()
+        accountDeletionLocalCleanupRepository = FakeAccountDeletionLocalCleanupRepository()
         recoveryCalls = 0
         foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
     }
@@ -605,16 +610,11 @@ class AuthViewModelTest {
         accountDeletionRepository.gate?.complete(Unit)
         advanceUntilIdle()
 
-        assertEquals(
-            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
-            viewModel.uiState.value.accountDeletionState,
-        )
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isSignedIn)
         repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
         runCurrent()
-        assertEquals(
-            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
-            viewModel.uiState.value.accountDeletionState,
-        )
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
     }
 
     @Test
@@ -640,10 +640,66 @@ class AuthViewModelTest {
         viewModel.deleteAccount()
         advanceUntilIdle()
         assertEquals(
-            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+            AccountDeletionUiState.IDLE,
             viewModel.uiState.value.accountDeletionState,
         )
+        assertFalse(viewModel.uiState.value.isSignedIn)
         assertEquals(2, accountDeletionRepository.calls)
+    }
+
+    @Test
+    fun accountDeletionCleansLocalOwnerDataBeforeClearingSession() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(listOf("owner-a"), accountDeletionLocalCleanupRepository.purgeOwners)
+        assertEquals(1, repository.clearLocalSessionCalls)
+        assertEquals(null, accountDeletionLocalCleanupRepository.marker)
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun failedLocalAccountCleanupRetainsRemoteConfirmedMarkerAndSession() = runTest {
+        accountDeletionLocalCleanupRepository.purgeResult = AccountDeletionLocalCleanupResult.Failed
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(
+            com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.REMOTE_CONFIRMED,
+            accountDeletionLocalCleanupRepository.marker?.phase,
+        )
+        assertEquals(AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP, viewModel.uiState.value.accountDeletionState)
+        assertEquals(0, repository.clearLocalSessionCalls)
+    }
+
+    @Test
+    fun remoteConfirmedMarkerRecoversLocallyWithoutAnotherRemoteRequest() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.REMOTE_CONFIRMED,
+            updatedAtEpochMillis = 1L,
+        )
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(0, accountDeletionRepository.calls)
+        assertEquals(listOf("owner-a"), accountDeletionLocalCleanupRepository.purgeOwners)
+        assertEquals(1, repository.clearLocalSessionCalls)
+        assertEquals(null, accountDeletionLocalCleanupRepository.marker)
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
     @Test
@@ -1003,6 +1059,7 @@ class AuthViewModelTest {
             recoverPendingLocalDeletionCleanup = pendingCleanup,
             reconcileLegacyTournamentOwnership = reconciliation,
             accountDeletionRepository = accountDeletionRepository,
+            accountDeletionLocalCleanupRepository = accountDeletionLocalCleanupRepository,
             savedStateHandle = savedStateHandle,
         )
 
@@ -1146,6 +1203,7 @@ class AuthViewModelTest {
         var passwordUpdateCalls: Int = 0
         var updatedPassword: String? = null
         var logoutCalls: Int = 0
+        var clearLocalSessionCalls: Int = 0
         var logoutResult: AuthOperationResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignedOutLocally,
         )
@@ -1207,6 +1265,11 @@ class AuthViewModelTest {
             }
             return logoutResult
         }
+
+        override suspend fun clearLocalSession() {
+            clearLocalSessionCalls += 1
+            authState.value = AuthState.SignedOut
+        }
     }
 
     private class FakeAccountDeletionRepository : AccountDeletionRepository {
@@ -1218,6 +1281,35 @@ class AuthViewModelTest {
             calls += 1
             gate?.await()
             return result
+        }
+    }
+
+    private class FakeAccountDeletionLocalCleanupRepository : AccountDeletionLocalCleanupRepository {
+        var marker: AccountDeletionMarker? = null
+        var purgeResult: AccountDeletionLocalCleanupResult = AccountDeletionLocalCleanupResult.Completed
+        var purgeOwners = mutableListOf<String>()
+
+        override suspend fun readMarker(): AccountDeletionMarker? = marker
+
+        override suspend fun markRemoteRequested(ownerUserId: String) {
+            marker = AccountDeletionMarker(ownerUserId, com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.REMOTE_REQUESTED, 1L)
+        }
+
+        override suspend fun markRemoteConfirmed(ownerUserId: String) {
+            marker = AccountDeletionMarker(ownerUserId, com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.REMOTE_CONFIRMED, 2L)
+        }
+
+        override suspend fun purgeLocalDataForOwner(ownerUserId: String): AccountDeletionLocalCleanupResult {
+            purgeOwners += ownerUserId
+            return purgeResult
+        }
+
+        override suspend fun markLocalCleanupComplete(ownerUserId: String) {
+            marker = AccountDeletionMarker(ownerUserId, com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.LOCAL_CLEANUP_COMPLETE, 3L)
+        }
+
+        override suspend fun clearMarker(ownerUserId: String) {
+            if (marker?.ownerUserId == ownerUserId) marker = null
         }
     }
 }

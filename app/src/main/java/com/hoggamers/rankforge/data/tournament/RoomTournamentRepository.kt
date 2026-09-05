@@ -55,6 +55,10 @@ import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionMarker
+import com.hoggamers.rankforge.domain.auth.AccountDeletionPhase
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
@@ -94,7 +98,7 @@ class RoomTournamentRepository @Inject constructor(
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
-    LocalDeletionRepository {
+    LocalDeletionRepository, AccountDeletionLocalCleanupRepository {
     constructor(database: RankForgeDatabase) : this(
         database = database,
         localImagePreserver = LocalImagePreserver(
@@ -646,6 +650,118 @@ class RoomTournamentRepository @Inject constructor(
             }
                 .also { result -> if (result == LocalDeletionResult.Deleted) state.value = next }
         }
+    }
+
+    override suspend fun readMarker(): AccountDeletionMarker? =
+        database.accountDeletionMarkerDao().readLatest()?.toDomain()
+
+    override suspend fun markRemoteRequested(ownerUserId: String) {
+        saveAccountDeletionMarker(ownerUserId, AccountDeletionPhase.REMOTE_REQUESTED)
+    }
+
+    override suspend fun markRemoteConfirmed(ownerUserId: String) {
+        saveAccountDeletionMarker(ownerUserId, AccountDeletionPhase.REMOTE_CONFIRMED)
+    }
+
+    override suspend fun purgeLocalDataForOwner(
+        ownerUserId: String,
+    ): AccountDeletionLocalCleanupResult {
+        require(ownerUserId.isNotBlank())
+        awaitState()
+        return writeMutex.withLock {
+            val tournaments = database.tournamentDao().observeAllByOwner(ownerUserId).first()
+            val cleanupPlans = tournaments.map { tournament ->
+                val templates = database.tournamentLobbyTemplateAssetDao()
+                    .readByTournamentId(tournament.id)
+                AccountDeletionTournamentCleanupPlan(
+                    tournamentId = tournament.id,
+                    matchIds = database.matchDao().observeByTournamentId(tournament.id)
+                        .first()
+                        .map { it.id },
+                    templateGenerations = templates.mapNotNull { asset ->
+                        localImagePreserver.lobbyTemplateGenerationFromRelativePath(
+                            tournamentId = tournament.id,
+                            relativePath = asset.localRelativePath,
+                        )
+                    }.toSet(),
+                    referencedRelativePaths = buildList {
+                        database.rosterScreenshotMetadataDao()
+                            .readByTournamentId(tournament.id)
+                            .forEach { add(it.localRelativePath) }
+                        database.screenshotMetadataDao()
+                            .observeByTournamentId(tournament.id)
+                            .first()
+                            .forEach { add(it.localRelativePath) }
+                        database.matchResultScreenshotAssetDao()
+                            .readByTournamentId(tournament.id)
+                            .forEach { add(it.localRelativePath) }
+                        database.matchLobbyScreenshotAssetDao()
+                            .readByTournamentId(tournament.id)
+                            .forEach { add(it.localRelativePath) }
+                        templates.forEach { add(it.localRelativePath) }
+                    },
+                )
+            }
+
+            for (plan in cleanupPlans) {
+                if (localImagePreserver.cleanupTournamentAssets(
+                        tournamentId = plan.tournamentId,
+                        matchIds = plan.matchIds,
+                        templateGenerations = plan.templateGenerations,
+                        referencedRelativePaths = plan.referencedRelativePaths,
+                    ) != LocalImageCleanupResult.Cleaned
+                ) {
+                    return@withLock AccountDeletionLocalCleanupResult.Failed
+                }
+            }
+            if (localImagePreserver.cleanupCustomDesignsForOwner(ownerUserId) != LocalImageCleanupResult.Cleaned) {
+                return@withLock AccountDeletionLocalCleanupResult.Failed
+            }
+
+            val ownedTournamentIds = cleanupPlans.map { it.tournamentId }.toSet()
+            val next = state.value.copy(
+                tournaments = state.value.tournaments.filterNot { it.id in ownedTournamentIds },
+                slots = state.value.slots - ownedTournamentIds,
+                rosters = state.value.rosters.filterKeys { it.tournamentId !in ownedTournamentIds },
+                matches = state.value.matches - ownedTournamentIds,
+                draftValues = state.value.draftValues.filterKeys {
+                    it.tournamentId !in ownedTournamentIds
+                },
+            )
+            database.withTransaction {
+                ownedTournamentIds.forEach { tournamentId ->
+                    database.syncRevisionDao().deleteByTournamentId(tournamentId)
+                    database.tournamentDao().deleteById(tournamentId)
+                }
+                database.syncQueueDao().deleteByOwner(ownerUserId)
+                database.deletionIntentDao().deleteByOwner(ownerUserId)
+                saveLegacyState(next)
+            }
+            state.value = next
+            AccountDeletionLocalCleanupResult.Completed
+        }
+    }
+
+    override suspend fun markLocalCleanupComplete(ownerUserId: String) {
+        saveAccountDeletionMarker(ownerUserId, AccountDeletionPhase.LOCAL_CLEANUP_COMPLETE)
+    }
+
+    override suspend fun clearMarker(ownerUserId: String) {
+        database.accountDeletionMarkerDao().deleteByOwner(ownerUserId)
+    }
+
+    private suspend fun saveAccountDeletionMarker(
+        ownerUserId: String,
+        phase: AccountDeletionPhase,
+    ) {
+        require(ownerUserId.isNotBlank())
+        database.accountDeletionMarkerDao().upsert(
+            com.hoggamers.rankforge.data.local.AccountDeletionMarkerEntity(
+                ownerUserId = ownerUserId,
+                phase = phase.name,
+                updatedAtEpochMillis = clock.millis(),
+            ),
+        )
     }
 
     override suspend fun restore(snapshot: TournamentCloudRestorationSnapshot) {
@@ -2675,6 +2791,20 @@ private fun buildLegacyParticipantResults(
         }
     }
 }
+
+private data class AccountDeletionTournamentCleanupPlan(
+    val tournamentId: String,
+    val matchIds: List<String>,
+    val templateGenerations: Set<String>,
+    val referencedRelativePaths: List<String>,
+)
+
+private fun com.hoggamers.rankforge.data.local.AccountDeletionMarkerEntity.toDomain() =
+    AccountDeletionMarker(
+        ownerUserId = ownerUserId,
+        phase = AccountDeletionPhase.valueOf(phase),
+        updatedAtEpochMillis = updatedAtEpochMillis,
+    )
 
 @Serializable
 private data class PersistedState(

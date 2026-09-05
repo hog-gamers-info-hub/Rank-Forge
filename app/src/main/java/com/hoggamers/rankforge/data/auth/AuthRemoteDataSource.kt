@@ -27,4 +27,6 @@ interface AuthRemoteDataSource {
     suspend fun signInWithGoogle()
 
     suspend fun logout(): AuthLogoutResult
+
+    suspend fun clearLocalSession()
 }

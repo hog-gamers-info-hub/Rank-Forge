@@ -125,5 +125,7 @@ class SupabaseAuthRepositoryTest {
         }
 
         override suspend fun logout(): AuthLogoutResult = AuthLogoutResult.LocalSessionCleared
+
+        override suspend fun clearLocalSession() = Unit
     }
 }

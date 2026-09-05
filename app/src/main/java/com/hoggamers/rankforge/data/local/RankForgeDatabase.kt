@@ -51,8 +51,9 @@ interface RankForgeStateDao {
         MatchOcrRowEvidenceEntity::class,
         MatchOcrCorrectionSnapshotEntity::class,
         MatchCalculatedEvidenceEntity::class,
+        AccountDeletionMarkerEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -78,6 +79,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun rosterScreenshotMetadataDao(): RosterScreenshotMetadataDao
     abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
     abstract fun matchCalculatedEvidenceDao(): MatchCalculatedEvidenceDao
+    abstract fun accountDeletionMarkerDao(): AccountDeletionMarkerDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -686,6 +688,21 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_match_calculated_evidence_owner_user_id` " +
                         "ON `match_calculated_evidence` (`owner_user_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `account_deletion_markers` (
+                        `owner_user_id` TEXT NOT NULL,
+                        `phase` TEXT NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`owner_user_id`)
+                    )
+                    """.trimIndent(),
                 )
             }
         }

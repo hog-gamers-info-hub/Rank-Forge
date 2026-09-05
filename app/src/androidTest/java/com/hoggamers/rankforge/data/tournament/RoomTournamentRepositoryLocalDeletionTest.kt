@@ -8,10 +8,13 @@ import com.hoggamers.rankforge.data.local.MatchKillEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.DeletionIntentEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
 import com.hoggamers.rankforge.data.local.SyncQueueEntity
 import com.hoggamers.rankforge.data.local.SyncRevisionEntity
 import com.hoggamers.rankforge.data.local.TournamentEntity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionPhase
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
@@ -51,6 +54,187 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryLocalDeletionTest {
+    @Test
+    fun accountCleanupRemovesOnlyOwnerDataAndPreservesUnownedAndForeignData() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "account-owner-cleanup-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "account-owner-cleanup-${UUID.randomUUID()}")
+        val downloads = File(root.parentFile, "Downloads/PointIQ")
+        val database = database(context, databaseName)
+        val ownerA = "a0000000-0000-0000-0000-000000000001"
+        val ownerB = "b0000000-0000-0000-0000-000000000001"
+        val designA = "a1000000-0000-0000-0000-000000000001"
+        try {
+            val preserver = preserver(root)
+            val repository = repository(database, preserver)
+            val owned = tournament("account-owned").copy(ownerUserId = ownerA)
+            val foreign = tournament("account-foreign").copy(ownerUserId = ownerB)
+            val ownerless = tournament("account-ownerless").copy(ownerUserId = null)
+            repository.create(owned)
+            repository.create(foreign)
+            repository.create(ownerless)
+            val ownedMatch = Match(
+                id = "account-owned-match",
+                tournamentId = owned.id,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 8, 21),
+                mapName = "Alpine",
+                status = MatchStatus.DRAFT,
+            )
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(ownedMatch))
+            database.screenshotMetadataDao().upsert(
+                ScreenshotMetadataEntity(
+                    matchId = ownedMatch.id,
+                    tournamentId = owned.id,
+                    ownerUserId = ownerA,
+                    localRelativePath = preserver.relativePath(owned.id, ownedMatch.id, "png"),
+                    fileExtension = "png",
+                    mimeType = "image/png",
+                    width = 100,
+                    height = 100,
+                    byteSize = 4,
+                    sha256 = "a".repeat(64),
+                    storageBucket = null,
+                    storageObjectPath = null,
+                    localStatus = "PRESERVED",
+                    uploadStatus = "PENDING",
+                    uploadFailureCode = null,
+                    createdAt = 1,
+                    updatedAt = 1,
+                    preservedAt = 1,
+                    uploadedAt = null,
+                    revision = 1,
+                ),
+            )
+            database.syncQueueDao().insert(queueEntry("account-owner-queue", owned.id).copy(ownerUserId = ownerA))
+            database.syncQueueDao().insert(queueEntry("account-foreign-queue", foreign.id).copy(ownerUserId = ownerB))
+            database.syncQueueDao().insert(
+                queueEntry("account-ownerless-queue", "ownerless").copy(
+                    tournamentId = null,
+                    ownerUserId = null,
+                ),
+            )
+            database.deletionIntentDao().insertIfAbsent(
+                DeletionIntentEntity(
+                    targetType = DeletionTargetType.TOURNAMENT.name,
+                    targetId = owned.id,
+                    tournamentId = owned.id,
+                    ownerUserId = ownerA,
+                    phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING.name,
+                    updatedAtEpochMillis = 1,
+                ),
+            )
+
+            val ownedFiles = matchFiles(preserver, owned.id, ownedMatch.id)
+            ownedFiles.forEach(::writeFile)
+            val customDesignFile = preserver.customDesignPreservedFile(ownerA, designA, "png")
+            writeFile(customDesignFile)
+            val missingCustomDesignFile = preserver.customDesignPreservedFile(
+                ownerA,
+                "a1000000-0000-0000-0000-000000000002",
+                "png",
+            )
+            missingCustomDesignFile.parentFile?.mkdirs()
+            val foreignCustomDesignFile = preserver.customDesignPreservedFile(ownerB, designA, "png")
+            writeFile(foreignCustomDesignFile)
+            val downloadsFile = File(downloads, "keep.txt")
+            writeFile(downloadsFile)
+
+            repository.markRemoteConfirmed(ownerA)
+            assertEquals(AccountDeletionLocalCleanupResult.Completed, repository.purgeLocalDataForOwner(ownerA))
+
+            assertTrue(database.tournamentDao().observeById(owned.id).first() == null)
+            assertTrue(database.matchDao().observeById(ownedMatch.id).first() == null)
+            assertTrue(database.screenshotMetadataDao().readByMatchId(ownedMatch.id) == null)
+            assertTrue(database.syncQueueDao().observeAll().first().none { it.ownerUserId == ownerA })
+            assertTrue(database.deletionIntentDao().findByTargetAndOwner(
+                DeletionTargetType.TOURNAMENT.name,
+                owned.id,
+                ownerA,
+            ) == null)
+            assertTrue(ownedFiles.none { it.exists() })
+            assertFalse(customDesignFile.exists())
+            assertFalse(missingCustomDesignFile.parentFile?.exists() == true)
+            assertTrue(database.tournamentDao().observeById(foreign.id).first() != null)
+            assertTrue(database.tournamentDao().observeById(ownerless.id).first() != null)
+            assertTrue(database.syncQueueDao().observeAll().first().any { it.id == "account-foreign-queue" })
+            assertTrue(database.syncQueueDao().observeAll().first().any { it.id == "account-ownerless-queue" })
+            assertTrue(foreignCustomDesignFile.exists())
+            assertTrue(downloadsFile.exists())
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+            downloads.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun remoteConfirmedMarkerSurvivesRecreationAndRepeatedCleanupIsIdempotent() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "account-recovery-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "account-recovery-${UUID.randomUUID()}")
+        val ownerA = "a0000000-0000-0000-0000-000000000001"
+        val database = database(context, databaseName)
+        try {
+            val preserver = preserver(root)
+            val repository = repository(database, preserver)
+            val owned = tournament("account-recovery-owned").copy(ownerUserId = ownerA)
+            repository.create(owned)
+            writeFile(preserver.customDesignPreservedFile(
+                ownerA,
+                "a1000000-0000-0000-0000-000000000001",
+                "jpg",
+            ))
+            repository.markRemoteConfirmed(ownerA)
+            database.close()
+
+            val reopenedDatabase = database(context, databaseName)
+            try {
+                val recoveredRepository = repository(reopenedDatabase, preserver)
+                assertEquals(AccountDeletionPhase.REMOTE_CONFIRMED, recoveredRepository.readMarker()?.phase)
+                assertEquals(AccountDeletionLocalCleanupResult.Completed, recoveredRepository.purgeLocalDataForOwner(ownerA))
+                assertEquals(AccountDeletionLocalCleanupResult.Completed, recoveredRepository.purgeLocalDataForOwner(ownerA))
+                assertTrue(reopenedDatabase.tournamentDao().observeById(owned.id).first() == null)
+            } finally {
+                reopenedDatabase.close()
+            }
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun failedAccountCleanupRetainsOwnerDataForRetry() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "account-cleanup-failure-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "account-cleanup-failure-${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        val ownerA = "a0000000-0000-0000-0000-000000000001"
+        try {
+            val preserver = preserver(root)
+            val repository = repository(database, preserver)
+            val owned = tournament("account-cleanup-failure").copy(ownerUserId = ownerA)
+            repository.create(owned)
+            val unknownFile = File(
+                root,
+                "custom-designs/users/$ownerA/a1000000-0000-0000-0000-000000000001/keep.txt",
+            )
+            writeFile(unknownFile)
+            repository.markRemoteConfirmed(ownerA)
+
+            assertEquals(AccountDeletionLocalCleanupResult.Failed, repository.purgeLocalDataForOwner(ownerA))
+            assertEquals(AccountDeletionPhase.REMOTE_CONFIRMED, repository.readMarker()?.phase)
+            assertTrue(database.tournamentDao().observeById(owned.id).first() != null)
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
     @Test
     fun deletingMatchWithoutLocalAssetsDoesNotBlockRoomDeletion() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()

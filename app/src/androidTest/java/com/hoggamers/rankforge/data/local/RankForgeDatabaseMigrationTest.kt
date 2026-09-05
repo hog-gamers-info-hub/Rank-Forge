@@ -338,6 +338,86 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion20AddsAccountDeletionMarkersWithoutDroppingExistingRoomData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 20).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, date, organizer_name, organizer_contact_number, status, creation_order, owner_user_id) " +
+                    "VALUES ('tournament-v20', 'Pre-21 Cup', '2026-09-04', 'Organizer', '123', " +
+                    "'CONFIRMED', 1, 'owner-v20')",
+            )
+            database.execSQL(
+                "INSERT INTO matches (id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('match-v20', 'tournament-v20', 1, '2026-09-04', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO sync_queue_entries " +
+                    "(id, operationType, tournamentId, createdAtEpochMillis, status, failureCategory, attemptCount, owner_user_id) " +
+                    "VALUES ('queue-v20', 'DRAFT_MATCH_SYNC', 'tournament-v20', 1, " +
+                    "'PENDING', NULL, 0, 'owner-v20')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            21,
+            true,
+            RankForgeDatabase.MIGRATION_20_21,
+        )
+
+        assertTrue(migrated.hasTable("account_deletion_markers"))
+        migrated.query("PRAGMA table_info(account_deletion_markers)").use { cursor ->
+            val columns = buildMap {
+                while (cursor.moveToNext()) {
+                    put(
+                        cursor.getString(cursor.getColumnIndexOrThrow("name")),
+                        Triple(
+                            cursor.getString(cursor.getColumnIndexOrThrow("type")),
+                            cursor.getInt(cursor.getColumnIndexOrThrow("notnull")),
+                            cursor.getInt(cursor.getColumnIndexOrThrow("pk")),
+                        ),
+                    )
+                }
+            }
+            assertEquals(
+                mapOf(
+                    "owner_user_id" to Triple("TEXT", 1, 1),
+                    "phase" to Triple("TEXT", 1, 0),
+                    "updated_at" to Triple("INTEGER", 1, 0),
+                ),
+                columns,
+            )
+        }
+        migrated.execSQL(
+            "INSERT INTO account_deletion_markers (owner_user_id, phase, updated_at) " +
+                "VALUES ('owner-v20', 'REMOTE_CONFIRMED', 1800000000000)",
+        )
+        migrated.query(
+            "SELECT owner_user_id, phase, updated_at FROM account_deletion_markers " +
+                "WHERE owner_user_id = 'owner-v20'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("owner-v20", cursor.getString(0))
+            assertEquals("REMOTE_CONFIRMED", cursor.getString(1))
+            assertEquals(1_800_000_000_000L, cursor.getLong(2))
+        }
+        migrated.query(
+            "SELECT owner_user_id FROM tournaments WHERE id = 'tournament-v20'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("owner-v20", cursor.getString(0))
+        }
+        migrated.query("SELECT id FROM matches WHERE id = 'match-v20'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        migrated.query("SELECT owner_user_id FROM sync_queue_entries WHERE id = 'queue-v20'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("owner-v20", cursor.getString(0))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun migrationFromVersion2AddsMatchResultTablesWithoutDroppingExistingMatch() {
         createVersion2Database().use { database ->
             database.execSQL(

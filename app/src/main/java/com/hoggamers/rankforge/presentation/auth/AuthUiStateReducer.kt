@@ -18,6 +18,7 @@ object AuthUiStateReducer {
             is AuthRestorationResult.Restored -> if (currentState.isPasswordRecoveryActive) {
                 currentState.copy(
                     accountEmail = null,
+                    accountUserId = null,
                     isSessionLoading = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = false,
@@ -27,6 +28,7 @@ object AuthUiStateReducer {
             } else {
                 currentState.copy(
                     accountEmail = result.user.email,
+                    accountUserId = result.user.id,
                     isSessionLoading = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = true,
@@ -37,6 +39,7 @@ object AuthUiStateReducer {
             AuthRestorationResult.NoSavedSession -> signedOut(currentState)
             is AuthRestorationResult.ExpiredOrInvalid -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = null,
@@ -46,6 +49,7 @@ object AuthUiStateReducer {
             )
             is AuthRestorationResult.TemporaryFailure -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = AuthUiMessage.RestorationWarning(
@@ -55,6 +59,7 @@ object AuthUiStateReducer {
             )
             is AuthRestorationResult.Failure -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = null,
@@ -81,6 +86,7 @@ object AuthUiStateReducer {
             is AuthState.SignedIn -> if (currentState.isPasswordRecoveryActive) {
                 currentState.copy(
                     accountEmail = null,
+                    accountUserId = null,
                     isSessionLoading = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = false,
@@ -90,6 +96,7 @@ object AuthUiStateReducer {
             } else {
                 currentState.copy(
                     accountEmail = authState.user.email,
+                    accountUserId = authState.user.id,
                     isSessionLoading = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = true,
@@ -99,6 +106,7 @@ object AuthUiStateReducer {
             }
             is AuthState.RestorationWarning -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = AuthUiMessage.RestorationWarning(authState.failure.category),
@@ -106,6 +114,7 @@ object AuthUiStateReducer {
             )
             is AuthState.SessionExpired -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = null,
@@ -113,6 +122,7 @@ object AuthUiStateReducer {
             )
             is AuthState.Error -> currentState.copy(
                 accountEmail = null,
+                accountUserId = null,
                 isSessionLoading = false,
                 isSignedIn = false,
                 warningMessage = null,
@@ -139,6 +149,15 @@ object AuthUiStateReducer {
             errorMessage = null,
         )
 
+    fun completeLocalAccountDeletion(currentState: AuthUiState): AuthUiState =
+        signedOut(
+            currentState.copy(
+                accountDeletionState = AccountDeletionUiState.IDLE,
+                isSubmitting = false,
+                statusMessage = null,
+            ),
+        )
+
     fun restoreAccountDeletionAfterProcessDeath(currentState: AuthUiState): AuthUiState =
         currentState.copy(
             accountDeletionState = AccountDeletionUiState.RECOVERY_REQUIRED,
@@ -146,6 +165,7 @@ object AuthUiStateReducer {
             isSignedIn = false,
             isSubmitting = false,
             accountEmail = null,
+            accountUserId = null,
             statusMessage = null,
             warningMessage = null,
             errorMessage = null,
@@ -174,6 +194,7 @@ object AuthUiStateReducer {
     fun failExternalAuthCallback(currentState: AuthUiState): AuthUiState =
         currentState.copy(
             accountEmail = null,
+            accountUserId = null,
             isSessionLoading = false,
             isExternalAuthCallbackProcessing = false,
             isSignedIn = false,
@@ -294,6 +315,7 @@ object AuthUiStateReducer {
             AuthSuccessOutcome.EmailConfirmationRequired -> currentState.copy(
                 isSubmitting = false,
                 accountEmail = null,
+                accountUserId = null,
                 isSignedIn = false,
                 statusMessage = AuthUiMessage.SignUpConfirmationRequired,
                 warningMessage = null,
@@ -302,6 +324,7 @@ object AuthUiStateReducer {
             AuthSuccessOutcome.PasswordResetEmailRequested -> currentState.copy(
                 passwordRecoveryStage = PasswordRecoveryStage.EMAIL_SENT,
                 accountEmail = null,
+                accountUserId = null,
                 isSubmitting = false,
                 isSignedIn = false,
                 statusMessage = null,
@@ -329,6 +352,7 @@ object AuthUiStateReducer {
 
     private fun signedOut(currentState: AuthUiState): AuthUiState = currentState.copy(
         accountEmail = null,
+        accountUserId = null,
         isSessionLoading = false,
         isSignedIn = false,
         warningMessage = null,

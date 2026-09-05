@@ -18,6 +18,10 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
+import com.hoggamers.rankforge.domain.auth.AccountDeletionPhase
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
 import com.hoggamers.rankforge.domain.tournament.ReconcileLegacyTournamentOwnershipUseCase
@@ -45,6 +49,7 @@ class AuthViewModel @Inject constructor(
     private val recoverPendingLocalDeletionCleanup: RecoverPendingLocalDeletionCleanupUseCase,
     private val reconcileLegacyTournamentOwnership: ReconcileLegacyTournamentOwnershipUseCase,
     private val accountDeletionRepository: AccountDeletionRepository,
+    private val accountDeletionLocalCleanupRepository: AccountDeletionLocalCleanupRepository,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
@@ -62,6 +67,7 @@ class AuthViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            val deletionRecovery = recoverAccountDeletionBeforeSessionRestore()
             val restoration = try {
                 restoreSession()
             } catch (cancellation: CancellationException) {
@@ -71,11 +77,15 @@ class AuthViewModel @Inject constructor(
                     AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
                 )
             }
-            _uiState.update { currentState ->
-                AuthUiStateReducer.reduceRestoration(currentState, restoration)
+            if (deletionRecovery != AccountDeletionRecovery.COMPLETED) {
+                _uiState.update { currentState ->
+                    AuthUiStateReducer.reduceRestoration(currentState, restoration)
+                }
             }
 
-            if (restoration is AuthRestorationResult.Restored) {
+            if (deletionRecovery == AccountDeletionRecovery.NONE &&
+                restoration is AuthRestorationResult.Restored
+            ) {
                 try {
                     recoverForegroundSyncQueue.recoverAfterAuthenticatedSession()
                 } catch (cancellation: CancellationException) {
@@ -351,8 +361,31 @@ class AuthViewModel @Inject constructor(
         ) {
             return
         }
+        val ownerUserId = currentState.accountUserId
+        if (ownerUserId.isNullOrBlank()) {
+            _uiState.update {
+                AuthUiStateReducer.failAccountDeletion(
+                    it,
+                    AccountDeletionFailureCategory.NO_SESSION,
+                )
+            }
+            return
+        }
 
         viewModelScope.launch {
+            try {
+                accountDeletionLocalCleanupRepository.markRemoteRequested(ownerUserId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                _uiState.update {
+                    AuthUiStateReducer.failAccountDeletion(
+                        it,
+                        AccountDeletionFailureCategory.UNKNOWN,
+                    )
+                }
+                return@launch
+            }
             savedStateHandle[ACCOUNT_DELETION_STATE_KEY] = AccountDeletionUiState.DELETING.name
             _uiState.update(AuthUiStateReducer::beginAccountDeletion)
             val result = try {
@@ -364,15 +397,16 @@ class AuthViewModel @Inject constructor(
                     com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory.UNKNOWN,
                 )
             }
-            _uiState.update { state ->
-                when (result) {
-                    AccountDeletionResult.Success -> {
-                        savedStateHandle[ACCOUNT_DELETION_STATE_KEY] =
-                            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP.name
-                        AuthUiStateReducer.completeAccountDeletion(state)
+            when (result) {
+                AccountDeletionResult.Success -> {
+                    completeRemoteDeletion(ownerUserId, _uiState.value)
+                }
+                is AccountDeletionResult.Failure -> {
+                    runCatching {
+                        accountDeletionLocalCleanupRepository.clearMarker(ownerUserId)
                     }
-                    is AccountDeletionResult.Failure -> {
-                        savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+                    savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+                    _uiState.update { state ->
                         AuthUiStateReducer.failAccountDeletion(state, result.category)
                     }
                 }
@@ -395,5 +429,83 @@ class AuthViewModel @Inject constructor(
 
     private companion object {
         const val ACCOUNT_DELETION_STATE_KEY = "account_deletion_state"
+    }
+
+    private suspend fun completeRemoteDeletion(
+        ownerUserId: String,
+        currentState: AuthUiState,
+    ): AuthUiState {
+        accountDeletionLocalCleanupRepository.markRemoteConfirmed(ownerUserId)
+        savedStateHandle[ACCOUNT_DELETION_STATE_KEY] =
+            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP.name
+        val pendingState = AuthUiStateReducer.completeAccountDeletion(currentState)
+        _uiState.value = pendingState
+        val finalState = when (accountDeletionLocalCleanupRepository.purgeLocalDataForOwner(ownerUserId)) {
+            AccountDeletionLocalCleanupResult.Failed -> pendingState
+            AccountDeletionLocalCleanupResult.Completed -> try {
+                logout.clearLocalSession()
+                accountDeletionLocalCleanupRepository.markLocalCleanupComplete(ownerUserId)
+                accountDeletionLocalCleanupRepository.clearMarker(ownerUserId)
+                savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+                AuthUiStateReducer.completeLocalAccountDeletion(pendingState)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                pendingState
+            }
+        }
+        _uiState.value = finalState
+        return finalState
+    }
+
+    private suspend fun recoverAccountDeletionBeforeSessionRestore(): AccountDeletionRecovery {
+        val marker = try {
+            accountDeletionLocalCleanupRepository.readMarker()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            _uiState.update(AuthUiStateReducer::restoreAccountDeletionAfterProcessDeath)
+            return AccountDeletionRecovery.BLOCKED
+        } ?: return AccountDeletionRecovery.NONE
+
+        return when (marker.phase) {
+            AccountDeletionPhase.REMOTE_REQUESTED -> {
+                _uiState.update(AuthUiStateReducer::restoreAccountDeletionAfterProcessDeath)
+                AccountDeletionRecovery.BLOCKED
+            }
+            AccountDeletionPhase.REMOTE_CONFIRMED -> {
+                _uiState.update {
+                    it.copy(
+                        accountDeletionState = AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+                        isSubmitting = false,
+                    )
+                }
+                when (accountDeletionLocalCleanupRepository.purgeLocalDataForOwner(marker.ownerUserId)) {
+                    AccountDeletionLocalCleanupResult.Failed -> AccountDeletionRecovery.BLOCKED
+                    AccountDeletionLocalCleanupResult.Completed -> finalizeRecoveredLocalDeletion(marker.ownerUserId)
+                }
+            }
+            AccountDeletionPhase.LOCAL_CLEANUP_COMPLETE ->
+                finalizeRecoveredLocalDeletion(marker.ownerUserId)
+        }
+    }
+
+    private suspend fun finalizeRecoveredLocalDeletion(ownerUserId: String): AccountDeletionRecovery = try {
+        logout.clearLocalSession()
+        accountDeletionLocalCleanupRepository.markLocalCleanupComplete(ownerUserId)
+        accountDeletionLocalCleanupRepository.clearMarker(ownerUserId)
+        savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+        _uiState.update { state -> AuthUiStateReducer.completeLocalAccountDeletion(state) }
+        AccountDeletionRecovery.COMPLETED
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        AccountDeletionRecovery.BLOCKED
+    }
+
+    private enum class AccountDeletionRecovery {
+        NONE,
+        BLOCKED,
+        COMPLETED,
     }
 }

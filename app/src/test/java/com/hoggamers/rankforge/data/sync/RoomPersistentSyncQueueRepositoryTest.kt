@@ -105,6 +105,9 @@ class RoomPersistentSyncQueueRepositoryTest {
         override suspend fun deleteByTournamentIdAndOwner(tournamentId: String, ownerUserId: String) {
             entries.value = entries.value.filterNot { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
         }
+        override suspend fun deleteByOwner(ownerUserId: String) {
+            entries.value = entries.value.filterNot { it.ownerUserId == ownerUserId }
+        }
     }
 
     private companion object {
