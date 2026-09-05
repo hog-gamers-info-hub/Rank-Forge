@@ -84,9 +84,9 @@ fun TournamentStandingsRoute(
     val snackbarHostState = remember { SnackbarHostState() }
     TournamentStandingsShareEventEffect(
         shareEvents = viewModel.shareEvents,
-        shareTextTitle = context.getString(R.string.tournament_standings_share_text_title),
-        chooserTitle = context.getString(R.string.tournament_standings_share_chooser_title),
-        failureMessage = context.getString(R.string.tournament_standings_share_failed_message),
+        shareTextTitle = stringResource(R.string.tournament_standings_share_text_title),
+        chooserTitle = stringResource(R.string.tournament_standings_share_chooser_title),
+        failureMessage = stringResource(R.string.tournament_standings_share_failed_message),
         startActivity = { intent -> context.startActivity(intent) },
         showFailure = { message -> snackbarHostState.showSnackbar(message) },
     )

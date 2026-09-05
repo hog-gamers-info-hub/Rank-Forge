@@ -61,11 +61,16 @@ class ResultFileSaver(
         when (ResultFileSavePolicy.routeForSdk(sdkInt)) {
             ResultFileSaveRoute.USER_SELECTED_DESTINATION_REQUIRED ->
                 ResultFileSaveResult.UserSelectedDestinationRequired
-            ResultFileSaveRoute.MEDIA_STORE_DOWNLOADS -> saveToMediaStore(
-                bytes = bytes,
-                displayName = displayName,
-                format = format,
-            )
+            ResultFileSaveRoute.MEDIA_STORE_DOWNLOADS ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveToMediaStore(
+                        bytes = bytes,
+                        displayName = displayName,
+                        format = format,
+                    )
+                } else {
+                    ResultFileSaveResult.UserSelectedDestinationRequired
+                }
         }
     }
 
