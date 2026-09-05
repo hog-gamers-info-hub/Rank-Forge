@@ -6,9 +6,13 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
@@ -131,6 +135,67 @@ class CustomDesignSetupScreenTest {
             composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
                 .fetchSemanticsNodes().size,
         )
+    }
+
+    @Test
+    fun newlySavedDesignShowsInformationalSuccessDialogAndAcknowledgesIt() {
+        var acknowledged = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(
+                    uiState = CustomDesignSetupUiState(
+                        savedCustomDesignId = "a2000000-0000-0000-0000-000000000001",
+                        saveStatus = CustomDesignSaveStatus.SAVED,
+                        restoreStatus = CustomDesignRestoreStatus.IDLE,
+                    ),
+                    onSaveSuccessAcknowledged = { acknowledged++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Custom Design Saved").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "You can now download your result using “My Custom Design” from Result Format.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG)
+            .performClick()
+
+        composeTestRule.runOnIdle { assertEquals(1, acknowledged) }
+    }
+
+    @Test
+    fun saveSuccessDialogIsAbsentForIdleSavingFailedAndRestoredStates() {
+        var uiState by mutableStateOf(CustomDesignSetupUiState())
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(uiState = uiState)
+            }
+        }
+
+        listOf(
+            CustomDesignSetupUiState(),
+            CustomDesignSetupUiState(saveStatus = CustomDesignSaveStatus.SAVING),
+            CustomDesignSetupUiState(saveStatus = CustomDesignSaveStatus.FAILED),
+            CustomDesignSetupUiState(
+                savedCustomDesignId = "a2000000-0000-0000-0000-000000000001",
+                saveStatus = CustomDesignSaveStatus.SAVED,
+                restoreStatus = CustomDesignRestoreStatus.RESTORED,
+            ),
+        ).forEach { state ->
+            composeTestRule.runOnIdle {
+                uiState = state
+            }
+            composeTestRule.waitForIdle()
+
+            assertEquals(
+                0,
+                composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG)
+                    .fetchSemanticsNodes()
+                    .size,
+            )
+        }
     }
 
     @Test

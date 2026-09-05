@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
@@ -82,6 +83,8 @@ const val CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG = "custom_design_delete_action"
 const val CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG = "custom_design_image_preview"
 const val CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG = "custom_design_grid_overlay"
 const val CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG = "custom_design_image_error"
+const val CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG = "custom_design_save_success_dialog"
+const val CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG = "custom_design_save_success_ok"
 
 private val CustomDesignPointIqBlue = Color(0xFF176AF7)
 private val CustomDesignPointIqDanger = Color(0xFFD92D3A)
@@ -125,6 +128,7 @@ fun CustomDesignSetupRoute(
         onTotalPointsChanged = viewModel::onTotalPointsChanged,
         onUploadCustomDesign = viewModel::requestPhotoPicker,
         onSaveActionRequested = viewModel::saveNewCustomDesign,
+        onSaveSuccessAcknowledged = viewModel::onSaveSuccessMessageHandled,
         onDeleteActionRequested = viewModel::deleteSavedCustomDesign,
         onManualColumnXChanged = viewModel::setManualColumnX,
         onManualRowYChanged = viewModel::setManualRowY,
@@ -141,6 +145,7 @@ fun CustomDesignSetupScreen(
     onTotalPointsChanged: (String) -> Unit = {},
     onUploadCustomDesign: () -> Unit = {},
     onSaveActionRequested: () -> Unit = {},
+    onSaveSuccessAcknowledged: () -> Unit = {},
     onDeleteActionRequested: () -> Unit = {},
     onManualColumnXChanged: (CustomDesignAnchorField, Float) -> Unit = { _, _ -> },
     onManualRowYChanged: (Int, Float) -> Unit = { _, _ -> },
@@ -306,6 +311,25 @@ fun CustomDesignSetupScreen(
                 Text(stringResource(R.string.custom_design_upload_action))
             }
         }
+    }
+
+    if (uiState.saveStatus == CustomDesignSaveStatus.SAVED &&
+        uiState.restoreStatus != CustomDesignRestoreStatus.RESTORED
+    ) {
+        AlertDialog(
+            modifier = Modifier.testTag(CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG),
+            onDismissRequest = onSaveSuccessAcknowledged,
+            title = { Text(stringResource(R.string.custom_design_save_success_title)) },
+            text = { Text(stringResource(R.string.custom_design_save_success_message)) },
+            confirmButton = {
+                Button(
+                    onClick = onSaveSuccessAcknowledged,
+                    modifier = Modifier.testTag(CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG),
+                ) {
+                    Text(stringResource(R.string.custom_design_save_success_ok))
+                }
+            },
+        )
     }
 }
 

@@ -160,6 +160,12 @@ class CustomDesignSetupViewModel @Inject constructor(
         }
     }
 
+    fun onSaveSuccessMessageHandled() {
+        if (_uiState.value.saveStatus == CustomDesignSaveStatus.SAVED) {
+            _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.IDLE) }
+        }
+    }
+
     fun restoreSavedCustomDesign(customDesignId: String) {
         if (customDesignId.isBlank() ||
             _uiState.value.restoreStatus == CustomDesignRestoreStatus.RESTORING ||

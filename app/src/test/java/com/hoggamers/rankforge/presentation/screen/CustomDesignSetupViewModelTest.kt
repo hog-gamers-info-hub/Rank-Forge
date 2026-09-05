@@ -231,6 +231,40 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun saveSuccessAcknowledgementReturnsToIdleAndPreservesSavedDesign() = runTest {
+        val viewModel = viewModel(
+            saveAction = CustomDesignSaveAction {
+                CustomDesignSaveResult.Success("saved-id", "saved-path")
+            },
+        )
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        viewModel.saveNewCustomDesign()
+        advanceUntilIdle()
+
+        assertEquals(CustomDesignSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+        viewModel.onSaveSuccessMessageHandled()
+
+        assertEquals(CustomDesignSaveStatus.IDLE, viewModel.uiState.value.saveStatus)
+        assertEquals("saved-id", viewModel.uiState.value.savedCustomDesignId)
+        assertEquals("content://picker/custom-design", viewModel.uiState.value.selectedImageReference)
+    }
+
+    @Test
+    fun saveSuccessAcknowledgementDoesNotAlterNonSavedState() {
+        val viewModel = viewModel()
+
+        viewModel.onSaveSuccessMessageHandled()
+        assertEquals(CustomDesignSaveStatus.IDLE, viewModel.uiState.value.saveStatus)
+
+        viewModel.saveNewCustomDesign()
+        assertEquals(CustomDesignSaveStatus.FAILED, viewModel.uiState.value.saveStatus)
+        viewModel.onSaveSuccessMessageHandled()
+        assertEquals(CustomDesignSaveStatus.FAILED, viewModel.uiState.value.saveStatus)
+    }
+
+    @Test
     fun validImageSelectionCreatesDraftWithSourceDimensionsAndExactLabels() = runTest {
         val runner = FakeCustomDesignOcrRunner()
         val viewModel = viewModel(

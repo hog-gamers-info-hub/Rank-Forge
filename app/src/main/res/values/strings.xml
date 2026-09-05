@@ -485,6 +485,9 @@
     <string name="custom_design_position_points_label">Position Points</string>
     <string name="custom_design_total_points_label">Total Points</string>
     <string name="custom_design_save_action">Save</string>
+    <string name="custom_design_save_success_title">Custom Design Saved</string>
+    <string name="custom_design_save_success_message">You can now download your result using “My Custom Design” from Result Format.</string>
+    <string name="custom_design_save_success_ok">OK</string>
     <string name="custom_design_delete_action">Delete</string>
     <string name="custom_design_upload_action">Upload Custom Design</string>
     <string name="match_review_download_generating">Generating result.</string>
