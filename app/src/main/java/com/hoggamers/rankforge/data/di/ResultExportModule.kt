@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.data.di
 
 import android.content.Context
 import com.hoggamers.rankforge.data.export.AndroidResultDocumentWriter
+import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.CustomDesignBitmapComposer
+import com.hoggamers.rankforge.data.export.CustomDesignResultRowsResolver
+import com.hoggamers.rankforge.data.export.DefaultCustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.DefaultResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDocumentWriter
 import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
@@ -19,6 +23,12 @@ import javax.inject.Singleton
 abstract class ResultExportBindingsModule {
     @Binds
     @Singleton
+    abstract fun bindCustomDesignResultDownloadCoordinator(
+        coordinator: DefaultCustomDesignResultDownloadCoordinator,
+    ): CustomDesignResultDownloadCoordinator
+
+    @Binds
+    @Singleton
     abstract fun bindResultDownloadCoordinator(
         coordinator: DefaultResultDownloadCoordinator,
     ): ResultDownloadCoordinator
@@ -33,6 +43,15 @@ abstract class ResultExportBindingsModule {
 @Module
 @InstallIn(SingletonComponent::class)
 object ResultExportProvidersModule {
+    @Provides
+    @Singleton
+    fun provideCustomDesignBitmapComposer(): CustomDesignBitmapComposer = CustomDesignBitmapComposer()
+
+    @Provides
+    @Singleton
+    fun provideCustomDesignResultRowsResolver(): CustomDesignResultRowsResolver =
+        CustomDesignResultRowsResolver()
+
     @Provides
     @Singleton
     fun provideResultFileSaver(

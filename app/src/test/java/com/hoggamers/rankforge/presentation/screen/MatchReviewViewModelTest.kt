@@ -3,6 +3,7 @@
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
+import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteFailure
@@ -2528,6 +2529,59 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun customDesignCurrentMatchUsesExactIdAndExistingRequestContext() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingCustomDesignResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+        )
+        val viewModel = reviewViewModel(customDesignResultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        val customDesignId = "a2000000-0000-0000-0000-000000000001"
+        viewModel.requestCustomDesignResultDownload(ResultDownloadScope.CURRENT_MATCH, customDesignId)
+        advanceUntilIdle()
+
+        assertEquals(customDesignId, coordinator.customDesignIds.single())
+        val request = coordinator.requests.single()
+        assertTrue(request is ResultDownloadRequest.CurrentMatch)
+        assertEquals(matchId, (request as ResultDownloadRequest.CurrentMatch).input.match.id)
+        assertEquals(
+            ResultDownloadUiState.Success(ResultExportFileFormat.PNG, false),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
+    fun customDesignWholeTournamentUsesExistingTournamentRequestContext() = runTest {
+        saveValidFinalizedMatch()
+        val coordinator = RecordingCustomDesignResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PNG,
+                displayName = "result.png",
+                bytes = byteArrayOf(1, 2, 3),
+            ),
+        )
+        val viewModel = reviewViewModel(customDesignResultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestCustomDesignResultDownload(
+            ResultDownloadScope.WHOLE_TOURNAMENT,
+            "a2000000-0000-0000-0000-000000000001",
+        )
+        advanceUntilIdle()
+
+        val request = coordinator.requests.single()
+        assertTrue(request is ResultDownloadRequest.WholeTournament)
+        assertEquals(TOURNAMENT_ID, (request as ResultDownloadRequest.WholeTournament).input.tournament.id)
+        assertEquals(
+            ResultDownloadUiState.DestinationLaunchRequested(ResultExportFileFormat.PNG, "result.png"),
+            viewModel.uiState.value.resultDownloadUiState,
+        )
+    }
+
+    @Test
     fun wholeTournamentUsesAllLocalMatchesAndApprovedTournamentPath() = runTest {
         saveValidFinalizedMatch()
         val draftMatchId = "draft-second-match"
@@ -2905,6 +2959,8 @@ class MatchReviewViewModelTest {
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
         googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource = RecordingGoogleSheetsMatchExport(),
         resultDownloadCoordinator: ResultDownloadCoordinator = RecordingResultDownloadCoordinator(),
+        customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator =
+            com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordinator,
         resultDocumentWriter: ResultDocumentWriter = RecordingResultDocumentWriter(),
         screenshotOwnerProvider: ScreenshotOwnerProvider = FixedScreenshotOwnerProvider("owner-id"),
         matchResultScreenshotAssetRepository: MatchResultScreenshotAssetRepository =
@@ -2937,6 +2993,7 @@ class MatchReviewViewModelTest {
         screenshotMetadataCloudDataSource = screenshotMetadataCloudDataSource,
         googleSheetsMatchExport = googleSheetsMatchExport,
         resultDownloadCoordinator = resultDownloadCoordinator,
+        customDesignResultDownloadCoordinator = customDesignResultDownloadCoordinator,
         resultDocumentWriter = resultDocumentWriter,
         screenshotOwnerProvider = screenshotOwnerProvider,
         matchResultScreenshotAssetRepository = matchResultScreenshotAssetRepository,
@@ -3044,6 +3101,24 @@ class MatchReviewViewModelTest {
             requests += Request(request, format)
             onSaving()
             gate?.await()
+            return result
+        }
+    }
+
+    private class RecordingCustomDesignResultDownloadCoordinator(
+        private val result: ResultDownloadExecutionResult,
+    ) : CustomDesignResultDownloadCoordinator {
+        val customDesignIds = mutableListOf<String>()
+        val requests = mutableListOf<ResultDownloadRequest>()
+
+        override suspend fun execute(
+            customDesignId: String,
+            request: ResultDownloadRequest,
+            onSaving: suspend () -> Unit,
+        ): ResultDownloadExecutionResult {
+            customDesignIds += customDesignId
+            requests += request
+            onSaving()
             return result
         }
     }

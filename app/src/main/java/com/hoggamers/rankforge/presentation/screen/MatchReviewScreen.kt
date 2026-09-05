@@ -508,6 +508,9 @@ fun MatchReviewRoute(
         onOpenCustomDesignSetup = { scope ->
             onOpenCustomDesignSetup(tournamentId, matchId, scope)
         },
+        onRequestCustomDesignResultDownload = { scope, customDesignId ->
+            viewModel.requestCustomDesignResultDownload(scope, customDesignId)
+        },
         onFinalize = viewModel::finalizeMatch,
         onDeleteMatch = viewModel::deleteMatch,
         onSelectScreenshot = viewModel::requestPhotoPicker,
@@ -586,6 +589,7 @@ fun MatchReviewScreen(
     onPrepareGoogleSheetsExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit = {},
+    onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
     onDeleteMatch: () -> Unit = {},
     onSelectScreenshot: () -> Unit = {},
@@ -647,6 +651,7 @@ fun MatchReviewScreen(
             onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
             onRequestResultDownload = onRequestResultDownload,
             onOpenCustomDesignSetup = onOpenCustomDesignSetup,
+            onRequestCustomDesignResultDownload = onRequestCustomDesignResultDownload,
             onFinalize = onFinalize,
             onDeleteMatch = onDeleteMatch,
             onSelectScreenshot = onSelectScreenshot,
@@ -700,6 +705,7 @@ private fun MatchReviewContent(
     onPrepareGoogleSheetsExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit,
+    onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit,
     onFinalize: () -> Unit,
     onDeleteMatch: () -> Unit,
     onSelectScreenshot: () -> Unit,
@@ -1506,6 +1512,7 @@ private fun MatchReviewContent(
     if (showResultFormatDialog) {
         ResultDownloadFormatDialog(
             selectedFormat = selectedResultFormat,
+            availability = customDesignFormatAvailabilityUiState,
             onFormatSelected = { selectedResultFormat = it },
             onBack = {
                 selectedResultFormat = null
@@ -1517,14 +1524,29 @@ private fun MatchReviewContent(
                 val scope = selectedResultScope
                 val format = selectedResultFormat
                 if (scope != null && format != null) {
-                    showResultFormatDialog = false
                     when (format) {
-                        ResultDownloadFormatOption.PDF ->
+                        ResultDownloadFormatOption.PDF -> {
+                            showResultFormatDialog = false
                             onRequestResultDownload(scope, ResultExportFileFormat.PDF)
-                        ResultDownloadFormatOption.PNG ->
+                        }
+                        ResultDownloadFormatOption.PNG -> {
+                            showResultFormatDialog = false
                             onRequestResultDownload(scope, ResultExportFileFormat.PNG)
-                        ResultDownloadFormatOption.CUSTOM_DESIGN ->
+                        }
+                        ResultDownloadFormatOption.CUSTOM_DESIGN -> {
+                            showResultFormatDialog = false
                             onOpenCustomDesignSetup(scope)
+                        }
+                        ResultDownloadFormatOption.MY_CUSTOM_DESIGN -> {
+                            val customDesignId = customDesignFormatAvailabilityUiState.customDesignId
+                            if (customDesignFormatAvailabilityUiState.status ==
+                                CustomDesignFormatAvailabilityStatus.FOUND &&
+                                !customDesignId.isNullOrBlank()
+                            ) {
+                                showResultFormatDialog = false
+                                onRequestCustomDesignResultDownload(scope, customDesignId)
+                            }
+                        }
                     }
                 }
             },
@@ -1611,11 +1633,24 @@ private fun ResultDownloadScopeDialog(
 @Composable
 private fun ResultDownloadFormatDialog(
     selectedFormat: ResultDownloadFormatOption?,
+    availability: CustomDesignFormatAvailabilityUiState,
     onFormatSelected: (ResultDownloadFormatOption) -> Unit,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    val customDesignOption = when (availability.status) {
+        CustomDesignFormatAvailabilityStatus.NONE ->
+            stringResource(R.string.match_review_download_custom_design) to
+                ResultDownloadFormatOption.CUSTOM_DESIGN
+        CustomDesignFormatAvailabilityStatus.FOUND ->
+            stringResource(R.string.match_review_download_my_custom_design) to
+                ResultDownloadFormatOption.MY_CUSTOM_DESIGN
+        CustomDesignFormatAvailabilityStatus.LOADING,
+        CustomDesignFormatAvailabilityStatus.UNAVAILABLE,
+        -> null
+    }
+
     AlertDialog(
         modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG),
         onDismissRequest = onDismiss,
@@ -1634,12 +1669,14 @@ private fun ResultDownloadFormatDialog(
                     onClick = { onFormatSelected(ResultDownloadFormatOption.PNG) },
                     testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG,
                 )
-                ResultDownloadRadioRow(
-                    label = stringResource(R.string.match_review_download_custom_design),
-                    selected = selectedFormat == ResultDownloadFormatOption.CUSTOM_DESIGN,
-                    onClick = { onFormatSelected(ResultDownloadFormatOption.CUSTOM_DESIGN) },
-                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
-                )
+                customDesignOption?.let { (label, option) ->
+                    ResultDownloadRadioRow(
+                        label = label,
+                        selected = selectedFormat == option,
+                        onClick = { onFormatSelected(option) },
+                        testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
+                    )
+                }
             }
         },
         dismissButton = {
@@ -1666,6 +1703,7 @@ private enum class ResultDownloadFormatOption {
     PDF,
     PNG,
     CUSTOM_DESIGN,
+    MY_CUSTOM_DESIGN,
 }
 
 @Composable

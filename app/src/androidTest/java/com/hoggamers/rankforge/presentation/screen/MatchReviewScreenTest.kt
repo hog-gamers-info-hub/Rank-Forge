@@ -336,6 +336,46 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun foundCustomDesignShowsMyCustomDesignAndDownloadsWithoutSetupNavigation() {
+        var setupCalls = 0
+        var download: Pair<ResultDownloadScope, String>? = null
+        val customDesignId = "a2000000-0000-0000-0000-000000000001"
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
+                        status = CustomDesignFormatAvailabilityStatus.FOUND,
+                        customDesignId = customDesignId,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenCustomDesignSetup = { setupCalls++ },
+                    onRequestCustomDesignResultDownload = { scope, id -> download = scope to id },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithText("My Custom Design").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Custom Design").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(ResultDownloadScope.CURRENT_MATCH to customDesignId, download)
+            assertEquals(0, setupCalls)
+        }
+    }
+
+    @Test
     fun completeNonLegacyEvidenceBypassesPreflightAndCalculatesPoints() {
         var opened = 0
         var calculated = 0
@@ -4093,6 +4133,9 @@ class MatchReviewScreenTest {
             RankForgeTheme {
                 MatchReviewScreen(
                     uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
+                        status = CustomDesignFormatAvailabilityStatus.NONE,
+                    ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},

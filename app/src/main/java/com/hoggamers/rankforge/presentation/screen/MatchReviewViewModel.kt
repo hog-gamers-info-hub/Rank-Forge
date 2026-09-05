@@ -26,11 +26,13 @@ import com.hoggamers.rankforge.data.cloud.ScreenshotMetadataCloudResult
 import com.hoggamers.rankforge.data.cloud.toCloudTimestamp
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
+import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
 import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.NoOpGoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
 import com.hoggamers.rankforge.data.export.ResultDocumentWriter
 import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
@@ -147,6 +149,8 @@ class MatchReviewViewModel @Inject constructor(
         NoOpGoogleSheetsMatchExportRemoteDataSource(),
     private val resultDownloadCoordinator: ResultDownloadCoordinator =
         NoOpResultDownloadCoordinator,
+    private val customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator =
+        NoOpCustomDesignResultDownloadCoordinator,
     private val resultDocumentWriter: ResultDocumentWriter = NoOpResultDocumentWriter,
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val clock: Clock = Clock.systemUTC(),
@@ -995,6 +999,119 @@ class MatchReviewViewModel @Inject constructor(
                                 _uiState.update { state ->
                                     if (state.tournamentId == tournamentId && state.matchId == matchId) {
                                         state.copy(resultDownloadUiState = ResultDownloadUiState.Saving(format))
+                                    } else {
+                                        state
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                ResultDownloadExecutionResult.Failure(ResultDownloadFailure.GENERATION_FAILED)
+            }
+
+            _uiState.update { state ->
+                if (state.tournamentId != tournamentId || state.matchId != matchId) {
+                    state
+                } else {
+                    when (outcome) {
+                        is ResultDownloadExecutionResult.Saved -> state.copy(
+                            resultDownloadUiState = ResultDownloadUiState.Success(
+                                format = outcome.format,
+                                userSelectedDestination = false,
+                            ),
+                        )
+                        is ResultDownloadExecutionResult.UserDestinationRequired -> {
+                            pendingResultDocument = PendingResultDocument(
+                                format = outcome.format,
+                                displayName = outcome.displayName,
+                                bytes = outcome.bytes,
+                            )
+                            state.copy(
+                                resultDownloadUiState = ResultDownloadUiState.DestinationLaunchRequested(
+                                    format = outcome.format,
+                                    suggestedDisplayName = outcome.displayName,
+                                ),
+                            )
+                        }
+                        is ResultDownloadExecutionResult.Failure -> state.copy(
+                            resultDownloadUiState = ResultDownloadUiState.Failure(outcome.reason),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun requestCustomDesignResultDownload(
+        scope: ResultDownloadScope,
+        customDesignId: String,
+    ) {
+        val current = _uiState.value
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        if (customDesignId.isBlank() || !current.canDownloadResult || resultDownloadJob?.isActive == true) return
+
+        pendingResultDocument = null
+        resultDownloadJob = viewModelScope.launch {
+            _uiState.update { state ->
+                if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                    state.copy(
+                        resultDownloadUiState = ResultDownloadUiState.Generating(
+                            scope = scope,
+                            format = ResultExportFileFormat.PNG,
+                        ),
+                    )
+                } else {
+                    state
+                }
+            }
+            val outcome = try {
+                val tournament = getTournamentById(tournamentId).first()
+                val matches = observeMatches(tournamentId).first()
+                val currentMatch = matches.firstOrNull { it.id == matchId }
+                when {
+                    tournament == null || currentMatch == null ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_CONTEXT)
+                    currentMatch.status != MatchStatus.FINALIZED ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    validateMatchForReview(currentMatch).errorsByTeamSlot.isNotEmpty() ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    else -> {
+                        val inputSlots = observeTournamentSlots(tournamentId).first()
+                        val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
+                        val request = when (scope) {
+                            ResultDownloadScope.CURRENT_MATCH -> ResultDownloadRequest.CurrentMatch(
+                                com.hoggamers.rankforge.domain.export.MatchCsvExportInput(
+                                    tournament = tournament,
+                                    match = currentMatch,
+                                    teamSlots = inputSlots,
+                                    rosterPlayers = rosterPlayers,
+                                ),
+                            )
+                            ResultDownloadScope.WHOLE_TOURNAMENT -> ResultDownloadRequest.WholeTournament(
+                                com.hoggamers.rankforge.domain.export.TournamentCsvExportInput(
+                                    tournament = tournament,
+                                    matches = matches,
+                                    teamSlots = inputSlots,
+                                    rosterPlayers = rosterPlayers,
+                                ),
+                            )
+                        }
+                        customDesignResultDownloadCoordinator.execute(
+                            customDesignId = customDesignId,
+                            request = request,
+                            onSaving = {
+                                _uiState.update { state ->
+                                    if (state.tournamentId == tournamentId && state.matchId == matchId) {
+                                        state.copy(
+                                            resultDownloadUiState = ResultDownloadUiState.Saving(
+                                                ResultExportFileFormat.PNG,
+                                            ),
+                                        )
                                     } else {
                                         state
                                     }
