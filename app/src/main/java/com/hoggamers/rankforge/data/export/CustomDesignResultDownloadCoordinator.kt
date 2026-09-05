@@ -140,12 +140,15 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
     }
 
     private fun ResultDownloadRequest.customDesignDisplayName(): String = when (this) {
-        is ResultDownloadRequest.CurrentMatch ->
-            "RankForge_${ResultExportFileName.sanitizeTournamentComponent(input.tournament.name)}_" +
-                "Match_${input.match.matchNumber}_Result.png"
-        is ResultDownloadRequest.WholeTournament ->
-            "RankForge_${ResultExportFileName.sanitizeTournamentComponent(input.tournament.name)}_" +
-                "Tournament_Result.png"
+        is ResultDownloadRequest.CurrentMatch -> ResultExportFileName.forMatch(
+            tournamentName = input.tournament.name,
+            matchNumber = input.match.matchNumber,
+            format = ResultExportFileFormat.PNG,
+        )
+        is ResultDownloadRequest.WholeTournament -> ResultExportFileName.forTournament(
+            tournamentName = input.tournament.name,
+            format = ResultExportFileFormat.PNG,
+        )
     }
 
     private data class GeneratedCustomDesignResult(

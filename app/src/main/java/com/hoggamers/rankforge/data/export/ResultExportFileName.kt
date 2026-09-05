@@ -18,17 +18,28 @@ object ResultExportFileName {
     fun forMatch(
         model: MatchResultExportModel,
         format: ResultExportFileFormat,
+    ): String = forMatch(model.tournamentName, model.matchNumber, format)
+
+    fun forMatch(
+        tournamentName: String,
+        matchNumber: Int,
+        format: ResultExportFileFormat,
     ): String = withExtension(
-        baseName = "RankForge_${sanitizeTournamentComponent(model.tournamentName)}_" +
-            "Match_${model.matchNumber}_Result",
+        baseName = "PointIQ_${sanitizeTournamentComponent(tournamentName)}_" +
+            "Match_${matchNumber}_Result",
         format = format,
     )
 
     fun forTournament(
         model: TournamentResultExportModel,
         format: ResultExportFileFormat,
+    ): String = forTournament(model.tournamentName, format)
+
+    fun forTournament(
+        tournamentName: String,
+        format: ResultExportFileFormat,
     ): String = withExtension(
-        baseName = "RankForge_${sanitizeTournamentComponent(model.tournamentName)}_Tournament_Result",
+        baseName = "PointIQ_${sanitizeTournamentComponent(tournamentName)}_Tournament_Result",
         format = format,
     )
 

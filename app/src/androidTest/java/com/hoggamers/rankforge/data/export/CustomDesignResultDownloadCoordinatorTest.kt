@@ -43,6 +43,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         var composedTextColors: CustomDesignColumnTextColors? = null
         var savedBytes: ByteArray? = null
         var savedFormat: ResultExportFileFormat? = null
+        var savedDisplayName: String? = null
         val bitmap = Bitmap.createBitmap(17, 19, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
             restore = { id ->
@@ -57,8 +58,9 @@ class CustomDesignResultDownloadCoordinatorTest {
                 composedTextColors = textColors
                 CustomDesignBitmapComposeResult.Success(bitmap)
             },
-            saveFile = { bytes, _, format ->
+            saveFile = { bytes, displayName, format ->
                 savedBytes = bytes
+                savedDisplayName = displayName
                 savedFormat = format
                 ResultFileSaveResult.Success(Uri.EMPTY, "result.png")
             },
@@ -75,6 +77,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         assertEquals(restoredDesign().geometry, composedGeometry)
         assertEquals(restoredDesign().textColors, composedTextColors)
         assertEquals(ResultExportFileFormat.PNG, savedFormat)
+        assertEquals("PointIQ_Tournament_Match_1_Result.png", savedDisplayName)
         assertTrue(bitmap.isRecycled)
         val encodedBytes = checkNotNull(savedBytes)
         val decoded = BitmapFactory.decodeByteArray(encodedBytes, 0, encodedBytes.size)
@@ -93,6 +96,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         )
         var receivedRequest: ResultDownloadRequest? = null
         var receivedRows: List<ResultExportRow>? = null
+        var savedDisplayName: String? = null
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
             resolveRows = { request ->
@@ -102,6 +106,10 @@ class CustomDesignResultDownloadCoordinatorTest {
             composeBitmap = { _, resolvedRows, _, _ ->
                 receivedRows = resolvedRows
                 CustomDesignBitmapComposeResult.Success(bitmap)
+            },
+            saveFile = { _, displayName, _ ->
+                savedDisplayName = displayName
+                ResultFileSaveResult.Success(Uri.EMPTY, "result.png")
             },
         )
 
@@ -114,6 +122,7 @@ class CustomDesignResultDownloadCoordinatorTest {
 
         assertTrue(receivedRequest is ResultDownloadRequest.WholeTournament)
         assertEquals(rows, receivedRows)
+        assertEquals("PointIQ_Tournament_Tournament_Result.png", savedDisplayName)
         assertTrue(bitmap.isRecycled)
     }
 
