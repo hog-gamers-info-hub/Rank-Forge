@@ -25,11 +25,11 @@ export function parseBearerToken(value: string | null): string {
   return match[1];
 }
 
-export async function validateSupabaseUser(
+export async function readValidatedSupabaseUserId(
   accessToken: string,
   config: SupabaseConfig,
   options: { fetchImpl?: FetchImplementation; timeoutMs: number },
-): Promise<void> {
+): Promise<string> {
   const fetchImpl = options.fetchImpl ?? fetch;
   let response: Response;
   try {
@@ -62,8 +62,17 @@ export async function validateSupabaseUser(
     if (typeof payload.id !== "string" || payload.id.length === 0) {
       throw new EdgeFunctionError("UNAUTHORIZED");
     }
+    return payload.id;
   } catch (error) {
     if (error instanceof EdgeFunctionError) throw error;
     throw new EdgeFunctionError("UNAUTHORIZED");
   }
+}
+
+export async function validateSupabaseUser(
+  accessToken: string,
+  config: SupabaseConfig,
+  options: { fetchImpl?: FetchImplementation; timeoutMs: number },
+): Promise<void> {
+  await readValidatedSupabaseUserId(accessToken, config, options);
 }

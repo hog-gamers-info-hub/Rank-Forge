@@ -185,7 +185,7 @@ select is((
     where namespace_row.nspname = 'public'
         and class_row.relname in ('tournaments', 'tournament_team_slots', 'players', 'matches', 'match_results')
         and not trigger_row.tgisinternal
-), '{tournaments:tournaments_owner_limit_before_insert}'::text, 'core tables have exactly the approved tournament-owner-limit trigger');
+), '{match_results:account_deletion_guard_match_results,matches:account_deletion_guard_matches,players:account_deletion_guard_players,tournament_team_slots:account_deletion_guard_tournament_team_slots,tournaments:account_deletion_guard_tournaments,tournaments:tournaments_owner_limit_before_insert}'::text, 'core tables have exactly the approved mutation and tournament-owner-limit triggers');
 select is((
     select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row

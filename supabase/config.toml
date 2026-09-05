@@ -385,6 +385,9 @@ deno_version = 2
 [functions.google-sheets-export]
 verify_jwt = true
 
+[functions.delete-account]
+verify_jwt = true
+
 [functions.signup-email-registration-status]
 verify_jwt = false
 

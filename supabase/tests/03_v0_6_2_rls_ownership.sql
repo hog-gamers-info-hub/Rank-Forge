@@ -116,14 +116,14 @@ select is((
     where namespace_row.nspname = 'public'
         and class_row.relname in ('tournaments', 'tournament_team_slots', 'players', 'matches', 'match_results')
         and not trigger_row.tgisinternal
-), '{tournaments:tournaments_owner_limit_before_insert}'::text, 'core tables have exactly the approved tournament-owner-limit trigger');
+), '{match_results:account_deletion_guard_match_results,matches:account_deletion_guard_matches,players:account_deletion_guard_players,tournament_team_slots:account_deletion_guard_tournament_team_slots,tournaments:account_deletion_guard_tournaments,tournaments:tournaments_owner_limit_before_insert}'::text, 'core tables have exactly the approved mutation and tournament-owner-limit triggers');
 select is((
     select coalesce(array_agg(procedure_row.proname::text order by procedure_row.proname), array[]::text[])::text
     from pg_proc procedure_row
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
         and procedure_row.prosecdef
-)::text, '{claim_export_operation,complete_export_operation_success,correct_finalized_match_snapshot,delete_match_idempotent,delete_tournament_idempotent,finalize_match_snapshot,mark_export_operation_outcome_uncertain,mark_export_operation_retryable_failure,mark_export_operation_write_started,purge_account_data,resolve_export_operation_verified_success,signup_email_is_registered}'::text, 'only approved privileged RPCs use SECURITY DEFINER');
+)::text, '{begin_account_deletion,claim_export_operation,complete_export_operation_success,correct_finalized_match_snapshot,delete_match_idempotent,delete_tournament_idempotent,finalize_match_snapshot,mark_export_operation_outcome_uncertain,mark_export_operation_retryable_failure,mark_export_operation_write_started,purge_account_data,resolve_export_operation_verified_success,signup_email_is_registered}'::text, 'only approved privileged RPCs use SECURITY DEFINER');
 
 insert into auth.users (id, email)
 values ('71000000-0000-0000-0000-000000000001', 'rls-owner@example.test');
