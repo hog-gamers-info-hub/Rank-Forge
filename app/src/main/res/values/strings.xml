@@ -476,7 +476,7 @@
     <string name="match_review_download_choose_format">Choose Format</string>
     <string name="match_review_download_pdf">PDF</string>
     <string name="match_review_download_png">Image (PNG)</string>
-    <string name="match_review_download_custom_design">Custom Design</string>
+    <string name="match_review_download_custom_design">Import Your Design</string>
     <string name="match_review_download_my_custom_design">My Custom Design</string>
     <string name="custom_design_setup_title">Custom Design Setup</string>
     <string name="custom_design_team_name_label">Team Name</string>

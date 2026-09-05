@@ -138,6 +138,8 @@ const val MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG = "match_review_download_for
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG = "match_review_download_format_png"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG =
     "match_review_download_format_custom_design"
+const val MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG =
+    "match_review_download_format_my_custom_design"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG = "match_review_download_format_back"
 const val MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG = "match_review_download_format_confirm"
 const val MATCH_REVIEW_DOWNLOAD_STATUS_TEST_TAG = "match_review_download_status"
@@ -1533,7 +1535,7 @@ private fun MatchReviewContent(
                             showResultFormatDialog = false
                             onRequestResultDownload(scope, ResultExportFileFormat.PNG)
                         }
-                        ResultDownloadFormatOption.CUSTOM_DESIGN -> {
+                        ResultDownloadFormatOption.IMPORT_YOUR_DESIGN -> {
                             showResultFormatDialog = false
                             onOpenCustomDesignSetup(scope)
                         }
@@ -1639,17 +1641,9 @@ private fun ResultDownloadFormatDialog(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
 ) {
-    val customDesignOption = when (availability.status) {
-        CustomDesignFormatAvailabilityStatus.NONE ->
-            stringResource(R.string.match_review_download_custom_design) to
-                ResultDownloadFormatOption.CUSTOM_DESIGN
-        CustomDesignFormatAvailabilityStatus.FOUND ->
-            stringResource(R.string.match_review_download_my_custom_design) to
-                ResultDownloadFormatOption.MY_CUSTOM_DESIGN
-        CustomDesignFormatAvailabilityStatus.LOADING,
-        CustomDesignFormatAvailabilityStatus.UNAVAILABLE,
-        -> null
-    }
+    val importYourDesignLabel = stringResource(R.string.match_review_download_custom_design)
+    val myCustomDesignAvailable = availability.status == CustomDesignFormatAvailabilityStatus.FOUND &&
+        !availability.customDesignId.isNullOrBlank()
 
     AlertDialog(
         modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG),
@@ -1669,14 +1663,20 @@ private fun ResultDownloadFormatDialog(
                     onClick = { onFormatSelected(ResultDownloadFormatOption.PNG) },
                     testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG,
                 )
-                customDesignOption?.let { (label, option) ->
+                if (myCustomDesignAvailable) {
                     ResultDownloadRadioRow(
-                        label = label,
-                        selected = selectedFormat == option,
-                        onClick = { onFormatSelected(option) },
-                        testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
+                        label = stringResource(R.string.match_review_download_my_custom_design),
+                        selected = selectedFormat == ResultDownloadFormatOption.MY_CUSTOM_DESIGN,
+                        onClick = { onFormatSelected(ResultDownloadFormatOption.MY_CUSTOM_DESIGN) },
+                        testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG,
                     )
                 }
+                ResultDownloadRadioRow(
+                    label = importYourDesignLabel,
+                    selected = selectedFormat == ResultDownloadFormatOption.IMPORT_YOUR_DESIGN,
+                    onClick = { onFormatSelected(ResultDownloadFormatOption.IMPORT_YOUR_DESIGN) },
+                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
+                )
             }
         },
         dismissButton = {
@@ -1702,7 +1702,7 @@ private fun ResultDownloadFormatDialog(
 private enum class ResultDownloadFormatOption {
     PDF,
     PNG,
-    CUSTOM_DESIGN,
+    IMPORT_YOUR_DESIGN,
     MY_CUSTOM_DESIGN,
 }
 

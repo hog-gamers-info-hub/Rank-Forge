@@ -364,9 +364,11 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
             .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG)
+            .assertIsDisplayed()
             .performClick()
+        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
         composeTestRule.onNodeWithText("My Custom Design").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Custom Design").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
 
         composeTestRule.runOnIdle {
@@ -4129,6 +4131,7 @@ class MatchReviewScreenTest {
     @Test
     fun customDesignSelectionOpensSetupForSelectedScope() {
         var selectedScope: ResultDownloadScope? = null
+        var customDesignDownloads = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -4140,6 +4143,7 @@ class MatchReviewScreenTest {
                     onEnterKills = {},
                     onBackToDetails = {},
                     onOpenCustomDesignSetup = { selectedScope = it },
+                    onRequestCustomDesignResultDownload = { _, _ -> customDesignDownloads++ },
                 )
             }
         }
@@ -4153,11 +4157,61 @@ class MatchReviewScreenTest {
             .onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
             .assertIsDisplayed()
             .performClick()
+        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(ResultDownloadScope.WHOLE_TOURNAMENT, selectedScope)
+            assertEquals(0, customDesignDownloads)
         }
+        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
+    }
+
+    @Test
+    fun loadingCustomDesignShowsImportButNotMyCustomDesign() {
+        setResultFormatAvailabilityContent(CustomDesignFormatAvailabilityStatus.LOADING)
+
+        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
+    }
+
+    @Test
+    fun unavailableCustomDesignShowsImportButNotMyCustomDesign() {
+        setResultFormatAvailabilityContent(CustomDesignFormatAvailabilityStatus.UNAVAILABLE)
+
+        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
+    }
+
+    @Test
+    fun customDesignAvailabilityRefreshToNoneHidesMyDesignAndKeepsImport() {
+        var availability by mutableStateOf(
+            CustomDesignFormatAvailabilityUiState(
+                status = CustomDesignFormatAvailabilityStatus.FOUND,
+                customDesignId = "a2000000-0000-0000-0000-000000000001",
+            ),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    customDesignFormatAvailabilityUiState = availability,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        openResultFormatDialog()
+        composeTestRule.onNodeWithText("My Custom Design").assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            availability = CustomDesignFormatAvailabilityUiState(
+                status = CustomDesignFormatAvailabilityStatus.NONE,
+            )
+        }
+        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
+        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
     }
 
     @Test
@@ -4415,6 +4469,33 @@ class MatchReviewScreenTest {
                 )
             }
         }
+    }
+
+    private fun setResultFormatAvailabilityContent(
+        status: CustomDesignFormatAvailabilityStatus,
+    ) {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
+                        status = status,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+        openResultFormatDialog()
+    }
+
+    private fun openResultFormatDialog() {
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
     }
 
     private fun assertScreenshotDescriptions(lobbyVisible: Boolean, resultVisible: Boolean) {
