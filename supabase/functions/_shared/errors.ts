@@ -15,6 +15,11 @@ export type ErrorCode =
   | "UPSTREAM_TIMEOUT"
   | "GOOGLE_API_FAILURE"
   | "GOOGLE_ACCOUNT_DELETION_FAILURE"
+  | "GOOGLE_CLEANUP_FAILED"
+  | "STORAGE_CLEANUP_FAILED"
+  | "DATABASE_PURGE_FAILED"
+  | "ACCOUNT_DELETE_FAILED"
+  | "INVALID_ACCOUNT_DELETE_REQUEST"
   | "INVALID_MATCH_EXPORT_PAYLOAD"
   | "TOURNAMENT_NOT_FOUND_OR_FORBIDDEN"
   | "MATCH_NOT_FOUND_OR_FORBIDDEN"
@@ -59,6 +64,12 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   GOOGLE_API_FAILURE: "Google Sheets could not verify spreadsheet access.",
   GOOGLE_ACCOUNT_DELETION_FAILURE:
     "Google Sheets account data could not be deleted safely.",
+  GOOGLE_CLEANUP_FAILED:
+    "Google Sheets account data could not be deleted safely.",
+  STORAGE_CLEANUP_FAILED: "Account storage could not be deleted safely.",
+  DATABASE_PURGE_FAILED: "Account data could not be deleted safely.",
+  ACCOUNT_DELETE_FAILED: "The account could not be deleted safely.",
+  INVALID_ACCOUNT_DELETE_REQUEST: "The account deletion request is invalid.",
   INVALID_MATCH_EXPORT_PAYLOAD: "The match export payload is invalid.",
   TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: "The tournament could not be found.",
   MATCH_NOT_FOUND_OR_FORBIDDEN: "The match could not be found.",
@@ -113,6 +124,11 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   UPSTREAM_TIMEOUT: 504,
   GOOGLE_API_FAILURE: 502,
   GOOGLE_ACCOUNT_DELETION_FAILURE: 502,
+  GOOGLE_CLEANUP_FAILED: 502,
+  STORAGE_CLEANUP_FAILED: 502,
+  DATABASE_PURGE_FAILED: 502,
+  ACCOUNT_DELETE_FAILED: 502,
+  INVALID_ACCOUNT_DELETE_REQUEST: 400,
   INVALID_MATCH_EXPORT_PAYLOAD: 400,
   TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: 404,
   MATCH_NOT_FOUND_OR_FORBIDDEN: 404,
