@@ -33,6 +33,10 @@ class CustomDesignCanvasRenderer {
         textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
     ): CustomDesignCanvasRenderResult {
         validate(geometry, rows)?.let { return CustomDesignCanvasRenderResult.Failure(it) }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 24f
+        }
 
         return try {
             rows.forEachIndexed { rowIndex, row ->
@@ -43,6 +47,7 @@ class CustomDesignCanvasRenderer {
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
+                    paint = paint,
                 )
                 drawCenteredText(
                     canvas = canvas,
@@ -50,6 +55,7 @@ class CustomDesignCanvasRenderer {
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.WIN),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.WIN),
+                    paint = paint,
                 )
                 drawCenteredText(
                     canvas = canvas,
@@ -57,6 +63,7 @@ class CustomDesignCanvasRenderer {
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TOTAL_KILLS),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS),
+                    paint = paint,
                 )
                 drawCenteredText(
                     canvas = canvas,
@@ -64,6 +71,7 @@ class CustomDesignCanvasRenderer {
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.POSITION_POINTS),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS),
+                    paint = paint,
                 )
                 drawCenteredText(
                     canvas = canvas,
@@ -71,6 +79,7 @@ class CustomDesignCanvasRenderer {
                     centerX = geometry.columnX.getValue(CustomDesignAnchorField.TOTAL_POINTS),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS),
+                    paint = paint,
                 )
             }
             CustomDesignCanvasRenderResult.Success
@@ -114,6 +123,7 @@ class CustomDesignCanvasRenderer {
         centerX: Float,
         centerY: Float,
         color: String,
+        paint: Paint,
     ) {
         paint.color = Color.parseColor(color)
         val textWidth = paint.measureText(text)
@@ -123,9 +133,5 @@ class CustomDesignCanvasRenderer {
 
     private companion object {
         const val CUSTOM_DESIGN_ROW_COUNT = 12
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK
-            textSize = 24f
-        }
     }
 }

@@ -12,7 +12,7 @@ class ResultExportFileNameTest {
     @Test
     fun currentMatchPdfUsesApprovedFilenameContract() {
         assertEquals(
-            "RankForge_HOG_Championship_Match_1_Result.pdf",
+            "PointIQ_HOG_Championship_Match_1_Result.pdf",
             ResultExportFileName.forMatch(matchModel("HOG Championship", 1), ResultExportFileFormat.PDF),
         )
     }
@@ -20,7 +20,7 @@ class ResultExportFileNameTest {
     @Test
     fun currentMatchPngUsesApprovedFilenameContract() {
         assertEquals(
-            "RankForge_HOG_Championship_Match_1_Result.png",
+            "PointIQ_HOG_Championship_Match_1_Result.png",
             ResultExportFileName.forMatch(matchModel("HOG Championship", 1), ResultExportFileFormat.PNG),
         )
     }
@@ -28,7 +28,7 @@ class ResultExportFileNameTest {
     @Test
     fun tournamentPdfUsesApprovedFilenameContract() {
         assertEquals(
-            "RankForge_HOG_Championship_Tournament_Result.pdf",
+            "PointIQ_HOG_Championship_Tournament_Result.pdf",
             ResultExportFileName.forTournament(tournamentModel("HOG Championship"), ResultExportFileFormat.PDF),
         )
     }
@@ -36,7 +36,7 @@ class ResultExportFileNameTest {
     @Test
     fun tournamentPngUsesApprovedFilenameContract() {
         assertEquals(
-            "RankForge_HOG_Championship_Tournament_Result.png",
+            "PointIQ_HOG_Championship_Tournament_Result.png",
             ResultExportFileName.forTournament(tournamentModel("HOG Championship"), ResultExportFileFormat.PNG),
         )
     }

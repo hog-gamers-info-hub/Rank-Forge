@@ -2666,7 +2666,7 @@ class MatchReviewViewModelTest {
         val coordinator = RecordingResultDownloadCoordinator(
             result = ResultDownloadExecutionResult.UserDestinationRequired(
                 format = ResultExportFileFormat.PDF,
-                displayName = "RankForge_Summer_Cup_Match_1_Result.pdf",
+                displayName = "PointIQ_Summer_Cup_Match_1_Result.pdf",
                 bytes = byteArrayOf(1, 2, 3),
             ),
         )
@@ -2679,7 +2679,7 @@ class MatchReviewViewModelTest {
         assertEquals(
             ResultDownloadUiState.DestinationLaunchRequested(
                 ResultExportFileFormat.PDF,
-                "RankForge_Summer_Cup_Match_1_Result.pdf",
+                "PointIQ_Summer_Cup_Match_1_Result.pdf",
             ),
             viewModel.uiState.value.resultDownloadUiState,
         )
