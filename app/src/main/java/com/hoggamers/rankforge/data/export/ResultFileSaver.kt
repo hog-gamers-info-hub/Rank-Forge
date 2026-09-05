@@ -80,7 +80,7 @@ class ResultFileSaver(
             put(MediaStore.MediaColumns.MIME_TYPE, format.mimeType)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
-                "${Environment.DIRECTORY_DOWNLOADS}/Rank Forge",
+                "${Environment.DIRECTORY_DOWNLOADS}/PointIQ",
             )
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }

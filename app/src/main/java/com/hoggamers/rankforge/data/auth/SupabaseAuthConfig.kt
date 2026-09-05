@@ -15,7 +15,7 @@ data class SupabaseAuthConfig(
     companion object {
         const val DEFAULT_SUPABASE_URL = "https://example.supabase.co"
         const val DEFAULT_SUPABASE_PUBLISHABLE_KEY = "replace-with-supabase-publishable-key"
-        const val AUTH_CALLBACK_SCHEME = "com.hoggamers.rankforge"
+        const val AUTH_CALLBACK_SCHEME = "com.pointiq.app"
         const val AUTH_CALLBACK_HOST = "auth-callback"
         const val PASSWORD_RECOVERY_REDIRECT_URL =
             "$AUTH_CALLBACK_SCHEME://$AUTH_CALLBACK_HOST/password-recovery"

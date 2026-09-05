@@ -39,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.hoggamers.rankforge"
+        applicationId = "com.pointiq.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

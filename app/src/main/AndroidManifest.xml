@@ -25,7 +25,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="com.hoggamers.rankforge"
+                    android:scheme="com.pointiq.app"
                     android:host="auth-callback" />
             </intent-filter>
         </activity>
