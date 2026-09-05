@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -94,6 +95,7 @@ fun AuthScreen(
     onConfirmNewPasswordChanged: (String) -> Unit = {},
     onUpdateRecoveredPassword: () -> Unit = {},
     onExitPasswordRecovery: () -> Unit = {},
+    onDeleteAccountConfirmed: () -> Unit = {},
 ) {
     RankForgeScreenContainer(
         modifier = Modifier
@@ -116,6 +118,7 @@ fun AuthScreen(
                 onLogout = onLogout,
                 onHome = onSignedInHome,
                 onBack = onSignedInBack,
+                onDeleteAccountConfirmed = onDeleteAccountConfirmed,
             )
         } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.REQUEST_EMAIL) {
             PasswordRecoveryRequestContent(
@@ -526,8 +529,10 @@ private fun SignedInAuthContent(
     onLogout: () -> Unit,
     onHome: () -> Unit,
     onBack: () -> Unit,
+    onDeleteAccountConfirmed: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    var showDeleteAccountConfirmation by remember { mutableStateOf(false) }
 
     val pointIqNavy = Color(0xFF071B3E)
     val pointIqBlue = Color(0xFF176AF7)
@@ -626,6 +631,52 @@ private fun SignedInAuthContent(
         Text(
             text = stringResource(R.string.auth_logout_action),
             style = MaterialTheme.typography.labelLarge,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    OutlinedButton(
+        onClick = { showDeleteAccountConfirmation = true },
+        enabled = !uiState.isSubmitting,
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = pointIqDanger,
+        ),
+        shape = RoundedCornerShape(RankForgeSpacing.Medium),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = stringResource(R.string.auth_delete_account_action),
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+
+    if (showDeleteAccountConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountConfirmation = false },
+            title = {
+                Text(text = stringResource(R.string.auth_delete_account_confirmation_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.auth_delete_account_confirmation_message))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountConfirmation = false
+                        onDeleteAccountConfirmed()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = pointIqDanger,
+                    ),
+                ) {
+                    Text(text = stringResource(R.string.auth_delete_account_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountConfirmation = false }) {
+                    Text(text = stringResource(R.string.auth_delete_account_cancel_action))
+                }
+            },
         )
     }
 }

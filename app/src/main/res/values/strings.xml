@@ -55,6 +55,10 @@
     <string name="auth_submitting_action">Submitting</string>
     <string name="auth_google_sign_in_action">Sign in with Google</string>
     <string name="auth_logout_action">Log out</string>
+    <string name="auth_delete_account_action">Delete Account</string>
+    <string name="auth_delete_account_confirmation_title">Delete account?</string>
+    <string name="auth_delete_account_confirmation_message">This will permanently delete your PointIQ account and associated data. This action cannot be undone.</string>
+    <string name="auth_delete_account_cancel_action">Cancel</string>
     <string name="auth_missing_credentials_error">Enter an email and password.</string>
     <string name="auth_signed_in_message">Signed in.</string>
     <string name="auth_external_authentication_launched_message">Complete sign-in in your browser.</string>
