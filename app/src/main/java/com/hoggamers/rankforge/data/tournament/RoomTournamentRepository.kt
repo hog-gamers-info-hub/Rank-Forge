@@ -1998,39 +1998,39 @@ class RoomTournamentRepository @Inject constructor(
                 if (match.status != MatchStatus.FINALIZED) {
                     return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
                 }
-            val previousParticipantResults = match.finalizedParticipantResultsOrNull()
-            val correctedParticipantResults = participantResults ?: placements.map { placement ->
-                val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
-                    ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
-                MatchParticipantResult(
-                    teamSlotNumber = placement.teamSlotNumber,
-                    participationStatus = MatchParticipationStatus.PARTICIPATED,
-                    placement = placement.position,
-                    kills = kill.kills,
+                val previousParticipantResults = match.finalizedParticipantResultsOrNull()
+                val correctedParticipantResults = participantResults ?: placements.map { placement ->
+                    val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
+                        ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+                    MatchParticipantResult(
+                        teamSlotNumber = placement.teamSlotNumber,
+                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                        placement = placement.position,
+                        kills = kill.kills,
+                    )
+                }
+                if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
+                    return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
+                }
+                val correctedMatch = match.copy(
+                    placements = correctedParticipantResults.mapNotNull { result ->
+                        result.placement?.let { MatchPlacement(result.teamSlotNumber, it) }
+                    },
+                    kills = correctedMatchKills(correctedParticipantResults),
+                    participantResults = correctedParticipantResults.sortedBy { it.teamSlotNumber },
+                    correctionHistory = match.correctionHistory + MatchCorrectionRecord(
+                        previousPlacements = match.placements.toList(),
+                        previousKills = match.kills.toList(),
+                        correctedPlacements = correctedMatchPlacements(correctedParticipantResults),
+                        correctedKills = correctedMatchKills(correctedParticipantResults),
+                        previousParticipantResults = previousParticipantResults.orEmpty(),
+                        correctedParticipantResults = correctedParticipantResults,
+                    ),
                 )
-            }
-            if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
-                return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
-            }
-            val correctedMatch = match.copy(
-                placements = correctedParticipantResults.mapNotNull { result ->
-                    result.placement?.let { MatchPlacement(result.teamSlotNumber, it) }
-                },
-                kills = correctedMatchKills(correctedParticipantResults),
-                participantResults = correctedParticipantResults.sortedBy { it.teamSlotNumber },
-                correctionHistory = match.correctionHistory + MatchCorrectionRecord(
-                    previousPlacements = match.placements.toList(),
-                    previousKills = match.kills.toList(),
-                    correctedPlacements = correctedMatchPlacements(correctedParticipantResults),
-                    correctedKills = correctedMatchKills(correctedParticipantResults),
-                    previousParticipantResults = previousParticipantResults.orEmpty(),
-                    correctedParticipantResults = correctedParticipantResults,
-                ),
-            )
-            val next = current.copy(
-                matches = current.matches.replaceMatch(match.tournamentId, matchId) { correctedMatch },
-                draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
-            )
+                val next = current.copy(
+                    matches = current.matches.replaceMatch(match.tournamentId, matchId) { correctedMatch },
+                    draftValues = current.draftValues - DraftKey(match.tournamentId, matchId),
+                )
                 database.matchDao().upsert(correctedMatch.toEntity())
                 replaceMatchPlacements(matchId, correctedMatch.placements)
                 replaceMatchKills(matchId, correctedMatch.kills)
@@ -2042,7 +2042,7 @@ class RoomTournamentRepository @Inject constructor(
                 markLocalRevisionChanged(match.tournamentId)
                 updatedState = next
                 SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
-            }
+                }
             if (result is SubmitMatchCorrectionRepositoryResult.Submitted && updatedState != null) state.value = updatedState!!
             result
         }
