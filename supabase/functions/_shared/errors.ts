@@ -14,6 +14,7 @@ export type ErrorCode =
   | "GOOGLE_API_RATE_LIMITED"
   | "UPSTREAM_TIMEOUT"
   | "GOOGLE_API_FAILURE"
+  | "GOOGLE_ACCOUNT_DELETION_FAILURE"
   | "INVALID_MATCH_EXPORT_PAYLOAD"
   | "TOURNAMENT_NOT_FOUND_OR_FORBIDDEN"
   | "MATCH_NOT_FOUND_OR_FORBIDDEN"
@@ -56,6 +57,8 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   GOOGLE_API_RATE_LIMITED: "Google API rate limit exceeded.",
   UPSTREAM_TIMEOUT: "An upstream service timed out.",
   GOOGLE_API_FAILURE: "Google Sheets could not verify spreadsheet access.",
+  GOOGLE_ACCOUNT_DELETION_FAILURE:
+    "Google Sheets account data could not be deleted safely.",
   INVALID_MATCH_EXPORT_PAYLOAD: "The match export payload is invalid.",
   TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: "The tournament could not be found.",
   MATCH_NOT_FOUND_OR_FORBIDDEN: "The match could not be found.",
@@ -109,6 +112,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   GOOGLE_API_RATE_LIMITED: 429,
   UPSTREAM_TIMEOUT: 504,
   GOOGLE_API_FAILURE: 502,
+  GOOGLE_ACCOUNT_DELETION_FAILURE: 502,
   INVALID_MATCH_EXPORT_PAYLOAD: 400,
   TOURNAMENT_NOT_FOUND_OR_FORBIDDEN: 404,
   MATCH_NOT_FOUND_OR_FORBIDDEN: 404,
