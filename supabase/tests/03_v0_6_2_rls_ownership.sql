@@ -123,7 +123,7 @@ select is((
     join pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
         and procedure_row.prosecdef
-)::text, '{claim_export_operation,complete_export_operation_success,correct_finalized_match_snapshot,delete_match_idempotent,delete_tournament_idempotent,finalize_match_snapshot,mark_export_operation_outcome_uncertain,mark_export_operation_retryable_failure,mark_export_operation_write_started,resolve_export_operation_verified_success,signup_email_is_registered}'::text, 'only approved protected, export-state, and deletion RPCs use documented security definer ownership checks');
+)::text, '{claim_export_operation,complete_export_operation_success,correct_finalized_match_snapshot,delete_match_idempotent,delete_tournament_idempotent,finalize_match_snapshot,mark_export_operation_outcome_uncertain,mark_export_operation_retryable_failure,mark_export_operation_write_started,purge_account_data,resolve_export_operation_verified_success,signup_email_is_registered}'::text, 'only approved privileged RPCs use SECURITY DEFINER');
 
 insert into auth.users (id, email)
 values ('71000000-0000-0000-0000-000000000001', 'rls-owner@example.test');
