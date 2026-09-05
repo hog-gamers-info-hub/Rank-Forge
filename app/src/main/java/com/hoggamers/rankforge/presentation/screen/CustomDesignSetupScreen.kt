@@ -13,16 +13,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +42,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberUpdatedState
@@ -51,6 +59,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -58,10 +67,12 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridInitializer
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
@@ -85,10 +96,33 @@ const val CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG = "custom_design_grid_overlay"
 const val CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG = "custom_design_image_error"
 const val CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG = "custom_design_save_success_dialog"
 const val CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG = "custom_design_save_success_ok"
+const val CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG = "custom_design_team_name_color"
+const val CUSTOM_DESIGN_WIN_COLOR_TEST_TAG = "custom_design_win_color"
+const val CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG = "custom_design_total_kills_color"
+const val CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG = "custom_design_position_points_color"
+const val CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG = "custom_design_total_points_color"
+const val CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG = "custom_design_text_color_dialog"
+const val CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX = "custom_design_text_color_option_"
 
 private val CustomDesignPointIqBlue = Color(0xFF176AF7)
 private val CustomDesignPointIqDanger = Color(0xFFD92D3A)
 private val CustomDesignPointIqDangerContainer = Color(0xFFFFF5F5)
+
+private data class CustomDesignSelectableTextColor(
+    val hex: String,
+)
+
+private val CustomDesignSelectableTextColors = listOf(
+    CustomDesignSelectableTextColor("#000000"),
+    CustomDesignSelectableTextColor("#FFFFFF"),
+    CustomDesignSelectableTextColor("#808080"),
+    CustomDesignSelectableTextColor("#FF0000"),
+    CustomDesignSelectableTextColor("#FF9800"),
+    CustomDesignSelectableTextColor("#FFD600"),
+    CustomDesignSelectableTextColor("#00A651"),
+    CustomDesignSelectableTextColor("#176AF7"),
+    CustomDesignSelectableTextColor("#7B1FA2"),
+)
 
 @Composable
 fun CustomDesignSetupRoute(
@@ -126,6 +160,7 @@ fun CustomDesignSetupRoute(
         onTotalKillsChanged = viewModel::onTotalKillsChanged,
         onPositionPointsChanged = viewModel::onPositionPointsChanged,
         onTotalPointsChanged = viewModel::onTotalPointsChanged,
+        onTextColorChanged = viewModel::setTextColor,
         onUploadCustomDesign = viewModel::requestPhotoPicker,
         onSaveActionRequested = viewModel::saveNewCustomDesign,
         onSaveSuccessAcknowledged = viewModel::onSaveSuccessMessageHandled,
@@ -143,6 +178,7 @@ fun CustomDesignSetupScreen(
     onTotalKillsChanged: (String) -> Unit = {},
     onPositionPointsChanged: (String) -> Unit = {},
     onTotalPointsChanged: (String) -> Unit = {},
+    onTextColorChanged: (CustomDesignAnchorField, String) -> Unit = { _, _ -> },
     onUploadCustomDesign: () -> Unit = {},
     onSaveActionRequested: () -> Unit = {},
     onSaveSuccessAcknowledged: () -> Unit = {},
@@ -151,6 +187,9 @@ fun CustomDesignSetupScreen(
     onManualRowYChanged: (Int, Float) -> Unit = { _, _ -> },
 ) {
     val isRestored = uiState.restoreStatus == CustomDesignRestoreStatus.RESTORED
+    var activeTextColorField by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<CustomDesignAnchorField?>(null)
+    }
     val editableGridGeometry = uiState.editableGridGeometry
         ?: CustomDesignEditableGridInitializer.initialize(
             sourceWidth = uiState.sourceImageWidth ?: 0,
@@ -189,44 +228,59 @@ fun CustomDesignSetupScreen(
         }
         if (!isRestored) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-            CustomDesignLabelInput(
+            CustomDesignLabelWithColor(
                 value = uiState.teamNameLabel,
                 onValueChange = onTeamNameChanged,
                 label = stringResource(R.string.custom_design_team_name_label),
                 testTag = CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
                 isError = CustomDesignLabelField.TEAM_NAME in uiState.validationErrors,
+                color = uiState.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
+                colorTestTag = CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG,
+                onColorClick = { activeTextColorField = CustomDesignAnchorField.TEAM_NAME },
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelInput(
+            CustomDesignLabelWithColor(
                 value = uiState.winLabel,
                 onValueChange = onWinChanged,
                 label = stringResource(R.string.custom_design_win_label),
                 testTag = CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
                 isError = CustomDesignLabelField.WIN in uiState.validationErrors,
+                color = uiState.textColors.colorFor(CustomDesignAnchorField.WIN),
+                colorTestTag = CUSTOM_DESIGN_WIN_COLOR_TEST_TAG,
+                onColorClick = { activeTextColorField = CustomDesignAnchorField.WIN },
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelInput(
+            CustomDesignLabelWithColor(
                 value = uiState.totalKillsLabel,
                 onValueChange = onTotalKillsChanged,
                 label = stringResource(R.string.custom_design_total_kills_label),
                 testTag = CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
                 isError = CustomDesignLabelField.TOTAL_KILLS in uiState.validationErrors,
+                color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS),
+                colorTestTag = CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG,
+                onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_KILLS },
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelInput(
+            CustomDesignLabelWithColor(
                 value = uiState.positionPointsLabel,
                 onValueChange = onPositionPointsChanged,
                 label = stringResource(R.string.custom_design_position_points_label),
                 testTag = CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
                 isError = CustomDesignLabelField.POSITION_POINTS in uiState.validationErrors,
+                color = uiState.textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS),
+                colorTestTag = CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG,
+                onColorClick = { activeTextColorField = CustomDesignAnchorField.POSITION_POINTS },
             )
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelInput(
+            CustomDesignLabelWithColor(
                 value = uiState.totalPointsLabel,
                 onValueChange = onTotalPointsChanged,
                 label = stringResource(R.string.custom_design_total_points_label),
                 testTag = CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
                 isError = CustomDesignLabelField.TOTAL_POINTS in uiState.validationErrors,
+                color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS),
+                colorTestTag = CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG,
+                onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_POINTS },
             )
             uiState.validationErrors.takeIf { it.isNotEmpty() }?.let {
                 Text(
@@ -331,6 +385,17 @@ fun CustomDesignSetupScreen(
             },
         )
     }
+
+    activeTextColorField?.let { field ->
+        CustomDesignTextColorDialog(
+            selectedColor = uiState.textColors.colorFor(field),
+            onColorSelected = { color ->
+                onTextColorChanged(field, color)
+                activeTextColorField = null
+            },
+            onDismissRequest = { activeTextColorField = null },
+        )
+    }
 }
 
 @Composable
@@ -340,18 +405,131 @@ private fun CustomDesignLabelInput(
     label: String,
     testTag: String,
     isError: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag(testTag),
         isError = isError,
         supportingText = {
             if (isError) Text(stringResource(R.string.required_field_error))
+        },
+    )
+}
+
+@Composable
+private fun CustomDesignLabelWithColor(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    testTag: String,
+    isError: Boolean,
+    color: String,
+    colorTestTag: String,
+    onColorClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CustomDesignLabelInput(
+            value = value,
+            onValueChange = onValueChange,
+            label = label,
+            testTag = testTag,
+            isError = isError,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(RankForgeSpacing.Small))
+        CustomDesignColorSwatch(
+            color = color,
+            testTag = colorTestTag,
+            onClick = onColorClick,
+        )
+    }
+}
+
+@Composable
+private fun CustomDesignColorSwatch(
+    color: String,
+    testTag: String,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(shape)
+            .background(Color(android.graphics.Color.parseColor(color)))
+            .border(
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .testTag(testTag),
+    )
+}
+
+@Composable
+private fun CustomDesignTextColorDialog(
+    selectedColor: String,
+    onColorSelected: (String) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag(CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG),
+        onDismissRequest = onDismissRequest,
+        title = { Text("Text Color") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                CustomDesignSelectableTextColors.chunked(3).forEach { rowColors ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        rowColors.forEach { option ->
+                            val isSelected = option.hex == selectedColor
+                            val shape = RoundedCornerShape(8.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(shape)
+                                    .background(Color(android.graphics.Color.parseColor(option.hex)))
+                                    .border(
+                                        border = BorderStroke(
+                                            width = if (isSelected) 3.dp else 1.dp,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outline
+                                            },
+                                        ),
+                                        shape = shape,
+                                    )
+                                    .selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = { onColorSelected(option.hex) },
+                                    )
+                                    .testTag(
+                                        CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX +
+                                            option.hex.removePrefix("#"),
+                                    ),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismissRequest) {
+                Text(stringResource(R.string.cancel_action))
+            }
         },
     )
 }

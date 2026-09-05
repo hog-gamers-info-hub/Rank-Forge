@@ -337,6 +337,22 @@ class CustomDesignSetupViewModel @Inject constructor(
         updateLabels { it.copy(totalPointsLabel = value) }
     }
 
+    fun setTextColor(
+        field: CustomDesignAnchorField,
+        color: String,
+    ) {
+        val state = _uiState.value
+        if (isRestoreLocked() ||
+            state.saveStatus == CustomDesignSaveStatus.SAVING ||
+            state.isImageValidationInProgress ||
+            state.isPhotoPickerLaunchPending
+        ) return
+        val updatedColors = CustomDesignColumnTextColors.fromMap(
+            state.textColors.asMap() + (field to color),
+        ) ?: return
+        _uiState.update { it.copy(textColors = updatedColors) }
+    }
+
     fun setManualColumnX(
         field: CustomDesignAnchorField,
         sourceX: Float,

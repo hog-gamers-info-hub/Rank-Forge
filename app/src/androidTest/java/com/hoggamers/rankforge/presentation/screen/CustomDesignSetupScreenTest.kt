@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -16,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinate
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCoordinateSource
@@ -72,6 +74,73 @@ class CustomDesignSetupScreenTest {
                 .fetchSemanticsNodes()
                 .size,
         )
+    }
+
+    @Test
+    fun colorSelectorsUseIndependentPaletteSelectionsAndCancelPreservesColor() {
+        var uiState by mutableStateOf(CustomDesignSetupUiState())
+        composeTestRule.setContent {
+            RankForgeTheme {
+                CustomDesignSetupScreen(
+                    uiState = uiState,
+                    onTextColorChanged = { field, color ->
+                        uiState = uiState.copy(
+                            textColors = CustomDesignColumnTextColors.fromMap(
+                                uiState.textColors.asMap() + (field to color),
+                            )!!,
+                        )
+                    },
+                )
+            }
+        }
+
+        val palette = listOf(
+            CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG to "FFFFFF",
+            CUSTOM_DESIGN_WIN_COLOR_TEST_TAG to "FF0000",
+            CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG to "176AF7",
+            CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG to "FFD600",
+            CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG to "FFFFFF",
+        )
+        val paletteColors = listOf("000000", "FFFFFF", "808080", "FF0000", "FF9800", "FFD600", "00A651", "176AF7", "7B1FA2")
+        palette.forEach { (selectorTag, colorTag) ->
+            composeTestRule.onNodeWithTag(selectorTag).performScrollTo().performClick()
+            composeTestRule.onNodeWithTag(CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG).assertIsDisplayed()
+            paletteColors.forEach { paletteColor ->
+                composeTestRule.onNodeWithTag(
+                    CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX + paletteColor,
+                ).assertIsDisplayed()
+            }
+            composeTestRule.onNodeWithTag(
+                CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX + "000000",
+            ).assertIsSelected()
+            composeTestRule.onNodeWithTag(
+                CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX + colorTag,
+            ).performClick()
+            assertEquals(
+                0,
+                composeTestRule.onAllNodesWithTag(CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG)
+                    .fetchSemanticsNodes().size,
+            )
+        }
+
+        composeTestRule.runOnIdle {
+            assertEquals("#FFFFFF", uiState.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME))
+            assertEquals("#FF0000", uiState.textColors.colorFor(CustomDesignAnchorField.WIN))
+            assertEquals("#176AF7", uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS))
+            assertEquals("#FFD600", uiState.textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS))
+            assertEquals("#FFFFFF", uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS))
+        }
+
+        composeTestRule.onNodeWithTag(CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(
+            CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX + "FFFFFF",
+        ).assertIsSelected()
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals("#FFFFFF", uiState.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME))
+        }
     }
 
     @Test
@@ -261,6 +330,11 @@ class CustomDesignSetupScreenTest {
                 CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG,
                 CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG,
                 CUSTOM_DESIGN_GRID_OVERLAY_TEST_TAG,
+                CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG,
+                CUSTOM_DESIGN_WIN_COLOR_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG,
+                CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG,
+                CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG,
             ).forEach { tag ->
                 assertEquals(
                     0,

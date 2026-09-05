@@ -630,6 +630,26 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun setTextColorUpdatesOnlyTheSelectedFieldWithoutRerunningOcr() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        val viewModel = viewModel(runner = runner)
+
+        selectImage(viewModel)
+        advanceUntilIdle()
+        val ocrCalls = runner.sources.size
+
+        viewModel.setTextColor(CustomDesignAnchorField.WIN, "#ff0000")
+
+        val colors = viewModel.uiState.value.textColors
+        assertEquals("#000000", colors.colorFor(CustomDesignAnchorField.TEAM_NAME))
+        assertEquals("#FF0000", colors.colorFor(CustomDesignAnchorField.WIN))
+        assertEquals("#000000", colors.colorFor(CustomDesignAnchorField.TOTAL_KILLS))
+        assertEquals("#000000", colors.colorFor(CustomDesignAnchorField.POSITION_POINTS))
+        assertEquals("#000000", colors.colorFor(CustomDesignAnchorField.TOTAL_POINTS))
+        assertEquals(ocrCalls, runner.sources.size)
+    }
+
+    @Test
     fun saveWithoutVerifiedDraftDoesNotInvokeCloudAction() {
         var calls = 0
         val viewModel = viewModel(
@@ -859,6 +879,7 @@ class CustomDesignSetupViewModelTest {
         viewModel.setManualColumnX(CustomDesignAnchorField.WIN, 1f)
         viewModel.setManualRowY(1, 1f)
         viewModel.clearManualGridOverrides()
+        viewModel.setTextColor(CustomDesignAnchorField.TEAM_NAME, "#FFFFFF")
         viewModel.requestPhotoPicker()
         viewModel.onSaveActionRequested()
         viewModel.saveNewCustomDesign()
@@ -866,6 +887,10 @@ class CustomDesignSetupViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(design.labels.teamName, state.teamNameLabel)
+        assertEquals(
+            design.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
+            state.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
+        )
         assertEquals(design.geometry.columnX, state.manualGridOverrides.columnX)
         assertEquals(design.geometry.rowY, state.manualGridOverrides.rowY)
         assertFalse(state.isPhotoPickerLaunchPending)
