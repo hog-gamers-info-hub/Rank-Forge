@@ -9,6 +9,7 @@ data class AuthUiState(
     val newPassword: String = "",
     val confirmNewPassword: String = "",
     val accountEmail: String? = null,
+    val accountUserId: String? = null,
     val isSessionLoading: Boolean = false,
     val isExternalAuthCallbackProcessing: Boolean = false,
     val isSubmitting: Boolean = false,

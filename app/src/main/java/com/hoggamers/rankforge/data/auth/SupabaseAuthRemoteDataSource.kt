@@ -156,6 +156,10 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         }
     }
 
+    override suspend fun clearLocalSession() {
+        client.auth.clearSession()
+    }
+
     private fun ensureConfigured() {
         if (!config.isConfigured) {
             throw AuthConfigurationException()

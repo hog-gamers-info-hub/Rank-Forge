@@ -32,4 +32,6 @@ interface AuthRepository {
     )
 
     suspend fun logout(): AuthOperationResult
+
+    suspend fun clearLocalSession() = Unit
 }

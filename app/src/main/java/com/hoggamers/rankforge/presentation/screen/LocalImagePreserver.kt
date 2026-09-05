@@ -215,6 +215,36 @@ class LocalImagePreserver(
         LocalImageCleanupResult.Cleaned
     }
 
+    suspend fun cleanupCustomDesignsForOwner(
+        ownerUserId: String,
+    ): LocalImageCleanupResult = withContext(ioDispatcher) {
+        if (!isCanonicalUuid(ownerUserId)) return@withContext LocalImageCleanupResult.Failed
+        val ownerDirectory = File(
+            File(File(appPrivateRoot, CUSTOM_DESIGNS_DIRECTORY), "users"),
+            ownerUserId,
+        )
+        if (!ownerDirectory.exists()) return@withContext LocalImageCleanupResult.Cleaned
+        if (!ownerDirectory.isDirectory) return@withContext LocalImageCleanupResult.Failed
+
+        val designDirectories = listFilesOrNull(ownerDirectory)
+            ?: return@withContext LocalImageCleanupResult.Failed
+        if (designDirectories.any { !it.isDirectory || !isCanonicalUuid(it.name) }) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        for (directory in designDirectories) {
+            if (cleanupCustomDesign(ownerUserId, directory.name) != LocalImageCleanupResult.Cleaned) {
+                return@withContext LocalImageCleanupResult.Failed
+            }
+        }
+
+        val remaining = listFilesOrNull(ownerDirectory)
+            ?: return@withContext LocalImageCleanupResult.Failed
+        if (remaining.isNotEmpty() || !deleteFile(ownerDirectory)) {
+            return@withContext LocalImageCleanupResult.Failed
+        }
+        LocalImageCleanupResult.Cleaned
+    }
+
     fun customDesignPreservedFile(
         ownerUserId: String,
         customDesignId: String,

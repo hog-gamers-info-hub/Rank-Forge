@@ -63,6 +63,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
@@ -98,6 +99,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindLocalDeletionRepository(
         repository: RoomTournamentRepository,
     ): LocalDeletionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAccountDeletionLocalCleanupRepository(
+        repository: RoomTournamentRepository,
+    ): AccountDeletionLocalCleanupRepository
 
     @Binds
     @Singleton
@@ -185,6 +192,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_17_18,
         RankForgeDatabase.MIGRATION_18_19,
         RankForgeDatabase.MIGRATION_19_20,
+        RankForgeDatabase.MIGRATION_20_21,
     ).build()
 
     @Provides

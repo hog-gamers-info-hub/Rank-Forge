@@ -88,6 +88,10 @@ class SupabaseAuthRepository @Inject constructor(
             )
         }
 
+    override suspend fun clearLocalSession() {
+        remoteDataSource.clearLocalSession()
+    }
+
     private suspend fun runAuthOperation(
         context: AuthFailureContext,
         successOutcome: AuthSuccessOutcome = AuthSuccessOutcome.SignedIn,
