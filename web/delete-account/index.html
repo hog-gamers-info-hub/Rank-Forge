@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; connect-src https://jfllzadfduzktczzdvil.supabase.co; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <title>Delete your PointIQ account</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, Helvetica, sans-serif; background: #f4faff; color: #071b3e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #fdfeff 0%, #f4faff 100%); padding: 24px; }
+    main { width: min(100%, 520px); margin: 0 auto; }
+    .card { margin-top: 12vh; padding: 28px; border: 1px solid #d9e6f7; border-radius: 22px; background: #ffffff; box-shadow: 0 4px 14px rgba(7, 27, 62, 0.09); }
+    .brand { margin: 0; color: #176af7; font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 8px 0 0; font-size: 30px; line-height: 36px; }
+    h2 { margin: 0; font-size: 24px; line-height: 30px; }
+    p { color: #607393; font-size: 16px; line-height: 24px; }
+    .description { margin: 12px 0 0; }
+    .warning { margin: 22px 0 0; padding: 14px; border: 1px solid #f0c8c8; border-radius: 14px; background: #fff7f7; color: #8b2020; font-size: 15px; line-height: 22px; }
+    form { display: grid; gap: 14px; margin-top: 22px; }
+    label { display: grid; gap: 7px; color: #071b3e; font-size: 14px; font-weight: 700; }
+    input { width: 100%; min-height: 48px; padding: 12px; border: 1px solid #b9cbe3; border-radius: 12px; color: #071b3e; background: #ffffff; font: inherit; font-weight: 400; }
+    input:focus, button:focus-visible { outline: 3px solid #9dc2ff; outline-offset: 2px; }
+    button { min-height: 48px; padding: 12px 16px; border: 0; border-radius: 14px; background: #176af7; color: #ffffff; cursor: pointer; font: inherit; font-weight: 700; }
+    button.secondary { background: #eef4ff; color: #176af7; }
+    button.danger { background: #ffffff; border: 1px solid #c53b3b; color: #a32424; }
+    button:disabled { cursor: wait; opacity: 0.65; }
+    .separator { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #8292aa; font-size: 13px; }
+    .separator::before, .separator::after { content: ""; height: 1px; flex: 1; background: #d9e6f7; }
+    .message { min-height: 24px; margin: 16px 0 0; color: #a32424; font-size: 14px; line-height: 21px; }
+    .account { margin: 16px 0 0; overflow-wrap: anywhere; color: #607393; }
+    .actions { display: grid; gap: 12px; margin-top: 24px; }
+    .confirm { margin-top: 22px; padding: 18px; border: 1px solid #f0c8c8; border-radius: 16px; background: #fffafa; }
+    .confirm h2 { color: #8b2020; font-size: 19px; line-height: 25px; }
+    .confirm p { margin: 8px 0 0; font-size: 14px; line-height: 21px; }
+    .confirm-actions { display: grid; gap: 10px; margin-top: 16px; }
+    .success { color: #166534; }
+    .success p { color: #3f6f52; }
+    @media (max-width: 430px) { body { padding: 16px; } .card { margin-top: 5vh; padding: 22px; } h1 { font-size: 27px; line-height: 33px; } }
+  </style>
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <section class="card"><p class="brand">PointIQ</p><p>Checking your sign-in…</p></section>
+  </main>
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm";
+
+    const SUPABASE_URL = "https://jfllzadfduzktczzdvil.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_kfQnNrmcsdPhDyTcP0BqHw_5Isv5QM3";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { autoRefreshToken: true, detectSessionInUrl: true, persistSession: true },
+    });
+    const app = document.getElementById("app");
+    let session = null;
+    let deletionInProgress = false;
+    let pageMessage = "";
+    let showConfirmation = false;
+
+    function element(tagName, className, text) {
+      const node = document.createElement(tagName);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function pageShell(content, className) {
+      const card = element("section", `card${className ? ` ${className}` : ""}`);
+      card.append(element("p", "brand", "PointIQ"), content);
+      return card;
+    }
+
+    function render() {
+      if (deletionInProgress) {
+        const content = element("div");
+        content.append(element("h1", "", "Delete your account"), element("p", "description", "Deleting your PointIQ account… Please keep this page open."));
+        app.replaceChildren(pageShell(content));
+        return;
+      }
+      if (pageMessage === "success") {
+        const content = element("div", "success");
+        content.append(element("h1", "", "Account deleted"), element("p", "description", "Your PointIQ account and associated data have been permanently deleted."));
+        app.replaceChildren(pageShell(content));
+        return;
+      }
+      if (!session) { renderSignedOut(); return; }
+
+      const content = element("div");
+      content.append(
+        element("h1", "", "Delete your account"),
+        element("p", "account", `Signed in as ${session.user.email || "your PointIQ account"}.`),
+        element("p", "warning", "This permanently deletes your PointIQ account and associated data. This action cannot be undone or restored."),
+      );
+      const actions = element("div", "actions");
+      const deleteButton = element("button", "danger", "Delete account");
+      deleteButton.type = "button";
+      deleteButton.addEventListener("click", () => { showConfirmation = true; render(); });
+      actions.append(deleteButton);
+      content.append(actions);
+
+      if (showConfirmation) {
+        const confirmation = element("div", "confirm");
+        confirmation.setAttribute("role", "alertdialog");
+        confirmation.setAttribute("aria-modal", "true");
+        confirmation.append(
+          element("h2", "", "Confirm permanent deletion"),
+          element("p", "", "Your account, tournaments, exports, custom designs, and other associated data will be permanently deleted."),
+        );
+        const confirmationActions = element("div", "confirm-actions");
+        const cancelButton = element("button", "secondary", "Cancel");
+        cancelButton.type = "button";
+        cancelButton.addEventListener("click", () => { showConfirmation = false; render(); });
+        const confirmButton = element("button", "danger", "Permanently delete account");
+        confirmButton.type = "button";
+        confirmButton.addEventListener("click", deleteAccount);
+        confirmationActions.append(cancelButton, confirmButton);
+        confirmation.append(confirmationActions);
+        content.append(confirmation);
+        confirmButton.focus();
+      }
+      if (pageMessage) content.append(element("p", "message", pageMessage));
+      app.replaceChildren(pageShell(content));
+    }
+
+    function renderSignedOut() {
+      const content = element("div");
+      content.append(element("h1", "", "Delete your account"), element("p", "description", "Sign in to permanently delete your PointIQ account without opening the app."));
+      const googleButton = element("button", "secondary", "Sign in with Google");
+      googleButton.type = "button";
+      googleButton.addEventListener("click", signInWithGoogle);
+      const form = document.createElement("form");
+      const emailLabel = element("label", "", "Email");
+      const emailInput = document.createElement("input");
+      emailInput.type = "email"; emailInput.name = "email"; emailInput.autocomplete = "email"; emailInput.required = true;
+      emailLabel.append(emailInput);
+      const passwordLabel = element("label", "", "Password");
+      const passwordInput = document.createElement("input");
+      passwordInput.type = "password"; passwordInput.name = "password"; passwordInput.autocomplete = "current-password"; passwordInput.required = true;
+      passwordLabel.append(passwordInput);
+      const submit = element("button", "", "Sign in");
+      submit.type = "submit";
+      form.append(emailLabel, passwordLabel, submit);
+      form.addEventListener("submit", (event) => signInWithPassword(event, emailInput, passwordInput, submit));
+      content.append(googleButton, element("div", "separator", "or"), form);
+      if (pageMessage) content.append(element("p", "message", pageMessage));
+      app.replaceChildren(pageShell(content));
+    }
+
+    async function signInWithGoogle() {
+      pageMessage = "";
+      const redirectTo = window.location.href.split("#")[0].split("?")[0];
+      const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+      if (error) { pageMessage = "Sign-in failed. Please try again."; render(); }
+    }
+
+    async function signInWithPassword(event, emailInput, passwordInput, submit) {
+      event.preventDefault();
+      if (submit.disabled) return;
+      submit.disabled = true; pageMessage = "";
+      const { data, error } = await supabase.auth.signInWithPassword({ email: emailInput.value, password: passwordInput.value });
+      submit.disabled = false;
+      if (error || !data.session) { pageMessage = "Sign-in failed. Check your details and try again."; render(); }
+    }
+
+    async function deleteAccount() {
+      if (deletionInProgress || !session) return;
+      deletionInProgress = true; pageMessage = ""; showConfirmation = false; render();
+      const { error } = await supabase.functions.invoke("delete-account", { body: {} });
+      if (error) {
+        deletionInProgress = false;
+        pageMessage = "Couldn't delete your PointIQ account. Please try again.";
+        render();
+        return;
+      }
+      await supabase.auth.signOut({ scope: "local" });
+      session = null; deletionInProgress = false; pageMessage = "success"; render();
+    }
+
+    supabase.auth.onAuthStateChange((_event, nextSession) => {
+      session = nextSession;
+      if (!nextSession && pageMessage !== "success") showConfirmation = false;
+      render();
+    });
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+    render();
+  </script>
+</body>
+</html>
