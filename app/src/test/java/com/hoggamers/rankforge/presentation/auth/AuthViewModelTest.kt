@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import androidx.lifecycle.SavedStateHandle
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
@@ -9,6 +10,9 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
@@ -63,6 +67,7 @@ import org.junit.Test
 class AuthViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FakeAuthRepository
+    private lateinit var accountDeletionRepository: FakeAccountDeletionRepository
     private var recoveryCalls = 0
     private var foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
 
@@ -70,6 +75,7 @@ class AuthViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = FakeAuthRepository()
+        accountDeletionRepository = FakeAccountDeletionRepository()
         recoveryCalls = 0
         foregroundRecovery = ForegroundSyncQueueRecoveryAction { recoveryCalls += 1 }
     }
@@ -581,6 +587,83 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun accountDeletionBlocksDuplicatesAndHandsOffAfterRemoteSuccess() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+        accountDeletionRepository.gate = CompletableDeferred()
+
+        viewModel.deleteAccount()
+        runCurrent()
+        viewModel.deleteAccount()
+        runCurrent()
+
+        assertEquals(1, accountDeletionRepository.calls)
+        assertEquals(AccountDeletionUiState.DELETING, viewModel.uiState.value.accountDeletionState)
+
+        accountDeletionRepository.gate?.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(
+            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+            viewModel.uiState.value.accountDeletionState,
+        )
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        runCurrent()
+        assertEquals(
+            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+            viewModel.uiState.value.accountDeletionState,
+        )
+    }
+
+    @Test
+    fun accountDeletionFailureIsVisibleAndCanBeRetriedManually() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.test"))
+        advanceUntilIdle()
+        accountDeletionRepository.result = AccountDeletionResult.Failure(
+            AccountDeletionFailureCategory.NETWORK,
+        )
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertEquals(
+            AuthUiMessage.AccountDeletionFailure(AccountDeletionFailureCategory.NETWORK),
+            viewModel.uiState.value.errorMessage,
+        )
+
+        accountDeletionRepository.result = AccountDeletionResult.Success
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(
+            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+            viewModel.uiState.value.accountDeletionState,
+        )
+        assertEquals(2, accountDeletionRepository.calls)
+    }
+
+    @Test
+    fun processDeathDuringAccountDeletionFailsClosedWithoutAutomaticRetry() = runTest {
+        val viewModel = createViewModel(
+            savedStateHandle = SavedStateHandle(
+                mapOf("account_deletion_state" to AccountDeletionUiState.DELETING.name),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            AccountDeletionUiState.RECOVERY_REQUIRED,
+            viewModel.uiState.value.accountDeletionState,
+        )
+        assertEquals(0, accountDeletionRepository.calls)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
     fun remoteLogoutFailureStillLeavesLocalDeviceSignedOutWithWarning() = runTest {
         repository.logoutResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignedOutLocallyWithRemoteFailure(
@@ -905,6 +988,7 @@ class AuthViewModelTest {
     private fun createViewModel(
         pendingCleanup: RecoverPendingLocalDeletionCleanupUseCase = noOpPendingCleanup(),
         reconciliation: ReconcileLegacyTournamentOwnershipUseCase = noOpReconciliation(),
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
@@ -918,6 +1002,8 @@ class AuthViewModelTest {
             recoverForegroundSyncQueue = foregroundRecovery,
             recoverPendingLocalDeletionCleanup = pendingCleanup,
             reconcileLegacyTournamentOwnership = reconciliation,
+            accountDeletionRepository = accountDeletionRepository,
+            savedStateHandle = savedStateHandle,
         )
 
     private fun noOpReconciliation() = ReconcileLegacyTournamentOwnershipUseCase(
@@ -1120,6 +1206,18 @@ class AuthViewModelTest {
                 authState.value = AuthState.SignedOut
             }
             return logoutResult
+        }
+    }
+
+    private class FakeAccountDeletionRepository : AccountDeletionRepository {
+        var result: AccountDeletionResult = AccountDeletionResult.Success
+        var gate: CompletableDeferred<Unit>? = null
+        var calls = 0
+
+        override suspend fun deleteCurrentAccount(): AccountDeletionResult {
+            calls += 1
+            gate?.await()
+            return result
         }
     }
 }

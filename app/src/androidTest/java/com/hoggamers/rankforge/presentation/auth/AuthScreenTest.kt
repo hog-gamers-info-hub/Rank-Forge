@@ -370,6 +370,71 @@ class AuthScreenTest {
     }
 
     @Test
+    fun signedInAccountDeleteConfirmationUsesExistingCallback() {
+        var deleteCount by mutableIntStateOf(0)
+        var uiState by mutableStateOf(
+            AuthUiState(isSignedIn = true, accountEmail = "user@example.com"),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = uiState,
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                    onDeleteAccountConfirmed = {
+                        deleteCount += 1
+                        uiState = uiState.copy(
+                            accountDeletionState = AccountDeletionUiState.DELETING,
+                            isSubmitting = true,
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_CONFIRMATION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG).performClick()
+        assertEquals(0, deleteCount)
+
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG).performClick()
+        assertEquals(1, deleteCount)
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_PROGRESS_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG).assertIsNotEnabled()
+    }
+
+    @Test
+    fun remoteDeletedPendingLocalCleanupHidesAccountActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(
+                        isSignedIn = true,
+                        accountEmail = "user@example.com",
+                        accountDeletionState = AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+                    ),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_PENDING_LOCAL_CLEANUP_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_ACCOUNT_EMAIL_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
     fun restorationWarningIsDisplayedWithoutSignedInState() {
         composeTestRule.setContent {
             RankForgeTheme {

@@ -50,6 +50,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
@@ -76,6 +77,12 @@ const val AUTH_NEW_PASSWORD_VISIBILITY_TEST_TAG = "auth_new_password_visibility"
 const val AUTH_CONFIRM_NEW_PASSWORD_VISIBILITY_TEST_TAG = "auth_confirm_new_password_visibility"
 const val AUTH_UPDATE_PASSWORD_ACTION_TEST_TAG = "auth_update_password_action"
 const val AUTH_PASSWORD_VALIDATION_ERROR_TEST_TAG = "auth_password_validation_error"
+const val AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG = "auth_delete_account_action"
+const val AUTH_DELETE_ACCOUNT_CONFIRMATION_TEST_TAG = "auth_delete_account_confirmation"
+const val AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG = "auth_delete_account_confirm"
+const val AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG = "auth_delete_account_cancel"
+const val AUTH_DELETE_ACCOUNT_PROGRESS_TEST_TAG = "auth_delete_account_progress"
+const val AUTH_DELETE_ACCOUNT_PENDING_LOCAL_CLEANUP_TEST_TAG = "auth_delete_account_pending_local_cleanup"
 
 @Composable
 fun AuthScreen(
@@ -112,7 +119,11 @@ fun AuthScreen(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        if (uiState.isSignedIn) {
+        if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
+            uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
+        ) {
+            AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
+        } else if (uiState.isSignedIn) {
             SignedInAuthContent(
                 uiState = uiState,
                 onLogout = onLogout,
@@ -531,7 +542,10 @@ private fun SignedInAuthContent(
     onBack: () -> Unit,
     onDeleteAccountConfirmed: () -> Unit,
 ) {
-    BackHandler(onBack = onBack)
+    val deletionInProgress = uiState.accountDeletionState == AccountDeletionUiState.DELETING
+    BackHandler(enabled = true) {
+        if (!deletionInProgress) onBack()
+    }
     var showDeleteAccountConfirmation by remember { mutableStateOf(false) }
 
     val pointIqNavy = Color(0xFF071B3E)
@@ -548,6 +562,7 @@ private fun SignedInAuthContent(
     ) {
         TextButton(
             onClick = onHome,
+            enabled = !deletionInProgress,
             modifier = Modifier.testTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG),
         ) {
             Text(
@@ -559,6 +574,7 @@ private fun SignedInAuthContent(
         Spacer(modifier = Modifier.weight(1f))
         TextButton(
             onClick = onBack,
+            enabled = !deletionInProgress,
             modifier = Modifier.testTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG),
         ) {
             Text(
@@ -619,7 +635,7 @@ private fun SignedInAuthContent(
     Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
     OutlinedButton(
         onClick = onLogout,
-        enabled = !uiState.isSubmitting,
+        enabled = !deletionInProgress && !uiState.isSubmitting,
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = pointIqDanger,
         ),
@@ -637,12 +653,14 @@ private fun SignedInAuthContent(
     Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
     OutlinedButton(
         onClick = { showDeleteAccountConfirmation = true },
-        enabled = !uiState.isSubmitting,
+        enabled = !deletionInProgress && !uiState.isSubmitting,
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = pointIqDanger,
         ),
         shape = RoundedCornerShape(RankForgeSpacing.Medium),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG),
     ) {
         Text(
             text = stringResource(R.string.auth_delete_account_action),
@@ -650,9 +668,26 @@ private fun SignedInAuthContent(
         )
     }
 
+    if (deletionInProgress) {
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AUTH_DELETE_ACCOUNT_PROGRESS_TEST_TAG),
+            horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            Text(text = stringResource(R.string.auth_delete_account_in_progress))
+        }
+    }
+
     if (showDeleteAccountConfirmation) {
         AlertDialog(
-            onDismissRequest = { showDeleteAccountConfirmation = false },
+            onDismissRequest = {
+                if (!deletionInProgress) showDeleteAccountConfirmation = false
+            },
+            modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRMATION_TEST_TAG),
             title = {
                 Text(text = stringResource(R.string.auth_delete_account_confirmation_title))
             },
@@ -665,6 +700,8 @@ private fun SignedInAuthContent(
                         showDeleteAccountConfirmation = false
                         onDeleteAccountConfirmed()
                     },
+                    enabled = !deletionInProgress,
+                    modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG),
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = pointIqDanger,
                     ),
@@ -673,12 +710,36 @@ private fun SignedInAuthContent(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteAccountConfirmation = false }) {
+                TextButton(
+                    onClick = { showDeleteAccountConfirmation = false },
+                    enabled = !deletionInProgress,
+                    modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG),
+                ) {
                     Text(text = stringResource(R.string.auth_delete_account_cancel_action))
                 }
             },
         )
     }
+
+    AuthMessages(uiState = uiState)
+}
+
+@Composable
+private fun AccountDeletionPendingLocalCleanupContent(
+    state: AccountDeletionUiState,
+) {
+    BackHandler(enabled = true) {}
+    Text(
+        text = stringResource(
+            if (state == AccountDeletionUiState.RECOVERY_REQUIRED) {
+                R.string.auth_delete_account_recovery_required
+            } else {
+                R.string.auth_delete_account_pending_local_cleanup
+            },
+        ),
+        style = MaterialTheme.typography.headlineSmall,
+        modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_PENDING_LOCAL_CLEANUP_TEST_TAG),
+    )
 }
 
 @Composable
@@ -940,7 +1001,20 @@ private fun AuthUiMessage.asText(): String =
         AuthUiMessage.PasswordUpdated -> stringResource(R.string.auth_password_updated_message)
         is AuthUiMessage.AuthenticationFailure -> this.asFailureText()
         is AuthUiMessage.RestorationWarning -> this.asRestorationWarningText()
+        is AuthUiMessage.AccountDeletionFailure -> this.asAccountDeletionFailureText()
     }
+
+@Composable
+private fun AuthUiMessage.AccountDeletionFailure.asAccountDeletionFailureText(): String =
+    stringResource(
+        when (category) {
+            AccountDeletionFailureCategory.NO_SESSION -> R.string.auth_delete_account_no_session
+            AccountDeletionFailureCategory.NETWORK -> R.string.auth_delete_account_network_failure
+            AccountDeletionFailureCategory.AUTHENTICATION -> R.string.auth_delete_account_authentication_failure
+            AccountDeletionFailureCategory.SERVER -> R.string.auth_delete_account_server_failure
+            AccountDeletionFailureCategory.UNKNOWN -> R.string.auth_delete_account_unknown_failure
+        },
+    )
 
 @Composable
 private fun AuthUiMessage.AuthenticationFailure.asFailureText(): String =

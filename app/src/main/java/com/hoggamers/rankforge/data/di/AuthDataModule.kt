@@ -1,12 +1,18 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.auth.AuthRemoteDataSource
+import com.hoggamers.rankforge.data.auth.AccountDeletionAccessTokenProvider
+import com.hoggamers.rankforge.data.auth.SupabaseAccountDeletionAccessTokenProvider
+import com.hoggamers.rankforge.data.auth.AccountDeletionHttpTransport
+import com.hoggamers.rankforge.data.auth.UrlConnectionAccountDeletionHttpTransport
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRemoteDataSource
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRepository
 import com.hoggamers.rankforge.data.auth.SignupEmailRegistrationStatusHttpTransport
 import com.hoggamers.rankforge.data.auth.UrlConnectionSignupEmailRegistrationStatusHttpTransport
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
+import com.hoggamers.rankforge.data.auth.SupabaseAccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
@@ -25,6 +31,24 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AuthDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindAccountDeletionAccessTokenProvider(
+        provider: SupabaseAccountDeletionAccessTokenProvider,
+    ): AccountDeletionAccessTokenProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindAccountDeletionHttpTransport(
+        transport: UrlConnectionAccountDeletionHttpTransport,
+    ): AccountDeletionHttpTransport
+
+    @Binds
+    @Singleton
+    abstract fun bindAccountDeletionRepository(
+        repository: SupabaseAccountDeletionRepository,
+    ): AccountDeletionRepository
+
     @Binds
     @Singleton
     abstract fun bindAuthRemoteDataSource(

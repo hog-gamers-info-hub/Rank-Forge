@@ -13,6 +13,7 @@ data class AuthUiState(
     val isExternalAuthCallbackProcessing: Boolean = false,
     val isSubmitting: Boolean = false,
     val isSignedIn: Boolean = false,
+    val accountDeletionState: AccountDeletionUiState = AccountDeletionUiState.IDLE,
     val passwordRecoveryStage: PasswordRecoveryStage = PasswordRecoveryStage.NONE,
     val statusMessage: AuthUiMessage? = null,
     val warningMessage: AuthUiMessage? = null,
@@ -33,4 +34,7 @@ data class AuthUiState(
             newPassword == confirmNewPassword &&
             newPassword.length >= MIN_AUTH_PASSWORD_LENGTH &&
             !isSubmitting
+
+    val isAccountDeletionInProgress: Boolean
+        get() = accountDeletionState == AccountDeletionUiState.DELETING
 }

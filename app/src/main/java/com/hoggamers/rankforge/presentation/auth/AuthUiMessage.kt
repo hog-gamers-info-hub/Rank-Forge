@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.auth
 
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 
 sealed interface AuthUiMessage {
     data object MissingCredentials : AuthUiMessage
@@ -15,4 +16,5 @@ sealed interface AuthUiMessage {
     data object PasswordUpdated : AuthUiMessage
     data class AuthenticationFailure(val category: AuthFailureCategory) : AuthUiMessage
     data class RestorationWarning(val category: AuthFailureCategory) : AuthUiMessage
+    data class AccountDeletionFailure(val category: AccountDeletionFailureCategory) : AuthUiMessage
 }

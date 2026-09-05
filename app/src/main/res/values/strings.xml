@@ -59,6 +59,14 @@
     <string name="auth_delete_account_confirmation_title">Delete account?</string>
     <string name="auth_delete_account_confirmation_message">This will permanently delete your PointIQ account and associated data. This action cannot be undone.</string>
     <string name="auth_delete_account_cancel_action">Cancel</string>
+    <string name="auth_delete_account_in_progress">Deleting your account…</string>
+    <string name="auth_delete_account_pending_local_cleanup">Account deletion is pending local cleanup. Keep this screen open while the device cleanup flow is completed.</string>
+    <string name="auth_delete_account_recovery_required">Account deletion could not be confirmed on this device. Please contact support before trying again.</string>
+    <string name="auth_delete_account_no_session">Your session is no longer available. Sign in again.</string>
+    <string name="auth_delete_account_network_failure">Network unavailable. Check your connection and try again.</string>
+    <string name="auth_delete_account_authentication_failure">Your session expired. Sign in again.</string>
+    <string name="auth_delete_account_server_failure">Account deletion could not be completed. Try again.</string>
+    <string name="auth_delete_account_unknown_failure">Account deletion could not be completed. Try again.</string>
     <string name="auth_missing_credentials_error">Enter an email and password.</string>
     <string name="auth_signed_in_message">Signed in.</string>
     <string name="auth_external_authentication_launched_message">Complete sign-in in your browser.</string>

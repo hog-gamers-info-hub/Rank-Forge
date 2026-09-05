@@ -74,6 +74,7 @@ fun RankForgeNavHost(
     onAuthPasswordChanged: (String) -> Unit = {},
     onAuthSubmit: () -> Unit = {},
     onAuthLogout: () -> Unit = {},
+    onAuthDeleteAccountConfirmed: () -> Unit = {},
     creationViewModel: TournamentCreationViewModel? = null,
     listViewModel: TournamentListViewModel? = null,
     cloudRestorationViewModelFactory: (() -> TournamentCloudRestorationViewModel)? = null,
@@ -191,6 +192,7 @@ fun RankForgeNavHost(
                 onSubmit = onAuthSubmit,
                 onGoogleSignIn = onAuthGoogleSignIn,
                 onLogout = onAuthLogout,
+                onDeleteAccountConfirmed = onAuthDeleteAccountConfirmed,
                 onSignedInHome = {
                     openHomeMenuOnReturn = false
                     navController.popBackStack()
