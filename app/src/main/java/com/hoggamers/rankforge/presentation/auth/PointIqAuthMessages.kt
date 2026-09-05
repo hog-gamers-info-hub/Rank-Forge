@@ -11,6 +11,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 
 @Composable
 internal fun PointIqAuthMessages(uiState: AuthUiState) {
@@ -57,6 +58,15 @@ private fun AuthUiMessage.asPointIqText(): String =
         AuthUiMessage.PasswordUpdated -> stringResource(R.string.auth_password_updated_message)
         is AuthUiMessage.AuthenticationFailure -> stringResource(category.failureMessageResource())
         is AuthUiMessage.RestorationWarning -> stringResource(category.restorationWarningResource())
+        is AuthUiMessage.AccountDeletionFailure -> stringResource(
+            when (category) {
+                AccountDeletionFailureCategory.NO_SESSION -> R.string.auth_delete_account_no_session
+                AccountDeletionFailureCategory.NETWORK -> R.string.auth_delete_account_network_failure
+                AccountDeletionFailureCategory.AUTHENTICATION -> R.string.auth_delete_account_authentication_failure
+                AccountDeletionFailureCategory.SERVER -> R.string.auth_delete_account_server_failure
+                AccountDeletionFailureCategory.UNKNOWN -> R.string.auth_delete_account_unknown_failure
+            },
+        )
     }
 
 private fun AuthFailureCategory.failureMessageResource(): Int =

@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
@@ -15,6 +16,8 @@ import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
 import com.hoggamers.rankforge.domain.sync.ForegroundSyncQueueRecoveryAction
 import com.hoggamers.rankforge.domain.tournament.RecoverPendingLocalDeletionCleanupUseCase
 import com.hoggamers.rankforge.domain.tournament.ReconcileLegacyTournamentOwnershipUseCase
@@ -41,8 +44,20 @@ class AuthViewModel @Inject constructor(
     private val recoverForegroundSyncQueue: ForegroundSyncQueueRecoveryAction,
     private val recoverPendingLocalDeletionCleanup: RecoverPendingLocalDeletionCleanupUseCase,
     private val reconcileLegacyTournamentOwnership: ReconcileLegacyTournamentOwnershipUseCase,
+    private val accountDeletionRepository: AccountDeletionRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(AuthUiState(isSessionLoading = true))
+    private val _uiState = MutableStateFlow(
+        AuthUiState(
+            isSessionLoading = true,
+            accountDeletionState = when (savedStateHandle.get<String>(ACCOUNT_DELETION_STATE_KEY)) {
+                AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP.name ->
+                    AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP
+                AccountDeletionUiState.DELETING.name -> AccountDeletionUiState.RECOVERY_REQUIRED
+                else -> AccountDeletionUiState.IDLE
+            },
+        ),
+    )
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
     init {
@@ -328,6 +343,43 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun deleteAccount() {
+        val currentState = _uiState.value
+        if (!currentState.isSignedIn ||
+            currentState.isSubmitting ||
+            currentState.accountDeletionState != AccountDeletionUiState.IDLE
+        ) {
+            return
+        }
+
+        viewModelScope.launch {
+            savedStateHandle[ACCOUNT_DELETION_STATE_KEY] = AccountDeletionUiState.DELETING.name
+            _uiState.update(AuthUiStateReducer::beginAccountDeletion)
+            val result = try {
+                accountDeletionRepository.deleteCurrentAccount()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                AccountDeletionResult.Failure(
+                    com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory.UNKNOWN,
+                )
+            }
+            _uiState.update { state ->
+                when (result) {
+                    AccountDeletionResult.Success -> {
+                        savedStateHandle[ACCOUNT_DELETION_STATE_KEY] =
+                            AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP.name
+                        AuthUiStateReducer.completeAccountDeletion(state)
+                    }
+                    is AccountDeletionResult.Failure -> {
+                        savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+                        AuthUiStateReducer.failAccountDeletion(state, result.category)
+                    }
+                }
+            }
+        }
+    }
+
     fun signInWithGoogle() {
         if (_uiState.value.isSubmitting || _uiState.value.isSignedIn) {
             return
@@ -339,5 +391,9 @@ class AuthViewModel @Inject constructor(
                 AuthUiStateReducer.finishOperation(state, result)
             }
         }
+    }
+
+    private companion object {
+        const val ACCOUNT_DELETION_STATE_KEY = "account_deletion_state"
     }
 }

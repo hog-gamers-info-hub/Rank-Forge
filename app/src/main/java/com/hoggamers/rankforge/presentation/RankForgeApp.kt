@@ -49,6 +49,7 @@ fun RankForgeApp(
                 onAuthConfirmNewPasswordChanged = authViewModel::onConfirmNewPasswordChanged,
                 onAuthUpdateRecoveredPassword = authViewModel::updateRecoveredPassword,
                 onAuthExitPasswordRecovery = authViewModel::exitPasswordRecovery,
+                onAuthDeleteAccountConfirmed = authViewModel::deleteAccount,
                 authenticatedContent = {
                     RankForgeNavHost(
                         authUiState = authUiState,
@@ -58,6 +59,7 @@ fun RankForgeApp(
                         onAuthSubmit = authViewModel::submit,
                         onAuthGoogleSignIn = authViewModel::signInWithGoogle,
                         onAuthLogout = authViewModel::logout,
+                        onAuthDeleteAccountConfirmed = authViewModel::deleteAccount,
                         matchLobbyScreenshotIntakeViewModelProvider = { _, _ -> hiltViewModel() },
                     )
                 },
@@ -82,9 +84,27 @@ fun RankForgeAppContent(
     onAuthConfirmNewPasswordChanged: (String) -> Unit = {},
     onAuthUpdateRecoveredPassword: () -> Unit = {},
     onAuthExitPasswordRecovery: () -> Unit = {},
+    onAuthDeleteAccountConfirmed: () -> Unit = {},
     authenticatedContent: @Composable () -> Unit,
 ) {
     when {
+        authUiState.accountDeletionState != com.hoggamers.rankforge.presentation.auth.AccountDeletionUiState.IDLE -> AuthScreen(
+            uiState = authUiState,
+            onModeSelected = onAuthModeSelected,
+            onEmailChanged = onAuthEmailChanged,
+            onPasswordChanged = onAuthPasswordChanged,
+            onSubmit = onAuthSubmit,
+            onLogout = onAuthLogout,
+            onGoogleSignIn = onAuthGoogleSignIn,
+            onBeginPasswordRecovery = onAuthBeginPasswordRecovery,
+            onCancelPasswordRecovery = onAuthCancelPasswordRecovery,
+            onRequestPasswordReset = onAuthRequestPasswordReset,
+            onNewPasswordChanged = onAuthNewPasswordChanged,
+            onConfirmNewPasswordChanged = onAuthConfirmNewPasswordChanged,
+            onUpdateRecoveredPassword = onAuthUpdateRecoveredPassword,
+            onExitPasswordRecovery = onAuthExitPasswordRecovery,
+            onDeleteAccountConfirmed = onAuthDeleteAccountConfirmed,
+        )
         authUiState.isPasswordRecoveryActive -> AuthScreen(
             uiState = authUiState,
             onModeSelected = onAuthModeSelected,
@@ -100,6 +120,7 @@ fun RankForgeAppContent(
             onConfirmNewPasswordChanged = onAuthConfirmNewPasswordChanged,
             onUpdateRecoveredPassword = onAuthUpdateRecoveredPassword,
             onExitPasswordRecovery = onAuthExitPasswordRecovery,
+            onDeleteAccountConfirmed = onAuthDeleteAccountConfirmed,
         )
         authUiState.isSignedIn -> authenticatedContent()
         authUiState.isExternalAuthCallbackProcessing -> ExternalAuthCallbackProcessingScreen()
@@ -140,6 +161,7 @@ fun RankForgeAppContent(
             onConfirmNewPasswordChanged = onAuthConfirmNewPasswordChanged,
             onUpdateRecoveredPassword = onAuthUpdateRecoveredPassword,
             onExitPasswordRecovery = onAuthExitPasswordRecovery,
+            onDeleteAccountConfirmed = onAuthDeleteAccountConfirmed,
         )
     }
 }

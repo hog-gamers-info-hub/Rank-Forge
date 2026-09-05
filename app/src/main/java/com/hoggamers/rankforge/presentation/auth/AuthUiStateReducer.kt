@@ -4,13 +4,17 @@ import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 
 object AuthUiStateReducer {
     fun reduceRestoration(
         currentState: AuthUiState,
         result: AuthRestorationResult,
-    ): AuthUiState =
-        when (result) {
+    ): AuthUiState {
+        if (currentState.accountDeletionState != AccountDeletionUiState.IDLE) {
+            return currentState
+        }
+        return when (result) {
             is AuthRestorationResult.Restored -> if (currentState.isPasswordRecoveryActive) {
                 currentState.copy(
                     accountEmail = null,
@@ -59,12 +63,16 @@ object AuthUiStateReducer {
                 ),
             )
         }
+    }
 
     fun reduceSession(
         currentState: AuthUiState,
         authState: AuthState,
-    ): AuthUiState =
-        when (authState) {
+    ): AuthUiState {
+        if (currentState.accountDeletionState != AccountDeletionUiState.IDLE) {
+            return currentState
+        }
+        return when (authState) {
             AuthState.Loading -> currentState.copy(
                 isSessionLoading = true,
                 errorMessage = null,
@@ -111,6 +119,47 @@ object AuthUiStateReducer {
                 errorMessage = AuthUiMessage.AuthenticationFailure(authState.failure.category),
             )
         }
+    }
+
+    fun beginAccountDeletion(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            accountDeletionState = AccountDeletionUiState.DELETING,
+            isSubmitting = true,
+            statusMessage = null,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun completeAccountDeletion(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            accountDeletionState = AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP,
+            isSubmitting = false,
+            statusMessage = null,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun restoreAccountDeletionAfterProcessDeath(currentState: AuthUiState): AuthUiState =
+        currentState.copy(
+            accountDeletionState = AccountDeletionUiState.RECOVERY_REQUIRED,
+            isSessionLoading = false,
+            isSignedIn = false,
+            isSubmitting = false,
+            accountEmail = null,
+            statusMessage = null,
+            warningMessage = null,
+            errorMessage = null,
+        )
+
+    fun failAccountDeletion(
+        currentState: AuthUiState,
+        category: AccountDeletionFailureCategory,
+    ): AuthUiState = currentState.copy(
+        accountDeletionState = AccountDeletionUiState.IDLE,
+        isSubmitting = false,
+        statusMessage = null,
+        errorMessage = AuthUiMessage.AccountDeletionFailure(category),
+    )
 
     fun beginExternalAuthCallback(currentState: AuthUiState): AuthUiState =
         currentState.copy(
