@@ -94,15 +94,12 @@ fun LoggedInHomeMenuShell(
         PointIqFullScreenMenu(
             onBack = { isMenuOpen = false },
             onOpenAccount = {
-                isMenuOpen = false
                 onOpenAccount()
             },
             onOpenAllTournaments = {
-                isMenuOpen = false
                 onOpenAllTournaments()
             },
             onOpenContactUs = {
-                isMenuOpen = false
                 onOpenContactUs()
             },
         )

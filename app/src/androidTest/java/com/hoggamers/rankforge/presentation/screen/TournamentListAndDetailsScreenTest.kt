@@ -285,6 +285,9 @@ class TournamentListAndDetailsScreenTest {
             .performClick()
 
         composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
+            .assertIsDisplayed()
 
         composeTestRule.runOnIdle {
             assertEquals(1, openAccountCount)
@@ -376,6 +379,9 @@ class TournamentListAndDetailsScreenTest {
             .performClick()
 
         composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
+            .assertIsDisplayed()
 
         composeTestRule.runOnIdle {
             assertEquals(1, openAllTournamentsCount)
@@ -407,6 +413,9 @@ class TournamentListAndDetailsScreenTest {
             .performClick()
 
         composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
+            .assertIsDisplayed()
 
         composeTestRule.runOnIdle {
             assertEquals(1, openContactUsCount)
