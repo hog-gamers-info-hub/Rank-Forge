@@ -41,8 +41,6 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
@@ -217,7 +215,6 @@ class TournamentDetailsDeletionViewModelTest {
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
-        googleSheetsStandingsExport = NoOpGoogleSheetsStandingsExportRemoteDataSource,
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
         createNextMatch = CreateNextMatchUseCase(repository),
@@ -236,16 +233,6 @@ class TournamentDetailsDeletionViewModelTest {
             deletionIntentRepository = TournamentDeletionTestIntentRepository(),
         ),
     )
-}
-
-private object NoOpGoogleSheetsStandingsExportRemoteDataSource : GoogleSheetsStandingsExportRemoteDataSource {
-    override suspend fun export(
-        tournamentId: String,
-        rows: List<com.hoggamers.rankforge.domain.export.TournamentStandingsExportRow>,
-    ): GoogleSheetsStandingsExportExecutionResult =
-        GoogleSheetsStandingsExportExecutionResult.Failure(
-            com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.SERVER_FAILURE,
-        )
 }
 
 private class DeletionTournamentRepository : TournamentRepository {

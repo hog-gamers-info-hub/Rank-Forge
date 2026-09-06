@@ -64,8 +64,6 @@ import com.hoggamers.rankforge.presentation.auth.AUTH_ACCOUNT_HOME_ACTION_TEST_T
 import com.hoggamers.rankforge.presentation.auth.AUTH_LOGOUT_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
@@ -2143,18 +2141,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 
-    private class FakeGoogleSheetsStandingsExportRemoteDataSource :
-        GoogleSheetsStandingsExportRemoteDataSource {
-        override suspend fun export(
-            tournamentId: String,
-            rows: List<com.hoggamers.rankforge.domain.export.TournamentStandingsExportRow>,
-        ): GoogleSheetsStandingsExportExecutionResult =
-            GoogleSheetsStandingsExportExecutionResult.Success(
-                exportedMatchCount = rows.firstOrNull()?.exportedMatchCount ?: 0,
-                rowsWritten = rows.size,
-            )
-    }
-
     private fun pressBackOnMainThread() {
         composeTestRule.runOnIdle {
             composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -2538,7 +2524,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
                     observeMatches = ObserveMatchesUseCase(repository),
                     observeRoster = ObserveRosterByTournamentUseCase(repository),
-                    googleSheetsStandingsExport = FakeGoogleSheetsStandingsExportRemoteDataSource(),
                     saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
                     validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
                     createNextMatch = CreateNextMatchUseCase(repository),

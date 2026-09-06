@@ -1,6 +1,6 @@
 begin;
 
-select plan(54);
+select plan(55);
 
 select has_table(
     'private',
@@ -193,14 +193,20 @@ $$, 'account B mutation is unaffected while account A is active');
 reset role;
 
 set local role service_role;
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_a_result as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000001');
 reset role;
 select is((select state from barrier_a_result), 'deleting'::text, 'begin deletion transitions account A to deleting');
 
+reset request.jwt.claims;
+select throws_ok($$
+    select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000001')
+$$, '42501', null, 'missing JWT role claim cannot execute begin deletion');
+
 set local role authenticated;
 set local request.jwt.claim.sub = 'a4000000-0000-0000-0000-000000000001';
+set local request.jwt.claims = '{"role":"authenticated","sub":"a4000000-0000-0000-0000-000000000001"}';
 select throws_ok($$
     insert into public.tournaments (id, owner_id, name)
     values ('b4100000-0000-0000-0000-000000000011', 'a4000000-0000-0000-0000-000000000001', 'Blocked')
@@ -263,7 +269,7 @@ $$, '42501', null, 'authenticated cannot target another account guard');
 reset role;
 
 set local role service_role;
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_a_again as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000001');
 reset role;
@@ -281,7 +287,7 @@ values (
     repeat('c', 64), 'in_progress',
     'a4500000-0000-0000-0000-000000000001', now() + interval '90 seconds'
 );
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_b_result as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000002');
 reset role;
@@ -303,7 +309,7 @@ values (
     repeat('d', 64), 'write_started',
     'a4500000-0000-0000-0000-000000000004', now() + interval '90 seconds'
 );
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_d_result as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000004');
 reset role;
@@ -338,7 +344,7 @@ values (
     'export_standings', 'b4000000-0000-0000-0000-000000000005', null,
     repeat('e', 64), 'outcome_uncertain'
 );
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_e_result as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000005');
 reset role;
@@ -355,7 +361,7 @@ select is(
     'outcome-uncertain export can settle through verified reconciliation'
 );
 reset role;
-set local request.jwt.claim.role = 'service_role';
+set local request.jwt.claims = '{"role":"service_role"}';
 create temporary table barrier_e_after_settlement as
 select * from public.begin_account_deletion('a4000000-0000-0000-0000-000000000005');
 reset role;

@@ -19,6 +19,8 @@ import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRemoteAccountStatus
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRequestDisposition
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
 import com.hoggamers.rankforge.domain.auth.AccountDeletionPhase
@@ -68,14 +70,18 @@ class AuthViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val deletionRecovery = recoverAccountDeletionBeforeSessionRestore()
-            val restoration = try {
-                restoreSession()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                AuthRestorationResult.Failure(
-                    AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
-                )
+            val restoration = if (deletionRecovery == AccountDeletionRecovery.NONE) {
+                try {
+                    restoreSession()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    AuthRestorationResult.Failure(
+                        AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+                    )
+                }
+            } else {
+                AuthRestorationResult.NoSavedSession
             }
             if (deletionRecovery != AccountDeletionRecovery.COMPLETED) {
                 _uiState.update { currentState ->
@@ -402,12 +408,18 @@ class AuthViewModel @Inject constructor(
                     completeRemoteDeletion(ownerUserId, _uiState.value)
                 }
                 is AccountDeletionResult.Failure -> {
-                    runCatching {
-                        accountDeletionLocalCleanupRepository.clearMarker(ownerUserId)
-                    }
-                    savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
-                    _uiState.update { state ->
-                        AuthUiStateReducer.failAccountDeletion(state, result.category)
+                    if (result.requestDisposition ==
+                        AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER
+                    ) {
+                        _uiState.update(AuthUiStateReducer::restoreAccountDeletionAfterProcessDeath)
+                    } else {
+                        runCatching {
+                            accountDeletionLocalCleanupRepository.clearMarker(ownerUserId)
+                        }
+                        savedStateHandle.remove<String>(ACCOUNT_DELETION_STATE_KEY)
+                        _uiState.update { state ->
+                            AuthUiStateReducer.failAccountDeletion(state, result.category)
+                        }
                     }
                 }
             }
@@ -471,7 +483,28 @@ class AuthViewModel @Inject constructor(
         return when (marker.phase) {
             AccountDeletionPhase.REMOTE_REQUESTED -> {
                 _uiState.update(AuthUiStateReducer::restoreAccountDeletionAfterProcessDeath)
-                AccountDeletionRecovery.BLOCKED
+                val remoteStatus = try {
+                    accountDeletionRepository.probeCurrentAccount()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    AccountDeletionRemoteAccountStatus.UNKNOWN
+                }
+                if (remoteStatus != AccountDeletionRemoteAccountStatus.DELETED) {
+                    AccountDeletionRecovery.BLOCKED
+                } else {
+                    val state = completeRemoteDeletion(
+                        marker.ownerUserId,
+                        _uiState.value,
+                    )
+                    if (state.accountDeletionState == AccountDeletionUiState.IDLE &&
+                        !state.isSignedIn
+                    ) {
+                        AccountDeletionRecovery.COMPLETED
+                    } else {
+                        AccountDeletionRecovery.BLOCKED
+                    }
+                }
             }
             AccountDeletionPhase.REMOTE_CONFIRMED -> {
                 _uiState.update {

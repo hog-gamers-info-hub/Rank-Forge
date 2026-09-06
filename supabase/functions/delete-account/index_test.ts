@@ -3,15 +3,11 @@ import {
   deleteOwnedStorageObjects,
 } from "../_shared/accountDeletionStorage.ts";
 import type { FetchImplementation } from "../_shared/http.ts";
-import { MATCH_EXPORT_COLUMNS } from "../_shared/matchExport.ts";
-import { STANDINGS_EXPORT_COLUMNS } from "../_shared/standingsExport.ts";
 import { handleRequest } from "./index.ts";
 
 const SUPABASE_URL = "https://example.supabase.co";
 const ANON_KEY = "anon-secret";
 const SERVICE_ROLE_KEY = "service-role-secret";
-const GOOGLE_PRIVATE_KEY = "google-private-key";
-const GOOGLE_ACCESS_TOKEN = "google-access-token";
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TOURNAMENT_A = "11111111-1111-4111-8111-111111111111";
@@ -30,7 +26,6 @@ interface FakeState {
   barrierResponse?: unknown;
   purgeResponse?: unknown;
   residualTable?: string;
-  googleFailure?: boolean;
   storageFailure?: boolean;
   storageDeleteFailure?: boolean;
   finalStorageObject?: boolean;
@@ -70,9 +65,6 @@ function env(overrides: Record<string, string | undefined> = {}) {
     SUPABASE_URL,
     SUPABASE_ANON_KEY: ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-    GOOGLE_SHEETS_CLIENT_EMAIL: "service@example.test",
-    GOOGLE_SHEETS_PRIVATE_KEY: GOOGLE_PRIVATE_KEY,
-    GOOGLE_SHEETS_SPREADSHEET_ID: "spreadsheet-id",
     ...overrides,
   };
   return (name: string) => values[name];
@@ -82,12 +74,9 @@ function options(state: FakeState, overrides: Record<string, unknown> = {}) {
   return {
     env: env(),
     fetchImpl: makeFetch(state),
-    signer: async () => new Uint8Array([1, 2, 3]),
     timeouts: {
       supabaseAuth: 100,
       supabaseAccount: 100,
-      googleToken: 100,
-      googleSheets: 100,
       storage: 100,
       authDelete: 100,
     },
@@ -117,7 +106,6 @@ function path(url: URL): string {
 
 function makeFetch(state: FakeState): FetchImplementation {
   let tournamentRead = 0;
-  let googleMutated = false;
 
   return async (input, init) => {
     const url = new URL(String(input));
@@ -168,52 +156,6 @@ function makeFetch(state: FakeState): FetchImplementation {
         return responseJson([{ owner_id: USER_A }]);
       }
       return responseJson([]);
-    }
-
-    if (url.hostname === "oauth2.googleapis.com") {
-      if (state.googleFailure) {
-        return responseJson({ error: "google secret" }, 500);
-      }
-      return responseJson({
-        access_token: GOOGLE_ACCESS_TOKEN,
-        token_type: "Bearer",
-      });
-    }
-
-    if (url.hostname === "sheets.googleapis.com") {
-      if (state.googleFailure) {
-        return responseJson({ error: "google secret" }, 500);
-      }
-      if (path(url).endsWith("/v4/spreadsheets/spreadsheet-id")) {
-        return responseJson({
-          sheets: [
-            { properties: { title: "Match Results", sheetId: 101 } },
-            { properties: { title: "Tournament Standings", sheetId: 202 } },
-          ],
-        });
-      }
-      if (path(url).includes("/values/Match Results!A1:")) {
-        return responseJson({ values: [MATCH_EXPORT_COLUMNS] });
-      }
-      if (path(url).includes("/values/Tournament Standings!A1:")) {
-        return responseJson({ values: [STANDINGS_EXPORT_COLUMNS] });
-      }
-      if (path(url).endsWith("/v4/spreadsheets/spreadsheet-id:batchUpdate")) {
-        googleMutated = true;
-        const body = JSON.parse(call.body ?? "{}") as { requests?: unknown[] };
-        return responseJson({
-          replies: Array.from(
-            { length: body.requests?.length ?? 0 },
-            () => ({}),
-          ),
-        });
-      }
-      if (path(url).endsWith("/values/Match Results!C2:C")) {
-        return responseJson({ values: googleMutated ? [] : [[TOURNAMENT_A]] });
-      }
-      if (path(url).endsWith("/values/Tournament Standings!C2:C")) {
-        return responseJson({ values: googleMutated ? [] : [[TOURNAMENT_A]] });
-      }
     }
 
     if (path(url).startsWith("/storage/v1/object/list/")) {
@@ -403,7 +345,6 @@ Deno.test("successful destructive stages occur in the required order", async () 
   );
   const capture = tournamentIndexes[0];
   const barrier = first("/rest/v1/rpc/begin_account_deletion");
-  const google = first("/v4/spreadsheets/spreadsheet-id");
   const storage = names.findIndex((name) =>
     name.startsWith("/storage/v1/object/list/")
   );
@@ -416,8 +357,7 @@ Deno.test("successful destructive stages occur in the required order", async () 
     name.startsWith("/auth/v1/admin/users/")
   );
   assert(
-    auth < barrier && barrier < capture && capture < google &&
-      google < storage && storage < scope,
+    auth < barrier && barrier < capture && capture < storage && storage < scope,
   );
   assert(scope < purge && purge < dbVerify && dbVerify < authDelete);
   assertEquals(authDelete, names.length - 1);
@@ -436,21 +376,7 @@ Deno.test("active external export fails closed after the deletion barrier", asyn
   );
 });
 
-Deno.test("Google failure stops Storage, DB, and Auth", async () => {
-  const state = validState({ googleFailure: true });
-  await assertError(
-    await handleRequest(request(), options(state)),
-    "GOOGLE_CLEANUP_FAILED",
-    502,
-  );
-  assert(!pathNames(state).some((name) => name.startsWith("/storage/")));
-  assert(!pathNames(state).includes("/rest/v1/rpc/purge_account_data"));
-  assert(
-    !pathNames(state).some((name) => name.startsWith("/auth/v1/admin/users/")),
-  );
-});
-
-Deno.test("zero tournaments skips Google calls and still completes", async () => {
+Deno.test("zero tournaments still completes without Google calls", async () => {
   const state = validState({ tournamentPages: [[]] });
   const response = await handleRequest(request(), options(state));
   assertEquals(response.status, 200);
@@ -594,13 +520,11 @@ Deno.test("unexpected handler exceptions map to INTERNAL_ERROR", async () => {
 });
 
 Deno.test("safe public errors do not expose upstream secrets", async () => {
-  const state = validState({ googleFailure: true });
+  const state = validState({ tournamentPages: [[]], storageFailure: true });
   const response = await handleRequest(request(), options(state));
   const text = await response.text();
-  assert(!text.includes("google secret"));
+  assert(!text.includes("storage secret"));
   assert(!text.includes(SERVICE_ROLE_KEY));
-  assert(!text.includes(GOOGLE_ACCESS_TOKEN));
-  assert(!text.includes(GOOGLE_PRIVATE_KEY));
 });
 
 Deno.test("recursive Storage listing handles nested folders without deleting while listing", async () => {

@@ -13,13 +13,6 @@ import {
   readOwnedTournamentIds,
   verifyAccountDatabasePurge,
 } from "../_shared/accountDeletionSupabase.ts";
-import {
-  createGoogleServiceAccountAssertion,
-  exchangeGoogleToken,
-  type JwtSigner,
-  readGoogleConfig,
-} from "../_shared/google.ts";
-import { deleteTournamentExportRows } from "../_shared/googleAccountDeletion.ts";
 import { type FetchImplementation, fetchWithTimeout } from "../_shared/http.ts";
 import {
   parseBearerToken,
@@ -29,8 +22,6 @@ import {
 
 export const SUPABASE_AUTH_TIMEOUT_MS = 10_000;
 export const SUPABASE_ACCOUNT_TIMEOUT_MS = 10_000;
-export const GOOGLE_TOKEN_TIMEOUT_MS = 10_000;
-export const GOOGLE_SHEETS_TIMEOUT_MS = 10_000;
 export const STORAGE_TIMEOUT_MS = 10_000;
 export const AUTH_DELETE_TIMEOUT_MS = 10_000;
 
@@ -39,12 +30,9 @@ type EnvironmentReader = (name: string) => string | undefined;
 export interface HandlerDependencies {
   env?: EnvironmentReader;
   fetchImpl?: FetchImplementation;
-  signer?: JwtSigner;
   timeouts?: {
     supabaseAuth?: number;
     supabaseAccount?: number;
-    googleToken?: number;
-    googleSheets?: number;
     storage?: number;
     authDelete?: number;
   };
@@ -126,39 +114,6 @@ function sameTournamentScope(
     first.every((tournamentId, index) => tournamentId === second[index]);
 }
 
-async function deleteGoogleRows(
-  tournamentIds: readonly string[],
-  getEnv: EnvironmentReader,
-  fetchImpl: FetchImplementation,
-  signer: JwtSigner | undefined,
-  dependencies: HandlerDependencies,
-): Promise<void> {
-  if (tournamentIds.length === 0) return;
-
-  try {
-    const googleConfig = readGoogleConfig(getEnv);
-    const assertion = await createGoogleServiceAccountAssertion(googleConfig, {
-      signer,
-    });
-    const accessToken = await exchangeGoogleToken(assertion, {
-      fetchImpl,
-      timeoutMs: dependencies.timeouts?.googleToken ?? GOOGLE_TOKEN_TIMEOUT_MS,
-    });
-    await deleteTournamentExportRows(
-      accessToken,
-      googleConfig.spreadsheetId,
-      tournamentIds,
-      {
-        fetchImpl,
-        timeoutMs: dependencies.timeouts?.googleSheets ??
-          GOOGLE_SHEETS_TIMEOUT_MS,
-      },
-    );
-  } catch {
-    throw new EdgeFunctionError("GOOGLE_CLEANUP_FAILED");
-  }
-}
-
 async function hardDeleteAuthUser(
   userId: string,
   config: SupabaseServerConfig,
@@ -229,23 +184,12 @@ export async function handleRequest(
       timeoutMs: dependencies.timeouts?.supabaseAccount ??
         SUPABASE_ACCOUNT_TIMEOUT_MS,
     };
-    const deletionBarrier = await beginAccountDeletion(
-      userId,
-      supabaseOptions,
-    );
+    const deletionBarrier = await beginAccountDeletion(userId, supabaseOptions);
     if (deletionBarrier.activeExportOperations > 0) {
       throw new EdgeFunctionError("DATABASE_PURGE_FAILED");
     }
 
     const tournamentIds = await readOwnedTournamentIds(userId, supabaseOptions);
-
-    await deleteGoogleRows(
-      tournamentIds,
-      getEnv,
-      fetchImpl,
-      dependencies.signer,
-      dependencies,
-    );
 
     const storageOptions = {
       supabaseUrl: serverConfig.url,

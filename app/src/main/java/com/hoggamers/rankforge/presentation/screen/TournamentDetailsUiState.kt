@@ -50,7 +50,6 @@ data class TournamentDetailsUiState(
     val isLoading: Boolean = true,
     val tournament: TournamentDetailsItemUiState? = null,
     val csvExportResult: AndroidExportResult? = null,
-    val googleSheetsExportResult: AndroidExportResult? = null,
     val pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     val calculatePointsMessage: CalculatePointsMessage? = null,
     val matchReviewRequest: MatchReviewRequest? = null,

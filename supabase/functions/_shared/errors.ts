@@ -4,18 +4,7 @@ export type ErrorCode =
   | "INVALID_OPERATION"
   | "UNAUTHORIZED"
   | "SUPABASE_AUTH_FAILURE"
-  | "GOOGLE_CONFIG_MISSING"
-  | "GOOGLE_CREDENTIAL_INVALID"
-  | "GOOGLE_JWT_SIGNING_FAILURE"
-  | "GOOGLE_TOKEN_FAILURE"
-  | "GOOGLE_TOKEN_RESPONSE_INVALID"
-  | "GOOGLE_SHEETS_ACCESS_DENIED"
-  | "GOOGLE_SHEETS_NOT_FOUND"
-  | "GOOGLE_API_RATE_LIMITED"
   | "UPSTREAM_TIMEOUT"
-  | "GOOGLE_API_FAILURE"
-  | "GOOGLE_ACCOUNT_DELETION_FAILURE"
-  | "GOOGLE_CLEANUP_FAILED"
   | "STORAGE_CLEANUP_FAILED"
   | "DATABASE_PURGE_FAILED"
   | "ACCOUNT_DELETE_FAILED"
@@ -25,16 +14,10 @@ export type ErrorCode =
   | "MATCH_NOT_FOUND_OR_FORBIDDEN"
   | "MATCH_NOT_FINALIZED"
   | "MATCH_EXPORT_DATA_MISMATCH"
-  | "GOOGLE_SHEET_SCHEMA_MISMATCH"
-  | "GOOGLE_MATCH_EXPORT_FAILURE"
-  | "GOOGLE_MATCH_EXPORT_RESPONSE_INVALID"
   | "SUPABASE_DATA_FAILURE"
   | "INVALID_STANDINGS_EXPORT_PAYLOAD"
   | "NO_FINALIZED_MATCHES"
   | "STANDINGS_EXPORT_DATA_MISMATCH"
-  | "GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH"
-  | "GOOGLE_STANDINGS_EXPORT_FAILURE"
-  | "GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID"
   | "EXPORT_IN_PROGRESS"
   | "EXPORT_OUTCOME_UNCERTAIN"
   | "EXPORT_IDEMPOTENCY_FAILURE"
@@ -50,22 +33,7 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   INVALID_OPERATION: "The requested operation is not supported.",
   UNAUTHORIZED: "Authentication is required.",
   SUPABASE_AUTH_FAILURE: "Authentication could not be verified.",
-  GOOGLE_CONFIG_MISSING: "Google Sheets configuration is incomplete.",
-  GOOGLE_CREDENTIAL_INVALID: "Google credentials are invalid.",
-  GOOGLE_JWT_SIGNING_FAILURE: "Google authentication could not be prepared.",
-  GOOGLE_TOKEN_FAILURE: "Google authentication failed.",
-  GOOGLE_TOKEN_RESPONSE_INVALID:
-    "Google returned an invalid authentication response.",
-  GOOGLE_SHEETS_ACCESS_DENIED:
-    "Access to the configured spreadsheet was denied.",
-  GOOGLE_SHEETS_NOT_FOUND: "The configured spreadsheet was not found.",
-  GOOGLE_API_RATE_LIMITED: "Google API rate limit exceeded.",
   UPSTREAM_TIMEOUT: "An upstream service timed out.",
-  GOOGLE_API_FAILURE: "Google Sheets could not verify spreadsheet access.",
-  GOOGLE_ACCOUNT_DELETION_FAILURE:
-    "Google Sheets account data could not be deleted safely.",
-  GOOGLE_CLEANUP_FAILED:
-    "Google Sheets account data could not be deleted safely.",
   STORAGE_CLEANUP_FAILED: "Account storage could not be deleted safely.",
   DATABASE_PURGE_FAILED: "Account data could not be deleted safely.",
   ACCOUNT_DELETE_FAILED: "The account could not be deleted safely.",
@@ -76,22 +44,11 @@ const CLIENT_MESSAGES: Record<ErrorCode, string> = {
   MATCH_NOT_FINALIZED: "Only finalized matches can be exported.",
   MATCH_EXPORT_DATA_MISMATCH:
     "The match export data does not match finalized records.",
-  GOOGLE_SHEET_SCHEMA_MISMATCH:
-    "The Match Results worksheet header is invalid.",
-  GOOGLE_MATCH_EXPORT_FAILURE: "Google Sheets could not export the match.",
-  GOOGLE_MATCH_EXPORT_RESPONSE_INVALID:
-    "Google Sheets returned an invalid export response.",
   SUPABASE_DATA_FAILURE: "Finalized match data could not be verified.",
   INVALID_STANDINGS_EXPORT_PAYLOAD: "The standings export payload is invalid.",
   NO_FINALIZED_MATCHES: "The tournament has no finalized matches to export.",
   STANDINGS_EXPORT_DATA_MISMATCH:
     "The standings export data does not match finalized records.",
-  GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH:
-    "The Tournament Standings worksheet header is invalid.",
-  GOOGLE_STANDINGS_EXPORT_FAILURE:
-    "Google Sheets could not export the standings.",
-  GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID:
-    "Google Sheets returned an invalid standings export response.",
   EXPORT_IN_PROGRESS: "An identical export is already in progress.",
   EXPORT_OUTCOME_UNCERTAIN:
     "The previous export outcome is uncertain and cannot be retried safely.",
@@ -113,18 +70,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   INVALID_OPERATION: 400,
   UNAUTHORIZED: 401,
   SUPABASE_AUTH_FAILURE: 502,
-  GOOGLE_CONFIG_MISSING: 500,
-  GOOGLE_CREDENTIAL_INVALID: 500,
-  GOOGLE_JWT_SIGNING_FAILURE: 500,
-  GOOGLE_TOKEN_FAILURE: 502,
-  GOOGLE_TOKEN_RESPONSE_INVALID: 502,
-  GOOGLE_SHEETS_ACCESS_DENIED: 403,
-  GOOGLE_SHEETS_NOT_FOUND: 404,
-  GOOGLE_API_RATE_LIMITED: 429,
   UPSTREAM_TIMEOUT: 504,
-  GOOGLE_API_FAILURE: 502,
-  GOOGLE_ACCOUNT_DELETION_FAILURE: 502,
-  GOOGLE_CLEANUP_FAILED: 502,
   STORAGE_CLEANUP_FAILED: 502,
   DATABASE_PURGE_FAILED: 502,
   ACCOUNT_DELETE_FAILED: 502,
@@ -134,16 +80,10 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   MATCH_NOT_FOUND_OR_FORBIDDEN: 404,
   MATCH_NOT_FINALIZED: 409,
   MATCH_EXPORT_DATA_MISMATCH: 409,
-  GOOGLE_SHEET_SCHEMA_MISMATCH: 409,
-  GOOGLE_MATCH_EXPORT_FAILURE: 502,
-  GOOGLE_MATCH_EXPORT_RESPONSE_INVALID: 502,
   SUPABASE_DATA_FAILURE: 502,
   INVALID_STANDINGS_EXPORT_PAYLOAD: 400,
   NO_FINALIZED_MATCHES: 409,
   STANDINGS_EXPORT_DATA_MISMATCH: 409,
-  GOOGLE_STANDINGS_SHEET_SCHEMA_MISMATCH: 409,
-  GOOGLE_STANDINGS_EXPORT_FAILURE: 502,
-  GOOGLE_STANDINGS_EXPORT_RESPONSE_INVALID: 502,
   EXPORT_IN_PROGRESS: 409,
   EXPORT_OUTCOME_UNCERTAIN: 409,
   EXPORT_IDEMPOTENCY_FAILURE: 502,

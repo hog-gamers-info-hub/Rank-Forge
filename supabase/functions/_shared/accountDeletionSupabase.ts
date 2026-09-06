@@ -45,6 +45,8 @@ const ACCOUNT_REFERENCE_COLUMNS = [
   ["match_screenshot_metadata", "owner_id"],
 ] as const;
 
+type NonOkResponseHandler = (response: Response) => Promise<void>;
+
 function databaseFailure(): never {
   throw new EdgeFunctionError("DATABASE_PURGE_FAILED");
 }
@@ -69,6 +71,7 @@ async function requestJson(
   input: string | URL,
   init: RequestInit,
   options: AccountDeletionSupabaseOptions,
+  onNonOk?: NonOkResponseHandler,
 ): Promise<unknown> {
   let response: Response;
   try {
@@ -83,7 +86,10 @@ async function requestJson(
     databaseFailure();
   }
 
-  if (!response.ok) databaseFailure();
+  if (!response.ok) {
+    await onNonOk?.(response);
+    databaseFailure();
+  }
 
   try {
     return await response.json();

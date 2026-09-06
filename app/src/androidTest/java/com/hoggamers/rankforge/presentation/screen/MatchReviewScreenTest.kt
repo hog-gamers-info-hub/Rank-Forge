@@ -3993,8 +3993,6 @@ class MatchReviewScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG)
-            .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)

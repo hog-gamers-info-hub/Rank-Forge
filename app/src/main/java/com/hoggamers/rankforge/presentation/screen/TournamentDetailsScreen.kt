@@ -80,10 +80,6 @@ const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
 const val MATCH_CLOUD_RESTORE_STATUS_TEST_TAG = "match_cloud_restore_status"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG = "tournament_standings_csv_export_action"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG = "tournament_standings_csv_export_status"
-const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG =
-    "tournament_standings_google_sheets_export_action"
-const val TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG =
-    "tournament_standings_google_sheets_export_status"
 const val TOURNAMENT_DELETE_ACTION_TEST_TAG = "tournament_delete_action"
 const val TOURNAMENT_DELETE_DIALOG_TEST_TAG = "tournament_delete_dialog"
 const val TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG = "tournament_delete_confirm_action"
@@ -165,10 +161,6 @@ fun TournamentDetailsRoute(
         onReviewMatch = onReviewMatch,
         onOpenStandings = onOpenStandings,
         onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
-        onPrepareGoogleSheetsStandingsExport = {
-            viewModel.prepareGoogleSheetsStandingsExport()
-        },
-        googleSheetsExportResult = uiState.googleSheetsExportResult,
         onDeleteTournament = { viewModel.deleteTournament() },
         isDeleting = uiState.isDeleting,
         deletionError = uiState.deletionError,
@@ -211,8 +203,6 @@ fun TournamentDetailsScreen(
     onSyncFinalizedMatches: (String) -> Unit = {},
     matchCloudRestorationUiState: MatchCloudRestorationUiState = MatchCloudRestorationUiState.Idle,
     onRestoreMatches: (String) -> Unit = {},
-    onPrepareGoogleSheetsStandingsExport: (String) -> Unit = {},
-    googleSheetsExportResult: AndroidExportResult? = null,
     showLegacyControls: Boolean = SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS,
     onDeleteTournament: (String) -> Unit = {},
     isDeleting: Boolean = false,
@@ -252,8 +242,6 @@ fun TournamentDetailsScreen(
             onSyncFinalizedMatches = onSyncFinalizedMatches,
             matchCloudRestorationUiState = matchCloudRestorationUiState,
             onRestoreMatches = onRestoreMatches,
-            onPrepareGoogleSheetsStandingsExport = onPrepareGoogleSheetsStandingsExport,
-            googleSheetsExportResult = googleSheetsExportResult,
             showLegacyControls = showLegacyControls,
             onDeleteTournament = onDeleteTournament,
             isDeleting = isDeleting,
@@ -290,8 +278,6 @@ private fun TournamentDetailsContent(
     onSyncFinalizedMatches: (String) -> Unit,
     matchCloudRestorationUiState: MatchCloudRestorationUiState,
     onRestoreMatches: (String) -> Unit,
-    onPrepareGoogleSheetsStandingsExport: (String) -> Unit,
-    googleSheetsExportResult: AndroidExportResult?,
     showLegacyControls: Boolean,
     onDeleteTournament: (String) -> Unit,
     isDeleting: Boolean,
@@ -572,64 +558,7 @@ private fun TournamentDetailsContent(
                 text = "CSV export blocked",
                 modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
             )
-            is AndroidExportResult.Unavailable -> Text(
-                text = "CSV export unavailable",
-                modifier = Modifier.testTag(TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG),
-            )
             else -> Unit
-        }
-
-        if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            Button(
-                onClick = { onPrepareGoogleSheetsStandingsExport(tournament.id) },
-                enabled = googleSheetsExportResult !is AndroidExportResult.GoogleSheetsExporting,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG),
-            ) {
-                Text(text = "Export to Google Sheets")
-            }
-        }
-
-        if (showLegacyControls) when (googleSheetsExportResult) {
-            is AndroidExportResult.CsvReady -> Text(
-                text = "Google Sheets export ready",
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            is AndroidExportResult.Blocked -> Text(
-                text = "Google Sheets export blocked",
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            is AndroidExportResult.Unavailable -> Text(
-                text = "Google Sheets export unavailable",
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            is AndroidExportResult.GoogleSheetsExporting -> Text(
-                text = "Google Sheets export in progress",
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            is AndroidExportResult.GoogleSheetsSuccess -> Text(
-                text = "Google Sheets export succeeded",
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            is AndroidExportResult.GoogleSheetsFailure -> Text(
-                text = googleSheetsExportResult.reason.toUiMessage(),
-                modifier = Modifier.testTag(
-                    TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG,
-                ),
-            )
-            null -> Unit
         }
 
         if (showLegacyControls) {
@@ -657,27 +586,6 @@ private fun TournamentDeletionUiError.toMessageRes(): Int = when (this) {
     TournamentDeletionUiError.UNKNOWN,
     -> R.string.tournament_delete_generic_error
 }
-
-private fun com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.toUiMessage(): String =
-    when (this) {
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.AUTHENTICATION_REQUIRED ->
-            "Google Sheets export requires sign-in"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.NETWORK_FAILURE ->
-            "Google Sheets export failed: network unavailable"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.TIMEOUT ->
-            "Google Sheets export timed out"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.SERVER_CONFIGURATION ->
-            "Google Sheets export is not configured"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.IN_PROGRESS ->
-            "Google Sheets export is already in progress"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.OUTCOME_UNCERTAIN ->
-            "Google Sheets export outcome is uncertain; do not retry yet"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.VERIFICATION_FAILURE ->
-            "Google Sheets export verification failed"
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.INVALID_RESPONSE,
-        com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.SERVER_FAILURE,
-        -> "Google Sheets export failed"
-    }
 
 @Composable
 private fun MatchCloudRestorationSection(tournamentId: String, uiState: MatchCloudRestorationUiState, onRestore: (String) -> Unit) {

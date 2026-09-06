@@ -27,9 +27,6 @@ import com.hoggamers.rankforge.data.cloud.toCloudTimestamp
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
 import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
-import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
-import com.hoggamers.rankforge.data.export.NoOpGoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordinator
@@ -145,8 +142,6 @@ class MatchReviewViewModel @Inject constructor(
         NoOpMatchResultScreenshotAssetCloudDataSource(),
     private val matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
         NoOpMatchResultPositionCropPreviewGenerator,
-    private val googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource =
-        NoOpGoogleSheetsMatchExportRemoteDataSource(),
     private val resultDownloadCoordinator: ResultDownloadCoordinator =
         NoOpResultDownloadCoordinator,
     private val customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator =
@@ -376,7 +371,6 @@ class MatchReviewViewModel @Inject constructor(
                         isFinalizing = current.isFinalizing,
                         finalizationError = current.finalizationError,
                         csvExportResult = current.csvExportResult,
-                        googleSheetsExportResult = current.googleSheetsExportResult,
                         resultDownloadUiState = current.resultDownloadUiState,
                         selectedScreenshotUri = current.selectedScreenshotUri,
                         isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
@@ -836,105 +830,6 @@ class MatchReviewViewModel @Inject constructor(
             _uiState.update { state ->
                 if (state.tournamentId == tournamentId && state.matchId == matchId) {
                     state.copy(csvExportResult = result)
-                } else {
-                    state
-                }
-            }
-        }
-    }
-
-    fun prepareGoogleSheetsExport() {
-        val current = _uiState.value
-        val tournamentId = current.tournamentId ?: return
-        val matchId = current.matchId ?: return
-        if (exportJob?.isActive == true) return
-
-        exportJob = viewModelScope.launch {
-            val tournament = getTournamentById(tournamentId).first()
-            val match = observeMatches(tournamentId).first().firstOrNull { it.id == matchId }
-            val result = when {
-                tournament == null || match == null -> AndroidExportCoordinator()
-                    .blockGoogleSheetsMatch(
-                        tournamentId = tournamentId,
-                        matchId = matchId,
-                        reason = AndroidExportBlockedReason.MISSING_CONTEXT,
-                    )
-                match.status != MatchStatus.FINALIZED -> AndroidExportCoordinator()
-                    .blockGoogleSheetsMatch(
-                        tournamentId = tournamentId,
-                        matchId = matchId,
-                        reason = AndroidExportBlockedReason.MATCH_NOT_FINALIZED,
-                    )
-                else -> {
-                    val rowsResult = MatchCsvExporter().buildMatchRows(
-                        MatchCsvExportInput(
-                            tournament = tournament,
-                            match = match,
-                            teamSlots = observeTournamentSlots(tournamentId).first(),
-                            rosterPlayers = observeRoster(tournamentId).first().values.flatten(),
-                        ),
-                    )
-                    when (rowsResult) {
-                        is com.hoggamers.rankforge.domain.export.MatchExportRowsResult.Failure ->
-                            AndroidExportCoordinator().blockGoogleSheetsMatch(
-                                tournamentId = tournamentId,
-                                matchId = matchId,
-                                reason = AndroidExportBlockedReason.INVALID_FINALIZED_MATCH,
-                            )
-                        is com.hoggamers.rankforge.domain.export.MatchExportRowsResult.Success -> {
-                            val hostedMatchId = MatchCloudIdentity.matchId(
-                                tournamentId = tournamentId,
-                                localMatchId = match.id,
-                            )
-                            if (hostedMatchId == null) {
-                                AndroidExportCoordinator().blockGoogleSheetsMatch(
-                                    tournamentId = tournamentId,
-                                    matchId = matchId,
-                                    reason = AndroidExportBlockedReason.INVALID_FINALIZED_MATCH,
-                                )
-                            } else {
-                                val hostedRows = rowsResult.rows.map { row ->
-                                    row.copy(matchId = hostedMatchId)
-                                }
-                                _uiState.update { state ->
-                                    if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                                        state.copy(
-                                            googleSheetsExportResult = AndroidExportCoordinator()
-                                                .googleSheetsMatchExporting(tournamentId, matchId),
-                                        )
-                                    } else {
-                                        state
-                                    }
-                                }
-                                when (
-                                    val exportResult = googleSheetsMatchExport.export(
-                                        tournamentId = tournamentId,
-                                        matchId = hostedMatchId,
-                                        rows = hostedRows,
-                                    )
-                                ) {
-                                    is GoogleSheetsMatchExportExecutionResult.Success ->
-                                        AndroidExportCoordinator().googleSheetsMatchSuccess(
-                                            tournamentId = tournamentId,
-                                            matchId = matchId,
-                                            exportedMatchCount = 1,
-                                            rowsWritten = exportResult.rowsWritten,
-                                        )
-                                    is GoogleSheetsMatchExportExecutionResult.Failure ->
-                                        AndroidExportCoordinator().googleSheetsMatchFailure(
-                                            tournamentId = tournamentId,
-                                            matchId = matchId,
-                                            reason = exportResult.reason,
-                                        )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            _uiState.update { state ->
-                if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                    state.copy(googleSheetsExportResult = result)
                 } else {
                     state
                 }
