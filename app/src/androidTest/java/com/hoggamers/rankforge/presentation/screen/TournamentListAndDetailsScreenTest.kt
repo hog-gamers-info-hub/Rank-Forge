@@ -20,6 +20,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_BACK_ITEM_TEST_TAG
+import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG
@@ -248,6 +249,10 @@ class TournamentListAndDetailsScreenTest {
             .assertIsEnabled()
 
         composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG)
+            .assertIsEnabled()
+
+        composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG)
             .assertIsNotEnabled()
 
@@ -374,6 +379,37 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.runOnIdle {
             assertEquals(1, openAllTournamentsCount)
+        }
+    }
+
+    @Test
+    fun contactUsMenuItemInvokesDedicatedPageCallback() {
+        var openContactUsCount = 0
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentListScreen(
+                    uiState = TournamentListUiState(),
+                    onCreateTournament = {},
+                    onOpenTournamentDetails = {},
+                    onOpenAuth = {},
+                    onOpenContactUs = { openContactUsCount += 1 },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
+            .performClick()
+
+        composeTestRule
+            .onNodeWithTag(LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG)
+            .performClick()
+
+        composeTestRule.waitForIdle()
+
+        composeTestRule.runOnIdle {
+            assertEquals(1, openContactUsCount)
         }
     }
 

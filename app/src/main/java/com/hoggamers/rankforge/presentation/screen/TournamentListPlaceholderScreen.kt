@@ -44,6 +44,7 @@ fun TournamentListRoute(
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAuth: () -> Unit = {},
     onOpenAllTournaments: () -> Unit = {},
+    onOpenContactUs: () -> Unit = {},
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
     viewModel: TournamentListViewModel = hiltViewModel(),
@@ -56,6 +57,7 @@ fun TournamentListRoute(
         onOpenTournamentDetails = onOpenTournamentDetails,
         onOpenAuth = onOpenAuth,
         onOpenAllTournaments = onOpenAllTournaments,
+        onOpenContactUs = onOpenContactUs,
         openDrawerOnEnter = openDrawerOnEnter,
         onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
     )
@@ -80,12 +82,14 @@ fun TournamentListScreen(
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAuth: () -> Unit,
     onOpenAllTournaments: () -> Unit = {},
+    onOpenContactUs: () -> Unit = {},
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
 ) {
     LoggedInHomeMenuShell(
         onOpenAccount = onOpenAuth,
         onOpenAllTournaments = onOpenAllTournaments,
+        onOpenContactUs = onOpenContactUs,
         content = {
             LoggedInTournamentHomeContent(
                 uiState = uiState,

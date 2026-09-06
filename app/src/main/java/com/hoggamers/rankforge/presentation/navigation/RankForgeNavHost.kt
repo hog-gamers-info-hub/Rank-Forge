@@ -64,6 +64,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.DraftConflictResolutionRoute
+import com.hoggamers.rankforge.presentation.screen.ContactUsRoute
 
 @Composable
 fun RankForgeNavHost(
@@ -147,11 +148,15 @@ fun RankForgeNavHost(
             val onOpenAllTournaments = {
                 navController.navigate(AllTournamentsDestination)
             }
+            val onOpenContactUs = {
+                navController.navigate(ContactUsDestination)
+            }
             TournamentListRoute(
                 onCreateTournament = onCreateTournament,
                 onOpenTournamentDetails = onOpenTournamentDetails,
                 onOpenAuth = onOpenAuth,
                 onOpenAllTournaments = onOpenAllTournaments,
+                onOpenContactUs = onOpenContactUs,
                 openDrawerOnEnter = openHomeMenuOnReturn,
                 onDrawerOpenRequestConsumed = { openHomeMenuOnReturn = false },
                 viewModel = sharedTournamentListViewModel,
@@ -181,6 +186,18 @@ fun RankForgeNavHost(
                 onOpenTournamentDetails = onOpenTournamentDetails,
                 viewModel = sharedTournamentListViewModel,
                 restorationViewModel = cloudRestorationViewModel,
+            )
+        }
+        composable<ContactUsDestination> {
+            ContactUsRoute(
+                onHome = {
+                    openHomeMenuOnReturn = false
+                    navController.popBackStack(TournamentListDestination, inclusive = false)
+                },
+                onBack = {
+                    openHomeMenuOnReturn = true
+                    navController.popBackStack(TournamentListDestination, inclusive = false)
+                },
             )
         }
         composable<AuthDestination> {
