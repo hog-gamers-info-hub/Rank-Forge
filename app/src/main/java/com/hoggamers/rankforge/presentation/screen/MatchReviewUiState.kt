@@ -176,7 +176,6 @@ data class MatchReviewUiState(
     val isFinalizing: Boolean = false,
     val finalizationError: FinalizeMatchGlobalError? = null,
     val csvExportResult: AndroidExportResult? = null,
-    val googleSheetsExportResult: AndroidExportResult? = null,
     val resultDownloadUiState: ResultDownloadUiState = ResultDownloadUiState.Idle,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,

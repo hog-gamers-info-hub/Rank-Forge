@@ -11,7 +11,10 @@ import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionPhase
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRemoteAccountStatus
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRequestDisposition
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
@@ -44,6 +47,7 @@ import com.hoggamers.rankforge.domain.tournament.DeletionIntent
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
+import java.io.IOException
 import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +123,7 @@ class AuthViewModelTest {
         assertEquals("stored@example.com", viewModel.uiState.value.accountEmail)
         assertNull(viewModel.uiState.value.statusMessage)
         assertEquals(1, recoveryCalls)
+        assertEquals(1, repository.restoreCalls)
 
         repository.authState.value = AuthState.SignedIn(
             AuthUser(id = "user-id", email = "stored@example.com"),
@@ -648,6 +653,61 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun postDispatchNetworkFailureKeepsDeletionRecoveryRequired() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.com"))
+        advanceUntilIdle()
+        accountDeletionRepository.result = AccountDeletionResult.Failure(
+            AccountDeletionFailureCategory.NETWORK,
+            AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+        )
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun postDispatchTimeoutFailureKeepsDeletionRecoveryRequired() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.com"))
+        advanceUntilIdle()
+        accountDeletionRepository.result = AccountDeletionResult.Failure(
+            AccountDeletionFailureCategory.NETWORK,
+            AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+        )
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+    }
+
+    @Test
+    fun postDispatchServerFailureKeepsDeletionRecoveryRequired() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        repository.authState.value = AuthState.SignedIn(AuthUser("owner-a", "a@example.com"))
+        advanceUntilIdle()
+        accountDeletionRepository.result = AccountDeletionResult.Failure(
+            AccountDeletionFailureCategory.SERVER,
+            AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+        )
+
+        viewModel.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+    }
+
+    @Test
     fun accountDeletionCleansLocalOwnerDataBeforeClearingSession() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -697,9 +757,90 @@ class AuthViewModelTest {
         assertEquals(0, accountDeletionRepository.calls)
         assertEquals(listOf("owner-a"), accountDeletionLocalCleanupRepository.purgeOwners)
         assertEquals(1, repository.clearLocalSessionCalls)
+        assertEquals(0, repository.restoreCalls)
         assertEquals(null, accountDeletionLocalCleanupRepository.marker)
         assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
         assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun requestedMarkerWithDeletedRemoteAccountCompletesOwnerScopedRecovery() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionRepository.remoteStatus = AccountDeletionRemoteAccountStatus.DELETED
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(1, accountDeletionRepository.probeCalls)
+        assertEquals(0, accountDeletionRepository.calls)
+        assertEquals(listOf("owner-a"), accountDeletionLocalCleanupRepository.purgeOwners)
+        assertEquals(1, repository.clearLocalSessionCalls)
+        assertEquals(null, accountDeletionLocalCleanupRepository.marker)
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun requestedMarkerWithPresentRemoteAccountStaysRecoveryRequiredWithoutRetry() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionRepository.remoteStatus = AccountDeletionRemoteAccountStatus.PRESENT
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+        assertTrue(accountDeletionLocalCleanupRepository.purgeOwners.isEmpty())
+        assertEquals(0, repository.clearLocalSessionCalls)
+        assertEquals(0, accountDeletionRepository.calls)
+        assertEquals(0, repository.restoreCalls)
+    }
+
+    @Test
+    fun requestedMarkerWithUnknownRemoteAccountStaysRecoveryRequiredWithoutCleanup() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionRepository.remoteStatus = AccountDeletionRemoteAccountStatus.UNKNOWN
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+        assertTrue(accountDeletionLocalCleanupRepository.purgeOwners.isEmpty())
+        assertEquals(0, accountDeletionRepository.calls)
+        assertEquals(0, repository.restoreCalls)
+    }
+
+    @Test
+    fun requestedMarkerWithProbeNetworkFailureStaysRecoveryRequiredWithoutCleanup() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionRepository.probeFailure = IOException("probe unavailable")
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+        assertTrue(accountDeletionLocalCleanupRepository.purgeOwners.isEmpty())
+        assertEquals(0, accountDeletionRepository.calls)
+        assertEquals(0, repository.clearLocalSessionCalls)
+        assertEquals(0, repository.restoreCalls)
     }
 
     @Test
@@ -1180,6 +1321,7 @@ class AuthViewModelTest {
         val authState = MutableStateFlow<AuthState>(AuthState.SignedOut)
         var restoreResult: AuthRestorationResult = AuthRestorationResult.NoSavedSession
         var restoreGate: CompletableDeferred<Unit>? = null
+        var restoreCalls = 0
         var signUpResult: AuthOperationResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignUpAuthenticated,
         )
@@ -1211,6 +1353,7 @@ class AuthViewModelTest {
         override fun observeAuthState(): Flow<AuthState> = authState
 
         override suspend fun restoreSession(): AuthRestorationResult {
+            restoreCalls += 1
             restoreGate?.await()
             when (val result = restoreResult) {
                 is AuthRestorationResult.Restored -> authState.value = AuthState.SignedIn(result.user)
@@ -1274,13 +1417,22 @@ class AuthViewModelTest {
 
     private class FakeAccountDeletionRepository : AccountDeletionRepository {
         var result: AccountDeletionResult = AccountDeletionResult.Success
+        var remoteStatus: AccountDeletionRemoteAccountStatus = AccountDeletionRemoteAccountStatus.UNKNOWN
+        var probeFailure: Throwable? = null
         var gate: CompletableDeferred<Unit>? = null
         var calls = 0
+        var probeCalls = 0
 
         override suspend fun deleteCurrentAccount(): AccountDeletionResult {
             calls += 1
             gate?.await()
             return result
+        }
+
+        override suspend fun probeCurrentAccount(): AccountDeletionRemoteAccountStatus {
+            probeCalls += 1
+            probeFailure?.let { throw it }
+            return remoteStatus
         }
     }
 

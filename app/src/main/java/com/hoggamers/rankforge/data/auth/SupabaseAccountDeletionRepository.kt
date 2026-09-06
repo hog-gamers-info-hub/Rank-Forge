@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRemoteAccountStatus
+import com.hoggamers.rankforge.domain.auth.AccountDeletionRequestDisposition
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
 import kotlinx.coroutines.CancellationException
@@ -19,15 +21,26 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 fun interface AccountDeletionAccessTokenProvider {
-    fun currentAccessToken(): String?
+    suspend fun currentAccessToken(): String?
 }
 
 @Singleton
 class SupabaseAccountDeletionAccessTokenProvider @Inject constructor(
     private val clientProvider: SupabaseClientProvider,
 ) : AccountDeletionAccessTokenProvider {
-    override fun currentAccessToken(): String? =
-        clientProvider.client.auth.currentSessionOrNull()?.accessToken
+    override suspend fun currentAccessToken(): String? {
+        clientProvider.client.auth.currentSessionOrNull()?.accessToken?.let { token ->
+            return token
+        }
+
+        return try {
+            clientProvider.client.auth.sessionManager.loadSessionOrNull()?.accessToken
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+    }
 }
 
 data class AccountDeletionHttpRequest(
@@ -43,26 +56,40 @@ data class AccountDeletionHttpResponse(
 
 fun interface AccountDeletionHttpTransport {
     suspend fun post(request: AccountDeletionHttpRequest): AccountDeletionHttpResponse
+
+    suspend fun get(request: AccountDeletionHttpRequest): AccountDeletionHttpResponse =
+        throw UnsupportedOperationException("GET is not supported")
 }
 
 @Singleton
 class UrlConnectionAccountDeletionHttpTransport @Inject constructor() :
     AccountDeletionHttpTransport {
     override suspend fun post(request: AccountDeletionHttpRequest): AccountDeletionHttpResponse =
+        execute(request, "POST")
+
+    override suspend fun get(request: AccountDeletionHttpRequest): AccountDeletionHttpResponse =
+        execute(request, "GET")
+
+    private suspend fun execute(
+        request: AccountDeletionHttpRequest,
+        method: String,
+    ): AccountDeletionHttpResponse =
         withContext(Dispatchers.IO) {
             val connection = (URL(request.url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
+                requestMethod = method
                 connectTimeout = REQUEST_TIMEOUT_MS
                 readTimeout = REQUEST_TIMEOUT_MS
-                doOutput = true
+                doOutput = method == "POST"
                 request.headers.forEach { (name, value) ->
                     setRequestProperty(name, value)
                 }
             }
 
             try {
-                connection.outputStream.use { output ->
-                    output.write(request.body.toByteArray(StandardCharsets.UTF_8))
+                if (method == "POST") {
+                    connection.outputStream.use { output ->
+                        output.write(request.body.toByteArray(StandardCharsets.UTF_8))
+                    }
                 }
                 val responseStream = if (connection.responseCode in 200..299) {
                     connection.inputStream
@@ -116,20 +143,80 @@ class SupabaseAccountDeletionRepository @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: SocketTimeoutException) {
-            AccountDeletionResult.Failure(AccountDeletionFailureCategory.NETWORK)
+            AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.NETWORK,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
         } catch (_: IOException) {
-            AccountDeletionResult.Failure(AccountDeletionFailureCategory.NETWORK)
+            AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.NETWORK,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
         } catch (_: Throwable) {
-            AccountDeletionResult.Failure(AccountDeletionFailureCategory.UNKNOWN)
+            AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.UNKNOWN,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
+        }
+    }
+
+    override suspend fun probeCurrentAccount(): AccountDeletionRemoteAccountStatus {
+        val accessToken = accessTokenProvider.currentAccessToken()
+            ?.takeIf { it.isNotBlank() }
+            ?: return AccountDeletionRemoteAccountStatus.UNKNOWN
+
+        if (!config.isConfigured) {
+            return AccountDeletionRemoteAccountStatus.UNKNOWN
+        }
+
+        return try {
+            val response = transport.get(
+                AccountDeletionHttpRequest(
+                    url = "${config.supabaseUrl.trimEnd('/')}/auth/v1/user",
+                    headers = mapOf(
+                        "Authorization" to "Bearer $accessToken",
+                        "apikey" to config.publishableKey,
+                        "Accept" to "application/json",
+                    ),
+                    body = "",
+                ),
+            )
+            if (response.statusCode == HttpURLConnection.HTTP_OK) {
+                AccountDeletionRemoteAccountStatus.PRESENT.also { classification ->
+                }
+            } else {
+                val code = runCatching {
+                    Json.parseToJsonElement(response.body)
+                        .jsonObject["code"]
+                        ?.jsonPrimitive
+                        ?.content
+                }.getOrNull()
+                val classification = if (code == "user_not_found") {
+                    AccountDeletionRemoteAccountStatus.DELETED
+                } else {
+                    AccountDeletionRemoteAccountStatus.UNKNOWN
+                }
+                classification
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            AccountDeletionRemoteAccountStatus.UNKNOWN
         }
     }
 
     private fun AccountDeletionHttpResponse.toDeletionResult(): AccountDeletionResult {
         if (statusCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
-            return AccountDeletionResult.Failure(AccountDeletionFailureCategory.AUTHENTICATION)
+            return AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.AUTHENTICATION,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
         }
         if (statusCode !in 200..299) {
-            return AccountDeletionResult.Failure(AccountDeletionFailureCategory.SERVER)
+            return AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.SERVER,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
         }
 
         return try {
@@ -137,10 +224,17 @@ class SupabaseAccountDeletionRepository @Inject constructor(
             if (ok) {
                 AccountDeletionResult.Success
             } else {
-                AccountDeletionResult.Failure(AccountDeletionFailureCategory.UNKNOWN)
+                AccountDeletionResult.Failure(
+                    AccountDeletionFailureCategory.UNKNOWN,
+                    AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+                )
             }
         } catch (_: Throwable) {
-            AccountDeletionResult.Failure(AccountDeletionFailureCategory.UNKNOWN)
+            AccountDeletionResult.Failure(
+                AccountDeletionFailureCategory.UNKNOWN,
+                AccountDeletionRequestDisposition.MAY_HAVE_REACHED_SERVER,
+            )
         }
     }
+
 }

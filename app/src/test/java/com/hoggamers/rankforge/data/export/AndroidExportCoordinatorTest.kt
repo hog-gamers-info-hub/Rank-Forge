@@ -51,54 +51,6 @@ class AndroidExportCoordinatorTest {
     }
 
     @Test
-    fun googleSheetsMatchExportIsUnavailableWithoutAnAndroidClient() {
-        val result = coordinator.googleSheetsMatchUnavailable(
-            tournamentId = "tournament-id",
-            matchId = "match-id",
-        )
-
-        assertEquals(AndroidExportType.MATCH_GOOGLE_SHEETS, result.request.type)
-        assertEquals("tournament-id", result.request.tournamentId)
-        assertEquals("match-id", result.request.matchId)
-        assertEquals(
-            AndroidExportUnavailableReason.GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
-            result.reason,
-        )
-    }
-
-    @Test
-    fun googleSheetsMatchStatesPreserveMatchGoogleSheetsIdentity() {
-        val exporting = coordinator.googleSheetsMatchExporting("tournament-id", "match-id")
-        val success = coordinator.googleSheetsMatchSuccess(
-            tournamentId = "tournament-id",
-            matchId = "match-id",
-            exportedMatchCount = 1,
-            rowsWritten = 12,
-        )
-        val failure = coordinator.googleSheetsMatchFailure(
-            tournamentId = "tournament-id",
-            matchId = "match-id",
-            reason = AndroidGoogleSheetsExportFailureReason.NETWORK_FAILURE,
-        )
-        val blocked = coordinator.blockGoogleSheetsMatch(
-            tournamentId = "tournament-id",
-            matchId = "match-id",
-            reason = AndroidExportBlockedReason.INVALID_FINALIZED_MATCH,
-        )
-
-        listOf(exporting, success, failure, blocked).forEach { result ->
-            assertEquals(AndroidExportType.MATCH_GOOGLE_SHEETS, result.request.type)
-            assertEquals("tournament-id", result.request.tournamentId)
-            assertEquals("match-id", result.request.matchId)
-            assertTrue(result.request.type != AndroidExportType.MATCH_CSV)
-        }
-        assertEquals(1, success.exportedMatchCount)
-        assertEquals(12, success.rowsWritten)
-        assertEquals(AndroidGoogleSheetsExportFailureReason.NETWORK_FAILURE, failure.reason)
-        assertEquals(AndroidExportBlockedReason.INVALID_FINALIZED_MATCH, blocked.reason)
-    }
-
-    @Test
     fun blockedMatchExportPreservesIdentityWithoutFinalizingData() {
         val result = coordinator.blockMatchCsv(
             tournamentId = "tournament-id",

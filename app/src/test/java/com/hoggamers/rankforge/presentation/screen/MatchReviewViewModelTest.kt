@@ -4,8 +4,6 @@ import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
 import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
-import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportExecutionResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsMatchExportRemoteDataSource
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteFailure
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
 import com.hoggamers.rankforge.data.export.ResultDocumentWriter
@@ -15,7 +13,6 @@ import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadRequest
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
-import com.hoggamers.rankforge.domain.export.MatchExportRow
 import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
@@ -96,9 +93,6 @@ import org.junit.Before
 import org.junit.Test
 
 private const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
-private const val HOSTED_ID_TEST_TOURNAMENT_ID = "f1e7a9b6-0543-4786-a328-fe927ca90814"
-private const val HOSTED_ID_TEST_LOCAL_MATCH_ID = "2c7ed56f-e9e3-44b3-a830-0b9ef0866438"
-private const val HOSTED_ID_TEST_HOSTED_MATCH_ID = "152837b7-65f3-3b03-a797-113848cbbf6d"
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MatchReviewViewModelTest {
@@ -2050,179 +2044,6 @@ class MatchReviewViewModelTest {
         assertEquals(TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
         assertEquals(matchId, viewModel.uiState.value.matchId)
         assertFalse(viewModel.uiState.value.isEditable)
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-        assertEquals(
-            AndroidExportType.MATCH_GOOGLE_SHEETS,
-            viewModel.uiState.value.googleSheetsExportResult?.request?.type,
-        )
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsSuccess)
-        assertEquals(
-            1,
-            (viewModel.uiState.value.googleSheetsExportResult as AndroidExportResult.GoogleSheetsSuccess)
-                .exportedMatchCount,
-        )
-        assertEquals(
-            12,
-            (viewModel.uiState.value.googleSheetsExportResult as AndroidExportResult.GoogleSheetsSuccess)
-                .rowsWritten,
-        )
-    }
-
-    @Test
-    fun draftMatchGoogleSheetsExportIsBlockedLocallyWithoutRemoteCall() = runTest {
-        val remote = RecordingGoogleSheetsMatchExport()
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-
-        val result = viewModel.uiState.value.googleSheetsExportResult as AndroidExportResult.Blocked
-        assertEquals(AndroidExportType.MATCH_GOOGLE_SHEETS, result.request.type)
-        assertEquals(AndroidExportBlockedReason.MATCH_NOT_FINALIZED, result.reason)
-        assertTrue(remote.requests.isEmpty())
-    }
-
-    @Test
-    fun invalidFinalizedMatchGoogleSheetsExportIsBlockedLocally() = runTest {
-        saveValidFinalizedMatch()
-        repository.saveTeamNames(TOURNAMENT_ID, mapOf(1 to ""))
-        val remote = RecordingGoogleSheetsMatchExport()
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-
-        val result = viewModel.uiState.value.googleSheetsExportResult as AndroidExportResult.Blocked
-        assertEquals(AndroidExportBlockedReason.INVALID_FINALIZED_MATCH, result.reason)
-        assertTrue(remote.requests.isEmpty())
-    }
-
-    @Test
-    fun validFinalizedMatchGoogleSheetsExportUsesExactIdentityAndTwelveRows() = runTest {
-        saveValidFinalizedMatch()
-        val remote = RecordingGoogleSheetsMatchExport()
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-
-        assertEquals(1, remote.requests.size)
-        val request = remote.requests.single()
-        assertEquals(TOURNAMENT_ID, request.tournamentId)
-        assertEquals(checkNotNull(MatchCloudIdentity.matchId(TOURNAMENT_ID, matchId)), request.matchId)
-        assertEquals(12, request.rows.size)
-        assertEquals(setOf(request.matchId), request.rows.map { it.matchId }.toSet())
-        assertFalse(request.rows.any { it.matchId == matchId })
-        assertEquals(matchId, viewModel.uiState.value.matchId)
-        assertEquals(matchId, viewModel.uiState.value.googleSheetsExportResult?.request?.matchId)
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsSuccess)
-    }
-
-    @Test
-    fun googleSheetsExportMapsKnownLocalMatchIdToHostedMatchId() = runTest {
-        repository.create(
-            Tournament(
-                id = HOSTED_ID_TEST_TOURNAMENT_ID,
-                name = "Hosted ID Test Cup",
-                date = LocalDate.of(2026, 7, 24),
-                organizerName = "Organizer",
-                organizerContactNumber = "123",
-                status = TournamentStatus.CONFIRMED,
-            ),
-        )
-        repository.saveTeamNames(
-            HOSTED_ID_TEST_TOURNAMENT_ID,
-            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
-        )
-        repository.createDraftMatch(
-            Match(
-                id = HOSTED_ID_TEST_LOCAL_MATCH_ID,
-                tournamentId = HOSTED_ID_TEST_TOURNAMENT_ID,
-                matchNumber = 2,
-                date = LocalDate.of(2026, 7, 24),
-                mapName = "Bermuda",
-                status = MatchStatus.DRAFT,
-            ),
-        )
-        matchId = HOSTED_ID_TEST_LOCAL_MATCH_ID
-        saveValidFinalizedMatch(HOSTED_ID_TEST_TOURNAMENT_ID)
-        val remote = RecordingGoogleSheetsMatchExport()
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(HOSTED_ID_TEST_TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-
-        val request = remote.requests.single()
-        assertEquals(HOSTED_ID_TEST_TOURNAMENT_ID, request.tournamentId)
-        assertEquals(HOSTED_ID_TEST_HOSTED_MATCH_ID, request.matchId)
-        assertEquals(12, request.rows.size)
-        assertEquals(
-            listOf(HOSTED_ID_TEST_HOSTED_MATCH_ID),
-            request.rows.map { it.matchId }.distinct(),
-        )
-        assertFalse(request.rows.any { it.matchId == HOSTED_ID_TEST_LOCAL_MATCH_ID })
-        assertEquals(HOSTED_ID_TEST_TOURNAMENT_ID, viewModel.uiState.value.tournamentId)
-        assertEquals(HOSTED_ID_TEST_LOCAL_MATCH_ID, viewModel.uiState.value.matchId)
-        assertEquals(
-            HOSTED_ID_TEST_LOCAL_MATCH_ID,
-            viewModel.uiState.value.googleSheetsExportResult?.request?.matchId,
-        )
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsSuccess)
-    }
-
-    @Test
-    fun secondGoogleSheetsRequestWhileFirstIsActiveDoesNotCreateAnotherCall() = runTest {
-        saveValidFinalizedMatch()
-        val remote = RecordingGoogleSheetsMatchExport().apply {
-            gate = kotlinx.coroutines.CompletableDeferred()
-        }
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsExporting)
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-        assertEquals(1, remote.requests.size)
-
-        checkNotNull(remote.gate).complete(Unit)
-        advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.googleSheetsExportResult is AndroidExportResult.GoogleSheetsSuccess)
-    }
-
-    @Test
-    fun remoteGoogleSheetsFailureReasonIsPreserved() = runTest {
-        saveValidFinalizedMatch()
-        val remote = RecordingGoogleSheetsMatchExport(
-            result = GoogleSheetsMatchExportExecutionResult.Failure(
-                com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.OUTCOME_UNCERTAIN,
-            ),
-        )
-        val viewModel = reviewViewModel(googleSheetsMatchExport = remote)
-        viewModel.load(TOURNAMENT_ID, matchId)
-        advanceUntilIdle()
-
-        viewModel.prepareGoogleSheetsExport()
-        advanceUntilIdle()
-
-        val result = viewModel.uiState.value.googleSheetsExportResult as AndroidExportResult.GoogleSheetsFailure
-        assertEquals(
-            com.hoggamers.rankforge.data.export.AndroidGoogleSheetsExportFailureReason.OUTCOME_UNCERTAIN,
-            result.reason,
-        )
-        assertEquals(matchId, result.request.matchId)
     }
 
     @Test
@@ -2957,7 +2778,6 @@ class MatchReviewViewModelTest {
         screenshotMetadataRepository: ScreenshotMetadataRepository = FakeScreenshotMetadataRepository(),
         screenshotMetadataCloudDataSource: ScreenshotMetadataCloudDataSource =
             com.hoggamers.rankforge.data.cloud.NoOpScreenshotMetadataCloudDataSource(),
-        googleSheetsMatchExport: GoogleSheetsMatchExportRemoteDataSource = RecordingGoogleSheetsMatchExport(),
         resultDownloadCoordinator: ResultDownloadCoordinator = RecordingResultDownloadCoordinator(),
         customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator =
             com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordinator,
@@ -2991,7 +2811,6 @@ class MatchReviewViewModelTest {
         screenshotStorageUploader = screenshotStorageUploader,
         screenshotMetadataRepository = screenshotMetadataRepository,
         screenshotMetadataCloudDataSource = screenshotMetadataCloudDataSource,
-        googleSheetsMatchExport = googleSheetsMatchExport,
         resultDownloadCoordinator = resultDownloadCoordinator,
         customDesignResultDownloadCoordinator = customDesignResultDownloadCoordinator,
         resultDocumentWriter = resultDocumentWriter,
@@ -3052,30 +2871,6 @@ class MatchReviewViewModelTest {
                 primaryResult = result,
                 queueRecordingResult = QueueRecordingResult.RECORDED,
             )
-        }
-    }
-
-    private class RecordingGoogleSheetsMatchExport(
-        private val result: GoogleSheetsMatchExportExecutionResult =
-            GoogleSheetsMatchExportExecutionResult.Success(rowsWritten = 12),
-    ) : GoogleSheetsMatchExportRemoteDataSource {
-        data class Request(
-            val tournamentId: String,
-            val matchId: String,
-            val rows: List<MatchExportRow>,
-        )
-
-        val requests = mutableListOf<Request>()
-        var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
-
-        override suspend fun export(
-            tournamentId: String,
-            matchId: String,
-            rows: List<MatchExportRow>,
-        ): GoogleSheetsMatchExportExecutionResult {
-            requests += Request(tournamentId, matchId, rows)
-            gate?.await()
-            return result
         }
     }
 

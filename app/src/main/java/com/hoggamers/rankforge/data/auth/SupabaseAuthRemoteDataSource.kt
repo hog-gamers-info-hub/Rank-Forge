@@ -59,6 +59,7 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         }
 
         return try {
+            client.auth.loadFromStorage(autoRefresh = true)
             client.auth.awaitInitialization()
             client.auth.currentSessionOrNull()?.let { session ->
                 AuthRestorationResult.Restored(

@@ -15,11 +15,8 @@ import androidx.navigation.toRoute
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
-import com.hoggamers.rankforge.domain.export.TournamentStandingsExportRow
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
@@ -242,7 +239,6 @@ private class RecreationFixture private constructor(
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             observeMatches = ObserveMatchesUseCase(repository),
             observeRoster = ObserveRosterByTournamentUseCase(repository),
-            googleSheetsStandingsExport = NoOpGoogleSheetsExport,
             saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository),
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
             createNextMatch = com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase(repository),
@@ -312,17 +308,6 @@ private class RecreationNavigationViewModels(
         matchReviewViewModels.getOrPut("$tournamentId:$matchId") {
             fixture.createMatchReviewViewModel(tournamentId, matchId)
         }
-}
-
-private object NoOpGoogleSheetsExport : GoogleSheetsStandingsExportRemoteDataSource {
-    override suspend fun export(
-        tournamentId: String,
-        rows: List<TournamentStandingsExportRow>,
-    ): GoogleSheetsStandingsExportExecutionResult =
-        GoogleSheetsStandingsExportExecutionResult.Success(
-            exportedMatchCount = 0,
-            rowsWritten = rows.size,
-        )
 }
 
 private object NoOpDraftMatchSync : DraftMatchCloudSyncAction {

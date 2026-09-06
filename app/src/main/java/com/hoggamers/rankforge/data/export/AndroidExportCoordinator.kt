@@ -7,8 +7,6 @@ import com.hoggamers.rankforge.domain.export.CsvUtf8PayloadResult
 enum class AndroidExportType {
     MATCH_CSV,
     STANDINGS_CSV,
-    MATCH_GOOGLE_SHEETS,
-    STANDINGS_GOOGLE_SHEETS,
 }
 
 enum class AndroidExportBlockedReason {
@@ -18,10 +16,6 @@ enum class AndroidExportBlockedReason {
     NO_FINALIZED_STANDINGS,
     INVALID_FINALIZED_STANDINGS,
     INVALID_CSV_PAYLOAD,
-}
-
-enum class AndroidExportUnavailableReason {
-    GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
 }
 
 data class AndroidExportRequest(
@@ -47,25 +41,6 @@ sealed interface AndroidExportResult {
         val reason: AndroidExportBlockedReason,
     ) : AndroidExportResult
 
-    data class Unavailable(
-        override val request: AndroidExportRequest,
-        val reason: AndroidExportUnavailableReason,
-    ) : AndroidExportResult
-
-    data class GoogleSheetsExporting(
-        override val request: AndroidExportRequest,
-    ) : AndroidExportResult
-
-    data class GoogleSheetsSuccess(
-        override val request: AndroidExportRequest,
-        val exportedMatchCount: Int,
-        val rowsWritten: Int,
-    ) : AndroidExportResult
-
-    data class GoogleSheetsFailure(
-        override val request: AndroidExportRequest,
-        val reason: AndroidGoogleSheetsExportFailureReason,
-    ) : AndroidExportResult
 }
 
 class AndroidExportCoordinator(
@@ -116,124 +91,6 @@ class AndroidExportCoordinator(
     ): AndroidExportResult.Blocked = AndroidExportResult.Blocked(
         request = AndroidExportRequest(
             type = AndroidExportType.STANDINGS_CSV,
-            tournamentId = tournamentId,
-        ),
-        reason = reason,
-    )
-
-    fun blockGoogleSheetsStandings(
-        tournamentId: String,
-        reason: AndroidExportBlockedReason,
-    ): AndroidExportResult.Blocked = AndroidExportResult.Blocked(
-        request = AndroidExportRequest(
-            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-        ),
-        reason = reason,
-    )
-
-    fun googleSheetsMatchUnavailable(
-        tournamentId: String,
-        matchId: String,
-    ): AndroidExportResult.Unavailable = AndroidExportResult.Unavailable(
-        request = AndroidExportRequest(
-            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-            matchId = matchId,
-        ),
-        reason = AndroidExportUnavailableReason.GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
-    )
-
-    fun blockGoogleSheetsMatch(
-        tournamentId: String,
-        matchId: String,
-        reason: AndroidExportBlockedReason,
-    ): AndroidExportResult.Blocked = AndroidExportResult.Blocked(
-        request = AndroidExportRequest(
-            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-            matchId = matchId,
-        ),
-        reason = reason,
-    )
-
-    fun googleSheetsMatchExporting(
-        tournamentId: String,
-        matchId: String,
-    ): AndroidExportResult.GoogleSheetsExporting = AndroidExportResult.GoogleSheetsExporting(
-        request = AndroidExportRequest(
-            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-            matchId = matchId,
-        ),
-    )
-
-    fun googleSheetsMatchSuccess(
-        tournamentId: String,
-        matchId: String,
-        exportedMatchCount: Int,
-        rowsWritten: Int,
-    ): AndroidExportResult.GoogleSheetsSuccess = AndroidExportResult.GoogleSheetsSuccess(
-        request = AndroidExportRequest(
-            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-            matchId = matchId,
-        ),
-        exportedMatchCount = exportedMatchCount,
-        rowsWritten = rowsWritten,
-    )
-
-    fun googleSheetsMatchFailure(
-        tournamentId: String,
-        matchId: String,
-        reason: AndroidGoogleSheetsExportFailureReason,
-    ): AndroidExportResult.GoogleSheetsFailure = AndroidExportResult.GoogleSheetsFailure(
-        request = AndroidExportRequest(
-            type = AndroidExportType.MATCH_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-            matchId = matchId,
-        ),
-        reason = reason,
-    )
-
-    fun googleSheetsStandingsUnavailable(
-        tournamentId: String,
-    ): AndroidExportResult.Unavailable = AndroidExportResult.Unavailable(
-        request = AndroidExportRequest(
-            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-        ),
-        reason = AndroidExportUnavailableReason.GOOGLE_SHEETS_CLIENT_NOT_CONFIGURED,
-    )
-
-    fun googleSheetsStandingsExporting(
-        tournamentId: String,
-    ): AndroidExportResult.GoogleSheetsExporting = AndroidExportResult.GoogleSheetsExporting(
-        request = AndroidExportRequest(
-            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-        ),
-    )
-
-    fun googleSheetsStandingsSuccess(
-        tournamentId: String,
-        exportedMatchCount: Int,
-        rowsWritten: Int,
-    ): AndroidExportResult.GoogleSheetsSuccess = AndroidExportResult.GoogleSheetsSuccess(
-        request = AndroidExportRequest(
-            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
-            tournamentId = tournamentId,
-        ),
-        exportedMatchCount = exportedMatchCount,
-        rowsWritten = rowsWritten,
-    )
-
-    fun googleSheetsStandingsFailure(
-        tournamentId: String,
-        reason: AndroidGoogleSheetsExportFailureReason,
-    ): AndroidExportResult.GoogleSheetsFailure = AndroidExportResult.GoogleSheetsFailure(
-        request = AndroidExportRequest(
-            type = AndroidExportType.STANDINGS_GOOGLE_SHEETS,
             tournamentId = tournamentId,
         ),
         reason = reason,

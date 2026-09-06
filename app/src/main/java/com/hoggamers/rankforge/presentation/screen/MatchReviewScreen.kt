@@ -125,8 +125,6 @@ const val MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG = "match_review_finalize
 const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_status"
 const val MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG = "match_review_csv_export_action"
 const val MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG = "match_review_csv_export_status"
-const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG = "match_review_google_sheets_export_action"
-const val MATCH_REVIEW_GOOGLE_SHEETS_EXPORT_STATUS_TEST_TAG = "match_review_google_sheets_export_status"
 const val MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG = "match_review_download_result_action"
 const val MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG = "match_review_download_scope_dialog"
 const val MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG = "match_review_download_scope_current_match"
@@ -505,7 +503,6 @@ fun MatchReviewRoute(
         onStartCorrection = viewModel::openCorrection,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
-        onPrepareGoogleSheetsExport = viewModel::prepareGoogleSheetsExport,
         onRequestResultDownload = viewModel::requestResultDownload,
         onOpenCustomDesignSetup = { scope ->
             onOpenCustomDesignSetup(tournamentId, matchId, scope)
@@ -588,7 +585,6 @@ fun MatchReviewScreen(
     onStartCorrection: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
-    onPrepareGoogleSheetsExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit = {},
     onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit = { _, _ -> },
@@ -650,7 +646,6 @@ fun MatchReviewScreen(
             onStartCorrection = onStartCorrection,
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
-            onPrepareGoogleSheetsExport = onPrepareGoogleSheetsExport,
             onRequestResultDownload = onRequestResultDownload,
             onOpenCustomDesignSetup = onOpenCustomDesignSetup,
             onRequestCustomDesignResultDownload = onRequestCustomDesignResultDownload,
@@ -704,7 +699,6 @@ private fun MatchReviewContent(
     onStartCorrection: () -> Unit,
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
-    onPrepareGoogleSheetsExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit,
     onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit,
@@ -904,10 +898,6 @@ private fun MatchReviewContent(
                     )
                     is AndroidExportResult.Blocked -> Text(
                         text = "CSV export blocked",
-                        modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
-                    )
-                    is AndroidExportResult.Unavailable -> Text(
-                        text = "CSV export unavailable",
                         modifier = Modifier.testTag(MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG),
                     )
                     else -> Unit

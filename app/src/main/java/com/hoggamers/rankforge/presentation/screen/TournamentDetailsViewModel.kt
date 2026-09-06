@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportCoordinator
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportExecutionResult
-import com.hoggamers.rankforge.data.export.GoogleSheetsStandingsExportRemoteDataSource
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportFailure
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportInput
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportResult
@@ -64,7 +62,6 @@ class TournamentDetailsViewModel @Inject constructor(
     private val observeTournamentSlots: ObserveTournamentSlotsUseCase,
     private val observeMatches: ObserveMatchesUseCase,
     private val observeRoster: ObserveRosterByTournamentUseCase,
-    private val googleSheetsStandingsExport: GoogleSheetsStandingsExportRemoteDataSource,
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
@@ -105,7 +102,6 @@ class TournamentDetailsViewModel @Inject constructor(
                 _uiState.update { current ->
                     state.copy(
                         csvExportResult = current.csvExportResult,
-                        googleSheetsExportResult = current.googleSheetsExportResult,
                         pendingTeamCountConfirmation = current.pendingTeamCountConfirmation,
                         calculatePointsMessage = current.calculatePointsMessage,
                         matchReviewRequest = current.matchReviewRequest,
@@ -382,64 +378,6 @@ class TournamentDetailsViewModel @Inject constructor(
             _uiState.update { state ->
                 if (state.tournament?.id == tournamentId) {
                     state.copy(csvExportResult = result)
-                } else {
-                    state
-                }
-            }
-        }
-    }
-
-    fun prepareGoogleSheetsStandingsExport() {
-        val tournamentId = _uiState.value.tournament?.id ?: return
-        if (exportJob?.isActive == true) return
-
-        _uiState.update { state ->
-            if (state.tournament?.id == tournamentId) {
-                state.copy(
-                    googleSheetsExportResult = AndroidExportCoordinator()
-                        .googleSheetsStandingsExporting(tournamentId),
-                )
-            } else {
-                state
-            }
-        }
-
-        exportJob = viewModelScope.launch {
-            val result = buildStandingsExportInput(tournamentId)?.let { input ->
-                when (val rowsResult = TournamentCsvExporter().buildStandingsRows(input)) {
-                    is TournamentStandingsExportRowsResult.Success -> {
-                        when (val exportResult = googleSheetsStandingsExport.export(tournamentId, rowsResult.rows)) {
-                            is GoogleSheetsStandingsExportExecutionResult.Success ->
-                                AndroidExportCoordinator().googleSheetsStandingsSuccess(
-                                    tournamentId = tournamentId,
-                                    exportedMatchCount = exportResult.exportedMatchCount,
-                                    rowsWritten = exportResult.rowsWritten,
-                                )
-                            is GoogleSheetsStandingsExportExecutionResult.Failure ->
-                                AndroidExportCoordinator().googleSheetsStandingsFailure(
-                                    tournamentId = tournamentId,
-                                    reason = exportResult.reason,
-                                )
-                        }
-                    }
-                    is TournamentStandingsExportRowsResult.Failure ->
-                        AndroidExportCoordinator().blockGoogleSheetsStandings(
-                            tournamentId = tournamentId,
-                            reason = if (TournamentCsvExportFailure.NO_FINALIZED_MATCHES in rowsResult.failures) {
-                                AndroidExportBlockedReason.NO_FINALIZED_STANDINGS
-                            } else {
-                                AndroidExportBlockedReason.INVALID_FINALIZED_STANDINGS
-                            },
-                        )
-                }
-            } ?: AndroidExportCoordinator().blockGoogleSheetsStandings(
-                tournamentId = tournamentId,
-                reason = AndroidExportBlockedReason.MISSING_CONTEXT,
-            )
-
-            _uiState.update { state ->
-                if (state.tournament?.id == tournamentId) {
-                    state.copy(googleSheetsExportResult = result)
                 } else {
                     state
                 }

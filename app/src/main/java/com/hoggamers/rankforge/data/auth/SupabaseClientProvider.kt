@@ -22,6 +22,7 @@ class SupabaseClientProvider @Inject constructor(
                 scheme = SupabaseAuthConfig.AUTH_CALLBACK_SCHEME
                 host = SupabaseAuthConfig.AUTH_CALLBACK_HOST
                 flowType = FlowType.PKCE
+                autoLoadFromStorage = false
             }
             install(Postgrest)
             install(Storage)

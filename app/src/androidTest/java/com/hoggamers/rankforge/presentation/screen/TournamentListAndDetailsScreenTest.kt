@@ -838,7 +838,6 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.onAllNodesWithTag(FINALIZED_MATCH_CLOUD_SYNC_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_CLOUD_RESTORE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(TOURNAMENT_STANDINGS_GOOGLE_SHEETS_EXPORT_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithText(context.getString(R.string.back_to_tournament_list_action)).assertCountEquals(0)
     }
 
