@@ -47,8 +47,18 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = providers.environmentVariable("POINTIQ_UPLOAD_STORE_FILE").orNull?.let(::file)
+            storePassword = providers.environmentVariable("POINTIQ_UPLOAD_STORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("POINTIQ_UPLOAD_KEY_ALIAS").orNull
+            keyPassword = providers.environmentVariable("POINTIQ_UPLOAD_KEY_PASSWORD").orNull
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
