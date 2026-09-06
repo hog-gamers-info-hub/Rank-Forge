@@ -58,11 +58,14 @@ const val LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG =
     "logged_in_home_notifications_item"
 const val LOGGED_IN_HOME_SETTINGS_ITEM_TEST_TAG =
     "logged_in_home_settings_item"
+const val LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG =
+    "logged_in_home_contact_us_item"
 
 @Composable
 fun LoggedInHomeMenuShell(
     onOpenAccount: () -> Unit,
     onOpenAllTournaments: () -> Unit,
+    onOpenContactUs: () -> Unit = {},
     content: @Composable () -> Unit,
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
@@ -98,6 +101,10 @@ fun LoggedInHomeMenuShell(
                 isMenuOpen = false
                 onOpenAllTournaments()
             },
+            onOpenContactUs = {
+                isMenuOpen = false
+                onOpenContactUs()
+            },
         )
     } else {
         Column(
@@ -126,6 +133,7 @@ private fun PointIqFullScreenMenu(
     onBack: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenAllTournaments: () -> Unit,
+    onOpenContactUs: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -173,6 +181,12 @@ private fun PointIqFullScreenMenu(
             text = stringResource(R.string.logged_in_home_all_tournaments),
             testTag = LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG,
             onClick = onOpenAllTournaments,
+        )
+
+        PointIqMenuPrimaryItem(
+            text = stringResource(R.string.logged_in_home_contact_us),
+            testTag = LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG,
+            onClick = onOpenContactUs,
         )
 
         PointIqMenuDisabledItem(

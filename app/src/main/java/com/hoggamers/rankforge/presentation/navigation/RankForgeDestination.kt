@@ -9,6 +9,9 @@ data object TournamentListDestination
 data object AllTournamentsDestination
 
 @Serializable
+data object ContactUsDestination
+
+@Serializable
 data object AuthDestination
 
 @Serializable
