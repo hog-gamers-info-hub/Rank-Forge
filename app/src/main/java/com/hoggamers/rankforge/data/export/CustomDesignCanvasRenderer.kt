@@ -45,10 +45,10 @@ class CustomDesignCanvasRenderer {
         return try {
             rows.forEachIndexed { rowIndex, row ->
                 val sourceY = geometry.rowY.getValue(rowIndex + 1)
-                drawCenteredText(
+                drawLeftAlignedText(
                     canvas = canvas,
                     text = row.teamName,
-                    centerX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME),
+                    startX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME),
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
                     paint = paint,
@@ -133,6 +133,19 @@ class CustomDesignCanvasRenderer {
         val textWidth = paint.measureText(text)
         val baseline = centerY - (paint.ascent() + paint.descent()) / 2f
         canvas.drawText(text, centerX - textWidth / 2f, baseline, paint)
+    }
+
+    private fun drawLeftAlignedText(
+        canvas: Canvas,
+        text: String,
+        startX: Float,
+        centerY: Float,
+        color: String,
+        paint: Paint,
+    ) {
+        paint.color = Color.parseColor(color)
+        val baseline = centerY - (paint.ascent() + paint.descent()) / 2f
+        canvas.drawText(text, startX, baseline, paint)
     }
 
     private companion object {
