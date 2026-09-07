@@ -38,6 +38,7 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
         List<ResultExportRow>,
         CustomDesignEffectiveGridGeometry,
         CustomDesignColumnTextColors,
+        Float?,
     ) -> CustomDesignBitmapComposeResult,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
 ) : CustomDesignResultDownloadCoordinator {
@@ -116,6 +117,7 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
                 rows,
                 design.geometry,
                 design.textColors,
+                design.averageRankingBoundingBoxHeightPx,
             )
         ) {
             is CustomDesignBitmapComposeResult.Success -> result.bitmap

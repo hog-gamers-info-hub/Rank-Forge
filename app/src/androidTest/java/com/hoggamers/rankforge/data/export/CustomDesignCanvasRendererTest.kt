@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
@@ -127,6 +129,95 @@ class CustomDesignCanvasRendererTest {
             )
             assertEquals(900f, canvas.texts[0].centerX, 0.01f)
             assertEquals(100f, canvas.texts[1].centerX, 0.01f)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun validAverageRankingHeightScalesEverySemanticFieldTextSize() {
+        listOf(
+            20f to 26f,
+            30.5f to 39.65f,
+        ).forEach { (averageHeight, expectedTextSize) ->
+            val canvas = RecordingCanvas()
+            try {
+                assertEquals(
+                    CustomDesignCanvasRenderResult.Success,
+                    renderer.render(
+                        canvas,
+                        rows(1),
+                        geometry(),
+                        averageRankingBoundingBoxHeightPx = averageHeight,
+                    ),
+                )
+                assertEquals(5, canvas.texts.size)
+                assertTrue(canvas.texts.all { kotlin.math.abs(it.textSizePx - expectedTextSize) <= 0.001f })
+            } finally {
+                canvas.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun missingOrInvalidAverageRankingHeightUsesExactLegacyTextSize() {
+        listOf(
+            null,
+            0f,
+            -1f,
+            Float.NaN,
+            Float.POSITIVE_INFINITY,
+            Float.NEGATIVE_INFINITY,
+            Float.MAX_VALUE,
+        ).forEach { averageHeight ->
+            val canvas = RecordingCanvas()
+            try {
+                assertEquals(
+                    CustomDesignCanvasRenderResult.Success,
+                    renderer.render(
+                        canvas,
+                        rows(1),
+                        geometry(),
+                        averageRankingBoundingBoxHeightPx = averageHeight,
+                    ),
+                )
+                assertTrue(canvas.texts.all { it.textSizePx == 24f })
+            } finally {
+                canvas.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun everySemanticFieldUsesMediumTypefaceWithoutChangingColors() {
+        val canvas = RecordingCanvas()
+        val colors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { field ->
+                when (field) {
+                    CustomDesignAnchorField.TEAM_NAME -> "#112233"
+                    CustomDesignAnchorField.WIN -> "#223344"
+                    CustomDesignAnchorField.TOTAL_KILLS -> "#334455"
+                    CustomDesignAnchorField.POSITION_POINTS -> "#445566"
+                    CustomDesignAnchorField.TOTAL_POINTS -> "#556677"
+                }
+            },
+        )!!
+        try {
+            assertEquals(
+                CustomDesignCanvasRenderResult.Success,
+                renderer.render(canvas, rows(1), geometry(), colors),
+            )
+            assertEquals(
+                listOf("#112233", "#223344", "#334455", "#445566", "#556677")
+                    .map(Color::parseColor),
+                canvas.texts.map { it.color },
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                assertTrue(canvas.texts.all { it.typeface.weight == 500 })
+            } else {
+                val expected = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                assertTrue(canvas.texts.all { it.typeface == expected && !it.typeface.isBold })
+            }
         } finally {
             canvas.recycle()
         }
@@ -290,6 +381,8 @@ class CustomDesignCanvasRendererTest {
                 color = paint.color,
                 centerX = x + width / 2f,
                 centerY = y + (paint.ascent() + paint.descent()) / 2f,
+                textSizePx = paint.textSize,
+                typeface = paint.typeface,
             )
             super.drawText(text, x, y, paint)
         }
@@ -304,5 +397,7 @@ class CustomDesignCanvasRendererTest {
         val color: Int,
         val centerX: Float,
         val centerY: Float,
+        val textSizePx: Float,
+        val typeface: Typeface,
     )
 }

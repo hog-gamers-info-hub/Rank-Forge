@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.data.export
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
+import android.os.Build
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
@@ -31,11 +33,13 @@ class CustomDesignCanvasRenderer {
         rows: List<ResultExportRow>,
         geometry: CustomDesignEffectiveGridGeometry,
         textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
+        averageRankingBoundingBoxHeightPx: Float? = null,
     ): CustomDesignCanvasRenderResult {
         validate(geometry, rows)?.let { return CustomDesignCanvasRenderResult.Failure(it) }
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = 24f
+            textSize = resolveResultTextSizePx(averageRankingBoundingBoxHeightPx)
+            typeface = mediumTypeface()
         }
 
         return try {
@@ -133,5 +137,22 @@ class CustomDesignCanvasRenderer {
 
     private companion object {
         const val CUSTOM_DESIGN_ROW_COUNT = 12
+        const val LEGACY_RESULT_TEXT_SIZE_PX = 24f
+        const val RESULT_TEXT_SIZE_MULTIPLIER = 1.3f
+        const val RESULT_TEXT_WEIGHT = 500
+
+        fun resolveResultTextSizePx(averageRankingBoundingBoxHeightPx: Float?): Float {
+            val scaled = averageRankingBoundingBoxHeightPx
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?.times(RESULT_TEXT_SIZE_MULTIPLIER)
+            return scaled?.takeIf { it.isFinite() && it > 0f }
+                ?: LEGACY_RESULT_TEXT_SIZE_PX
+        }
+
+        fun mediumTypeface(): Typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Typeface.create(Typeface.DEFAULT, RESULT_TEXT_WEIGHT, false)
+        } else {
+            Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
     }
 }
