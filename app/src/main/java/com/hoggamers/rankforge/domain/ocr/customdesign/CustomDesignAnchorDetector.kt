@@ -74,6 +74,7 @@ class CustomDesignAnchorDetector @Inject constructor() {
             missingFields = missingFields,
             ambiguousFields = ambiguousFields,
             ambiguousRanks = rankResult.ambiguousRanks,
+            acceptedRankingBoundingBoxes = rankResult.acceptedRankingBoundingBoxes,
         )
     }
 
@@ -113,12 +114,20 @@ class CustomDesignAnchorDetector @Inject constructor() {
         val ambiguousRanks = linkedSetOf<Int>()
         selected.groupBy { it.rank }.forEach { (rank, matches) ->
             if (matches.size == 1) {
-                rowY[rank] = matches.single().centerY.coerceIn(0f, sourceHeight.toFloat())
+                val match = matches.single()
+                rowY[rank] = match.centerY.coerceIn(0f, sourceHeight.toFloat())
             } else {
                 ambiguousRanks += rank
             }
         }
-        return RankDetectionResult(rowY, ambiguousRanks)
+        return RankDetectionResult(
+            rowY = rowY,
+            ambiguousRanks = ambiguousRanks,
+            acceptedRankingBoundingBoxes = selected
+                .groupBy { it.rank }
+                .values
+                .mapNotNull { it.singleOrNull()?.boundingBox },
+        )
     }
 }
 
@@ -134,11 +143,13 @@ private data class RankObservation(
     val centerX: Float,
     val centerY: Float,
     val width: Float,
+    val boundingBox: RawOcrBoundingBox,
 )
 
 private data class RankDetectionResult(
     val rowY: Map<Int, Float>,
     val ambiguousRanks: Set<Int>,
+    val acceptedRankingBoundingBoxes: List<RawOcrBoundingBox> = emptyList(),
 ) {
     companion object {
         val EMPTY = RankDetectionResult(emptyMap(), emptySet())
@@ -233,6 +244,7 @@ private fun RawOcrElement.rankObservation(sourceWidth: Int, sourceHeight: Int): 
         centerX = center.x,
         centerY = center.y,
         width = candidate.boundingBox.width().toFloat().coerceAtLeast(1f),
+        boundingBox = candidate.boundingBox,
     )
 }
 
