@@ -27,6 +27,8 @@ data class CustomDesignTemplateCloudPayload(
     @SerialName("columns_json") val columnsJson: JsonObject,
     @SerialName("rows_json") val rowsJson: JsonObject,
     @SerialName("text_colors_json") val textColorsJson: JsonObject? = null,
+    @SerialName("average_ranking_bounding_box_height_px")
+    val averageRankingBoundingBoxHeightPx: Float? = null,
 )
 
 enum class CustomDesignTemplateCloudFailure {

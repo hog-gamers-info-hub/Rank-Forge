@@ -22,6 +22,7 @@ data class CustomDesignSaveRequest(
     val labels: CustomDesignOcrLabels,
     val effectiveGridGeometry: CustomDesignEffectiveGridGeometry?,
     val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
+    val averageRankingBoundingBoxHeightPx: Float? = null,
 )
 
 enum class CustomDesignSaveFailure {
@@ -163,6 +164,10 @@ class CustomDesignSaveCoordinator internal constructor(
         if (geometry.rowY.values.any { !it.isFinite() || it !in 0f..request.currentSourceHeight.toFloat() }) {
             return CustomDesignSaveFailure.VALIDATION
         }
+        if (request.averageRankingBoundingBoxHeightPx?.let {
+                !it.isFinite() || it <= 0f || it > request.currentSourceHeight.toFloat()
+            } == true
+        ) return CustomDesignSaveFailure.VALIDATION
         if ((1..11).any { geometry.rowY.getValue(it) >= geometry.rowY.getValue(it + 1) }) {
             return CustomDesignSaveFailure.VALIDATION
         }
@@ -206,6 +211,7 @@ class CustomDesignSaveCoordinator internal constructor(
                     put(field.name, textColors.colorFor(field))
                 }
             },
+            averageRankingBoundingBoxHeightPx = averageRankingBoundingBoxHeightPx,
         )
     }
 }

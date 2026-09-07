@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.ocr.customdesign
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 
 enum class CustomDesignAnchorField {
     TEAM_NAME,
@@ -54,4 +55,5 @@ data class CustomDesignAnchorDetectionResult(
     val missingFields: Set<CustomDesignAnchorField>,
     val ambiguousFields: Set<CustomDesignAnchorField>,
     val ambiguousRanks: Set<Int>,
+    val acceptedRankingBoundingBoxes: List<RawOcrBoundingBox> = emptyList(),
 )

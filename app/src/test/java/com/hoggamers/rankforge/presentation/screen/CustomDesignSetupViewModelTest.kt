@@ -623,6 +623,7 @@ class CustomDesignSetupViewModelTest {
         assertEquals(700f, captured?.effectiveGridGeometry?.columnX?.get(CustomDesignAnchorField.WIN))
         assertEquals(410f, captured?.effectiveGridGeometry?.rowY?.get(2))
         assertEquals(CustomDesignColumnTextColors.allBlack(), captured?.textColors)
+        assertEquals(30f, captured?.averageRankingBoundingBoxHeightPx!!, 0f)
 
         viewModel.saveNewCustomDesign()
         advanceUntilIdle()
@@ -847,6 +848,7 @@ class CustomDesignSetupViewModelTest {
         assertEquals(design.labels.positionPoints, state.positionPointsLabel)
         assertEquals(design.labels.totalPoints, state.totalPointsLabel)
         assertEquals(design.textColors, state.textColors)
+        assertEquals(design.averageRankingBoundingBoxHeightPx, state.averageRankingBoundingBoxHeightPx)
         assertEquals(CustomDesignOcrStatus.IDLE, state.ocrStatus)
         assertEquals(null, state.ocrAnchors)
         assertEquals(null, state.gridGeometry)
@@ -1015,6 +1017,7 @@ class CustomDesignSetupViewModelTest {
         sourceWidth = 1080,
         sourceHeight = 1350,
         labels = CustomDesignOcrLabels(" TEAM NAME ", "WIN", "ELIM.", "POS.", "TOTAL"),
+        averageRankingBoundingBoxHeightPx = 30.5f,
         geometry = CustomDesignEffectiveGridGeometry(
             sourceWidth = 1080,
             sourceHeight = 1350,

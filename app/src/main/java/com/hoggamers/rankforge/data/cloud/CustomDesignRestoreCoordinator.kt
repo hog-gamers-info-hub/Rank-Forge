@@ -30,6 +30,7 @@ data class VerifiedCustomDesignTemplate(
     val labels: CustomDesignOcrLabels,
     val geometry: CustomDesignEffectiveGridGeometry,
     val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
+    val averageRankingBoundingBoxHeightPx: Float? = null,
 )
 
 enum class CustomDesignRestoreFailure {
@@ -57,6 +58,7 @@ data class RestoredCustomDesign(
     val labels: CustomDesignOcrLabels,
     val geometry: CustomDesignEffectiveGridGeometry,
     val textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
+    val averageRankingBoundingBoxHeightPx: Float? = null,
 )
 
 fun interface CustomDesignRestoreAction {
@@ -165,6 +167,7 @@ class CustomDesignRestoreCoordinator internal constructor(
                     labels = verified.labels,
                     geometry = verified.geometry,
                     textColors = verified.textColors,
+                    averageRankingBoundingBoxHeightPx = verified.averageRankingBoundingBoxHeightPx,
                 ),
             )
         } catch (cancellation: CancellationException) {
@@ -207,6 +210,11 @@ internal object CustomDesignTemplateValidator {
                 requestedId,
                 payload.imageExtension,
             )
+        ) return null
+
+        if (payload.averageRankingBoundingBoxHeightPx?.let {
+                !it.isFinite() || it <= 0f || it > payload.sourceHeight.toFloat()
+            } == true
         ) return null
 
         val textColors = if (payload.textColorsJson == null) {
@@ -263,6 +271,7 @@ internal object CustomDesignTemplateValidator {
                 rowY = rows,
             ),
             textColors = textColors,
+            averageRankingBoundingBoxHeightPx = payload.averageRankingBoundingBoxHeightPx,
         )
     }
 

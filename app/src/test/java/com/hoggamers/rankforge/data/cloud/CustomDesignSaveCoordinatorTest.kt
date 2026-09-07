@@ -27,6 +27,7 @@ class CustomDesignSaveCoordinatorTest {
         assertEquals(listOf("auth", "prepare", "upload", "auth", "insert"), events)
         assertEquals(1, captured.inserted.size)
         assertEquals(ownerId, captured.inserted.single().userId)
+        assertEquals(30.5f, captured.inserted.single().averageRankingBoundingBoxHeightPx!!, 0f)
         assertEquals(700.0, captured.inserted.single().columnsJson["TEAM_NAME"]?.toString()?.toDouble())
         assertEquals(200.0, captured.inserted.single().columnsJson["WIN"]?.toString()?.toDouble())
         assertEquals(
@@ -129,6 +130,7 @@ class CustomDesignSaveCoordinatorTest {
                 CustomDesignAnchorField.TOTAL_POINTS to "#556677".lowercase(),
             ),
         )!!,
+        averageRankingBoundingBoxHeightPx = 30.5f,
     )
 
     private fun validGeometry() = CustomDesignEffectiveGridGeometry(

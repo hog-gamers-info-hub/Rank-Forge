@@ -11,10 +11,14 @@ import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.put
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,6 +51,7 @@ class CustomDesignRestoreCoordinatorTest {
         assertArrayEquals(bytes, restoredFile.readBytes())
         assertEquals(payload.sourceWidth, design.sourceWidth)
         assertEquals(payload.sourceHeight, design.sourceHeight)
+        assertNull(design.averageRankingBoundingBoxHeightPx)
         assertEquals(" TEAM NAME ", design.labels.teamName)
         assertEquals(900f, design.geometry.columnX[CustomDesignAnchorField.TEAM_NAME])
         assertEquals(100f, design.geometry.columnX[CustomDesignAnchorField.WIN])
@@ -61,6 +66,33 @@ class CustomDesignRestoreCoordinatorTest {
             ),
             design.textColors.asMap(),
         )
+    }
+
+    @Test
+    fun restorePreservesPersistedAverageRankingBoundingBoxHeight() = runTest {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val result = coordinator(
+            payload = payload(bytes).copy(averageRankingBoundingBoxHeightPx = 30.5f),
+            bytes = bytes,
+        ).restore(designId)
+
+        assertEquals(
+            30.5f,
+            (result as CustomDesignRestoreResult.Success).design.averageRankingBoundingBoxHeightPx!!,
+            0f,
+        )
+    }
+
+    @Test
+    fun legacyPayloadWithoutAverageStillDecodesAndValidates() {
+        val legacyJson = Json { encodeDefaults = false }.encodeToString(
+            CustomDesignTemplateCloudPayload.serializer(),
+            payload(byteArrayOf(1, 2, 3, 4)),
+        )
+        val decoded = Json.decodeFromString<CustomDesignTemplateCloudPayload>(legacyJson)
+
+        assertNull(decoded.averageRankingBoundingBoxHeightPx)
+        assertTrue(CustomDesignTemplateValidator.validate(decoded, designId, ownerId) != null)
     }
 
     @Test

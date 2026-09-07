@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.customdesign.averageRankingBoundingBoxHeightPx
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -136,6 +137,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 overrides = state.manualGridOverrides,
             ),
             textColors = state.textColors,
+            averageRankingBoundingBoxHeightPx = state.averageRankingBoundingBoxHeightPx,
         )
         val generation = ++saveGeneration
         _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.SAVING) }
@@ -229,6 +231,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                             isImageValidationInProgress = false,
                             ocrStatus = CustomDesignOcrStatus.IDLE,
                             ocrAnchors = null,
+                            averageRankingBoundingBoxHeightPx = design.averageRankingBoundingBoxHeightPx,
                             gridGeometry = null,
                             editableGridGeometry = editable,
                             manualGridOverrides = CustomDesignGridOverrides(
@@ -296,6 +299,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         isImageValidationInProgress = false,
                         ocrStatus = CustomDesignOcrStatus.IDLE,
                         ocrAnchors = null,
+                        averageRankingBoundingBoxHeightPx = null,
                         gridGeometry = null,
                         editableGridGeometry = null,
                         manualGridOverrides = CustomDesignGridOverrides(),
@@ -559,6 +563,7 @@ class CustomDesignSetupViewModel @Inject constructor(
             it.copy(
                 ocrStatus = CustomDesignOcrStatus.PROCESSING,
                 ocrAnchors = null,
+                averageRankingBoundingBoxHeightPx = null,
                 gridGeometry = null,
             )
         }
@@ -591,6 +596,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         it.copy(
                             ocrStatus = CustomDesignOcrStatus.FAILED,
                             ocrAnchors = null,
+                            averageRankingBoundingBoxHeightPx = null,
                             gridGeometry = null,
                             editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
                                 sourceWidth = draft.imageWidth,
@@ -622,6 +628,9 @@ class CustomDesignSetupViewModel @Inject constructor(
             it.copy(
                 ocrStatus = CustomDesignOcrStatus.COMPLETED,
                 ocrAnchors = detection.anchors,
+                averageRankingBoundingBoxHeightPx = averageRankingBoundingBoxHeightPx(
+                    detection.acceptedRankingBoundingBoxes,
+                ),
                 gridGeometry = gridGeometry,
                 editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
                     sourceWidth = draft.imageWidth,
@@ -643,6 +652,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         return copy(
             ocrStatus = CustomDesignOcrStatus.IDLE,
             ocrAnchors = null,
+            averageRankingBoundingBoxHeightPx = null,
             gridGeometry = null,
             editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
                 sourceWidth = sourceImageWidth ?: 0,

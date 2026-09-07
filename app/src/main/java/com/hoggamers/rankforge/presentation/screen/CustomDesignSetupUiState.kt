@@ -65,6 +65,7 @@ data class CustomDesignSetupUiState(
     val isImageValidationInProgress: Boolean = false,
     val ocrStatus: CustomDesignOcrStatus = CustomDesignOcrStatus.IDLE,
     val ocrAnchors: CustomDesignOcrAnchors? = null,
+    val averageRankingBoundingBoxHeightPx: Float? = null,
     val gridGeometry: CustomDesignGridGeometry? = null,
     val editableGridGeometry: CustomDesignEditableGridGeometry? = null,
     val manualGridOverrides: CustomDesignGridOverrides = CustomDesignGridOverrides(),
