@@ -86,11 +86,41 @@ class CustomDesignCanvasRendererTest {
         )
         try {
             assertEquals(CustomDesignCanvasRenderResult.Success, renderer.render(canvas, rows(1), crossed))
-            assertEquals(900f, canvas.texts[0].centerX, 0.01f)
+            assertEquals(900f, canvas.texts[0].startX, 0.01f)
             assertEquals(100f, canvas.texts[1].centerX, 0.01f)
             assertEquals(700f, canvas.texts[2].centerX, 0.01f)
             assertEquals(300f, canvas.texts[3].centerX, 0.01f)
             assertEquals(500f, canvas.texts[4].centerX, 0.01f)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun teamNamesUseColumnXAsStartWhileNumericFieldsRemainCentered() {
+        val canvas = RecordingCanvas()
+        val suppliedRows = listOf(
+            row(rank = 1, teamName = "A"),
+            row(rank = 2, teamName = "Much longer team name"),
+        )
+        try {
+            assertEquals(
+                CustomDesignCanvasRenderResult.Success,
+                renderer.render(canvas, suppliedRows, geometry()),
+            )
+            assertEquals(10, canvas.texts.size)
+            assertEquals("A", canvas.texts[0].text)
+            assertEquals("Much longer team name", canvas.texts[5].text)
+            assertEquals(100f, canvas.texts[0].startX, 0.01f)
+            assertEquals(100f, canvas.texts[5].startX, 0.01f)
+            assertEquals(300f, canvas.texts[1].centerX, 0.01f)
+            assertEquals(500f, canvas.texts[2].centerX, 0.01f)
+            assertEquals(700f, canvas.texts[3].centerX, 0.01f)
+            assertEquals(900f, canvas.texts[4].centerX, 0.01f)
+            assertEquals(300f, canvas.texts[6].centerX, 0.01f)
+            assertEquals(500f, canvas.texts[7].centerX, 0.01f)
+            assertEquals(700f, canvas.texts[8].centerX, 0.01f)
+            assertEquals(900f, canvas.texts[9].centerX, 0.01f)
         } finally {
             canvas.recycle()
         }
@@ -127,7 +157,7 @@ class CustomDesignCanvasRendererTest {
                     .map(Color::parseColor),
                 canvas.texts.map { it.color },
             )
-            assertEquals(900f, canvas.texts[0].centerX, 0.01f)
+            assertEquals(900f, canvas.texts[0].startX, 0.01f)
             assertEquals(100f, canvas.texts[1].centerX, 0.01f)
         } finally {
             canvas.recycle()
@@ -379,6 +409,7 @@ class CustomDesignCanvasRendererTest {
             texts += DrawnText(
                 text = text,
                 color = paint.color,
+                startX = x,
                 centerX = x + width / 2f,
                 centerY = y + (paint.ascent() + paint.descent()) / 2f,
                 textSizePx = paint.textSize,
@@ -395,6 +426,7 @@ class CustomDesignCanvasRendererTest {
     private data class DrawnText(
         val text: String,
         val color: Int,
+        val startX: Float,
         val centerX: Float,
         val centerY: Float,
         val textSizePx: Float,
