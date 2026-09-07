@@ -358,11 +358,20 @@ fun CustomDesignSetupScreen(
             else -> Button(
                 onClick = onUploadCustomDesign,
                 enabled = !actionBusy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CustomDesignPointIqBlue,
+                    contentColor = Color.White,
+                ),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
                     .testTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG),
             ) {
-                Text(stringResource(R.string.custom_design_upload_action))
+                Text(
+                    text = stringResource(R.string.custom_design_upload_action),
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
             }
         }
     }
