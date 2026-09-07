@@ -35,6 +35,7 @@ class CustomDesignBitmapComposer(
         rows: List<ResultExportRow>,
         geometry: CustomDesignEffectiveGridGeometry,
         textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
+        averageRankingBoundingBoxHeightPx: Float? = null,
     ): CustomDesignBitmapComposeResult {
         val sourceFile = validatedSourceFile(imageReference)
             ?: return CustomDesignBitmapComposeResult.Failure(
@@ -88,7 +89,15 @@ class CustomDesignBitmapComposer(
         return try {
             val canvas = Canvas(composedBitmap)
             canvas.drawBitmap(decodedSource, 0f, 0f, null)
-            when (renderer.render(canvas, rows, geometry, textColors)) {
+            when (
+                renderer.render(
+                    canvas,
+                    rows,
+                    geometry,
+                    textColors,
+                    averageRankingBoundingBoxHeightPx,
+                )
+            ) {
                 CustomDesignCanvasRenderResult.Success ->
                     CustomDesignBitmapComposeResult.Success(composedBitmap)
                 is CustomDesignCanvasRenderResult.Failure -> {
