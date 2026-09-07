@@ -2633,8 +2633,11 @@ private fun ResultPositionCropPreviews(
 ) {
     if (items.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { items.size })
-    LaunchedEffect(items) {
-        pagerState.scrollToPage(0)
+    LaunchedEffect(pagerState, items.size) {
+        val lastPage = items.lastIndex
+        if (lastPage >= 0 && pagerState.currentPage > lastPage) {
+            pagerState.scrollToPage(lastPage)
+        }
     }
     val previews = items.map { it.preview }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
