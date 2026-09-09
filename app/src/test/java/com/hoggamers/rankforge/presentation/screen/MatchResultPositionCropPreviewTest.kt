@@ -1,5 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -18,6 +21,41 @@ class MatchResultPositionCropPreviewTest {
         val state = available((11 downTo 1).toList())
 
         assertEquals((1..11).toList(), state.sortedCrops().map(MatchResultPositionCropPreview::position))
+    }
+
+    @Test
+    fun upperPreviewStateExposesPartialEightPositionSetWithAcceptedSourceBounds() {
+        val acceptedBounds = (1..8).map { position ->
+            OcrPixelCropRect(
+                left = 951,
+                top = position * 10,
+                right = 1740,
+                bottom = position * 10 + 8,
+            )
+        }
+        val state = MatchResultPositionCropPreviewState.Available(
+            (1..8).mapIndexed { index, position ->
+                MatchResultPositionCropPreview(
+                    position = position,
+                    image = FakePreviewImage,
+                    geometry = MatchResultPositionCrop(
+                        position = position,
+                        column = MatchResultPositionColumn.RIGHT,
+                        bounds = acceptedBounds[index],
+                    ),
+                    sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                )
+            },
+        )
+
+        assertEquals(
+            (1..8).toList(),
+            state.sortedCrops().map(MatchResultPositionCropPreview::position),
+        )
+        assertEquals(
+            acceptedBounds,
+            state.sortedCrops().mapNotNull { it.geometry?.bounds },
+        )
     }
 
     @Test

@@ -138,7 +138,7 @@ class MatchResultPositionLogicalRowClassifier {
         val classifiedLines = candidates.map { candidate ->
             val spanning = (candidate.box.bottom - candidate.box.top).toDouble() > medianHeight * SPANNING_HEIGHT_FACTOR
             val placement = isStructuralPlacementCandidate(
-                candidate, cropWidth, slotCenterYLocal, medianHeight, spanning,
+                candidate, position, cropWidth, slotCenterYLocal, medianHeight, spanning,
             )
             val band = when {
                 placement -> MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED
@@ -342,6 +342,7 @@ class MatchResultPositionLogicalRowClassifier {
 
     private fun isStructuralPlacementCandidate(
         candidate: Candidate,
+        position: Int,
         cropWidth: Int,
         slotCenterYLocal: Double,
         medianHeight: Double,
@@ -352,9 +353,11 @@ class MatchResultPositionLogicalRowClassifier {
         if (token.isEmpty() || token.length > MAX_PLACEMENT_TOKEN_LENGTH ||
             token.any { it !in NUMERIC_LIKE_PLACEMENT_CHARACTERS }
         ) return false
+        if (abs(candidate.centerY - slotCenterYLocal) > medianHeight) return false
         val centerX = (candidate.box.left + candidate.box.right) / 2.0
-        return centerX <= cropWidth * PLACEMENT_REGION_FRACTION &&
-            abs(candidate.centerY - slotCenterYLocal) <= medianHeight
+        if (centerX <= cropWidth * PLACEMENT_REGION_FRACTION) return true
+        return token == position.toString() &&
+            centerX <= cropWidth * EXACT_POSITION_FALLBACK_REGION_FRACTION
     }
 
     private fun deriveTwoRowClusters(
@@ -466,6 +469,7 @@ class MatchResultPositionLogicalRowClassifier {
 
     private companion object {
         const val PLACEMENT_REGION_FRACTION = 0.10
+        const val EXACT_POSITION_FALLBACK_REGION_FRACTION = 0.11
         const val CENTER_TOLERANCE_FRACTION = 0.35
         const val SPANNING_HEIGHT_FACTOR = 2.0
         const val MAX_PLACEMENT_TOKEN_LENGTH = 3
