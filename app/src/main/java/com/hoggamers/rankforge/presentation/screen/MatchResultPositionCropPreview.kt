@@ -156,7 +156,6 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
             }
             generated.toPreviewState(
                 semanticRole = assignedRole,
-                allowUpperPositionElevenFallback = allowAssignedUpperFallback,
             )
         } finally {
             if (!source.isRecycled) source.recycle()
@@ -170,7 +169,6 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
 
     private fun MatchResultPositionCropGenerationResult.toPreviewState(
         semanticRole: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean,
     ): MatchResultPositionCropPreviewState = when (this) {
         is MatchResultPositionCropGenerationResult.Generated -> {
             val previews = crops
@@ -183,16 +181,7 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
                         sourceScreenshotRole = semanticRole,
                     )
                 }
-            val positions = previews.map(MatchResultPositionCropPreview::position)
-            val hasExpectedPositions = when (semanticRole) {
-                MatchResultScreenshotRole.MATCH_RESULT_UPPER ->
-                    positions == (1..10).toList() ||
-                        (allowUpperPositionElevenFallback && positions == (1..11).toList())
-
-                MatchResultScreenshotRole.MATCH_RESULT_LOWER ->
-                    positions == listOf(11) || positions == listOf(11, 12)
-            }
-            if (hasExpectedPositions) {
+            if (previews.isNotEmpty()) {
                 MatchResultPositionCropPreviewState.Available(previews)
             } else {
                 previews.forEach(MatchResultPositionCropPreview::release)

@@ -275,6 +275,102 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
+    fun exactPositionSixJustOutsideTenPercentIsFilteredByNarrowFallback() {
+        val result = classifyCustom(
+            position = 6,
+            cropWidth = 509,
+            cropHeight = 52,
+            center = 26.0,
+            lines = listOf(
+                line("upper player", 100, 3, 200, 13),
+                line("6", 42, 22, 62, 32),
+                line("lower player", 100, 39, 200, 49),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(1, result.diagnostics.placementLinesRemoved)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+        assertEquals(listOf("upper player", "lower player"), result.blocks.flatMap { it.lines }.map { it.text })
+        assertEquals(1, result.diagnostics.upperCount)
+        assertEquals(1, result.diagnostics.lowerCount)
+        assertTrue(52.0 > 509 * 0.10)
+        assertTrue(52.0 <= 509 * 0.11)
+    }
+
+    @Test
+    fun wrongPositionTokenOutsideTenPercentIsNotFilteredByFallback() {
+        val result = classifyCustom(
+            position = 6,
+            cropWidth = 509,
+            cropHeight = 52,
+            center = 26.0,
+            lines = listOf(
+                line("upper player", 100, 3, 200, 13),
+                line("7", 42, 22, 62, 32),
+                line("lower player", 100, 39, 200, 49),
+            ),
+        )
+
+        assertEquals(0, result.diagnostics.placementLinesRemoved)
+        val available = result as? MatchResultPositionLogicalRowClassification.Available
+        if (available != null) {
+            assertTrue(available.blocks.flatMap { it.lines }.any { it.text == "7" })
+        }
+    }
+
+    @Test
+    fun exactPositionTokenBeyondElevenPercentIsNotFiltered() {
+        val result = classifyCustom(
+            position = 6,
+            cropWidth = 509,
+            cropHeight = 52,
+            center = 26.0,
+            lines = listOf(
+                line("upper player", 100, 3, 200, 13),
+                line("6", 48, 22, 68, 32),
+                line("lower player", 100, 39, 200, 49),
+            ),
+        )
+
+        assertEquals(0, result.diagnostics.placementLinesRemoved)
+    }
+
+    @Test
+    fun exactPositionTokenWithIncorrectYIsNotFilteredByFallback() {
+        val result = classifyCustom(
+            position = 6,
+            cropWidth = 509,
+            cropHeight = 52,
+            center = 26.0,
+            lines = listOf(
+                line("upper player", 100, 3, 200, 13),
+                line("6", 42, 39, 62, 49),
+                line("lower player", 100, 35, 200, 45),
+            ),
+        )
+
+        assertEquals(0, result.diagnostics.placementLinesRemoved)
+    }
+
+    @Test
+    fun exactMultiDigitPositionTokenUsesTheSameNarrowFallback() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 500,
+            cropHeight = 100,
+            center = 50.0,
+            lines = listOf(
+                line("upper player", 100, 20, 200, 30),
+                line("11", 51, 45, 59, 55),
+                line("lower player", 100, 70, 200, 80),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(1, result.diagnostics.placementLinesRemoved)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+    }
+
+    @Test
     fun twoRowClusteringIsUniformAcrossEveryPosition() {
         for (position in 1..12) {
             val result = classifyCustom(

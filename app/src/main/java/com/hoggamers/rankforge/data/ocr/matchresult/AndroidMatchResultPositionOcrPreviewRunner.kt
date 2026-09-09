@@ -2,7 +2,6 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
@@ -450,7 +449,6 @@ class MatchResultPpOnlyPairReconciliationRunner(
         val reconciliation = semanticRoleReconciler.reconcile(ppResults)
         val canonicalPpResults = (reconciliation as? MatchResultSemanticRoleReconciliation.Resolved)?.results
         if (canonicalPpResults != null && canonicalPpResults.values.all(::isAcceptable)) {
-            logAcceptedRoute()
             return@coroutineScope canonicalPpResults
         }
         if (ppResults.requiresSemanticSafeFailure(reconciliation)) {
@@ -487,13 +485,6 @@ class MatchResultPpOnlyPairReconciliationRunner(
         return reconciliation is MatchResultSemanticRoleReconciliation.Conflict
     }
 
-    private fun logAcceptedRoute() {
-        runCatching {
-            Log.i(RESULT_OCR_ROUTE_LOG_TAG, "RESULT_OCR_ROUTE route=NEW_PP_POSITION status=ACCEPTED")
-        }
-    }
-
-
     private fun isAcceptable(result: MatchResultOcrPreviewProcessingResult): Boolean =
         result is MatchResultOcrPreviewProcessingResult.Processed &&
             result.source == MatchResultOcrPreviewSource.NEW_PP_POSITION &&
@@ -507,10 +498,6 @@ class MatchResultPpOnlyPairReconciliationRunner(
     )
 
     private data class RunKey(val tournamentId: String, val matchId: String)
-
-    private companion object {
-        const val RESULT_OCR_ROUTE_LOG_TAG = "RESULT_OCR_ROUTE"
-    }
 }
 
 internal fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
