@@ -3,6 +3,9 @@ package com.hoggamers.rankforge.data.ocr.matchlobby
 import android.graphics.Bitmap
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidBitmapOcrImage
+import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
+import com.hoggamers.rankforge.data.ocr.preprocessing.LOBBY_OCR_ENHANCEMENT_PROFILE
+import com.hoggamers.rankforge.data.ocr.preprocessing.OcrImageEnhancer
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCrop
@@ -146,6 +149,8 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val panelPpRuntime: LobbyPanelPpOcrRuntime = NoOpLobbyPanelPpOcrRuntime,
 ) : MatchLobbySlotNumberOcrRunner {
+    private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
+
     internal var teamCropPreviewFactory: MatchLobbyTeamCropPreviewFactory =
         AndroidMatchLobbyTeamCropPreviewFactory
 
@@ -211,8 +216,19 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
             return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP)
         }
 
+        val enhancedBitmap = try {
+            imageEnhancer.enhance(panelBitmap, LOBBY_OCR_ENHANCEMENT_PROFILE)
+        } catch (cancellation: CancellationException) {
+            releasePanel(panel, position)?.let { releaseFailure ->
+                if (releaseFailure is CancellationException) throw releaseFailure
+            }
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        val ppInputBitmap = enhancedBitmap ?: panelBitmap
         val ppRecognition = try {
-            panelPpRuntime.recognize(panelBitmap, position.index)
+            panelPpRuntime.recognize(ppInputBitmap, position.index)
         } catch (cancellation: CancellationException) {
             releasePanel(panel, position)?.let { releaseFailure ->
                 if (releaseFailure is CancellationException) throw releaseFailure
@@ -223,6 +239,10 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                 if (releaseFailure is CancellationException) throw releaseFailure
             }
             return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.EXTRACTION_FAILED)
+        } finally {
+            if (enhancedBitmap != null && enhancedBitmap !== panelBitmap && !enhancedBitmap.isRecycled) {
+                enhancedBitmap.recycle()
+            }
         }
 
         val mapping = LobbyPanelPpMapper.map(
