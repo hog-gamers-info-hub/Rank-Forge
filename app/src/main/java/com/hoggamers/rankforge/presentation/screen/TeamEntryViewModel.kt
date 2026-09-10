@@ -14,12 +14,18 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.CancellationException
+
+sealed interface TeamEntryNavigationEvent {
+    data object BackToTournamentDetails : TeamEntryNavigationEvent
+}
 
 @HiltViewModel
 class TeamEntryViewModel @Inject constructor(
@@ -46,6 +52,8 @@ class TeamEntryViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(TeamEntryUiState())
     val uiState: StateFlow<TeamEntryUiState> = _uiState.asStateFlow()
+    private val navigationEventsChannel = Channel<TeamEntryNavigationEvent>(Channel.BUFFERED)
+    val navigationEvents: Flow<TeamEntryNavigationEvent> = navigationEventsChannel.receiveAsFlow()
     private val draftWriteChannel = Channel<DraftWriteCommand>(Channel.UNLIMITED)
     private var loadJob: Job? = null
     private var loadedTournamentId: String? = null
@@ -228,6 +236,7 @@ class TeamEntryViewModel @Inject constructor(
                     // Local team names remain saved when the immediate cloud attempt throws.
                 }
                 _uiState.update { it.copy(isSaving = false) }
+                navigationEventsChannel.trySend(TeamEntryNavigationEvent.BackToTournamentDetails)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
