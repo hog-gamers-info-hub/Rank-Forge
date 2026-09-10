@@ -165,6 +165,47 @@ class InMemoryTournamentRepositoryTest {
     }
 
     @Test
+    fun teamEntryDraftPreservesRawNamesWithoutChangingAuthoritativeSlots() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+        val beforeSlots = repository.observeSlotsByTournamentId("stable-id").first()
+        val draft = mapOf(1 to " Team ", 2 to "", 3 to "A")
+
+        repository.saveTeamEntryDraft("stable-id", draft)
+
+        assertEquals(draft, repository.readTeamEntryDraft("stable-id"))
+        assertEquals(beforeSlots, repository.observeSlotsByTournamentId("stable-id").first())
+    }
+
+    @Test
+    fun teamEntryDraftSurvivesUnrelatedTeamNameSaveAndClearsToNull() = runTest {
+        val repository = InMemoryTournamentRepository()
+        repository.create(tournament(id = "stable-id"))
+        val draft = mapOf(1 to " Team ", 2 to "")
+
+        repository.saveTeamEntryDraft("stable-id", draft)
+        repository.saveTeamNames("stable-id", mapOf(1 to "Authoritative"))
+
+        assertEquals(draft, repository.readTeamEntryDraft("stable-id"))
+
+        repository.clearTeamEntryDraft("stable-id")
+        repository.clearTeamEntryDraft("stable-id")
+
+        assertEquals(null, repository.readTeamEntryDraft("stable-id"))
+    }
+
+    @Test
+    fun teamEntryDraftRejectsInvalidSlotNumbers() = runTest {
+        val repository = InMemoryTournamentRepository()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                repository.saveTeamEntryDraft("stable-id", mapOf(13 to "Invalid"))
+            }
+        }
+    }
+
+    @Test
     fun rosterSupportsZeroThroughSixPlayers() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament(id = "stable-id"))

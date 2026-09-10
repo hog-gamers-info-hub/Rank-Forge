@@ -87,6 +87,15 @@ interface TournamentRepository {
 
     fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>>
 
+    suspend fun readTeamEntryDraft(tournamentId: String): Map<Int, String>? = null
+
+    suspend fun saveTeamEntryDraft(
+        tournamentId: String,
+        namesBySlotNumber: Map<Int, String>,
+    ) = Unit
+
+    suspend fun clearTeamEntryDraft(tournamentId: String) = Unit
+
     fun observeSlotsByTournamentIdAndOwner(
         tournamentId: String,
         ownerUserId: String,

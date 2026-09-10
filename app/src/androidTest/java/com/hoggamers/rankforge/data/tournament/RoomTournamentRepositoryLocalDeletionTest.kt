@@ -341,6 +341,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             val repository = repository(database, preserver)
             val tournament = tournament("tournament-delete")
             repository.create(tournament)
+            repository.saveTeamEntryDraft(tournament.id, mapOf(1 to "Draft Team"))
             repository.saveTeamNames(tournament.id, mapOf(1 to "Team One"))
             repository.saveRoster(tournament.id, 1, listOf(RosterPlayer(tournament.id, 1, "Player One")))
             repository.createDraftMatch(
@@ -372,6 +373,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             assertTrue(database.matchDao().observeByTournamentId(tournament.id).first().isEmpty())
             assertNull(database.syncRevisionDao().readByTournamentId(tournament.id))
             assertTrue(database.syncQueueDao().observeAll().first().none { it.tournamentId == tournament.id })
+            assertEquals(null, repository.readTeamEntryDraft(tournament.id))
             assertTrue(files.none { it.exists() })
             assertFalse(database.stateDao().readPayload().orEmpty().contains(tournament.id))
 
