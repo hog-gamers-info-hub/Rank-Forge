@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import java.time.LocalDate
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -161,6 +162,7 @@ class TeamEntryViewModelTest {
         (2..12).forEach { slotNumber ->
             viewModel.onTeamNameChanged(slotNumber = slotNumber, teamName = "Team $slotNumber")
         }
+        val navigation = async { viewModel.navigationEvents.first() }
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
@@ -171,6 +173,7 @@ class TeamEntryViewModelTest {
         assertEquals("Team 2", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
         assertEquals(listOf("stable-id"), uploadAction.tournamentIds)
         assertEquals(null, repository.readTeamEntryDraft("stable-id"))
+        assertEquals(TeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
     }
 
     @Test
@@ -240,12 +243,14 @@ class TeamEntryViewModelTest {
         viewModel.load("stable-id")
         advanceUntilIdle()
         viewModel.onTeamNameChanged(1, "Alpha")
+        val navigation = async { viewModel.navigationEvents.first() }
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
         assertEquals("Alpha", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
         assertFalse(viewModel.uiState.value.hasSaveError)
         assertFalse(viewModel.uiState.value.isSaving)
+        assertEquals(TeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
     }
 
     @Test
@@ -352,6 +357,7 @@ class TeamEntryViewModelTest {
 
         viewModel.onTeamNameChanged(1, " Alpha ")
         viewModel.onTeamNameChanged(2, "Alpha")
+        val navigation = async { viewModel.navigationEvents.first() }
         viewModel.saveTeamNames()
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.validationIssues.none { it.isBlocking })
@@ -360,6 +366,27 @@ class TeamEntryViewModelTest {
         assertTrue(uploadAction.tournamentIds.isEmpty())
         assertEquals(" Alpha ", repository.readTeamEntryDraft("stable-id")?.get(1))
         assertEquals("Alpha", repository.readTeamEntryDraft("stable-id")?.get(2))
+        assertTrue(navigation.isActive)
+        navigation.cancel()
+    }
+
+    @Test
+    fun successfulSaveNavigationEventIsNotReplayed() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+
+        val navigation = async { viewModel.navigationEvents.first() }
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(TeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
+        val replay = async { viewModel.navigationEvents.first() }
+        runCurrent()
+        assertTrue(replay.isActive)
+        replay.cancel()
     }
 
     @Test

@@ -69,6 +69,13 @@ fun TeamEntryRoute(
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
     }
+    LaunchedEffect(viewModel.navigationEvents) {
+        viewModel.navigationEvents.collect { event ->
+            when (event) {
+                TeamEntryNavigationEvent.BackToTournamentDetails -> onBackToDetails()
+            }
+        }
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     TeamEntryScreen(
