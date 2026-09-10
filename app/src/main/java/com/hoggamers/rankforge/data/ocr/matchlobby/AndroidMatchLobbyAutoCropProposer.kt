@@ -7,6 +7,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
+import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
+import com.hoggamers.rankforge.data.ocr.preprocessing.LOBBY_OCR_ENHANCEMENT_PROFILE
+import com.hoggamers.rankforge.data.ocr.preprocessing.OcrImageEnhancer
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyAutoCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyAutoCropCalculator
@@ -36,6 +39,7 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
     private val anchorResolver = LobbyOcrAnchorResolver()
     private val gridReconstructor = LobbySlotGridReconstructor()
     private val cropCalculator = LobbyAutoCropCalculator()
+    private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
 
     override suspend fun propose(
         localFile: File,
@@ -56,31 +60,37 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
         try {
             val dimensions = OcrImageDimensions.from(original.width, original.height)
                 ?: return@withContext MatchLobbyAutoCropResult.NoProposal
-            val inputImage = try {
-                InputImage.fromBitmap(original, 0)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                return@withContext MatchLobbyAutoCropResult.NoProposal
-            }
-            val recognizer = try {
-                recognizerFactory.create()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                return@withContext MatchLobbyAutoCropResult.NoProposal
-            }
-
+            val enhancedBitmap = imageEnhancer.enhance(original, LOBBY_OCR_ENHANCEMENT_PROFILE)
+            val mlKitBitmap = enhancedBitmap ?: original
             val recognizedText = try {
-                try {
-                    recognizer.process(inputImage).awaitText()
+                val inputImage = try {
+                    InputImage.fromBitmap(mlKitBitmap, 0)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
                     return@withContext MatchLobbyAutoCropResult.NoProposal
                 }
+                val recognizer = try {
+                    recognizerFactory.create()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    return@withContext MatchLobbyAutoCropResult.NoProposal
+                }
+                try {
+                    val text = recognizer.process(inputImage).awaitText()
+                    text
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    return@withContext MatchLobbyAutoCropResult.NoProposal
+                } finally {
+                    recognizer.close()
+                }
             } finally {
-                recognizer.close()
+                if (enhancedBitmap != null) {
+                    enhancedBitmap.recycleIfNeeded()
+                }
             }
 
             val mlKitObservations = recognizedText.toLobbyAnchorObservations()
