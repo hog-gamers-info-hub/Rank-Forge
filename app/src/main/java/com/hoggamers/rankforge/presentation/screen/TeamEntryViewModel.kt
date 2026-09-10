@@ -156,6 +156,31 @@ class TeamEntryViewModel @Inject constructor(
         )
     }
 
+    fun onBulkTeamNamesApplied(teamNames: List<String>) {
+        editGeneration += 1
+        _uiState.update { current ->
+            current.copy(
+                slots = current.slots.map { slot ->
+                    teamNames.getOrNull(slot.slotNumber - 1)?.let { teamName ->
+                        slot.copy(teamName = teamName)
+                    } ?: slot
+                },
+                validationIssues = emptyList(),
+                hasTeamNameGap = false,
+            )
+        }
+        val tournamentId = loadedTournamentId ?: return
+        val snapshot = _uiState.value.slots.associate { slot ->
+            slot.slotNumber to slot.teamName
+        }
+        draftWriteChannel.trySend(
+            DraftWriteCommand.Save(
+                tournamentId = tournamentId,
+                namesBySlotNumber = snapshot,
+            ),
+        )
+    }
+
     fun saveTeamNames() {
         if (_uiState.value.isSaving) return
         val tournamentId = loadedTournamentId ?: return

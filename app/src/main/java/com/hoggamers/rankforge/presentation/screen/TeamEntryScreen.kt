@@ -15,6 +15,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -23,10 +24,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,6 +85,7 @@ fun TeamEntryRoute(
     TeamEntryScreen(
         uiState = uiState,
         onTeamNameChanged = viewModel::onTeamNameChanged,
+        onBulkTeamNamesApplied = viewModel::onBulkTeamNamesApplied,
         onSave = viewModel::saveTeamNames,
         onBackToDetails = onBackToDetails,
         onEditRoster = onEditRoster,
@@ -93,6 +98,7 @@ fun TeamEntryRoute(
 fun TeamEntryScreen(
     uiState: TeamEntryUiState,
     onTeamNameChanged: (Int, String) -> Unit,
+    onBulkTeamNamesApplied: (List<String>) -> Unit,
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit = {},
@@ -110,6 +116,7 @@ fun TeamEntryScreen(
             TeamEntryContent(
                 slots = uiState.slots,
                 onTeamNameChanged = onTeamNameChanged,
+                onBulkTeamNamesApplied = onBulkTeamNamesApplied,
                 onSave = onSave,
                 onBackToDetails = onBackToDetails,
                 onEditRoster = onEditRoster,
@@ -128,6 +135,7 @@ fun TeamEntryScreen(
 private fun TeamEntryContent(
     slots: List<TeamEntrySlotUiState>,
     onTeamNameChanged: (Int, String) -> Unit,
+    onBulkTeamNamesApplied: (List<String>) -> Unit,
     onSave: () -> Unit,
     onBackToDetails: () -> Unit,
     onEditRoster: (Int) -> Unit,
@@ -139,6 +147,7 @@ private fun TeamEntryContent(
     hasTeamNameGap: Boolean,
 ) {
     val focusRequester = remember { BringIntoViewRequester() }
+    var isPasteTeamListDialogVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(focusSlotNumber) {
         if (focusSlotNumber != null) {
@@ -176,6 +185,24 @@ private fun TeamEntryContent(
             fontSize = 14.sp,
             lineHeight = 20.sp,
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(
+            onClick = { isPasteTeamListDialogVisible = true },
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = PointIqTeamsNavy,
+            ),
+            border = BorderStroke(1.dp, PointIqTeamsBorder),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.team_entry_paste_list_action),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
         Spacer(modifier = Modifier.height(22.dp))
 
         if (SHOW_TEAM_ENTRY_VALIDATION_ISSUES) {
@@ -363,6 +390,77 @@ private fun TeamEntryContent(
             )
         }
     }
+
+    if (isPasteTeamListDialogVisible) {
+        PasteTeamListDialog(
+            onDismissRequest = { isPasteTeamListDialogVisible = false },
+            onApply = { teamNames ->
+                onBulkTeamNamesApplied(teamNames)
+                isPasteTeamListDialogVisible = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun PasteTeamListDialog(
+    onDismissRequest: () -> Unit,
+    onApply: (List<String>) -> Unit,
+) {
+    var pastedText by remember { mutableStateOf("") }
+    var hasOverflow by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(text = stringResource(R.string.team_entry_paste_list_title))
+        },
+        text = {
+            Column {
+                Text(text = stringResource(R.string.team_entry_paste_list_description))
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = pastedText,
+                    onValueChange = { updatedText ->
+                        pastedText = updatedText
+                        hasOverflow = false
+                    },
+                    label = {
+                        Text(text = stringResource(R.string.team_entry_paste_list_label))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 6,
+                )
+                if (hasOverflow) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.team_entry_paste_list_overflow),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(R.string.cancel_action))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val result = TeamListParser.parse(pastedText)
+                    if (result.hasOverflow) {
+                        hasOverflow = true
+                    } else {
+                        onApply(result.teamNames)
+                    }
+                },
+            ) {
+                Text(text = stringResource(R.string.team_entry_paste_list_apply_action))
+            }
+        },
+    )
 }
 
 @Composable

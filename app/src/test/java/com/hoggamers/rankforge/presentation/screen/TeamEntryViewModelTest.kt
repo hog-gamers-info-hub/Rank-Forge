@@ -152,6 +152,61 @@ class TeamEntryViewModelTest {
     }
 
     @Test
+    fun bulkApplyUpdatesSequentialSlotsAndPersistsOneFullDraftWithoutSavingOrUploading() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames("stable-id", mapOf(4 to "Existing D"))
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onBulkTeamNamesApplied(listOf("Alpha", "Bravo", "Charlie"))
+
+        assertEquals("Alpha", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
+        assertEquals("Bravo", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Charlie", viewModel.uiState.value.slots.first { it.slotNumber == 3 }.teamName)
+        assertEquals("Existing D", viewModel.uiState.value.slots.first { it.slotNumber == 4 }.teamName)
+
+        advanceUntilIdle()
+
+        val draft = repository.readTeamEntryDraft("stable-id")
+        assertEquals(12, draft?.size)
+        assertEquals("Alpha", draft?.get(1))
+        assertEquals("Bravo", draft?.get(2))
+        assertEquals("Charlie", draft?.get(3))
+        assertEquals("Existing D", draft?.get(4))
+        assertTrue(uploadAction.tournamentIds.isEmpty())
+        val authoritativeSlots = repository.observeSlotsByTournamentId("stable-id").first()
+        assertEquals("", authoritativeSlots.first { it.slotNumber == 1 }.teamName)
+        assertEquals("Existing D", authoritativeSlots.first { it.slotNumber == 4 }.teamName)
+    }
+
+    @Test
+    fun bulkApplyClearsValidationAndAllowsLaterManualEdits() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(1, "Alpha")
+        viewModel.onTeamNameChanged(2, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.validationIssues.none { it.isBlocking })
+
+        viewModel.onBulkTeamNamesApplied(listOf("Bravo"))
+
+        assertEquals("Bravo", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
+        assertTrue(viewModel.uiState.value.validationIssues.isEmpty())
+        assertFalse(viewModel.uiState.value.hasTeamNameGap)
+
+        viewModel.onTeamNameChanged(2, "Charlie")
+        advanceUntilIdle()
+
+        assertEquals("Charlie", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Charlie", repository.readTeamEntryDraft("stable-id")?.get(2))
+    }
+
+    @Test
     fun savePersistsEditedNamesAndTrimsWhitespace() = runTest {
         repository.create(tournament())
         val viewModel = viewModel()
