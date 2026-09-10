@@ -182,6 +182,12 @@
     <string name="enter_teams_action">Enter Teams</string>
     <string name="team_entry_title">Enter teams</string>
     <string name="team_entry_loading">Loading team slots</string>
+    <string name="team_entry_paste_list_action">Paste Team List</string>
+    <string name="team_entry_paste_list_title">Paste Team List</string>
+    <string name="team_entry_paste_list_description">Paste up to 12 team names, one per line.</string>
+    <string name="team_entry_paste_list_label">Team names</string>
+    <string name="team_entry_paste_list_apply_action">Apply</string>
+    <string name="team_entry_paste_list_overflow">Only 12 team names can be imported.</string>
     <string name="team_name_slot_label">Slot %1$d team name</string>
     <string name="save_team_names_action">Save team names</string>
     <string name="saving_team_names_action">Saving team namesâ€¦</string>
