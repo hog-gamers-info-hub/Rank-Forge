@@ -629,6 +629,7 @@ class RoomTournamentRepository @Inject constructor(
                 rosters = state.value.rosters.filterKeys { it.tournamentId != tournamentId },
                 matches = state.value.matches - tournamentId,
                 draftValues = state.value.draftValues.filterKeys { it.tournamentId != tournamentId },
+                teamEntryDrafts = state.value.teamEntryDrafts - tournamentId,
             )
             database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, ownerUserId)) {
@@ -727,6 +728,7 @@ class RoomTournamentRepository @Inject constructor(
                 draftValues = state.value.draftValues.filterKeys {
                     it.tournamentId !in ownedTournamentIds
                 },
+                teamEntryDrafts = state.value.teamEntryDrafts - ownedTournamentIds,
             )
             database.withTransaction {
                 ownedTournamentIds.forEach { tournamentId ->
@@ -1085,6 +1087,44 @@ class RoomTournamentRepository @Inject constructor(
         emitAll(database.teamSlotDao().observeByTournamentId(tournamentId).map { slots ->
             slots.map { it.toDomain() }
         })
+    }
+
+    override suspend fun readTeamEntryDraft(tournamentId: String): Map<Int, String>? =
+        awaitState().teamEntryDrafts[tournamentId]
+
+    override suspend fun saveTeamEntryDraft(
+        tournamentId: String,
+        namesBySlotNumber: Map<Int, String>,
+    ) {
+        namesBySlotNumber.keys.forEach { slotNumber ->
+            require(slotNumber in TeamSlot.SLOT_NUMBERS) {
+                "Team slot number must be between 1 and 12."
+            }
+        }
+        awaitState()
+        writeMutex.withLock {
+            val next = state.value.copy(
+                teamEntryDrafts = state.value.teamEntryDrafts +
+                    (tournamentId to namesBySlotNumber.toMap()),
+            )
+            database.withTransaction {
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
+    }
+
+    override suspend fun clearTeamEntryDraft(tournamentId: String) {
+        awaitState()
+        writeMutex.withLock {
+            val current = state.value
+            if (tournamentId !in current.teamEntryDrafts) return@withLock
+            val next = current.copy(teamEntryDrafts = current.teamEntryDrafts - tournamentId)
+            database.withTransaction {
+                saveLegacyState(next)
+            }
+            state.value = next
+        }
     }
 
     override fun observeSlotsByTournamentIdAndOwner(
@@ -2813,6 +2853,7 @@ private data class PersistedState(
     val rosters: List<PersistedRoster> = emptyList(),
     val matches: List<PersistedMatch> = emptyList(),
     val draftValues: List<PersistedDraftMatch> = emptyList(),
+    val teamEntryDrafts: List<PersistedTeamEntryDraft> = emptyList(),
 )
 
 @Serializable
@@ -2835,6 +2876,8 @@ private data class PersistedParticipantResult(val teamSlotNumber: Int, val parti
 private data class PersistedDraftMatch(val tournamentId: String, val matchId: String, val values: List<PersistedDraftValue>)
 @Serializable
 private data class PersistedDraftValue(val teamSlotNumber: Int, val placementInput: String, val killsInput: String)
+@Serializable
+private data class PersistedTeamEntryDraft(val tournamentId: String, val names: Map<Int, String>)
 
 private fun RepositoryState.toPersistedState() = PersistedState(
     tournaments = tournaments.map { PersistedTournament(it.id, it.name, it.date.toString(), it.organizerName, it.organizerContactNumber, it.status.name, it.ownerUserId) },
@@ -2842,6 +2885,7 @@ private fun RepositoryState.toPersistedState() = PersistedState(
     rosters = rosters.map { (key, players) -> players.map { PersistedRoster(key.tournamentId, key.slotNumber, it.displayName) } }.flatten(),
     matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> PersistedCorrection(correction.previousPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { PersistedKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { PersistedKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> PersistedParticipantResult(result.teamSlotNumber, result.participationStatus.name, result.placement, result.kills) }) },
     draftValues = draftValues.map { (key, values) -> PersistedDraftMatch(key.tournamentId, key.matchId, values.map { (slot, value) -> PersistedDraftValue(slot, value.placementInput, value.killsInput) }) },
+    teamEntryDrafts = teamEntryDrafts.map { (tournamentId, names) -> PersistedTeamEntryDraft(tournamentId, names) },
 )
 
 private fun PersistedState.toRepositoryState() = RepositoryState(
@@ -2854,6 +2898,7 @@ private fun PersistedState.toRepositoryState() = RepositoryState(
             value.teamSlotNumber to MatchDraftFieldValues(value.placementInput, value.killsInput)
         }
     },
+    teamEntryDrafts = teamEntryDrafts.associate { draft -> draft.tournamentId to draft.names },
 )
 
 private data class RepositoryState(
@@ -2862,6 +2907,7 @@ private data class RepositoryState(
     val rosters: Map<RosterKey, List<RosterPlayer>> = emptyMap(),
     val matches: Map<String, List<Match>> = emptyMap(),
     val draftValues: Map<DraftKey, Map<Int, MatchDraftFieldValues>> = emptyMap(),
+    val teamEntryDrafts: Map<String, Map<Int, String>> = emptyMap(),
 )
 
 private fun RepositoryState.withTournamentMirror(

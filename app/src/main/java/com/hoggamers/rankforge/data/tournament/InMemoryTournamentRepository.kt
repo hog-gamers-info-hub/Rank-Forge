@@ -48,6 +48,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
     private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
     private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
+    private val teamEntryDraftsByTournamentId = MutableStateFlow<Map<String, Map<Int, String>>>(emptyMap())
     private val preservedOcrEvidenceByMatch = MutableStateFlow<Map<String, PreservedMatchOcrEvidence>>(emptyMap())
     private val cloudRevisions = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val baseCloudRevisions = MutableStateFlow<Map<String, Int?>>(emptyMap())
@@ -189,6 +190,27 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                     ?: TeamSlot.fixedSlotsForTournament(tournamentId)
             }
         }
+
+    override suspend fun readTeamEntryDraft(tournamentId: String): Map<Int, String>? =
+        teamEntryDraftsByTournamentId.value[tournamentId]
+
+    override suspend fun saveTeamEntryDraft(
+        tournamentId: String,
+        namesBySlotNumber: Map<Int, String>,
+    ) {
+        namesBySlotNumber.keys.forEach { slotNumber ->
+            require(slotNumber in TeamSlot.SLOT_NUMBERS) {
+                "Team slot number must be between 1 and 12."
+            }
+        }
+        teamEntryDraftsByTournamentId.update { current ->
+            current + (tournamentId to namesBySlotNumber.toMap())
+        }
+    }
+
+    override suspend fun clearTeamEntryDraft(tournamentId: String) {
+        teamEntryDraftsByTournamentId.update { current -> current - tournamentId }
+    }
 
     override suspend fun saveTeamNames(
         tournamentId: String,

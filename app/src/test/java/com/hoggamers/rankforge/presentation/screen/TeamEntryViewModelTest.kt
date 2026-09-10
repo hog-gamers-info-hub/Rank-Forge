@@ -59,6 +59,37 @@ class TeamEntryViewModelTest {
     }
 
     @Test
+    fun loadUsesAuthoritativeNamesWhenNoDraftExists() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames("stable-id", mapOf(1 to "Authoritative"))
+        val viewModel = viewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Authoritative",
+            viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName,
+        )
+    }
+
+    @Test
+    fun loadUsesExistingDraftOverAuthoritativeNamesIncludingEmptyValues() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames("stable-id", mapOf(1 to "Authoritative", 2 to "Also stored"))
+        repository.saveTeamEntryDraft("stable-id", mapOf(1 to " Team ", 2 to ""))
+        val viewModel = viewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals(" Team ", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
+        assertEquals("", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+        assertEquals("Authoritative", repository.observeSlotsByTournamentId("stable-id").first()[0].teamName)
+        assertEquals("Also stored", repository.observeSlotsByTournamentId("stable-id").first()[1].teamName)
+    }
+
+    @Test
     fun editingOneSlotDoesNotChangeOtherSlots() = runTest {
         repository.create(tournament())
         val viewModel = viewModel()
@@ -69,6 +100,54 @@ class TeamEntryViewModelTest {
 
         assertEquals("", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
         assertEquals("Bravo", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
+    }
+
+    @Test
+    fun changingOneSlotPersistsTheEntireRawDraftSnapshotWithoutUploading() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged(slotNumber = 2, teamName = "  Bravo  ")
+        advanceUntilIdle()
+
+        val draft = repository.readTeamEntryDraft("stable-id")
+        assertEquals(12, draft?.size)
+        assertEquals("  Bravo  ", draft?.get(2))
+        assertEquals("", draft?.get(1))
+        assertTrue(uploadAction.tournamentIds.isEmpty())
+        assertTrue(repository.observeSlotsByTournamentId("stable-id").first().all { it.teamName.isEmpty() })
+    }
+
+    @Test
+    fun clearingANamePersistsAnEmptyRawDraftValue() = runTest {
+        repository.create(tournament())
+        repository.saveTeamNames("stable-id", mapOf(1 to "Authoritative"))
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged(slotNumber = 1, teamName = "")
+        advanceUntilIdle()
+
+        assertEquals("", repository.readTeamEntryDraft("stable-id")?.get(1))
+        assertEquals("Authoritative", repository.observeSlotsByTournamentId("stable-id").first()[0].teamName)
+    }
+
+    @Test
+    fun rapidEditsAreWrittenInOrderWithLatestValueStored() = runTest {
+        repository.create(tournament())
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        listOf("A", "AL", "ALP", "ALPH", "ALPHA").forEach { value ->
+            viewModel.onTeamNameChanged(slotNumber = 1, teamName = value)
+        }
+        advanceUntilIdle()
+
+        assertEquals("ALPHA", repository.readTeamEntryDraft("stable-id")?.get(1))
     }
 
     @Test
@@ -91,6 +170,7 @@ class TeamEntryViewModelTest {
         assertEquals("Alpha", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
         assertEquals("Team 2", viewModel.uiState.value.slots.first { it.slotNumber == 2 }.teamName)
         assertEquals(listOf("stable-id"), uploadAction.tournamentIds)
+        assertEquals(null, repository.readTeamEntryDraft("stable-id"))
     }
 
     @Test
@@ -278,6 +358,33 @@ class TeamEntryViewModelTest {
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first().first().teamName)
         assertEquals("", repository.observeSlotsByTournamentId("stable-id").first()[1].teamName)
         assertTrue(uploadAction.tournamentIds.isEmpty())
+        assertEquals(" Alpha ", repository.readTeamEntryDraft("stable-id")?.get(1))
+        assertEquals("Alpha", repository.readTeamEntryDraft("stable-id")?.get(2))
+    }
+
+    @Test
+    fun newerEditDuringSaveRemainsAsAnUnsavedDraft() = runTest {
+        repository.create(tournament())
+        uploadAction.block = true
+        val viewModel = viewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged(1, "Old")
+        viewModel.saveTeamNames()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isSaving)
+        assertEquals(listOf("stable-id"), uploadAction.tournamentIds)
+
+        viewModel.onTeamNameChanged(1, "New")
+        runCurrent()
+        uploadAction.release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("Old", repository.observeSlotsByTournamentId("stable-id").first()[0].teamName)
+        assertEquals("New", repository.readTeamEntryDraft("stable-id")?.get(1))
+        assertEquals("New", viewModel.uiState.value.slots.first { it.slotNumber == 1 }.teamName)
     }
 
     private fun viewModel() = TeamEntryViewModel(
@@ -285,6 +392,7 @@ class TeamEntryViewModelTest {
         saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository, SignedInTournamentTestAuthRepository()),
         validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
         uploadTournament = uploadAction,
+        tournamentRepository = repository,
     )
 
     private fun tournament() = Tournament(

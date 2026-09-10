@@ -83,6 +83,82 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RoomTournamentRepositoryTest {
     @Test
+    fun teamEntryDraftPreservesRawNamesAndAuthoritativeState() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-team-entry-draft.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "team-entry-draft"
+            repository.create(tournament(tournamentId, TournamentStatus.DRAFT))
+            repository.saveTeamNames(tournamentId, mapOf(1 to "Stored Team"))
+            repository.confirmTournament(tournamentId)
+
+            val beforeSlots = repository.observeSlotsByTournamentId(tournamentId).first()
+            val beforeTournament = database.tournamentDao().observeById(tournamentId).first()
+            val beforeRevision = repository.readLocalRevisionState(tournamentId)
+            val beforeQueue = database.syncQueueDao().observeAll().first()
+            val draft = mapOf(1 to " Team ", 2 to "", 3 to "A")
+
+            repository.saveTeamEntryDraft(tournamentId, draft)
+
+            assertEquals(draft, repository.readTeamEntryDraft(tournamentId))
+            assertEquals(beforeSlots, repository.observeSlotsByTournamentId(tournamentId).first())
+            assertEquals(beforeTournament, database.tournamentDao().observeById(tournamentId).first())
+            assertEquals(beforeRevision, repository.readLocalRevisionState(tournamentId))
+            assertEquals(beforeQueue, database.syncQueueDao().observeAll().first())
+
+            repository.saveTeamNames(tournamentId, mapOf(1 to "Updated Team"))
+            assertEquals(draft, repository.readTeamEntryDraft(tournamentId))
+
+            repository.clearTeamEntryDraft(tournamentId)
+            repository.clearTeamEntryDraft(tournamentId)
+
+            assertEquals(null, repository.readTeamEntryDraft(tournamentId))
+            assertEquals(
+                "Updated Team",
+                repository.observeSlotsByTournamentId(tournamentId).first().first().teamName,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun persistedStateWithoutTeamEntryDraftsStillRestores() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-team-entry-draft-legacy.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            database.stateDao().save(
+                RankForgeStateEntity(
+                    payload = legacyPayload(
+                        id = "legacy-team-entry-draft",
+                        name = "Legacy",
+                        status = TournamentStatus.DRAFT.name,
+                    ),
+                ),
+            )
+
+            val repository = RoomTournamentRepository(database)
+
+            assertEquals(null, repository.readTeamEntryDraft("legacy-team-entry-draft"))
+            assertEquals(
+                "Legacy",
+                repository.observeById("legacy-team-entry-draft").first()?.name,
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun legacyOwnerAssignmentIsConditionalAndChangesOnlyTheParentOwnerAndMirror() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-legacy-owner-assignment.db"

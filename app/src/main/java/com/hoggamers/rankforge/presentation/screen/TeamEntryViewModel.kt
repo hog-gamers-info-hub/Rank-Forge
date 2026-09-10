@@ -6,11 +6,14 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,12 +27,70 @@ class TeamEntryViewModel @Inject constructor(
     private val saveTeamSlotNames: SaveTeamSlotNamesUseCase,
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val uploadTournament: TournamentCloudUploadAction,
+    private val tournamentRepository: TournamentRepository,
 ) : ViewModel() {
+    private sealed interface DraftWriteCommand {
+        data class Save(
+            val tournamentId: String,
+            val namesBySlotNumber: Map<Int, String>,
+        ) : DraftWriteCommand
+
+        data class ClearIfUnchanged(
+            val tournamentId: String,
+            val expectedEditGeneration: Long,
+            val completion: CompletableDeferred<Unit>,
+        ) : DraftWriteCommand
+
+        data class Barrier(val completion: CompletableDeferred<Unit>) : DraftWriteCommand
+    }
+
     private val _uiState = MutableStateFlow(TeamEntryUiState())
     val uiState: StateFlow<TeamEntryUiState> = _uiState.asStateFlow()
+    private val draftWriteChannel = Channel<DraftWriteCommand>(Channel.UNLIMITED)
     private var loadJob: Job? = null
     private var loadedTournamentId: String? = null
     private var initializedDraftValues = false
+    private var editGeneration = 0L
+
+    init {
+        viewModelScope.launch {
+            for (command in draftWriteChannel) {
+                when (command) {
+                    is DraftWriteCommand.Save -> {
+                        try {
+                            tournamentRepository.saveTeamEntryDraft(
+                                tournamentId = command.tournamentId,
+                                namesBySlotNumber = command.namesBySlotNumber,
+                            )
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Throwable) {
+                            // A draft write must not stop later edits or explicit Save.
+                        }
+                    }
+
+                    is DraftWriteCommand.ClearIfUnchanged -> {
+                        try {
+                            if (
+                                loadedTournamentId == command.tournamentId &&
+                                editGeneration == command.expectedEditGeneration
+                            ) {
+                                tournamentRepository.clearTeamEntryDraft(command.tournamentId)
+                            }
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Throwable) {
+                            // Explicit Save retains its existing error behavior.
+                        } finally {
+                            command.completion.complete(Unit)
+                        }
+                    }
+
+                    is DraftWriteCommand.Barrier -> command.completion.complete(Unit)
+                }
+            }
+        }
+    }
 
     fun load(tournamentId: String) {
         if (loadedTournamentId == tournamentId) return
@@ -42,11 +103,14 @@ class TeamEntryViewModel @Inject constructor(
                 if (slots.isEmpty()) {
                     _uiState.update { TeamEntryUiState(isLoading = false) }
                 } else if (!initializedDraftValues) {
+                    val draft = tournamentRepository.readTeamEntryDraft(tournamentId)
                     initializedDraftValues = true
                     _uiState.update {
                         TeamEntryUiState(
                             isLoading = false,
-                            slots = slots.toTeamEntrySlotUiState(),
+                            slots = slots.toTeamEntrySlotUiState().map { slot ->
+                                slot.copy(teamName = draft?.get(slot.slotNumber) ?: slot.teamName)
+                            },
                         )
                     }
                 }
@@ -58,6 +122,7 @@ class TeamEntryViewModel @Inject constructor(
         slotNumber: Int,
         teamName: String,
     ) {
+        editGeneration += 1
         _uiState.update { current ->
             current.copy(
                 slots = current.slots.map { slot ->
@@ -71,6 +136,16 @@ class TeamEntryViewModel @Inject constructor(
                 hasTeamNameGap = false,
             )
         }
+        val tournamentId = loadedTournamentId ?: return
+        val snapshot = _uiState.value.slots.associate { slot ->
+            slot.slotNumber to slot.teamName
+        }
+        draftWriteChannel.trySend(
+            DraftWriteCommand.Save(
+                tournamentId = tournamentId,
+                namesBySlotNumber = snapshot,
+            ),
+        )
     }
 
     fun saveTeamNames() {
@@ -81,10 +156,12 @@ class TeamEntryViewModel @Inject constructor(
             slot.slotNumber to slot.teamName.trim()
         }
         val participation = teamNamesBySlotNumber.analyzeTeamSlotParticipation()
+        val saveEditGeneration = editGeneration
         persistTeamNames(
             tournamentId = tournamentId,
             teamNamesBySlotNumber = teamNamesBySlotNumber,
             activeSlotNumbers = participation.activeSlotNumbers.toSet(),
+            saveEditGeneration = saveEditGeneration,
         )
     }
 
@@ -92,6 +169,7 @@ class TeamEntryViewModel @Inject constructor(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
         activeSlotNumbers: Set<Int>,
+        saveEditGeneration: Long,
     ) {
         _uiState.update {
             it.copy(
@@ -102,6 +180,7 @@ class TeamEntryViewModel @Inject constructor(
         }
         viewModelScope.launch {
             try {
+                awaitDraftWrites()
                 val validation = validateTournamentRoster(
                     tournamentId = tournamentId,
                     teamNamesBySlotNumber = teamNamesBySlotNumber,
@@ -128,11 +207,16 @@ class TeamEntryViewModel @Inject constructor(
                     }
                     SaveTeamSlotNamesResult.Saved -> Unit
                 }
+                clearDraftIfUnchanged(tournamentId, saveEditGeneration)
                 _uiState.update { current ->
                     current.copy(
                         validationIssues = validation.toUiState(),
-                        slots = current.slots.map { slot ->
-                            slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber))
+                        slots = if (editGeneration == saveEditGeneration) {
+                            current.slots.map { slot ->
+                                slot.copy(teamName = teamNamesBySlotNumber.getValue(slot.slotNumber))
+                            }
+                        } else {
+                            current.slots
                         },
                     )
                 }
@@ -152,6 +236,27 @@ class TeamEntryViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun awaitDraftWrites() {
+        val completion = CompletableDeferred<Unit>()
+        draftWriteChannel.send(DraftWriteCommand.Barrier(completion))
+        completion.await()
+    }
+
+    private suspend fun clearDraftIfUnchanged(
+        tournamentId: String,
+        expectedEditGeneration: Long,
+    ) {
+        val completion = CompletableDeferred<Unit>()
+        draftWriteChannel.send(
+            DraftWriteCommand.ClearIfUnchanged(
+                tournamentId = tournamentId,
+                expectedEditGeneration = expectedEditGeneration,
+                completion = completion,
+            ),
+        )
+        completion.await()
     }
 
 }
