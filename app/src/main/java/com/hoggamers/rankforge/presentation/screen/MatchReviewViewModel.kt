@@ -54,6 +54,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.export.MatchCsvExportFailure
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
@@ -161,10 +162,12 @@ class MatchReviewViewModel @Inject constructor(
     private val matchCalculatedEvidencePreviewRestorer: MatchCalculatedEvidencePreviewRestorer? = null,
     private val calculatedEvidenceSaveScheduler: ScreenshotReconciliationScheduler =
         ScreenshotReconciliationScheduler(),
+    private val createNextMatchWorkflow: CreateNextMatchWorkflow? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
+    private var nextMatchCreationJob: Job? = null
     private var validationJob: Job? = null
     private var duplicateDetectionJob: Job? = null
     private var preservationJob: Job? = null
@@ -223,6 +226,7 @@ class MatchReviewViewModel @Inject constructor(
         if (loadedMatchKey == matchKey) return
         loadedMatchKey = matchKey
         loadJob?.cancel()
+        nextMatchCreationJob?.cancel()
         validationJob?.cancel()
         duplicateDetectionJob?.cancel()
         preservationJob?.cancel()
@@ -337,6 +341,8 @@ class MatchReviewViewModel @Inject constructor(
                         activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
                         finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
                         matchNumber = match.matchNumber,
+                        nextMatchNumber = matches.maxOfOrNull { it.matchNumber }?.plus(1) ?: 1,
+                        existingMatchCount = matches.size,
                         status = match.status,
                         correctionHistory = match.correctionHistory,
                         rows = rows.map { row ->
@@ -371,6 +377,10 @@ class MatchReviewViewModel @Inject constructor(
                         isFinalizing = current.isFinalizing,
                         finalizationError = current.finalizationError,
                         csvExportResult = current.csvExportResult,
+                        pendingNextMatchTeamCountConfirmation = current.pendingNextMatchTeamCountConfirmation,
+                        isCreatingNextMatch = current.isCreatingNextMatch,
+                        nextMatchCreationMessage = current.nextMatchCreationMessage,
+                        nextMatchReviewRequest = current.nextMatchReviewRequest,
                         resultDownloadUiState = current.resultDownloadUiState,
                         selectedScreenshotUri = current.selectedScreenshotUri,
                         isPhotoPickerLaunchPending = current.isPhotoPickerLaunchPending,
@@ -502,6 +512,104 @@ class MatchReviewViewModel @Inject constructor(
     fun openCorrection() {
         if (_uiState.value.status == MatchStatus.FINALIZED) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.CORRECTION) }
+        }
+    }
+
+    fun requestNextMatchCreation() {
+        val state = _uiState.value
+        val tournamentId = state.tournamentId
+        val workflow = createNextMatchWorkflow
+        if (!state.canCreateNextMatch || tournamentId.isNullOrBlank() || workflow == null) return
+        if (nextMatchCreationJob?.isActive == true) return
+        _uiState.update { it.copy(nextMatchCreationMessage = null) }
+        nextMatchCreationJob = viewModelScope.launch {
+            val confirmation = workflow.teamCountConfirmationOrNull(tournamentId)
+            if (confirmation != null) {
+                _uiState.update {
+                    it.copy(pendingNextMatchTeamCountConfirmation = confirmation)
+                }
+            } else {
+                createNextMatch(tournamentId, workflow)
+            }
+        }
+    }
+
+    fun cancelNextMatchTeamCountConfirmation() {
+        _uiState.update { it.copy(pendingNextMatchTeamCountConfirmation = null) }
+    }
+
+    fun useEnteredTeamsForNextMatch() {
+        val state = _uiState.value
+        val tournamentId = state.tournamentId
+        val workflow = createNextMatchWorkflow
+        if (state.pendingNextMatchTeamCountConfirmation == null ||
+            tournamentId.isNullOrBlank() ||
+            workflow == null ||
+            nextMatchCreationJob?.isActive == true
+        ) return
+        _uiState.update {
+            it.copy(pendingNextMatchTeamCountConfirmation = null)
+        }
+        nextMatchCreationJob = viewModelScope.launch {
+            createNextMatch(tournamentId, workflow)
+        }
+    }
+
+    fun useDefaultsForNextMatch() {
+        val state = _uiState.value
+        val tournamentId = state.tournamentId
+        val workflow = createNextMatchWorkflow
+        if (state.pendingNextMatchTeamCountConfirmation == null ||
+            tournamentId.isNullOrBlank() ||
+            workflow == null ||
+            nextMatchCreationJob?.isActive == true
+        ) return
+        _uiState.update {
+            it.copy(pendingNextMatchTeamCountConfirmation = null)
+        }
+        nextMatchCreationJob = viewModelScope.launch {
+            if (!workflow.applyDefaults(tournamentId)) {
+                _uiState.update {
+                    it.copy(nextMatchCreationMessage = CalculatePointsMessage.VALIDATION_FAILED)
+                }
+            } else {
+                _uiState.update { it.copy(nextMatchCreationMessage = null) }
+                createNextMatch(tournamentId, workflow)
+            }
+        }
+    }
+
+    fun onNextMatchReviewRequestHandled() {
+        _uiState.update { it.copy(nextMatchReviewRequest = null) }
+    }
+
+    private suspend fun createNextMatch(
+        tournamentId: String,
+        workflow: CreateNextMatchWorkflow,
+    ) {
+        _uiState.update {
+            it.copy(
+                isCreatingNextMatch = true,
+                nextMatchCreationMessage = null,
+            )
+        }
+        when (val result = workflow.create(tournamentId)) {
+            is CreateNextMatchResult.Created -> _uiState.update {
+                it.copy(
+                    isCreatingNextMatch = false,
+                    nextMatchCreationMessage = null,
+                    nextMatchReviewRequest = MatchReviewRequest(
+                        tournamentId = result.match.tournamentId,
+                        matchId = result.match.id,
+                    ),
+                )
+            }
+            is CreateNextMatchResult.Rejected -> _uiState.update {
+                it.copy(
+                    isCreatingNextMatch = false,
+                    nextMatchCreationMessage = result.failure.toCalculatePointsMessage(),
+                )
+            }
         }
     }
 

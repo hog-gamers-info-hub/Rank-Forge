@@ -626,6 +626,13 @@ fun RankForgeNavHost(
             val onStartCorrection: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchCorrectionDestination(tournamentId, matchId))
             }
+            val onCreateNextMatch: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(MatchReviewDestination(tournamentId, matchId)) {
+                    popUpTo(MatchReviewDestination(destination.tournamentId, destination.matchId)) {
+                        inclusive = true
+                    }
+                }
+            }
             val onOpenOcrReview: (String, String) -> Unit = if (showLegacyManualReviewContent) {
                 { tournamentId, matchId ->
                     navController.navigate(MatchOcrReviewDestination(tournamentId, matchId))
@@ -699,6 +706,7 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    onCreateNextMatch = onCreateNextMatch,
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
                         navController.navigate(
                             CustomDesignSetupDestination(
@@ -723,6 +731,7 @@ fun RankForgeNavHost(
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
                     onStartCorrection = onStartCorrection,
+                    onCreateNextMatch = onCreateNextMatch,
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
                         navController.navigate(
                             CustomDesignSetupDestination(

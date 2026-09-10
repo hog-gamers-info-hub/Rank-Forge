@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -166,6 +167,8 @@ data class MatchReviewUiState(
     val activeTeamCount: Int? = null,
     val finalizedParticipantSlotNumbers: Set<Int> = emptySet(),
     val matchNumber: Int? = null,
+    val nextMatchNumber: Int? = null,
+    val existingMatchCount: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
     val rows: List<MatchReviewRowUiState> = emptyList(),
     val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
@@ -177,6 +180,10 @@ data class MatchReviewUiState(
     val finalizationError: FinalizeMatchGlobalError? = null,
     val csvExportResult: AndroidExportResult? = null,
     val resultDownloadUiState: ResultDownloadUiState = ResultDownloadUiState.Idle,
+    val pendingNextMatchTeamCountConfirmation: TeamCountConfirmationUiState? = null,
+    val isCreatingNextMatch: Boolean = false,
+    val nextMatchCreationMessage: CalculatePointsMessage? = null,
+    val nextMatchReviewRequest: MatchReviewRequest? = null,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
     val isPhotoPickerRequestActive: Boolean = false,
@@ -236,6 +243,18 @@ data class MatchReviewUiState(
     get() = canPrepareMatchCsvExport &&
         participantTeamIdentitiesAreValid &&
         !resultDownloadUiState.isBusy
+
+    val canCreateNextMatch: Boolean
+        get() = isAvailable &&
+            (existingMatchCount ?: MAX_MATCHES_PER_TOURNAMENT) < MAX_MATCHES_PER_TOURNAMENT &&
+            nextMatchNumber != null &&
+            !isCreatingNextMatch &&
+            pendingNextMatchTeamCountConfirmation == null
+
+    val shouldShowCreateNextMatch: Boolean
+        get() = isAvailable &&
+            existingMatchCount != null &&
+            existingMatchCount < MAX_MATCHES_PER_TOURNAMENT
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT

@@ -126,6 +126,7 @@ const val MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG = "match_review_finalized_statu
 const val MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG = "match_review_csv_export_action"
 const val MATCH_REVIEW_CSV_EXPORT_STATUS_TEST_TAG = "match_review_csv_export_status"
 const val MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG = "match_review_download_result_action"
+const val MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG = "match_review_create_next_match_action"
 const val MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG = "match_review_download_scope_dialog"
 const val MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG = "match_review_download_scope_current_match"
 const val MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG = "match_review_download_scope_tournament"
@@ -201,6 +202,13 @@ const val MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG = "match_review_ocr_preflig
 const val MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG = "match_review_ocr_preflight_calculate"
 const val MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG = "match_review_ocr_preflight_cancel"
 
+private fun CalculatePointsMessage.toMessageRes(): Int = when (this) {
+    CalculatePointsMessage.NO_TEAMS_SAVED -> R.string.enter_and_save_teams_before_calculating_message
+    CalculatePointsMessage.INVALID_TEAM_SLOTS -> R.string.team_entry_gap_message
+    CalculatePointsMessage.VALIDATION_FAILED -> R.string.calculate_points_validation_error
+    CalculatePointsMessage.MATCH_CREATION_FAILED -> R.string.match_creation_error
+}
+
 fun matchReviewOcrPreflightItemTestTag(identity: OcrScreenshotPreflightIdentity): String = when (identity) {
     is OcrScreenshotPreflightIdentity.Lobby ->
         "match_review_ocr_preflight_lobby_${identity.index}"
@@ -228,6 +236,7 @@ fun MatchReviewRoute(
     onOpenOcrReview: (String, String) -> Unit,
     onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
     onStartCorrection: (String, String) -> Unit,
+    onCreateNextMatch: (String, String) -> Unit = { _, _ -> },
     onOpenCustomDesignSetup: (String, String, ResultDownloadScope) -> Unit = { _, _, _ -> },
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     lobbyScreenshotIntakeViewModel: MatchLobbyScreenshotIntakeViewModel? = null,
@@ -463,6 +472,12 @@ fun MatchReviewRoute(
             null -> Unit
         }
     }
+    LaunchedEffect(uiState.nextMatchReviewRequest) {
+        uiState.nextMatchReviewRequest?.let { request ->
+            viewModel.onNextMatchReviewRequestHandled()
+            onCreateNextMatch(request.tournamentId, request.matchId)
+        }
+    }
     BackHandler(enabled = !uiState.isDeleting, onBack = viewModel::onBackToDetails)
 
     MatchReviewScreen(
@@ -501,6 +516,10 @@ fun MatchReviewRoute(
         isClearResultInProgress = calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING,
         onClearResult = viewModel::clearResult,
         onStartCorrection = viewModel::openCorrection,
+        onRequestNextMatchCreation = viewModel::requestNextMatchCreation,
+        onCancelNextMatchTeamCountConfirmation = viewModel::cancelNextMatchTeamCountConfirmation,
+        onUseEnteredTeamsForNextMatch = viewModel::useEnteredTeamsForNextMatch,
+        onUseDefaultsForNextMatch = viewModel::useDefaultsForNextMatch,
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
         onRequestResultDownload = viewModel::requestResultDownload,
@@ -583,6 +602,10 @@ fun MatchReviewScreen(
     isClearResultInProgress: Boolean = false,
     onClearResult: () -> Unit = {},
     onStartCorrection: () -> Unit = {},
+    onRequestNextMatchCreation: () -> Unit = {},
+    onCancelNextMatchTeamCountConfirmation: () -> Unit = {},
+    onUseEnteredTeamsForNextMatch: () -> Unit = {},
+    onUseDefaultsForNextMatch: () -> Unit = {},
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
@@ -644,6 +667,10 @@ fun MatchReviewScreen(
             isClearResultInProgress = isClearResultInProgress,
             onClearResult = onClearResult,
             onStartCorrection = onStartCorrection,
+            onRequestNextMatchCreation = onRequestNextMatchCreation,
+            onCancelNextMatchTeamCountConfirmation = onCancelNextMatchTeamCountConfirmation,
+            onUseEnteredTeamsForNextMatch = onUseEnteredTeamsForNextMatch,
+            onUseDefaultsForNextMatch = onUseDefaultsForNextMatch,
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
             onRequestResultDownload = onRequestResultDownload,
@@ -697,6 +724,10 @@ private fun MatchReviewContent(
     isClearResultInProgress: Boolean,
     onClearResult: () -> Unit,
     onStartCorrection: () -> Unit,
+    onRequestNextMatchCreation: () -> Unit,
+    onCancelNextMatchTeamCountConfirmation: () -> Unit,
+    onUseEnteredTeamsForNextMatch: () -> Unit,
+    onUseDefaultsForNextMatch: () -> Unit,
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
@@ -1316,6 +1347,38 @@ private fun MatchReviewContent(
                 -> Unit
             }
         }
+        if (uiState.shouldShowCreateNextMatch) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onRequestNextMatchCreation,
+                enabled = uiState.canCreateNextMatch,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PointIqMatchReviewBlue,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFFB8C7DC),
+                    disabledContentColor = Color.White.copy(alpha = 0.85f),
+                ),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.create_match_number_action,
+                        uiState.nextMatchNumber ?: 0,
+                    ),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (uiState.nextMatchCreationMessage != null) {
+                Text(
+                    text = stringResource(uiState.nextMatchCreationMessage.toMessageRes()),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {
             Button(
                 onClick = { showCorrectionConfirmation = true },
@@ -1405,6 +1468,15 @@ private fun MatchReviewContent(
                 Text(stringResource(R.string.back_to_match_details_action))
             }
         }
+    }
+
+    uiState.pendingNextMatchTeamCountConfirmation?.let { confirmation ->
+        TeamCountConfirmationDialog(
+            confirmation = confirmation,
+            onCancel = onCancelNextMatchTeamCountConfirmation,
+            onUseEnteredTeams = onUseEnteredTeamsForNextMatch,
+            onUseDefaults = onUseDefaultsForNextMatch,
+        )
     }
 
     if (showDeleteConfirmation && !uiState.isDeleting) {

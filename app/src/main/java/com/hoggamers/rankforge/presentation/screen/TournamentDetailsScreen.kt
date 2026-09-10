@@ -799,7 +799,12 @@ private fun MatchList(
                 onClick = { onCreateMatch(tournament.id) },
                 modifier = Modifier.fillMaxWidth().testTag(CREATE_MATCH_ACTION_TEST_TAG),
             ) {
-                Text(text = stringResource(R.string.create_match_action))
+                Text(
+                    text = stringResource(
+                        R.string.create_match_number_action,
+                        tournament.nextMatchNumber,
+                    ),
+                )
             }
         }
         if (tournament.matches.isEmpty()) {
@@ -1116,7 +1121,10 @@ private fun SimplifiedMatchList(
                         .testTag(CREATE_MATCH_ACTION_TEST_TAG),
                 ) {
                     Text(
-                        text = stringResource(R.string.create_match_action),
+                        text = stringResource(
+                            R.string.create_match_number_action,
+                            tournament.nextMatchNumber,
+                        ),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1139,7 +1147,7 @@ const val CALCULATE_POINTS_USE_DEFAULTS_TEST_TAG = "calculate_points_use_default
 const val CALCULATE_POINTS_CANCEL_TEST_TAG = "calculate_points_cancel"
 
 @Composable
-private fun TeamCountConfirmationDialog(
+internal fun TeamCountConfirmationDialog(
     confirmation: TeamCountConfirmationUiState,
     onCancel: () -> Unit,
     onUseEnteredTeams: () -> Unit,

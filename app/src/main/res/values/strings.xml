@@ -275,6 +275,7 @@
     <string name="match_date_label">Match date</string>
     <string name="match_map_label">Map</string>
     <string name="create_match_action">Create match</string>
+    <string name="create_match_number_action">Create Match %1$d</string>
     <string name="match_creation_error">Match could not be created. Try again.</string>
     <string name="match_number_invalid_error">Enter a positive whole number.</string>
     <string name="duplicate_match_number_error">That match number already exists in this tournament.</string>

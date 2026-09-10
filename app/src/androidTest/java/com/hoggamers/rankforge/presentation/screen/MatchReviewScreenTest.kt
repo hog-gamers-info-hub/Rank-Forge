@@ -186,6 +186,58 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun finalizedReviewShowsNumberedCreateNextMatchAction() {
+        var createRequests = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        nextMatchNumber = 6,
+                        existingMatchCount = 5,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestNextMatchCreation = { createRequests++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        composeTestRule.onNodeWithText("Create Match 6").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { assertEquals(1, createRequests) }
+    }
+
+    @Test
+    fun draftReviewShowsCreateNextMatchAction() {
+        var createRequests = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(nextMatchNumber = 2, existingMatchCount = 1),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onRequestNextMatchCreation = { createRequests++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        composeTestRule.onNodeWithText("Create Match 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { assertEquals(1, createRequests) }
+    }
+
+    @Test
     fun deletionErrorLeavesMatchReviewVisible() {
         composeTestRule.setContent {
             RankForgeTheme {

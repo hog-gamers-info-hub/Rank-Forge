@@ -12,6 +12,79 @@ import org.junit.Test
 
 class MatchReviewUiStateTest {
     @Test
+    fun draftReviewCanCreateNextMatchUsingHighestObservedNumber() {
+        assertTrue(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                nextMatchNumber = 6,
+                existingMatchCount = 5,
+            ).canCreateNextMatch,
+        )
+    }
+
+    @Test
+    fun finalizedReviewCanCreateNextMatchUsingHighestObservedNumber() {
+        assertTrue(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                nextMatchNumber = 6,
+                existingMatchCount = 5,
+            ).canCreateNextMatch,
+        )
+    }
+
+    @Test
+    fun currentMatchStatusDoesNotAffectNextMatchAvailabilityOrNumber() {
+        val draft = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+            nextMatchNumber = 6,
+            existingMatchCount = 5,
+        )
+        val finalized = draft.copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+        )
+
+        assertTrue(draft.shouldShowCreateNextMatch)
+        assertTrue(finalized.shouldShowCreateNextMatch)
+        assertTrue(draft.canCreateNextMatch)
+        assertTrue(finalized.canCreateNextMatch)
+        assertTrue(draft.nextMatchNumber == finalized.nextMatchNumber)
+    }
+
+    @Test
+    fun nextMatchCreationIsBlockedAtTournamentLimit() {
+        assertFalse(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                nextMatchNumber = 11,
+                existingMatchCount = com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT,
+            ).canCreateNextMatch,
+        )
+        assertFalse(
+            state().copy(
+                status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+                nextMatchNumber = 11,
+                existingMatchCount = com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT,
+            ).shouldShowCreateNextMatch,
+        )
+    }
+
+    @Test
+    fun pendingConfirmationAndCreationDisableNextMatchAction() {
+        val finalized = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            nextMatchNumber = 2,
+            existingMatchCount = 1,
+        )
+        assertFalse(
+            finalized.copy(
+                pendingNextMatchTeamCountConfirmation = TeamCountConfirmationUiState(8, 4),
+            ).canCreateNextMatch,
+        )
+        assertFalse(finalized.copy(isCreatingNextMatch = true).canCreateNextMatch)
+    }
+
+    @Test
     fun onlyValidFinalizedMatchCanDownloadResult() {
         assertFalse(state().canDownloadResult)
         assertTrue(

@@ -74,6 +74,9 @@ data class TournamentDetailsItemUiState(
     val hasInvalidTeamSlotState: Boolean = false,
 )
 
+val TournamentDetailsItemUiState.nextMatchNumber: Int
+    get() = matches.maxOfOrNull { it.matchNumber }?.plus(1) ?: 1
+
 val TournamentDetailsItemUiState.canPrepareStandingsCsvExport: Boolean
     get() = matches.any { match ->
         match.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED &&
