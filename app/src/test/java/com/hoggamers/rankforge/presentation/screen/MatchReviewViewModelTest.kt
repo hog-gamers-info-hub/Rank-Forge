@@ -38,6 +38,9 @@ import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
@@ -49,11 +52,15 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -197,6 +204,126 @@ class MatchReviewViewModelTest {
         viewModel.onNavigationHandled()
         viewModel.onBackToDetails()
         assertEquals(MatchReviewNavigation.DETAILS, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun finalizedReviewCreatesNextMatchAndPublishesReviewRequest() = runTest {
+        saveValidFinalizedMatch()
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.nextMatchNumber)
+        assertTrue(viewModel.uiState.value.canCreateNextMatch)
+
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+
+        val matches = repository.observeMatchesByTournamentId(TOURNAMENT_ID).first()
+        val created = matches.single { it.id != matchId }
+        assertEquals(2, created.matchNumber)
+        assertEquals(
+            MatchReviewRequest(TOURNAMENT_ID, created.id),
+            viewModel.uiState.value.nextMatchReviewRequest,
+        )
+        assertFalse(viewModel.uiState.value.isCreatingNextMatch)
+    }
+
+    @Test
+    fun reviewUsesHighestObservedMatchNumberRegardlessOfCurrentStatus() = runTest {
+        (2..5).forEach { number ->
+            repository.createDraftMatch(
+                Match(
+                    id = "observed-match-$number",
+                    tournamentId = TOURNAMENT_ID,
+                    matchNumber = number,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                ),
+            )
+        }
+        saveValidFinalizedMatch()
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertEquals(6, viewModel.uiState.value.nextMatchNumber)
+        assertTrue(viewModel.uiState.value.canCreateNextMatch)
+
+        saveValidFinalizedMatch()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        assertEquals(6, viewModel.uiState.value.nextMatchNumber)
+        assertTrue(viewModel.uiState.value.canCreateNextMatch)
+    }
+
+    @Test
+    fun finalizedReviewPreservesTeamCountConfirmationBeforeCreation() = runTest {
+        saveFinalizedMatchForNamedSlots((1..8).toSet())
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+
+        assertEquals(
+            TeamCountConfirmationUiState(enteredCount = 8, emptyCount = 4),
+            viewModel.uiState.value.pendingNextMatchTeamCountConfirmation,
+        )
+        assertEquals(1, repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().size)
+
+        viewModel.useEnteredTeamsForNextMatch()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().size)
+        assertNotNull(viewModel.uiState.value.nextMatchReviewRequest)
+    }
+
+    @Test
+    fun draftReviewCreatesNextMatchAndPublishesReviewRequest() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+
+        val matches = repository.observeMatchesByTournamentId(TOURNAMENT_ID).first()
+        val created = matches.single { it.id != matchId }
+        assertEquals(2, created.matchNumber)
+        assertEquals(
+            MatchReviewRequest(TOURNAMENT_ID, created.id),
+            viewModel.uiState.value.nextMatchReviewRequest,
+        )
+    }
+
+    @Test
+    fun creationInProgressPreventsDuplicateRequests() = runTest {
+        val completionGate = CompletableDeferred<Unit>()
+        val viewModel = reviewViewModel(
+            applyLobbyTemplate = ApplyLobbyTemplateAction { _, _ ->
+                completionGate.await()
+                ApplyLobbyTemplateResult.Unavailable
+            },
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestNextMatchCreation()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isCreatingNextMatch)
+
+        viewModel.requestNextMatchCreation()
+        runCurrent()
+
+        assertEquals(2, repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().size)
+
+        completionGate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isCreatingNextMatch)
     }
 
     @Test
@@ -2792,6 +2919,30 @@ class MatchReviewViewModelTest {
         calculatedEvidencePreviewRestorer: MatchCalculatedEvidencePreviewRestorer? = null,
         calculatedEvidenceSaveScheduler: ScreenshotReconciliationScheduler =
             ScreenshotReconciliationScheduler(),
+        applyLobbyTemplate: ApplyLobbyTemplateAction =
+            ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
+        createNextMatchWorkflow: CreateNextMatchWorkflow = CreateNextMatchWorkflow(
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            saveTeamSlotNames = SaveTeamSlotNamesUseCase(
+                repository,
+                SignedInTournamentTestAuthRepository(),
+            ),
+            validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+            createNextMatch = CreateNextMatchUseCase(
+                repository,
+                SignedInTournamentTestAuthRepository(),
+            ),
+            syncDraftMatches = DraftMatchCloudSyncAction {
+                QueueAwareActionResult(
+                    primaryResult = DraftMatchCloudSyncResult.Success,
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+            applyLobbyTemplate = applyLobbyTemplate,
+            lobbyUploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
+                MatchLobbyScreenshotUploadCheckpointResult.Skipped
+            },
+        ),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeMatches = ObserveMatchesUseCase(repository),
@@ -2821,6 +2972,7 @@ class MatchReviewViewModelTest {
         matchCalculatedEvidenceRepository = calculatedEvidenceRepository,
         matchCalculatedEvidencePreviewRestorer = calculatedEvidencePreviewRestorer,
         calculatedEvidenceSaveScheduler = calculatedEvidenceSaveScheduler,
+        createNextMatchWorkflow = createNextMatchWorkflow,
         )
 
     private fun batchReviewViewModel(

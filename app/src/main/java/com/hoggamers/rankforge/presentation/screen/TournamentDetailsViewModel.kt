@@ -14,13 +14,8 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
-import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
-import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
-import com.hoggamers.rankforge.domain.tournament.defaultTeamNameForSlot
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
-import com.hoggamers.rankforge.domain.tournament.CreateNextMatchFailure
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
@@ -69,7 +64,18 @@ class TournamentDetailsViewModel @Inject constructor(
     private val applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
     private val deleteTournamentUseCase: DeleteTournamentUseCase? = null,
+    private val createNextMatchWorkflow: CreateNextMatchWorkflow? = null,
 ) : ViewModel() {
+    private val matchCreationWorkflow: CreateNextMatchWorkflow = createNextMatchWorkflow
+        ?: CreateNextMatchWorkflow(
+            observeTournamentSlots = observeTournamentSlots,
+            saveTeamSlotNames = saveTeamSlotNames,
+            validateTournamentRoster = validateTournamentRoster,
+            createNextMatch = createNextMatch,
+            syncDraftMatches = syncDraftMatches,
+            applyLobbyTemplate = applyLobbyTemplate,
+            lobbyUploadCheckpoint = lobbyUploadCheckpoint,
+        )
     private val _uiState = MutableStateFlow(TournamentDetailsUiState())
     val uiState: StateFlow<TournamentDetailsUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
@@ -123,25 +129,16 @@ class TournamentDetailsViewModel @Inject constructor(
             _uiState.value.matchReviewRequest != null
         ) return
         viewModelScope.launch {
-            val slots = observeTournamentSlots(tournament.id).first()
-            val participation = slots.analyzeTeamSlotParticipation()
-            when {
-                participation.activeCount == 0 -> _uiState.update {
+            val confirmation = matchCreationWorkflow.teamCountConfirmationOrNull(tournament.id)
+            if (confirmation != null) {
+                _uiState.update {
                     it.copy(
-                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(0, TeamSlot.MAX_SLOT_NUMBER),
+                        pendingTeamCountConfirmation = confirmation,
                         calculatePointsMessage = null,
                     )
                 }
-                participation.activeCount < TeamSlot.MAX_SLOT_NUMBER -> _uiState.update {
-                    it.copy(
-                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(
-                            enteredCount = participation.activeCount,
-                            emptyCount = TeamSlot.MAX_SLOT_NUMBER - participation.activeCount,
-                        ),
-                        calculatePointsMessage = null,
-                    )
-                }
-                else -> requestMatchCreation(tournament.id)
+            } else {
+                requestMatchCreation(tournament.id)
             }
         }
     }
@@ -162,51 +159,19 @@ class TournamentDetailsViewModel @Inject constructor(
         if (_uiState.value.pendingTeamCountConfirmation == null) return
         _uiState.update { it.copy(pendingTeamCountConfirmation = null) }
         viewModelScope.launch {
-            val slots = observeTournamentSlots(tournamentId).first()
-            val names = slots.associate { slot ->
-                val trimmedName = slot.teamName.trim()
-                slot.slotNumber to if (trimmedName.isBlank()) {
-                    defaultTeamNameForSlot(slot.slotNumber)
-                } else {
-                    trimmedName
-                }
-            }
-            val validation = validateTournamentRoster(
-                tournamentId = tournamentId,
-                teamNamesBySlotNumber = names,
-                activeTeamSlotNumbers = TeamSlot.SLOT_NUMBERS.toSet(),
-            )
-            if (validation.hasBlockingIssues) {
+            if (!matchCreationWorkflow.applyDefaults(tournamentId)) {
                 _uiState.update {
                     it.copy(
                         calculatePointsMessage = CalculatePointsMessage.VALIDATION_FAILED,
                     )
                 }
             } else {
-                runCatching {
-                    saveTeamSlotNames(tournamentId, names)
-                }.onSuccess { result ->
-                    if (result != SaveTeamSlotNamesResult.Saved) {
-                        _uiState.update {
-                            it.copy(
-                                calculatePointsMessage = CalculatePointsMessage.VALIDATION_FAILED,
-                            )
-                        }
-                        return@onSuccess
-                    }
-                    _uiState.update {
-                        it.copy(
-                            calculatePointsMessage = null,
-                        )
-                    }
-                    requestMatchCreation(tournamentId)
-                }.onFailure {
-                    _uiState.update {
-                        it.copy(
-                            calculatePointsMessage = CalculatePointsMessage.VALIDATION_FAILED,
-                        )
-                    }
+                _uiState.update {
+                    it.copy(
+                        calculatePointsMessage = null,
+                    )
                 }
+                requestMatchCreation(tournamentId)
             }
         }
     }
@@ -279,39 +244,8 @@ class TournamentDetailsViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            when (val result = createNextMatch(tournamentId)) {
+            when (val result = matchCreationWorkflow.create(tournamentId)) {
                 is CreateNextMatchResult.Created -> {
-                    val inheritedLobby = try {
-                        applyLobbyTemplate(result.match.tournamentId, result.match.id) == ApplyLobbyTemplateResult.Applied
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Throwable) {
-                        false
-                    }
-                    try {
-                        syncDraftMatches(result.match.tournamentId)
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Throwable) {
-                        // Local match creation remains authoritative for navigation.
-                    }
-                    if (inheritedLobby) {
-                        (1..3).forEach { index ->
-                            try {
-                                lobbyUploadCheckpoint.run(
-                                    com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity(
-                                        tournamentId = result.match.tournamentId,
-                                        matchId = result.match.id,
-                                        lobbyScreenshotIndex = index,
-                                    ),
-                                )
-                            } catch (cancellation: CancellationException) {
-                                throw cancellation
-                            } catch (_: Throwable) {
-                                // Local inheritance and navigation remain authoritative.
-                            }
-                        }
-                    }
                     _uiState.update {
                         it.copy(
                             isCreatingMatch = false,
@@ -330,16 +264,6 @@ class TournamentDetailsViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun CreateNextMatchFailure.toCalculatePointsMessage(): CalculatePointsMessage = when (this) {
-        CreateNextMatchFailure.NO_PARTICIPATING_TEAMS -> CalculatePointsMessage.NO_TEAMS_SAVED
-        CreateNextMatchFailure.INVALID_TEAM_SLOTS -> CalculatePointsMessage.INVALID_TEAM_SLOTS
-        CreateNextMatchFailure.AUTHENTICATION_REQUIRED,
-        CreateNextMatchFailure.TOURNAMENT_NOT_FOUND,
-        CreateNextMatchFailure.LIMIT_REACHED,
-        CreateNextMatchFailure.REPOSITORY_REJECTED,
-        -> CalculatePointsMessage.MATCH_CREATION_FAILED
     }
 
     fun prepareStandingsCsvExport() {
