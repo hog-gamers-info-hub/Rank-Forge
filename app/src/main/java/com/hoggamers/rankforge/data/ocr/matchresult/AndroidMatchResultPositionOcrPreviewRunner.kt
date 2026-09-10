@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
+import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
+import com.hoggamers.rankforge.data.ocr.preprocessing.LOBBY_OCR_ENHANCEMENT_PROFILE
+import com.hoggamers.rankforge.data.ocr.preprocessing.OcrImageEnhancer
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -39,6 +42,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val paddleEngineProvider: MatchResultPositionPaddleOcrEngineProvider,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
 ) : MatchResultPairOcrPreviewRunner {
+    private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
     private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
     private val pairSemanticRoleResolver = MatchResultPairSemanticRoleResolver()
 
@@ -125,8 +129,25 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             null
         }?.takeIf { runCatching { it.isFile && it.length() > 0L }.getOrDefault(false) }
             ?: return@withContext Prepared.Failed(MatchResultOcrPreviewProcessingResult.MissingLocalOriginal)
-        val source = decodeCrop(file, pixelCrop)
+        val decodedSource = decodeCrop(file, pixelCrop)
             ?: return@withContext Prepared.Failed(MatchResultOcrPreviewProcessingResult.DecodeFailed)
+        val enhancedBitmap = try {
+            imageEnhancer.enhance(decodedSource, LOBBY_OCR_ENHANCEMENT_PROFILE)
+        } catch (cancellation: CancellationException) {
+            if (!decodedSource.isRecycled) decodedSource.recycle()
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        val source = enhancedBitmap?.takeIf { candidate ->
+            !candidate.isRecycled &&
+                candidate.width == decodedSource.width &&
+                candidate.height == decodedSource.height
+        } ?: decodedSource
+        if (enhancedBitmap != null && enhancedBitmap !== source && !enhancedBitmap.isRecycled) {
+            enhancedBitmap.recycle()
+        }
+        if (source !== decodedSource && !decodedSource.isRecycled) decodedSource.recycle()
         val evidence = try {
             when (val result = positionCropGenerator.observe(source)) {
                 is MatchResultPositionCropObservationResult.Observed -> {
