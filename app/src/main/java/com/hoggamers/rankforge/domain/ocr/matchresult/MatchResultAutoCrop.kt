@@ -121,6 +121,9 @@ private data class RightColumnRecoveryCandidate(
     val normalizedHorizontalDelta: Double,
 )
 
+private const val FALLBACK_ELIMINATION_LEFT_OFFSET_MULTIPLIER = 2.8
+private const val FALLBACK_ELIMINATION_COLUMN_ALIGNMENT_FRACTION = 0.05
+
 class MatchResultAutoCropCalculator(
     private val anchorDetector: MatchResultAutoCropAnchorDetector = MatchResultAutoCropAnchorDetector(),
 ) {
@@ -128,13 +131,33 @@ class MatchResultAutoCropCalculator(
         val anchorFour = anchorDetector.findAnchorFour(evidence)
         val anchorFive = anchorDetector.findAnchorFive(evidence)
 
-        val geometry = resolveCropGeometry(
-            evidence = evidence,
-            anchorFour = anchorFour,
-            anchorFive = anchorFive,
-        ) ?: return when {
-            anchorFour == null -> MatchResultAutoCropResult.AnchorFourMissing
-            else -> MatchResultAutoCropResult.AnchorFiveMissing
+        val geometry = if (anchorFour != null && anchorFive != null) {
+            resolveCropGeometry(
+                evidence = evidence,
+                anchorFour = anchorFour,
+                anchorFive = anchorFive,
+            )
+        } else {
+            null
+        }
+        val fallbackElimination = if (anchorFour == null || anchorFive == null) {
+            evidence.resolveFallbackEliminationObservation()
+        } else {
+            null
+        }
+        val fallbackEliminationColumn = if (fallbackElimination != null) {
+            evidence.findFallbackEliminationColumn(fallbackElimination)
+        } else {
+            null
+        }
+        if (
+            geometry == null &&
+            (fallbackElimination == null || fallbackEliminationColumn == null)
+        ) {
+            return when {
+                anchorFour == null -> MatchResultAutoCropResult.AnchorFourMissing
+                else -> MatchResultAutoCropResult.AnchorFiveMissing
+            }
         }
 
         val rightBoundary = evidence.observations
@@ -144,15 +167,43 @@ class MatchResultAutoCropCalculator(
             .maxOrNull()
             ?: return MatchResultAutoCropResult.RightBoundaryMissing
 
-        val rowPitch = geometry.rowPitch
-        if (!rowPitch.isFinite() || rowPitch <= 0.0) {
-            return MatchResultAutoCropResult.InvalidRowPitch
-        }
+        val leftRaw: Double
+        val topRaw: Double
+        val bottomRaw: Double
+        if (fallbackElimination != null) {
+            leftRaw = fallbackElimination.left.toDouble() -
+                FALLBACK_ELIMINATION_LEFT_OFFSET_MULTIPLIER *
+                (fallbackElimination.right - fallbackElimination.left).toDouble()
+            val eliminationColumn = fallbackEliminationColumn
+                ?: return MatchResultAutoCropResult.InvalidCalculatedCrop
+            val topMost = eliminationColumn.minWithOrNull(
+                compareBy<RawOcrBoundingBox> { it.top }
+                    .thenBy { it.left }
+                    .thenBy { it.right }
+                    .thenBy { it.bottom },
+            ) ?: return MatchResultAutoCropResult.InvalidCalculatedCrop
+            val bottomMost = eliminationColumn.maxWithOrNull(
+                compareBy<RawOcrBoundingBox> { it.bottom }
+                    .thenBy { it.left }
+                    .thenBy { it.right }
+                    .thenBy { it.top },
+            ) ?: return MatchResultAutoCropResult.InvalidCalculatedCrop
+            topRaw = topMost.top.toDouble() -
+                (topMost.bottom - topMost.top).toDouble()
+            bottomRaw = bottomMost.bottom.toDouble() +
+                (bottomMost.bottom - bottomMost.top).toDouble()
+        } else {
+            val resolvedGeometry = geometry ?: return MatchResultAutoCropResult.InvalidCalculatedCrop
+            val rowPitch = resolvedGeometry.rowPitch
+            if (!rowPitch.isFinite() || rowPitch <= 0.0) {
+                return MatchResultAutoCropResult.InvalidRowPitch
+            }
 
-        // Existing result-crop geometry remains unchanged.
-        val leftRaw = geometry.p5CenterX - LEFT_ROW_PITCH_FACTOR * rowPitch
-        val topRaw = geometry.p5CenterY - TOP_ROW_PITCH_FACTOR * rowPitch
-        val bottomRaw = geometry.p5CenterY + BOTTOM_ROW_PITCH_FACTOR * rowPitch
+            // Existing result-crop geometry remains unchanged.
+            leftRaw = resolvedGeometry.p5CenterX - LEFT_ROW_PITCH_FACTOR * rowPitch
+            topRaw = resolvedGeometry.p5CenterY - TOP_ROW_PITCH_FACTOR * rowPitch
+            bottomRaw = resolvedGeometry.p5CenterY + BOTTOM_ROW_PITCH_FACTOR * rowPitch
+        }
         if (!leftRaw.isFinite() || !topRaw.isFinite() || !bottomRaw.isFinite()) {
             return MatchResultAutoCropResult.InvalidCalculatedCrop
         }
@@ -179,6 +230,34 @@ class MatchResultAutoCropCalculator(
         return MatchResultAutoCropResult.Proposed(
             crop = OcrNormalizedCropRect.fromPixelRect(pixelCrop, dimensions),
         )
+    }
+
+    private fun MatchResultAutoCropEvidence.resolveFallbackEliminationObservation(): RawOcrBoundingBox? =
+        observations
+            .asSequence()
+            .filter { it.text.looksLikeHardenedEliminationText() }
+            .mapNotNull { it.usableBoundingBoxOrNull(imageDimensions) }
+            .minWithOrNull(
+                compareBy<RawOcrBoundingBox> { it.left }
+                    .thenBy { it.top }
+                    .thenBy { it.right }
+                    .thenBy { it.bottom },
+            )
+
+    private fun MatchResultAutoCropEvidence.findFallbackEliminationColumn(
+        reference: RawOcrBoundingBox,
+    ): List<RawOcrBoundingBox>? {
+        val maxHorizontalDelta =
+            imageDimensions.width * FALLBACK_ELIMINATION_COLUMN_ALIGNMENT_FRACTION
+        return observations
+            .asSequence()
+            .filter { it.text.looksLikeHardenedEliminationText() }
+            .mapNotNull { it.usableBoundingBoxOrNull(imageDimensions) }
+            .filter { candidate ->
+                abs(candidate.centerX() - reference.centerX()) <= maxHorizontalDelta
+            }
+            .toList()
+            .takeIf { it.isNotEmpty() }
     }
 
     private fun resolveCropGeometry(
@@ -308,4 +387,43 @@ class MatchResultAutoCropCalculator(
         const val MAX_RIGHT_PAIR_HORIZONTAL_DELTA_FRACTION = 0.02
         const val MAX_KNOWN_ANCHOR_RESIDUAL_TO_LEFT_PITCH_RATIO = 0.12
     }
+}
+
+private fun String.looksLikeHardenedEliminationText(): Boolean {
+    val normalized = lowercase().filter { it in 'a'..'z' }
+    if (normalized.startsWith("eliminat")) {
+        return normalized.getOrNull("eliminat".length) != 'e'
+    }
+    val expected = "eliminations"
+    val minimumPrefixLength = expected.length - 1
+    val maximumPrefixLength = minOf(normalized.length, expected.length)
+    if (maximumPrefixLength < minimumPrefixLength) return false
+    return (minimumPrefixLength..maximumPrefixLength).any { prefixLength ->
+        normalized.take(prefixLength).hasAtMostOneEditFrom(expected)
+    }
+}
+
+private fun String.hasAtMostOneEditFrom(expected: String): Boolean {
+    if (abs(length - expected.length) > 1) return false
+    var previous = IntArray(expected.length + 1) { it }
+    for (leftIndex in indices) {
+        val current = IntArray(expected.length + 1)
+        current[0] = leftIndex + 1
+        var rowMinimum = current[0]
+        for (expectedIndex in expected.indices) {
+            current[expectedIndex + 1] = if (this[leftIndex] == expected[expectedIndex]) {
+                previous[expectedIndex]
+            } else {
+                1 + minOf(
+                    previous[expectedIndex],
+                    current[expectedIndex],
+                    previous[expectedIndex + 1],
+                )
+            }
+            rowMinimum = minOf(rowMinimum, current[expectedIndex + 1])
+        }
+        if (rowMinimum > 1) return false
+        previous = current
+    }
+    return previous[expected.length] <= 1
 }

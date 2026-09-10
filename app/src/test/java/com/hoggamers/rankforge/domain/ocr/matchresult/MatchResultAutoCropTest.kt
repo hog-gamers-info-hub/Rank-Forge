@@ -215,36 +215,211 @@ class MatchResultAutoCropTest {
     }
 
     @Test
-    fun missingAnchorFourWithoutRecoveryEvidenceReturnsAnchorFourMissing() {
-        assertEquals(
-            MatchResultAutoCropResult.AnchorFourMissing,
-            calculator.calculate(evidence(observation("5", 100, 500, 130, 540))),
-        )
-    }
-
-    @Test
-    fun missingAnchorFiveWithoutRecoveryEvidenceReturnsAnchorFiveMissing() {
-        assertEquals(
-            MatchResultAutoCropResult.AnchorFiveMissing,
-            calculator.calculate(evidence(observation("4", 100, 100, 130, 140))),
-        )
-    }
-
-    @Test
-    fun bothLeftAnchorsMissingDoesNotAttemptRightColumnOnlyRecovery() {
+    fun missingAnchorFourWithoutTrustworthyEliminationsKeepsExistingFailure() {
         assertEquals(
             MatchResultAutoCropResult.AnchorFourMissing,
             calculator.calculate(
-                evidence(
-                    observation("6", 600, 100, 620, 120),
-                    observation("7", 600, 150, 620, 170),
+                MatchResultAutoCropEvidence(
+                    observations = listOf(
+                        observation("5", 100, 500, 130, 540),
+                        observation("eliminate", 500, 50, 580, 80),
+                    ),
+                    imageDimensions = dimensions,
                 ),
             ),
         )
     }
 
     @Test
-    fun missingFourIsRecoveredFromConsecutiveSixAndSeven() {
+    fun missingAnchorFiveWithoutTrustworthyEliminationsKeepsExistingFailure() {
+        assertEquals(
+            MatchResultAutoCropResult.AnchorFiveMissing,
+            calculator.calculate(
+                MatchResultAutoCropEvidence(
+                    observations = listOf(
+                        observation("4", 100, 100, 130, 140),
+                        observation("eliminate", 500, 50, 580, 80),
+                    ),
+                    imageDimensions = dimensions,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun bothLeftAnchorsMissingWithoutEliminationsKeepsExistingFailure() {
+        assertEquals(
+            MatchResultAutoCropResult.AnchorFourMissing,
+            calculator.calculate(
+                MatchResultAutoCropEvidence(
+                    observations = listOf(
+                        observation("6", 600, 100, 620, 120),
+                        observation("7", 600, 150, 620, 170),
+                    ),
+                    imageDimensions = dimensions,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun normalPosition45PathRemainsUnchangedWhenEliminationsExist() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("4", 100, 100, 130, 140),
+                    observation("5", 200, 300, 240, 340),
+                    observation("Eliminations", 500, 100, 580, 130),
+                    observation("right", 800, 200, 900, 250),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(
+            OcrNormalizedCropRect(0.13, 0.0, 0.9, 0.525),
+            result.crop,
+        )
+    }
+
+    @Test
+    fun bothLeftAnchorsMissingUsesSingleLeftmostEliminationsObservation() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 18, 272, 30),
+                    observation("Eliminations", 210, 91, 273, 105),
+                    observation("Eliminations", 208, 197, 272, 209),
+                    observation("Eliminations", 437, 5, 500, 20),
+                    observation("Eliminations", 437, 300, 500, 450),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(28.0 / dimensions.width, result.crop.left, 0.0)
+        assertEquals(6.0 / dimensions.height, result.crop.top, 0.0)
+        assertEquals(900.0 / dimensions.width, result.crop.right, 0.0)
+        assertEquals(221.0 / dimensions.height, result.crop.bottom, 0.0)
+    }
+
+    @Test
+    fun fallbackEliminationsLeftCalculationClampsToZero() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 150, 100, 210, 130),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(0.0, result.crop.left, 0.0)
+    }
+
+    @Test
+    fun malformedEliminationsTextDoesNotActivateFallback() {
+        val result = calculator.calculate(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("eliminate", 208, 100, 272, 130),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(MatchResultAutoCropResult.AnchorFourMissing, result)
+    }
+
+    @Test
+    fun fallbackUsesOnlyLeftmostEliminationsColumnForTopAndBottom() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 100, 272, 130),
+                    observation("Eliminations", 210, 180, 274, 210),
+                    observation("Eliminations", 437, 5, 500, 20),
+                    observation("Eliminations", 437, 390, 500, 420),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(70.0 / dimensions.height, result.crop.top, 0.0)
+        assertEquals(240.0 / dimensions.height, result.crop.bottom, 0.0)
+    }
+
+    @Test
+    fun fallbackTopAndBottomPaddingUsesHeightNotWidth() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 200, 272, 230),
+                    observation("Eliminations", 210, 100, 280, 112),
+                    observation("Eliminations", 210, 400, 220, 500),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(88.0 / dimensions.height, result.crop.top, 0.0)
+        assertEquals(600.0 / dimensions.height, result.crop.bottom, 0.0)
+    }
+
+    @Test
+    fun fallbackTopClampsToImageTop() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 100, 272, 130),
+                    observation("Eliminations", 210, 5, 270, 17),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(0.0, result.crop.top, 0.0)
+    }
+
+    @Test
+    fun fallbackBottomClampsToImageHeight() {
+        val result = proposed(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 100, 272, 130),
+                    observation("Eliminations", 210, 700, 270, 790),
+                    observation("right", 800, 30, 900, 50),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(1.0, result.crop.bottom, 0.0)
+    }
+
+    @Test
+    fun fallbackWithoutTrustworthyLeftmostEliminationsKeepsExistingFailure() {
+        val result = calculator.calculate(
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("Eliminations", 208, 100, 208, 130),
+                    observation("right", 800, 300, 900, 350),
+                ),
+                imageDimensions = dimensions,
+            ),
+        )
+
+        assertEquals(MatchResultAutoCropResult.AnchorFourMissing, result)
+    }
+
+    @Test
+    fun missingFourUsesEliminationsFallbackInsteadOfConsecutiveRightRecovery() {
         val result = proposed(
             evidence(
                 observation("5", 180, 334, 220, 355),
@@ -256,17 +431,17 @@ class MatchResultAutoCropTest {
 
         assertEquals(
             OcrNormalizedCropRect(
-                173.0 / dimensions.width,
-                80.0 / dimensions.height,
+                276.0 / dimensions.width,
+                20.0 / dimensions.height,
                 900.0 / dimensions.width,
-                374.0 / dimensions.height,
+                110.0 / dimensions.height,
             ),
             result.crop,
         )
     }
 
     @Test
-    fun missingFiveIsRecoveredFromConsecutiveSixAndSeven() {
+    fun missingFiveUsesEliminationsFallbackInsteadOfConsecutiveRightRecovery() {
         val result = proposed(
             evidence(
                 observation("4", 180, 276, 220, 296),
@@ -278,17 +453,17 @@ class MatchResultAutoCropTest {
 
         assertEquals(
             OcrNormalizedCropRect(
-                173.0 / dimensions.width,
-                80.0 / dimensions.height,
+                276.0 / dimensions.width,
+                20.0 / dimensions.height,
                 900.0 / dimensions.width,
-                374.0 / dimensions.height,
+                110.0 / dimensions.height,
             ),
             result.crop,
         )
     }
 
     @Test
-    fun tenAndElevenCanRecoverMissingFour() {
+    fun tenAndElevenDoNotRecoverMissingFourWhenEliminationsFallbackApplies() {
         val result = proposed(
             evidence(
                 observation("5", 180, 334, 220, 355),
@@ -300,10 +475,10 @@ class MatchResultAutoCropTest {
 
         assertEquals(
             OcrNormalizedCropRect(
-                173.0 / dimensions.width,
-                80.0 / dimensions.height,
+                276.0 / dimensions.width,
+                20.0 / dimensions.height,
                 900.0 / dimensions.width,
-                374.0 / dimensions.height,
+                110.0 / dimensions.height,
             ),
             result.crop,
         )
@@ -312,10 +487,13 @@ class MatchResultAutoCropTest {
     @Test
     fun nonConsecutiveRightPositionsDoNotRecoverMissingFour() {
         val result = calculator.calculate(
-            evidence(
-                observation("5", 180, 334, 220, 355),
-                observation("6", 600, 100, 620, 120),
-                observation("8", 600, 200, 620, 220),
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("5", 180, 334, 220, 355),
+                    observation("6", 600, 100, 620, 120),
+                    observation("8", 600, 200, 620, 220),
+                ),
+                imageDimensions = dimensions,
             ),
         )
 
@@ -325,10 +503,13 @@ class MatchResultAutoCropTest {
     @Test
     fun nonExactRightPositionTextDoesNotRecoverMissingFour() {
         val result = calculator.calculate(
-            evidence(
-                observation("5", 180, 334, 220, 355),
-                observation("6 Eliminations", 600, 100, 620, 120),
-                observation("7 Eliminations", 600, 150, 620, 170),
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("5", 180, 334, 220, 355),
+                    observation("6 result", 600, 100, 620, 120),
+                    observation("7 result", 600, 150, 620, 170),
+                ),
+                imageDimensions = dimensions,
             ),
         )
 
@@ -336,7 +517,7 @@ class MatchResultAutoCropTest {
     }
 
     @Test
-    fun misleadingConsecutiveDigitsAreRejectedByKnownAnchorGeometry() {
+    fun missingFourUsesEliminationsFallbackDespiteRightAnchorCandidates() {
         val result = proposed(
             evidence(
                 observation("5", 180, 334, 220, 355),
@@ -350,10 +531,10 @@ class MatchResultAutoCropTest {
 
         assertEquals(
             OcrNormalizedCropRect(
-                173.0 / dimensions.width,
-                80.0 / dimensions.height,
+                276.0 / dimensions.width,
+                20.0 / dimensions.height,
                 900.0 / dimensions.width,
-                374.0 / dimensions.height,
+                110.0 / dimensions.height,
             ),
             result.crop,
         )
@@ -362,10 +543,13 @@ class MatchResultAutoCropTest {
     @Test
     fun horizontallyMisalignedRightPairDoesNotRecoverMissingFour() {
         val result = calculator.calculate(
-            evidence(
-                observation("5", 180, 334, 220, 355),
-                observation("6", 600, 100, 620, 120),
-                observation("7", 800, 150, 820, 170),
+            MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("5", 180, 334, 220, 355),
+                    observation("6", 600, 100, 620, 120),
+                    observation("7", 800, 150, 820, 170),
+                ),
+                imageDimensions = dimensions,
             ),
         )
 
@@ -373,7 +557,7 @@ class MatchResultAutoCropTest {
     }
 
     @Test
-    fun blurredFourFixtureRejectsEliminationFourAndUsesSevenEightRecovery() {
+    fun blurredFourFixtureRejectsEliminationFourAndUsesEliminationsFallback() {
         val fullHdEvidence = MatchResultAutoCropEvidence(
             observations = listOf(
                 // Real placement 4 is absent/blurred.
@@ -402,17 +586,17 @@ class MatchResultAutoCropTest {
         val result = proposed(fullHdEvidence)
         assertEquals(
             OcrNormalizedCropRect(
-                310.0 / 2_400,
-                231.0 / 1_080,
+                367.0 / 2_400,
+                242.0 / 1_080,
                 2_057.0 / 2_400,
-                947.0 / 1_080,
+                326.0 / 1_080,
             ),
             result.crop,
         )
     }
 
     @Test
-    fun recoveryIsIndependentOfObservationOrder() {
+    fun eliminationsFallbackIsIndependentOfObservationOrder() {
         val observations = listOf(
             observation("5", 180, 334, 220, 355),
             observation("6", 600, 100, 620, 120),
