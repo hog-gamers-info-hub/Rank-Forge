@@ -271,6 +271,7 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     panelImage = panel.croppedPanelImage,
                     semanticPosition = semanticPosition,
                     teams = panelMapping.teams,
+                    unavailableTeams = panelMapping.unavailableTeams,
                     factory = teamCropPreviewFactory,
                 )
                 val previews = MatchLobbyTeamCropPreviewResult.Available(
@@ -335,36 +336,56 @@ internal fun createMatchLobbyTeamCropPreviewOutcomes(
     panelImage: OcrPreprocessingImage,
     semanticPosition: RosterScreenshotPosition,
     teams: List<LobbyPanelPpMappedTeam>,
+    unavailableTeams: List<LobbyPanelPpUnavailableTeam> = emptyList(),
     factory: MatchLobbyTeamCropPreviewFactory,
-): List<MatchLobbyTeamCropPreviewOutcome> = teams.map { mappedTeam ->
-    val unavailableReason = mappedTeam.unavailableReason
-    if (unavailableReason != null) {
-        MatchLobbyTeamCropPreviewOutcome.Unavailable(
-            visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
-            reason = unavailableReason,
-        )
-    } else {
-        try {
-            MatchLobbyTeamCropPreviewOutcome.Available(
-                MatchLobbyTeamCropPreview(
-                    visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
-                    detectedSlotNumber = mappedTeam.crop.detectedSlotNumber,
-                    image = factory.create(panelImage, mappedTeam.crop),
-                    playerRowPreviews = mappedTeam.rowPreviews,
-                    authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
-                        mappedTeam.crop.visibleSlotPosition,
-                    ),
-                    bounds = mappedTeam.crop.bounds,
-                ),
-            )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
+): List<MatchLobbyTeamCropPreviewOutcome> {
+    val mappedOutcomes = teams.map { mappedTeam ->
+        val unavailableReason = mappedTeam.unavailableReason
+        if (unavailableReason != null) {
             MatchLobbyTeamCropPreviewOutcome.Unavailable(
                 visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
-                reason = MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
+                reason = unavailableReason,
             )
+        } else {
+            try {
+                MatchLobbyTeamCropPreviewOutcome.Available(
+                    MatchLobbyTeamCropPreview(
+                        visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
+                        detectedSlotNumber = mappedTeam.crop.detectedSlotNumber,
+                        image = factory.create(panelImage, mappedTeam.crop),
+                        playerRowPreviews = mappedTeam.rowPreviews,
+                        authoritativeTeamSlotNumber = semanticPosition.tournamentSlotFor(
+                            mappedTeam.crop.visibleSlotPosition,
+                        ),
+                        bounds = mappedTeam.crop.bounds,
+                    ),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                MatchLobbyTeamCropPreviewOutcome.Unavailable(
+                    visibleSlotPosition = mappedTeam.crop.visibleSlotPosition,
+                    reason = MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
+                )
+            }
         }
+    }
+    val outcomes = mappedOutcomes + unavailableTeams.map { unavailableTeam ->
+        MatchLobbyTeamCropPreviewOutcome.Unavailable(
+            visibleSlotPosition = unavailableTeam.visibleSlotPosition,
+            reason = unavailableTeam.reason,
+        )
+    }
+    val positions = outcomes.map { it.visibleSlotPosition }
+    require(
+        positions.size == RosterVisibleSlotPosition.entries.size &&
+            positions.toSet().size == positions.size &&
+            positions.toSet() == RosterVisibleSlotPosition.entries.toSet(),
+    ) {
+        "Team crop preview outcomes must contain one outcome for every visible slot position."
+    }
+    return RosterVisibleSlotPosition.entries.map { visibleSlotPosition ->
+        outcomes.single { it.visibleSlotPosition == visibleSlotPosition }
     }
 }
 

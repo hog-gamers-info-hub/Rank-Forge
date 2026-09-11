@@ -128,6 +128,50 @@ class LobbyTeamCropGeometryCalculatorTest {
         )
     }
 
+    @Test
+    fun gridGeometryWithFourValidCropsReturnsEveryCrop() {
+        val result = availableGrid(validGrid())
+
+        assertEquals(RosterVisibleSlotPosition.entries, result.crops.map { it.visibleSlotPosition })
+        assertTrue(result.unavailable.isEmpty())
+    }
+
+    @Test
+    fun firstInvalidGridCropDoesNotDiscardLaterValidCrops() {
+        val result = availableGrid(validGrid(topLeftCenterY = 0.0))
+
+        assertEquals(
+            listOf(
+                RosterVisibleSlotPosition.TOP_RIGHT,
+                RosterVisibleSlotPosition.BOTTOM_LEFT,
+                RosterVisibleSlotPosition.BOTTOM_RIGHT,
+            ),
+            result.crops.map { it.visibleSlotPosition },
+        )
+        assertEquals(
+            listOf(
+                LobbyTeamCropUnavailable(
+                    visibleSlotPosition = RosterVisibleSlotPosition.TOP_LEFT,
+                    detectedSlotNumber = 1,
+                    reason = LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                ),
+            ),
+            result.unavailable,
+        )
+    }
+
+    @Test
+    fun gridGeometryWithAllIndividualCropBoundsInvalidReturnsOnlyUnavailableOutcomes() {
+        val result = availableGrid(
+            allBoundsInvalidGrid(),
+            panelHeight = 100,
+        )
+
+        assertTrue(result.crops.isEmpty())
+        assertEquals(RosterVisibleSlotPosition.entries, result.unavailable.map { it.visibleSlotPosition })
+        assertTrue(result.unavailable.all { it.reason == LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS })
+    }
+
     private fun available(
         slots: List<LobbyTeamCropSlotGeometry>,
         panelWidth: Int = 1_000,
@@ -142,6 +186,75 @@ class LobbyTeamCropGeometryCalculatorTest {
             panelHeight = 800,
             slots = slots,
         )
+
+    private fun availableGrid(
+        grid: LobbySlotGrid,
+        panelHeight: Int = 900,
+    ): LobbyTeamCropGeometryResult.Available =
+        LobbyTeamCropGeometryCalculator.calculate(
+            panelWidth = 1_000,
+            panelHeight = panelHeight,
+            grid = grid,
+            observedSlotLeftInsets = listOf(100.0),
+        ) as LobbyTeamCropGeometryResult.Available
+
+    private fun validGrid(
+        topLeftCenterY: Double = 200.0,
+        topRightCenterY: Double = 200.0,
+        bottomLeftCenterY: Double = 600.0,
+        bottomRightCenterY: Double = 600.0,
+    ) = LobbySlotGrid(
+        screenshotIndex = 1,
+        points = listOf(
+            gridPoint(1, LobbySlotGridRole.TOP_LEFT, 100.0, topLeftCenterY),
+            gridPoint(2, LobbySlotGridRole.TOP_RIGHT, 500.0, topRightCenterY),
+            gridPoint(3, LobbySlotGridRole.BOTTOM_LEFT, 100.0, bottomLeftCenterY),
+            gridPoint(4, LobbySlotGridRole.BOTTOM_RIGHT, 500.0, bottomRightCenterY),
+        ),
+        topRowCenterY = 200.0,
+        bottomRowCenterY = 600.0,
+        leftColumnCenterX = 100.0,
+        rightColumnCenterX = 500.0,
+        rowPitch = 400.0,
+        columnPitch = 400.0,
+        topRowAlignmentError = 0.0,
+        bottomRowAlignmentError = 0.0,
+        leftColumnAlignmentError = 0.0,
+        rightColumnAlignmentError = 0.0,
+    )
+
+    private fun allBoundsInvalidGrid() = LobbySlotGrid(
+        screenshotIndex = 1,
+        points = listOf(
+            gridPoint(1, LobbySlotGridRole.TOP_LEFT, 100.0, 0.0),
+            gridPoint(2, LobbySlotGridRole.TOP_RIGHT, 500.0, 0.0),
+            gridPoint(3, LobbySlotGridRole.BOTTOM_LEFT, 100.0, 100.0),
+            gridPoint(4, LobbySlotGridRole.BOTTOM_RIGHT, 500.0, 100.0),
+        ),
+        topRowCenterY = 0.0,
+        bottomRowCenterY = 100.0,
+        leftColumnCenterX = 100.0,
+        rightColumnCenterX = 500.0,
+        rowPitch = 100.0,
+        columnPitch = 400.0,
+        topRowAlignmentError = 0.0,
+        bottomRowAlignmentError = 0.0,
+        leftColumnAlignmentError = 0.0,
+        rightColumnAlignmentError = 0.0,
+    )
+
+    private fun gridPoint(
+        slotNumber: Int,
+        role: LobbySlotGridRole,
+        centerX: Double,
+        centerY: Double,
+    ) = LobbyGridPoint(
+        slotNumber = slotNumber,
+        role = role,
+        centerX = centerX,
+        centerY = centerY,
+        source = LobbyGridPointSource.OBSERVED,
+    )
 
     private fun validSlots(
         topCenterY: Double = 100.0,
