@@ -39,7 +39,14 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
     private val anchorResolver = LobbyOcrAnchorResolver()
     private val gridReconstructor = LobbySlotGridReconstructor()
     private val cropCalculator = LobbyAutoCropCalculator()
-    private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
+    private var imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
+
+    internal constructor(
+        recognizerFactory: MlKitTextRecognizerFactory,
+        imageEnhancer: OcrImageEnhancer,
+    ) : this(recognizerFactory) {
+        this.imageEnhancer = imageEnhancer
+    }
 
     override suspend fun propose(
         localFile: File,
@@ -60,75 +67,101 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
         try {
             val dimensions = OcrImageDimensions.from(original.width, original.height)
                 ?: return@withContext MatchLobbyAutoCropResult.NoProposal
+            val originalAttempt = attemptAutoCrop(original, dimensions)
+            val originalResult = when (originalAttempt) {
+                is AutoCropAttempt.Completed -> originalAttempt.result
+                AutoCropAttempt.Failed -> return@withContext MatchLobbyAutoCropResult.NoProposal
+            }
+            if (originalResult is MatchLobbyAutoCropResult.Proposed) {
+                return@withContext originalResult
+            }
+
             val enhancedBitmap = imageEnhancer.enhance(original, LOBBY_OCR_ENHANCEMENT_PROFILE)
-            val mlKitBitmap = enhancedBitmap ?: original
-            val recognizedText = try {
-                val inputImage = try {
-                    InputImage.fromBitmap(mlKitBitmap, 0)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    return@withContext MatchLobbyAutoCropResult.NoProposal
-                }
-                val recognizer = try {
-                    recognizerFactory.create()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    return@withContext MatchLobbyAutoCropResult.NoProposal
-                }
-                try {
-                    val text = recognizer.process(inputImage).awaitText()
-                    text
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    return@withContext MatchLobbyAutoCropResult.NoProposal
-                } finally {
-                    recognizer.close()
+                ?: return@withContext MatchLobbyAutoCropResult.NoProposal
+            try {
+                when (val enhancedAttempt = attemptAutoCrop(enhancedBitmap, dimensions)) {
+                    is AutoCropAttempt.Completed -> enhancedAttempt.result
+                    AutoCropAttempt.Failed -> MatchLobbyAutoCropResult.NoProposal
                 }
             } finally {
-                if (enhancedBitmap != null) {
+                if (enhancedBitmap !== original) {
                     enhancedBitmap.recycleIfNeeded()
                 }
             }
-
-            val mlKitObservations = recognizedText.toLobbyAnchorObservations()
-            val resolvedGroups = anchorResolver.resolveAll(mlKitObservations, dimensions)
-
-            val candidates = resolvedGroups.mapNotNull { resolved ->
-                val reconstruction = gridReconstructor.reconstruct(
-                    screenshotIndex = resolved.screenshotIndex,
-                    observedAnchors = resolved.anchors.map { it.anchor },
-                )
-                val grid = (reconstruction as? com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyGridReconstructionResult.Reconstructed)
-                    ?.grid
-                    ?: return@mapNotNull null
-                LobbyAutoCropGridCandidate(
-                    grid = grid,
-                    directlyObservedAnchorCount = resolved.directlyObservedAnchorCount,
-                    alignmentError = resolved.alignmentError,
-                )
-            }
-            val selected = LobbyAutoCropGroupSelector.select(candidates)
-                ?: return@withContext MatchLobbyAutoCropResult.NoProposal
-            when (
-                val calculation = cropCalculator.calculate(
-                    grid = selected.grid,
-                    imageWidth = dimensions.width,
-                    imageHeight = dimensions.height,
-                    calibration = LobbyCropCalibrationProfiles.InitialSafeLa03bMedian,
-                )
-            ) {
-                is LobbyAutoCropCalculationResult.Proposal ->
-                    MatchLobbyAutoCropResult.Proposed(calculation.crop)
-                LobbyAutoCropCalculationResult.InvalidImageDimensions,
-                LobbyAutoCropCalculationResult.InvalidGridGeometry,
-                LobbyAutoCropCalculationResult.InvalidCalibration,
-                -> MatchLobbyAutoCropResult.NoProposal
-            }
         } finally {
             original.recycleIfNeeded()
+        }
+    }
+
+    private suspend fun attemptAutoCrop(
+        bitmap: Bitmap,
+        dimensions: OcrImageDimensions,
+    ): AutoCropAttempt {
+        val inputImage = try {
+            InputImage.fromBitmap(bitmap, 0)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return AutoCropAttempt.Failed
+        }
+        val recognizer = try {
+            recognizerFactory.create()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return AutoCropAttempt.Failed
+        }
+        val recognizedText = try {
+            try {
+                recognizer.process(inputImage).awaitText()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                return AutoCropAttempt.Failed
+            }
+        } finally {
+            recognizer.close()
+        }
+        return AutoCropAttempt.Completed(calculateProposal(recognizedText, dimensions))
+    }
+
+    private fun calculateProposal(
+        recognizedText: Text,
+        dimensions: OcrImageDimensions,
+    ): MatchLobbyAutoCropResult {
+        val mlKitObservations = recognizedText.toLobbyAnchorObservations()
+        val resolvedGroups = anchorResolver.resolveAll(mlKitObservations, dimensions)
+
+        val candidates = resolvedGroups.mapNotNull { resolved ->
+            val reconstruction = gridReconstructor.reconstruct(
+                screenshotIndex = resolved.screenshotIndex,
+                observedAnchors = resolved.anchors.map { it.anchor },
+            )
+            val grid = (reconstruction as? com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyGridReconstructionResult.Reconstructed)
+                ?.grid
+                ?: return@mapNotNull null
+            LobbyAutoCropGridCandidate(
+                grid = grid,
+                directlyObservedAnchorCount = resolved.directlyObservedAnchorCount,
+                alignmentError = resolved.alignmentError,
+            )
+        }
+        val selected = LobbyAutoCropGroupSelector.select(candidates)
+            ?: return MatchLobbyAutoCropResult.NoProposal
+        return when (
+            val calculation = cropCalculator.calculate(
+                grid = selected.grid,
+                imageWidth = dimensions.width,
+                imageHeight = dimensions.height,
+                calibration = LobbyCropCalibrationProfiles.InitialSafeLa03bMedian,
+            )
+        ) {
+            is LobbyAutoCropCalculationResult.Proposal ->
+                MatchLobbyAutoCropResult.Proposed(calculation.crop)
+            LobbyAutoCropCalculationResult.InvalidImageDimensions,
+            LobbyAutoCropCalculationResult.InvalidGridGeometry,
+            LobbyAutoCropCalculationResult.InvalidCalibration,
+            -> MatchLobbyAutoCropResult.NoProposal
         }
     }
 
@@ -181,6 +214,14 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
     private fun Bitmap.recycleIfNeeded() {
         if (!isRecycled) recycle()
     }
+}
+
+private sealed interface AutoCropAttempt {
+    data class Completed(
+        val result: MatchLobbyAutoCropResult,
+    ) : AutoCropAttempt
+
+    data object Failed : AutoCropAttempt
 }
 
 private suspend fun Task<Text>.awaitText(): Text = suspendCancellableCoroutine { continuation ->
