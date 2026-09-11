@@ -59,6 +59,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotCropViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeRoute
 import com.hoggamers.rankforge.presentation.screen.MatchLobbyScreenshotIntakeViewModel
+import com.hoggamers.rankforge.presentation.screen.MatchScreenshotCropCandidate
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchOcrReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
@@ -640,6 +641,14 @@ fun RankForgeNavHost(
             } else {
                 { _, _ -> }
             }
+            val lobbyScreenshotIntakeViewModel =
+                matchLobbyScreenshotIntakeViewModelFactory?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                ) ?: matchLobbyScreenshotIntakeViewModelProvider?.invoke(
+                    destination.tournamentId,
+                    destination.matchId,
+                )
             val onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit = {
                     tournamentId,
                     matchId,
@@ -658,22 +667,19 @@ fun RankForgeNavHost(
                     matchId,
                     lobbyScreenshotIndex,
                 ->
+                val candidate = lobbyScreenshotIntakeViewModel
+                    ?.consumePendingLobbyScreenshotCropCandidate(lobbyScreenshotIndex)
                 navController.navigate(
                     MatchLobbyScreenshotCropDestination(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         lobbyScreenshotIndex = lobbyScreenshotIndex,
+                        candidateUri = candidate?.uri,
+                        candidateWidth = candidate?.width,
+                        candidateHeight = candidate?.height,
                     ),
                 )
             }
-            val lobbyScreenshotIntakeViewModel =
-                matchLobbyScreenshotIntakeViewModelFactory?.invoke(
-                    destination.tournamentId,
-                    destination.matchId,
-                ) ?: matchLobbyScreenshotIntakeViewModelProvider?.invoke(
-                    destination.tournamentId,
-                    destination.matchId,
-                )
             val matchLobbyScreenshotIntake = @Composable {
                 matchLobbyScreenshotIntakeContent(
                     destination.tournamentId,
@@ -696,6 +702,24 @@ fun RankForgeNavHost(
                 destination.tournamentId,
                 destination.matchId,
             )
+            val onOpenResultScreenshotCropWithCandidate:
+                (String, String, MatchResultScreenshotRole, MatchScreenshotCropCandidate?) -> Unit = {
+                    tournamentId,
+                    matchId,
+                    role,
+                    candidate,
+                ->
+                navController.navigate(
+                    MatchResultScreenshotCropDestination(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        screenshotRole = role.name,
+                        candidateUri = candidate?.uri,
+                        candidateWidth = candidate?.width,
+                        candidateHeight = candidate?.height,
+                    ),
+                )
+            }
             if (reviewViewModel == null) {
                 MatchReviewRoute(
                     tournamentId = destination.tournamentId,
@@ -705,6 +729,7 @@ fun RankForgeNavHost(
                     onEnterKills = onEnterKills,
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
+                    onOpenResultScreenshotCropWithCandidate = onOpenResultScreenshotCropWithCandidate,
                     onStartCorrection = onStartCorrection,
                     onCreateNextMatch = onCreateNextMatch,
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
@@ -730,6 +755,7 @@ fun RankForgeNavHost(
                     onEnterKills = onEnterKills,
                     onOpenOcrReview = onOpenOcrReview,
                     onOpenResultScreenshotCrop = onOpenResultScreenshotCrop,
+                    onOpenResultScreenshotCropWithCandidate = onOpenResultScreenshotCropWithCandidate,
                     onStartCorrection = onStartCorrection,
                     onCreateNextMatch = onCreateNextMatch,
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
@@ -797,12 +823,17 @@ fun RankForgeNavHost(
                 if (nextIndex == null) {
                     returnToReview()
                 } else {
+                    val candidate = lobbyBatchViewModel
+                        .consumePendingLobbyScreenshotCropCandidate(nextIndex)
                     navController.navigate(
-                        MatchLobbyScreenshotCropDestination(
-                            tournamentId = destination.tournamentId,
-                            matchId = destination.matchId,
-                            lobbyScreenshotIndex = nextIndex,
-                        ),
+                            MatchLobbyScreenshotCropDestination(
+                                tournamentId = destination.tournamentId,
+                                matchId = destination.matchId,
+                                lobbyScreenshotIndex = nextIndex,
+                                candidateUri = candidate?.uri,
+                                candidateWidth = candidate?.width,
+                                candidateHeight = candidate?.height,
+                            ),
                     ) {
                         popUpTo(backStackEntry.destination.id) { inclusive = true }
                     }
@@ -818,6 +849,10 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
+                    candidateUri = destination.candidateUri,
+                    candidateWidth = destination.candidateWidth,
+                    candidateHeight = destination.candidateHeight,
+                    preparationUiState = lobbyBatchViewModel?.uiState,
                     onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                 )
@@ -826,6 +861,10 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     lobbyScreenshotIndex = destination.lobbyScreenshotIndex,
+                    candidateUri = destination.candidateUri,
+                    candidateWidth = destination.candidateWidth,
+                    candidateHeight = destination.candidateHeight,
+                    preparationUiState = lobbyBatchViewModel?.uiState,
                     onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                     viewModel = cropViewModel,
@@ -885,12 +924,17 @@ fun RankForgeNavHost(
                 if (nextRole == null) {
                     returnToReview()
                 } else {
+                    val candidate = reviewBatchViewModel
+                        .consumePendingResultScreenshotCropCandidate(nextRole)
                     navController.navigate(
-                        MatchResultScreenshotCropDestination(
-                            tournamentId = destination.tournamentId,
-                            matchId = destination.matchId,
-                            screenshotRole = nextRole.name,
-                        ),
+                            MatchResultScreenshotCropDestination(
+                                tournamentId = destination.tournamentId,
+                                matchId = destination.matchId,
+                                screenshotRole = nextRole.name,
+                                candidateUri = candidate?.uri,
+                                candidateWidth = candidate?.width,
+                                candidateHeight = candidate?.height,
+                            ),
                     ) {
                         popUpTo(backStackEntry.destination.id) { inclusive = true }
                     }
@@ -901,6 +945,10 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
+                    candidateUri = destination.candidateUri,
+                    candidateWidth = destination.candidateWidth,
+                    candidateHeight = destination.candidateHeight,
+                    preparationUiState = reviewBatchViewModel.uiState,
                     onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                 )
@@ -909,6 +957,10 @@ fun RankForgeNavHost(
                     tournamentId = destination.tournamentId,
                     matchId = destination.matchId,
                     screenshotRole = destination.screenshotRole,
+                    candidateUri = destination.candidateUri,
+                    candidateWidth = destination.candidateWidth,
+                    candidateHeight = destination.candidateHeight,
+                    preparationUiState = reviewBatchViewModel.uiState,
                     onCancel = onCancelToReview,
                     onConfirmed = onConfirmed,
                     viewModel = cropViewModel,

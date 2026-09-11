@@ -69,6 +69,12 @@ data class MatchLobbyScreenshotCropBatch(
     val remainingSlotIndices: List<Int>,
 )
 
+data class MatchScreenshotCropCandidate(
+    val uri: String,
+    val width: Int,
+    val height: Int,
+)
+
 data class MatchLobbyScreenshotMultiPhotoPickerRequest(
     val requestId: Long,
     val targetSlotIndices: List<Int>,

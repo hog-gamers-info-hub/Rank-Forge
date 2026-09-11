@@ -25,6 +25,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.flow.StateFlow
 
 const val MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG = "match_lobby_screenshot_crop_screen"
 const val MATCH_LOBBY_SCREENSHOT_CROP_EDITOR_TEST_TAG = "match_lobby_screenshot_crop_editor"
@@ -36,6 +37,10 @@ fun MatchLobbyScreenshotCropRoute(
     tournamentId: String,
     matchId: String,
     lobbyScreenshotIndex: Int,
+    candidateUri: String? = null,
+    candidateWidth: Int? = null,
+    candidateHeight: Int? = null,
+    preparationUiState: StateFlow<MatchLobbyScreenshotIntakeUiState>? = null,
     onCancel: () -> Unit,
     onConfirmed: () -> Unit,
     viewModel: MatchLobbyScreenshotCropViewModel = hiltViewModel(),
@@ -44,9 +49,27 @@ fun MatchLobbyScreenshotCropRoute(
         viewModel.load(tournamentId, matchId, lobbyScreenshotIndex)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val intakeState = preparationUiState?.collectAsStateWithLifecycle()?.value
+    val preparationSlot = intakeState?.slot(lobbyScreenshotIndex)
+    val preparationFailed = candidateUri != null && preparationSlot?.let {
+        it.imageValidationError != null ||
+            it.duplicateError != null ||
+            it.preservationError != null
+    } == true
+    val preparationReady = candidateUri == null || (
+        uiState.imageUri != null &&
+            uiState.originalWidth != null &&
+            uiState.originalHeight != null &&
+            uiState.error == null
+        )
     BackHandler(onBack = onCancel)
     MatchLobbyScreenshotCropScreen(
         uiState = uiState,
+        candidateUri = candidateUri,
+        candidateWidth = candidateWidth,
+        candidateHeight = candidateHeight,
+        isPreparationReady = preparationReady,
+        isPreparationFailed = preparationFailed,
         onCropChanged = viewModel::onCropChanged,
         onCancel = onCancel,
         onConfirm = { viewModel.confirmCrop(onConfirmed) },
@@ -56,6 +79,11 @@ fun MatchLobbyScreenshotCropRoute(
 @Composable
 fun MatchLobbyScreenshotCropScreen(
     uiState: MatchLobbyScreenshotCropUiState,
+    candidateUri: String? = null,
+    candidateWidth: Int? = null,
+    candidateHeight: Int? = null,
+    isPreparationReady: Boolean = true,
+    isPreparationFailed: Boolean = false,
     onCropChanged: (OcrNormalizedCropRect) -> Unit,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
@@ -81,6 +109,9 @@ fun MatchLobbyScreenshotCropScreen(
         return
     }
     val index = uiState.lobbyScreenshotIndex ?: 0
+    val displayImageUri = candidateUri ?: uiState.imageUri
+    val displayWidth = candidateWidth ?: uiState.originalWidth
+    val displayHeight = candidateHeight ?: uiState.originalHeight
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,20 +125,35 @@ fun MatchLobbyScreenshotCropScreen(
             style = MaterialTheme.typography.headlineMedium,
         )
         Text(text = stringResource(R.string.match_lobby_screenshot_crop_guidance))
-        uiState.error?.let { Text(text = stringResource(it.toStringRes()), color = MaterialTheme.colorScheme.error) }
+        if (isPreparationFailed) {
+            Text(
+                text = stringResource(R.string.match_lobby_screenshot_preservation_failed),
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            uiState.error
+                ?.takeUnless {
+                    candidateUri != null && it in setOf(
+                        MatchLobbyScreenshotCropError.MISSING_ASSET,
+                        MatchLobbyScreenshotCropError.MISSING_LOCAL_FILE,
+                    )
+                }
+                ?.let { Text(text = stringResource(it.toStringRes()), color = MaterialTheme.colorScheme.error) }
+        }
         if (uiState.isFinalized) {
             Text(text = stringResource(R.string.match_lobby_screenshot_finalized_read_only), color = MaterialTheme.colorScheme.error)
         }
-        if (uiState.imageUri != null && uiState.originalWidth != null && uiState.originalHeight != null) {
+        if (displayImageUri != null && displayWidth != null && displayHeight != null) {
             OcrVisualCropEditor(
-                imageUri = uiState.imageUri,
+                imageUri = displayImageUri,
                 crop = uiState.draftCrop,
                 defaultCrop = OcrVisualCropDefaults.FullImageCrop,
                 profile = OcrCropValidationProfiles.Lobby,
                 onCropChanged = onCropChanged,
                 onConfirmCrop = onConfirm,
-                sourceImageWidth = uiState.originalWidth,
-                sourceImageHeight = uiState.originalHeight,
+                sourceImageWidth = displayWidth,
+                sourceImageHeight = displayHeight,
+                confirmEnabled = isPreparationReady && !isPreparationFailed,
                 confirmButtonText = stringResource(
                     if (uiState.confirmedCrop != null) {
                         R.string.match_lobby_screenshot_update_crop_action
@@ -118,6 +164,9 @@ fun MatchLobbyScreenshotCropScreen(
                 previewContentDescription = stringResource(R.string.match_lobby_screenshot_crop_preview_description, index),
                 modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_CROP_EDITOR_TEST_TAG),
             )
+        }
+        if (candidateUri != null && !isPreparationReady && !isPreparationFailed) {
+            Text(text = stringResource(R.string.match_lobby_screenshot_saving))
         }
         OutlinedButton(
             onClick = onCancel,

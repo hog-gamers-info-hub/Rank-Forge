@@ -235,6 +235,7 @@ fun MatchReviewRoute(
     onEnterKills: (String, String) -> Unit,
     onOpenOcrReview: (String, String) -> Unit,
     onOpenResultScreenshotCrop: (String, String, MatchResultScreenshotRole) -> Unit,
+    onOpenResultScreenshotCropWithCandidate: ((String, String, MatchResultScreenshotRole, MatchScreenshotCropCandidate?) -> Unit)? = null,
     onStartCorrection: (String, String) -> Unit,
     onCreateNextMatch: (String, String) -> Unit = { _, _ -> },
     onOpenCustomDesignSetup: (String, String, ResultDownloadScope) -> Unit = { _, _, _ -> },
@@ -454,19 +455,25 @@ fun MatchReviewRoute(
             }
             MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP -> {
                 viewModel.onNavigationHandled()
-                onOpenResultScreenshotCrop(
+                val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+                val candidateUri = viewModel.consumePendingResultScreenshotCropCandidate(role)
+                onOpenResultScreenshotCropWithCandidate?.invoke(
                     tournamentId,
                     matchId,
-                    MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                )
+                    role,
+                    candidateUri,
+                ) ?: onOpenResultScreenshotCrop(tournamentId, matchId, role)
             }
             MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP -> {
                 viewModel.onNavigationHandled()
-                onOpenResultScreenshotCrop(
+                val role = MatchResultScreenshotRole.MATCH_RESULT_LOWER
+                val candidateUri = viewModel.consumePendingResultScreenshotCropCandidate(role)
+                onOpenResultScreenshotCropWithCandidate?.invoke(
                     tournamentId,
                     matchId,
-                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
-                )
+                    role,
+                    candidateUri,
+                ) ?: onOpenResultScreenshotCrop(tournamentId, matchId, role)
             }
             null -> Unit
         }

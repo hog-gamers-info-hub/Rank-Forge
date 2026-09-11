@@ -220,6 +220,8 @@ class MatchReviewViewModel @Inject constructor(
     private var nextResultMultiPhotoPickerRequestId = 0L
     private val pendingNewResultScreenshotCropRoles =
         mutableSetOf<MatchResultScreenshotRole>()
+    private val pendingResultScreenshotCropCandidateUris =
+        mutableMapOf<MatchResultScreenshotRole, MatchScreenshotCropCandidate>()
 
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
@@ -235,6 +237,7 @@ class MatchReviewViewModel @Inject constructor(
         resultScreenshotJobs.clear()
         clearAllResultPositionCropPreviews()
         pendingNewResultScreenshotCropRoles.clear()
+        pendingResultScreenshotCropCandidateUris.clear()
         cancelActiveResultBatchAndClearTransientState()
         screenshotIntakeGeneration++
         exportJob?.cancel()
@@ -853,6 +856,9 @@ class MatchReviewViewModel @Inject constructor(
         return nextRole
     }
 
+    fun consumePendingResultScreenshotCropCandidate(role: MatchResultScreenshotRole): MatchScreenshotCropCandidate? =
+        pendingResultScreenshotCropCandidateUris.remove(role)
+
     fun cancelResultCropBatch(tournamentId: String, matchId: String) {
         val current = _uiState.value
         if (
@@ -862,6 +868,7 @@ class MatchReviewViewModel @Inject constructor(
             return
         }
         pendingNewResultScreenshotCropRoles.clear()
+        pendingResultScreenshotCropCandidateUris.clear()
         clearPendingResultCropBatch(tournamentId, matchId)
     }
 
@@ -874,6 +881,7 @@ class MatchReviewViewModel @Inject constructor(
         if (current.tournamentId != tournamentId || current.matchId != matchId) return
 
         val wasPendingNewSelection = pendingNewResultScreenshotCropRoles.remove(role)
+        pendingResultScreenshotCropCandidateUris.remove(role)
         clearPendingResultCropBatch(tournamentId, matchId)
         if (wasPendingNewSelection) {
             removeResultScreenshot(role)
@@ -1261,6 +1269,7 @@ class MatchReviewViewModel @Inject constructor(
 
     fun requestPhotoPicker(role: MatchResultScreenshotRole) {
         pendingNewResultScreenshotCropRoles.remove(role)
+        pendingResultScreenshotCropCandidateUris.remove(role)
         val current = _uiState.value
         val slot = current.resultScreenshots.slot(role)
         if (!current.isAvailable || current.resultScreenshotMultiPhotoPickerRequest != null ||
@@ -1293,6 +1302,7 @@ class MatchReviewViewModel @Inject constructor(
 
     fun requestMultiPhotoPicker() {
         pendingNewResultScreenshotCropRoles.clear()
+        pendingResultScreenshotCropCandidateUris.clear()
         val current = _uiState.value
         if (!current.isAvailable || !current.isEditable) return
         if (current.resultScreenshotMultiPhotoPickerRequest != null ||
@@ -1369,6 +1379,7 @@ class MatchReviewViewModel @Inject constructor(
         val wasEmptyBeforeSelection = !_uiState.value.resultScreenshots.slot(role).hasLinkedAsset
         if (selectedUri == null) {
             pendingNewResultScreenshotCropRoles.remove(role)
+            pendingResultScreenshotCropCandidateUris.remove(role)
             _uiState.updateSlot(role) {
                 it.copy(
                     isPhotoPickerLaunchPending = false,
@@ -1439,6 +1450,7 @@ class MatchReviewViewModel @Inject constructor(
         activeResultBatchRoles = targetRoles
         activeResultBatchSelectedUris = assignments.toMap()
         resultScreenshotBatchJob = viewModelScope.launch {
+            var earlyCropNavigationRequested = false
             try {
                 val successfulRoles = buildList {
                     assignments.forEach { (role, uri) ->
@@ -1448,6 +1460,24 @@ class MatchReviewViewModel @Inject constructor(
                                 generation = generation,
                                 requestCropNavigation = false,
                                 wasEmptyBeforeSelection = wasEmptyBeforeSelection[role] == true,
+                                onValidatedCandidate = { validatedRole, candidate ->
+                                    pendingResultScreenshotCropCandidateUris[validatedRole] = candidate
+                                    if (!earlyCropNavigationRequested) {
+                                        earlyCropNavigationRequested = true
+                                        _uiState.update {
+                                            it.copy(
+                                                pendingResultScreenshotCropBatch = MatchResultScreenshotCropBatch(
+                                                    currentRole = validatedRole,
+                                                    remainingRoles = assignments
+                                                        .dropWhile { (assignedRole, _) -> assignedRole != validatedRole }
+                                                        .drop(1)
+                                                        .map { (assignedRole, _) -> assignedRole },
+                                                ),
+                                                navigation = validatedRole.cropNavigation(),
+                                            )
+                                        }
+                                    }
+                                },
                             )
                         ) {
                             add(role)
@@ -1461,11 +1491,10 @@ class MatchReviewViewModel @Inject constructor(
                                 currentRole = successfulRoles.first(),
                                 remainingRoles = successfulRoles.drop(1),
                             ),
-                            navigation = when (successfulRoles.first()) {
-                                MatchResultScreenshotRole.MATCH_RESULT_UPPER ->
-                                    MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP
-                                MatchResultScreenshotRole.MATCH_RESULT_LOWER ->
-                                    MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP
+                            navigation = if (earlyCropNavigationRequested) {
+                                it.navigation
+                            } else {
+                                successfulRoles.first().cropNavigation()
                             },
                         )
                     }
@@ -1485,6 +1514,7 @@ class MatchReviewViewModel @Inject constructor(
         generation: Long,
         requestCropNavigation: Boolean = true,
         wasEmptyBeforeSelection: Boolean = false,
+        onValidatedCandidate: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
     ): Boolean {
         if (generation != screenshotIntakeGeneration) return false
         if (selectedUri.isBlank()) {
@@ -1578,6 +1608,7 @@ class MatchReviewViewModel @Inject constructor(
             generation = generation,
             requestCropNavigation = requestCropNavigation,
             wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+            onValidatedCandidate = onValidatedCandidate,
         )
     }
 
@@ -1588,6 +1619,7 @@ class MatchReviewViewModel @Inject constructor(
         generation: Long,
         requestCropNavigation: Boolean = true,
         wasEmptyBeforeSelection: Boolean = false,
+        onValidatedCandidate: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
     ): Boolean {
         if (generation != screenshotIntakeGeneration) return false
         val current = _uiState.value
@@ -1619,6 +1651,24 @@ class MatchReviewViewModel @Inject constructor(
                 duplicateInfo = null,
                 preservationError = null,
             )
+        }
+        val candidate = MatchScreenshotCropCandidate(
+            uri = selectedUri,
+            width = metadata.width,
+            height = metadata.height,
+        )
+        if (requestCropNavigation) {
+            pendingResultScreenshotCropCandidateUris[role] = candidate
+            val cropNavigationRequested = requestResultScreenshotCropNavigationAfterValidation(
+                identity = identity,
+                selectedUri = selectedUri,
+            )
+            if (!cropNavigationRequested) pendingResultScreenshotCropCandidateUris.remove(role)
+            if (cropNavigationRequested && wasEmptyBeforeSelection) {
+                pendingNewResultScreenshotCropRoles += role
+            }
+        } else {
+            onValidatedCandidate?.invoke(role, candidate)
         }
         val duplicateResult = matchResultScreenshotDuplicateDetector.link(
             identity = identity,
@@ -1703,15 +1753,6 @@ class MatchReviewViewModel @Inject constructor(
                         isUploadInProgress = false,
                         uploadError = null,
                     )
-                }
-                if (requestCropNavigation) {
-                    val cropNavigationRequested = requestResultScreenshotCropNavigationIfReady(
-                        identity = identity,
-                        selectedUri = selectedUri,
-                    )
-                    if (cropNavigationRequested && wasEmptyBeforeSelection) {
-                        pendingNewResultScreenshotCropRoles += role
-                    }
                 }
                 return true
             }
@@ -1883,7 +1924,12 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
-    private fun requestResultScreenshotCropNavigationIfReady(
+    private fun MatchResultScreenshotRole.cropNavigation(): MatchReviewNavigation = when (this) {
+        MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP
+        MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP
+    }
+
+    private fun requestResultScreenshotCropNavigationAfterValidation(
         identity: MatchResultScreenshotIdentity,
         selectedUri: String,
     ): Boolean {
@@ -1896,10 +1942,7 @@ class MatchReviewViewModel @Inject constructor(
                 state.tournamentId != identity.tournamentId ||
                 state.matchId != identity.matchId ||
                 !state.isEditable ||
-                !isCurrentSelection ||
-                !slot.hasLinkedAsset ||
-                slot.isBusy ||
-                slot.isLocalFileMissing
+                !isCurrentSelection
             ) {
                 state
             } else {
