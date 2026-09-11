@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
                     authViewModel.onPasswordRecoveryLinkFailed()
                 }
             }
+            AuthCallbackKind.INVALID_CALLBACK -> return
         }
     }
 }
