@@ -1038,6 +1038,8 @@ internal fun MatchOcrReviewRow(
             )
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
                 row = row,
+                teamNamesBySlot = teamNamesBySlot,
+                correctionDraft = correctionDraft,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = correctionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
@@ -1132,6 +1134,8 @@ private fun MatchOcrReviewRowUiState.isSyntheticManualPlaceholder(): Boolean =
 @Composable
 private fun MatchOcrReviewMissingPreviewRow(
     row: MatchOcrReviewRowUiState,
+    teamNamesBySlot: Map<Int, String>,
+    correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
     compactDeleteTestTag: String? = null,
@@ -1140,8 +1144,19 @@ private fun MatchOcrReviewMissingPreviewRow(
     compactResetTestTag: String? = null,
 ) {
     val position = row.expectedPlacementLabel
-    val notMatched = stringResource(R.string.match_ocr_review_compact_not_matched)
-    val notDetected = stringResource(R.string.match_ocr_review_compact_not_detected)
+    val assignedSlot = correctionDraft
+        ?.assignedTeamSlotDraftValue
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+    val teamName = if (assignedSlot == null) {
+        stringResource(R.string.match_ocr_review_compact_not_matched)
+    } else {
+        teamNamesBySlot[assignedSlot]
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.match_ocr_review_compact_not_named)
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1159,28 +1174,17 @@ private fun MatchOcrReviewMissingPreviewRow(
         )
         Text(
             text = stringResource(
-                R.string.match_ocr_review_compact_team,
-                notMatched,
-                notMatched,
+                R.string.match_ocr_review_manual_team_name,
+                teamName,
             ),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(row.rowIndex + 1)),
-        )
-        MatchOcrReviewMissingPreviewPlayerRow(
-            position = row.rowIndex + 1,
-            leftSlot = 1,
-            rightSlot = 3,
-            playerLabel = notDetected,
-        )
-        MatchOcrReviewMissingPreviewPlayerRow(
-            position = row.rowIndex + 1,
-            leftSlot = 2,
-            rightSlot = 4,
-            playerLabel = notDetected,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MatchOcrReviewTestTags.compactTeam(row.rowIndex + 1)),
         )
     }
 }
@@ -1246,41 +1250,6 @@ private fun MatchOcrReviewPositionHeader(
             }
         }
     }
-}
-
-@Composable
-private fun MatchOcrReviewMissingPreviewPlayerRow(
-    position: Int,
-    leftSlot: Int,
-    rightSlot: Int,
-    playerLabel: String,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.compactPlayerRow(position, leftSlot)),
-        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-    ) {
-        MatchOcrReviewMissingPreviewPlayerCell(position, leftSlot, playerLabel, Modifier.weight(1f))
-        MatchOcrReviewMissingPreviewPlayerCell(position, rightSlot, playerLabel, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun MatchOcrReviewMissingPreviewPlayerCell(
-    position: Int,
-    slot: Int,
-    playerLabel: String,
-    modifier: Modifier,
-) {
-    Text(
-        text = stringResource(R.string.match_ocr_review_lobby_player, slot, playerLabel),
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier.testTag(MatchOcrReviewTestTags.compactPlayer(position, slot)),
-    )
 }
 
 @Composable

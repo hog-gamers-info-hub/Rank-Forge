@@ -221,6 +221,66 @@ class MatchOcrReviewViewModel @Inject constructor(
         )
     }
 
+    fun openManualReview(
+        tournamentId: String,
+        matchId: String,
+    ) {
+        cacheLoadJob?.cancel()
+        previewJob?.cancel()
+
+        val manualKey = "$tournamentId:$matchId:manual"
+        loadedMatchKey = manualKey
+        _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
+
+        val currentTeamNames = when (val current = _uiState.value) {
+            is MatchOcrReviewUiState.Ready -> current.teamNamesBySlot
+            is MatchOcrReviewUiState.Empty -> current.teamNamesBySlot
+            else -> emptyMap()
+        }
+        val ready = completeManualFallbackReviewState(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            preview = MatchResultOcrPreviewUiState.NotRequested,
+            teamNamesBySlot = currentTeamNames,
+            lobbyPlayers = emptyList(),
+            phase1LobbySlotNumberOcr = null,
+        )
+        val expectedPlacementByRowIndex = ready.rows.associate { row ->
+            row.rowIndex to row.expectedPlacementLabel
+        }
+        val seededDraft = ready.correctionDraft?.let { draft ->
+            MatchOcrReviewCorrectionDraftReducer.validate(
+                draft.copy(
+                    rows = draft.rows.map { draftRow ->
+                        val expectedPlacement =
+                            expectedPlacementByRowIndex[draftRow.rowIndex].orEmpty()
+                        draftRow.copy(
+                            originalPlacementValue = expectedPlacement,
+                            placementDraftValue = expectedPlacement,
+                        )
+                    },
+                ),
+            )
+        }
+        _uiState.value = ready.copy(correctionDraft = seededDraft)
+
+        cacheLoadJob = viewModelScope.launch {
+            val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
+            if (loadedMatchKey != manualKey) return@launch
+            _uiState.update { state ->
+                if (
+                    state is MatchOcrReviewUiState.Ready &&
+                    state.tournamentId == tournamentId &&
+                    state.matchId == matchId
+                ) {
+                    state.copy(teamNamesBySlot = teamNamesBySlot)
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
     private fun startOcrProcessing(
         tournamentId: String,
         matchId: String,
