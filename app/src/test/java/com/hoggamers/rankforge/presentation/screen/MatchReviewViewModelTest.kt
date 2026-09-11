@@ -2025,11 +2025,29 @@ class MatchReviewViewModelTest {
             )
         }
         val finalizedSync = RecordingFinalizedMatchCloudSync()
-        val viewModel = reviewViewModel(finalizedMatchCloudSync = finalizedSync)
+        val previewGenerator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..10),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            generator = previewGenerator,
+            finalizedMatchCloudSync = finalizedSync,
+        )
+        val viewModel = scenario.viewModel
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
+        viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
 
-       viewModel.finalizeMatch()
+        assertTrue(
+            viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                is MatchResultPositionCropPreviewState.Available,
+        )
+
+        viewModel.finalizeMatch()
         advanceUntilIdle()
 
         assertEquals(MatchStatus.FINALIZED, viewModel.uiState.value.status)
@@ -2042,6 +2060,13 @@ class MatchReviewViewModelTest {
             MatchStatus.FINALIZED,
             repository.observeMatchById(matchId).first()!!.status,
         )
+        MatchResultScreenshotRole.entries.forEach { role ->
+            assertEquals(
+                MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
+                (viewModel.uiState.value.resultPositionCropPreviews.getValue(role)
+                    as MatchResultPositionCropPreviewState.Unavailable).reason,
+            )
+        }
         assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
     }
 
@@ -3092,6 +3117,7 @@ class MatchReviewViewModelTest {
         roles: Array<out MatchResultScreenshotRole>,
         generator: RecordingMatchResultPositionCropPreviewGenerator =
             RecordingMatchResultPositionCropPreviewGenerator(),
+        finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
     ): ReadyResultPreviewScenario {
         val preserver = localImagePreserver()
         val assets = roles.map { role ->
@@ -3114,6 +3140,7 @@ class MatchReviewViewModelTest {
             localImagePreserver = preserver,
             matchResultScreenshotAssetRepository = assetRepository,
             matchResultPositionCropPreviewGenerator = generator,
+            finalizedMatchCloudSync = finalizedMatchCloudSync,
             ),
             assets = assetRepository,
         )

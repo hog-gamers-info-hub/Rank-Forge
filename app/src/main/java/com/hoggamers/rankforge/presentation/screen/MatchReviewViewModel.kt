@@ -3074,6 +3074,7 @@ class MatchReviewViewModel @Inject constructor(
                 )
             ) {
                 is FinalizeMatchResult.Finalized -> {
+                    clearAllResultPositionCropPreviews()
                     _uiState.update {
                         it.copy(isFinalizing = false, finalizationError = null)
                     }

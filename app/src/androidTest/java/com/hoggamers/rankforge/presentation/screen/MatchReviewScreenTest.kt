@@ -1093,7 +1093,7 @@ class MatchReviewScreenTest {
     }
 
     @Test
-    fun resultSourceCollapsesOnlyAfterDisplayableOcrDataAppears() {
+    fun resultSourceVisibilityFollowsDraftAndFinalizedOcrLifecycle() {
         val positionCropImage = AndroidMatchResultPositionCropPreviewImage(
             Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
         )
@@ -1103,35 +1103,39 @@ class MatchReviewScreenTest {
             ignoredLowerRows = emptyList(),
             manualReviewRows = emptyList(),
         )
+        var reviewUiState by mutableStateOf(
+            availableState(
+                resultScreenshots = listOf(
+                    resultSlot(
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        hasLinkedAsset = true,
+                        localPreviewUri = "file:///private/result-1.png",
+                        originalWidth = 1920,
+                        originalHeight = 1080,
+                        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                        cropProfileId = "match-result",
+                    ),
+                    resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                ),
+                resultPositionCropPreviews = mapOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER to
+                        MatchResultPositionCropPreviewState.Available(
+                            listOf(MatchResultPositionCropPreview(1, positionCropImage)),
+                        ),
+                ),
+            ),
+        )
+        var showInlineOcrDetails by mutableStateOf(true)
         var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(MatchOcrReviewUiState.Empty())
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState(
-                        resultScreenshots = listOf(
-                            resultSlot(
-                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                                hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
-                                originalWidth = 1920,
-                                originalHeight = 1080,
-                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
-                                cropProfileId = "match-result",
-                            ),
-                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-                        ),
-                        resultPositionCropPreviews = mapOf(
-                            MatchResultScreenshotRole.MATCH_RESULT_UPPER to
-                                MatchResultPositionCropPreviewState.Available(
-                                    listOf(MatchResultPositionCropPreview(1, positionCropImage)),
-                                ),
-                        ),
-                    ),
+                    uiState = reviewUiState,
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
                     showLegacyManualReviewContent = false,
-                    showInlineOcrDetails = true,
+                    showInlineOcrDetails = showInlineOcrDetails,
                     ocrUiState = ocrUiState,
                 )
             }
@@ -1208,6 +1212,23 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(0))
             .assertCountEquals(1)
+
+        composeTestRule.runOnIdle {
+            reviewUiState = reviewUiState.copy(
+                status = MatchStatus.FINALIZED,
+            )
+            showInlineOcrDetails = false
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
