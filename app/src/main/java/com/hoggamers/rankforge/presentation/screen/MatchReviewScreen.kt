@@ -1017,6 +1017,7 @@ private fun MatchReviewContent(
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                         !hasDisplayableResultOcrData,
+                    showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
                 )
@@ -1084,6 +1085,7 @@ private fun MatchReviewContent(
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                         !hasDisplayableResultOcrData,
+                    showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
                 )
@@ -2321,6 +2323,7 @@ private fun MatchReviewResultRowsPagerContent(
         if (rows.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
+                pageSpacing = RankForgeSpacing.ExtraSmall,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG),
@@ -2373,6 +2376,7 @@ private fun ResultScreenshotSelector(
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit,
     showSourceScreenshot: Boolean = true,
+    showOcrDetailsOutsideScreenshotPager: Boolean = false,
     ocrDetailsContent: @Composable () -> Unit = {},
     ocrPositionContent: @Composable (Int) -> Unit = {},
 ) {
@@ -2458,6 +2462,7 @@ private fun ResultScreenshotSelector(
                     state = pagerState,
                     pageSize = androidx.compose.foundation.pager.PageSize.Fill,
                     pageSpacing = RankForgeSpacing.ExtraSmall,
+                    verticalAlignment = Alignment.Top,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
@@ -2470,7 +2475,8 @@ private fun ResultScreenshotSelector(
                             imageAreaHeight = maxResultScreenshotHeight,
                             isEditable = isEditable,
                             showSourceScreenshot = showSourceScreenshot,
-                            showOcrDetails = pagerState.currentPage == page,
+                            showOcrDetails = !showOcrDetailsOutsideScreenshotPager &&
+                                pagerState.currentPage == page,
                             showPositionCropPreviews = !hasCombinedPositionCropPreviews,
                             ocrDetailsContent = ocrDetailsContent,
                             ocrPositionContent = ocrPositionContent,
@@ -2480,6 +2486,9 @@ private fun ResultScreenshotSelector(
                         )
                     }
                 }
+            }
+            if (showOcrDetailsOutsideScreenshotPager) {
+                ocrDetailsContent()
             }
         } else {
             ocrDetailsContent()
