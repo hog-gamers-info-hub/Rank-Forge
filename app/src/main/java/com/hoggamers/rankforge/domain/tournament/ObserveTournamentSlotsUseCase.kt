@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -20,12 +21,19 @@ class ObserveTournamentSlotsUseCase(
     ) : this(
         observeSlots = { tournamentId ->
             authRepository.observeAuthState().flatMapLatest { authState ->
-                val ownerUserId = (authState as? AuthState.SignedIn)?.user?.id
-                    ?.takeIf { it.isNotBlank() }
-                if (ownerUserId == null) {
-                    flowOf(emptyList())
-                } else {
-                    repository.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId)
+                when (authState) {
+                    AuthState.Loading -> emptyFlow()
+
+                    is AuthState.SignedIn -> {
+                        val ownerUserId = authState.user.id.takeIf { it.isNotBlank() }
+                        if (ownerUserId == null) {
+                            flowOf(emptyList())
+                        } else {
+                            repository.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId)
+                        }
+                    }
+
+                    else -> flowOf(emptyList())
                 }
             }
         },
