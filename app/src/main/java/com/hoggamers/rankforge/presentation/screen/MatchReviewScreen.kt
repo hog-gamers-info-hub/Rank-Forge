@@ -293,7 +293,6 @@ fun MatchReviewRoute(
                  -> resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
                  CalculatedEvidenceRestoreStatus.CLEARED -> {
                      resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(tournamentId, matchId)
-                     resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
                  }
                  CalculatedEvidenceRestoreStatus.CHECKING -> Unit
             }
