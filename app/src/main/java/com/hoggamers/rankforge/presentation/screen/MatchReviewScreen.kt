@@ -1324,45 +1324,6 @@ private fun MatchReviewContent(
         if (uiState.isEditable &&
             (showLegacyManualReviewContent || !hasDisplayableResultOcrData)
         ) {
-            Button(
-                onClick = {
-                    if (showLegacyManualReviewContent) {
-                        onOcrReviewOpenedChange(true)
-                        onOpenOcrReview()
-                    } else if (ocrPreflightItems.isEmpty()) {
-                        onOcrReviewOpenedChange(true)
-                        onCalculatePoints()
-                    } else {
-                        showOcrPreflight = true
-                    }
-                },
-                enabled = uiState.isEditable,
-                colors = if (!showLegacyManualReviewContent) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
-                        contentColor = Color.White,
-                    )
-                } else {
-                    ButtonDefaults.buttonColors()
-                },
-                shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
-                    .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    stringResource(
-                        if (!showLegacyManualReviewContent) {
-                            R.string.calculate_points_action
-                        } else {
-                            R.string.match_ocr_review_title
-                        },
-                    ),
-                    fontSize = 14.sp,
-                    fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
-                )
-            }
             if (!showLegacyManualReviewContent && !hasResultScreenshotSelection) {
                 Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
                 Button(
@@ -1385,6 +1346,46 @@ private fun MatchReviewContent(
                         "Manual",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                Button(
+                    onClick = {
+                        if (showLegacyManualReviewContent) {
+                            onOcrReviewOpenedChange(true)
+                            onOpenOcrReview()
+                        } else if (ocrPreflightItems.isEmpty()) {
+                            onOcrReviewOpenedChange(true)
+                            onCalculatePoints()
+                        } else {
+                            showOcrPreflight = true
+                        }
+                    },
+                    enabled = uiState.isEditable,
+                    colors = if (!showLegacyManualReviewContent) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = PointIqMatchReviewBlue,
+                            contentColor = Color.White,
+                        )
+                    } else {
+                        ButtonDefaults.buttonColors()
+                    },
+                    shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
+                        .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
+                ) {
+                    Text(
+                        stringResource(
+                            if (!showLegacyManualReviewContent) {
+                                R.string.calculate_points_action
+                            } else {
+                                R.string.match_ocr_review_title
+                            },
+                        ),
+                        fontSize = 14.sp,
+                        fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
                     )
                 }
             }
