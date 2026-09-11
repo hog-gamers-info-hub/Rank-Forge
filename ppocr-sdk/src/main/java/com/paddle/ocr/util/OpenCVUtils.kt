@@ -15,15 +15,13 @@
 package com.paddle.ocr.util
 
 import android.content.Context
-import android.util.Log
 
 object OpenCVUtils {
     fun init(context: Context): Boolean {
         try {
             OpenCvNativeLoader.ensureLoaded()
             return true
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e("OpenCVUtils", "Failed to initialize OpenCV: ${e.message}")
+        } catch (_: UnsatisfiedLinkError) {
         }
         return false
     }
