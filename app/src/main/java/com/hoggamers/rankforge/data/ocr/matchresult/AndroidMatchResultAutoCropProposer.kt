@@ -7,9 +7,6 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
-import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
-import com.hoggamers.rankforge.data.ocr.preprocessing.LOBBY_OCR_ENHANCEMENT_PROFILE
-import com.hoggamers.rankforge.data.ocr.preprocessing.OcrImageEnhancer
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropCalculator
@@ -31,8 +28,6 @@ import kotlinx.coroutines.withContext
 class AndroidMatchResultAutoCropProposer @Inject constructor(
     private val recognizerFactory: MlKitTextRecognizerFactory,
 ) : MatchResultAutoCropProposer {
-    private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
-
     override suspend fun propose(localFile: File): MatchResultAutoCropResult = withContext(Dispatchers.IO) {
         val original = try {
             BitmapFactory.decodeFile(localFile.absolutePath)
@@ -50,55 +45,40 @@ class AndroidMatchResultAutoCropProposer @Inject constructor(
         try {
             val dimensions = OcrImageDimensions.from(original.width, original.height)
                 ?: return@withContext MatchResultAutoCropResult.OcrFailed
-            val enhancedBitmap = try {
-                imageEnhancer.enhance(original, LOBBY_OCR_ENHANCEMENT_PROFILE)
+            val inputImage = try {
+                InputImage.fromBitmap(original, 0)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                null
+                return@withContext MatchResultAutoCropResult.OcrFailed
             }
-            val mlKitBitmap = enhancedBitmap ?: original
+
+            val recognizer = try {
+                recognizerFactory.create()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                return@withContext MatchResultAutoCropResult.OcrFailed
+            }
 
             try {
-                val inputImage = try {
-                    InputImage.fromBitmap(mlKitBitmap, 0)
+                val recognizedText = try {
+                    recognizer.process(inputImage).awaitText()
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
                     return@withContext MatchResultAutoCropResult.OcrFailed
                 }
 
-                val recognizer = try {
-                    recognizerFactory.create()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    return@withContext MatchResultAutoCropResult.OcrFailed
-                }
-
-                try {
-                    val recognizedText = try {
-                        recognizer.process(inputImage).awaitText()
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Throwable) {
-                        return@withContext MatchResultAutoCropResult.OcrFailed
-                    }
-
-                    val observations = recognizedText.toElementObservations(dimensions)
-                    MatchResultAutoCropCalculator().calculate(
-                        MatchResultAutoCropEvidence(
-                            observations = observations,
-                            imageDimensions = dimensions,
-                        ),
-                    )
-                } finally {
-                    recognizer.close()
-                }
+                val observations = recognizedText.toElementObservations(dimensions)
+                MatchResultAutoCropCalculator().calculate(
+                    MatchResultAutoCropEvidence(
+                        observations = observations,
+                        imageDimensions = dimensions,
+                    ),
+                )
             } finally {
-                if (enhancedBitmap != null && enhancedBitmap !== original && !enhancedBitmap.isRecycled) {
-                    enhancedBitmap.recycle()
-                }
+                recognizer.close()
             }
         } finally {
             original.recycleIfNeeded()
