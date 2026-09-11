@@ -80,6 +80,7 @@ fun OcrVisualCropEditor(
     modifier: Modifier = Modifier,
     sourceImageWidth: Int? = null,
     sourceImageHeight: Int? = null,
+    confirmEnabled: Boolean = true,
     confirmButtonText: String = stringResource(R.string.ocr_visual_crop_confirm_action),
     previewContentDescription: String = stringResource(R.string.ocr_visual_crop_preview_description),
 ) {
@@ -132,7 +133,7 @@ fun OcrVisualCropEditor(
             }
             Button(
                 onClick = onConfirmCrop,
-                enabled = validation is OcrCropValidationResult.Valid,
+                enabled = confirmEnabled && validation is OcrCropValidationResult.Valid,
                 modifier = Modifier
                     .weight(1f)
                     .testTag(OCR_VISUAL_CROP_CONFIRM_ACTION_TEST_TAG),

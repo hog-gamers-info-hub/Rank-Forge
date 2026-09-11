@@ -86,6 +86,9 @@ data class MatchResultScreenshotCropDestination(
     val tournamentId: String,
     val matchId: String,
     val screenshotRole: String,
+    val candidateUri: String? = null,
+    val candidateWidth: Int? = null,
+    val candidateHeight: Int? = null,
 )
 
 @Serializable
@@ -93,6 +96,9 @@ data class MatchLobbyScreenshotCropDestination(
     val tournamentId: String,
     val matchId: String,
     val lobbyScreenshotIndex: Int,
+    val candidateUri: String? = null,
+    val candidateWidth: Int? = null,
+    val candidateHeight: Int? = null,
 )
 
 @Serializable
