@@ -666,6 +666,22 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    fun enableManualCalculatedEvidenceSaving() {
+        val state = _uiState.value
+        if (!state.isAvailable ||
+            state.calculatedEvidenceRestoreStatus == CalculatedEvidenceRestoreStatus.NOT_REQUESTED ||
+            state.calculatedEvidenceRestoreStatus == CalculatedEvidenceRestoreStatus.CHECKING ||
+            _calculatedEvidenceSaveStatus.value == MatchCalculatedEvidenceSaveStatus.CLEARING
+        ) {
+            return
+        }
+        calculatedEvidenceSaveEnabled = true
+        calculatedEvidenceSaved = false
+        calculatedEvidenceSaveGeneration++
+        calculatedEvidenceSaveGenerationRequested = null
+        _calculatedEvidenceSaveStatus.value = MatchCalculatedEvidenceSaveStatus.IDLE
+    }
+
     fun saveCalculatedEvidenceIfReady(ocrReviewState: MatchOcrReviewUiState) {
         if (!calculatedEvidenceSaveEnabled) return
         val readyOcrState = ocrReviewState as? MatchOcrReviewUiState.Ready ?: return

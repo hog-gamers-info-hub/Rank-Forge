@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -245,7 +247,9 @@ fun MatchReviewRoute(
     viewModel: MatchReviewViewModel = hiltViewModel(),
     ocrReviewViewModel: MatchOcrReviewViewModel? = null,
 ) {
+    var manualOpenRequested by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tournamentId, matchId) {
+        manualOpenRequested = false
         viewModel.load(tournamentId, matchId)
     }
     LaunchedEffect(tournamentId, matchId, lobbyScreenshotIntakeViewModel) {
@@ -297,6 +301,38 @@ fun MatchReviewRoute(
                  }
                  CalculatedEvidenceRestoreStatus.CHECKING -> Unit
             }
+        }
+    }
+    LaunchedEffect(
+        tournamentId,
+        matchId,
+        manualOpenRequested,
+        uiState.isAvailable,
+        uiState.calculatedEvidenceRestoreStatus,
+        uiState.restoredCalculatedEvidence,
+    ) {
+        if (!manualOpenRequested || !uiState.isAvailable) return@LaunchedEffect
+        when (uiState.calculatedEvidenceRestoreStatus) {
+            CalculatedEvidenceRestoreStatus.RESTORED -> {
+                if (uiState.restoredCalculatedEvidence != null) {
+                    viewModel.enableManualCalculatedEvidenceSaving()
+                    manualOpenRequested = false
+                }
+            }
+            CalculatedEvidenceRestoreStatus.NOT_FOUND,
+            CalculatedEvidenceRestoreStatus.FAILED,
+            CalculatedEvidenceRestoreStatus.CLEARED,
+            -> {
+                viewModel.enableManualCalculatedEvidenceSaving()
+                resolvedOcrReviewViewModel.openManualReview(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                )
+                manualOpenRequested = false
+            }
+            CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+            CalculatedEvidenceRestoreStatus.CHECKING,
+            -> Unit
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -484,8 +520,6 @@ fun MatchReviewRoute(
             onCreateNextMatch(request.tournamentId, request.matchId)
         }
     }
-    BackHandler(enabled = !uiState.isDeleting, onBack = viewModel::onBackToDetails)
-
     MatchReviewScreen(
         uiState = uiState,
         lobbyUiState = lobbyUiState,
@@ -514,6 +548,10 @@ fun MatchReviewRoute(
                     useSlotNumberOnlyLobbyOcr = true,
                 )
             }
+        },
+        onOpenManualReview = {
+            manualOpenRequested = true
+            viewModel.enableManualCalculatedEvidenceSaving()
         },
         showClearResult = uiState.isEditable &&
             (hasCalculatedEvidenceRecord ||
@@ -604,6 +642,7 @@ fun MatchReviewScreen(
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit = {},
     onCalculatePoints: () -> Unit = {},
+    onOpenManualReview: () -> Unit = {},
     showClearResult: Boolean = false,
     isClearResultInProgress: Boolean = false,
     onClearResult: () -> Unit = {},
@@ -652,6 +691,19 @@ fun MatchReviewScreen(
     onOcrDismissFinalizeWarnings: () -> Unit = {},
 ) {
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
+    var manualModeOpened by rememberSaveable { mutableStateOf(false) }
+    val closeManualMode = {
+        manualModeOpened = false
+        ocrReviewOpened = false
+    }
+
+    BackHandler(enabled = !uiState.isDeleting) {
+        if (manualModeOpened) {
+            closeManualMode()
+        } else {
+            onBackToDetails()
+        }
+    }
 
     when {
         ocrUiState is MatchOcrReviewUiState.Calculating ->
@@ -669,6 +721,7 @@ fun MatchReviewScreen(
             onEnterKills = onEnterKills,
             onOpenOcrReview = onOpenOcrReview,
             onCalculatePoints = onCalculatePoints,
+            onOpenManualReview = onOpenManualReview,
             showClearResult = showClearResult,
             isClearResultInProgress = isClearResultInProgress,
             onClearResult = onClearResult,
@@ -702,6 +755,9 @@ fun MatchReviewScreen(
             customDesignFormatAvailabilityUiState = customDesignFormatAvailabilityUiState,
             ocrReviewOpened = ocrReviewOpened,
             onOcrReviewOpenedChange = { ocrReviewOpened = it },
+            manualModeOpened = manualModeOpened,
+            onManualModeOpenedChange = { manualModeOpened = it },
+            onManualBack = closeManualMode,
             ocrCacheAvailability = ocrCacheAvailability,
             ocrUiState = ocrUiState,
             onOcrPlacementChanged = onOcrPlacementChanged,
@@ -726,6 +782,7 @@ private fun MatchReviewContent(
     onEnterKills: () -> Unit,
     onOpenOcrReview: () -> Unit,
     onCalculatePoints: () -> Unit,
+    onOpenManualReview: () -> Unit,
     showClearResult: Boolean,
     isClearResultInProgress: Boolean,
     onClearResult: () -> Unit,
@@ -761,6 +818,9 @@ private fun MatchReviewContent(
     customDesignFormatAvailabilityUiState: CustomDesignFormatAvailabilityUiState,
     ocrReviewOpened: Boolean,
     onOcrReviewOpenedChange: (Boolean) -> Unit,
+    manualModeOpened: Boolean,
+    onManualModeOpenedChange: (Boolean) -> Unit,
+    onManualBack: () -> Unit,
     ocrCacheAvailability: MatchOcrCacheAvailability,
     ocrUiState: MatchOcrReviewUiState,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit,
@@ -840,7 +900,7 @@ private fun MatchReviewContent(
         !hasResultScreenshotSelection &&
         !hasProcessedLobbyOcrData
     val resultOcrDetailsContent: @Composable () -> Unit = {
-        if (shouldShowInlineOcrDetails) {
+        if (shouldShowInlineOcrDetails && !manualModeOpened) {
             MatchReviewResultOcrDetailsContent(
                 uiState = ocrUiState,
                 onPlacementChanged = onOcrPlacementChanged,
@@ -870,17 +930,70 @@ private fun MatchReviewContent(
             )
         }
     }
+    val showManualPanel = manualModeOpened &&
+        !hasResultScreenshotSelection &&
+        ocrUiState is MatchOcrReviewUiState.Ready &&
+        hasDisplayableResultOcrData
+    val manualOcrPanel: @Composable (Modifier) -> Unit = { modifier ->
+        Surface(
+            modifier = modifier
+                .layout { measurable, constraints ->
+                    val horizontalBleed = RankForgeSpacing.Large.roundToPx()
+                    val expandedWidth = constraints.maxWidth + (horizontalBleed * 2)
+                    val placeable = measurable.measure(
+                        constraints.copy(
+                            minWidth = 0,
+                            maxWidth = expandedWidth,
+                        ),
+                    )
+                    layout(constraints.maxWidth, placeable.height) {
+                        placeable.placeRelative(-horizontalBleed, 0)
+                    }
+                },
+            shape = RoundedCornerShape(
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = 0.dp,
+                bottomEnd = 0.dp,
+            ),
+            color = PointIqMatchReviewCard,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(RankForgeSpacing.Large),
+            ) {
+                MatchReviewResultOcrDetailsContent(
+                    uiState = ocrUiState,
+                    onPlacementChanged = onOcrPlacementChanged,
+                    onKillsChanged = onOcrKillsChanged,
+                    onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                    onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                    onExcludeOcrRow = onExcludeOcrRow,
+                    onResetRowCorrection = onOcrResetRowCorrection,
+                    onResetAllCorrections = onOcrResetAllCorrections,
+                    onFinalizeOcrCorrection = onOcrFinalize,
+                    onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                    onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                    onManualBack = onManualBack,
+                )
+            }
+        }
+    }
 
-    Column(
-        modifier = Modifier
-            .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
-            .verticalScroll(rememberScrollState())
-            .fillMaxSize()
-            .background(RankForgePageBackground)
-            .padding(RankForgeSpacing.Large),
-        horizontalAlignment = androidx.compose.ui.Alignment.Start,
-        verticalArrangement = Arrangement.Top,
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val manualSurfaceMinHeight = maxHeight
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(RankForgePageBackground)
+                .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(RankForgeSpacing.Large),
+            horizontalAlignment = androidx.compose.ui.Alignment.Start,
+            verticalArrangement = Arrangement.Top,
+        ) {
         val reviewTitle = stringResource(
             if (showLegacyManualReviewContent) {
                 R.string.match_review_title
@@ -983,6 +1096,15 @@ private fun MatchReviewContent(
                 }
             }
             Spacer(modifier = Modifier.height(14.dp))
+            if (manualModeOpened) {
+                if (showManualPanel) {
+                    manualOcrPanel(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = manualSurfaceMinHeight),
+                    )
+                }
+            } else {
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
                 emphasizedSurface = true,
@@ -1029,6 +1151,7 @@ private fun MatchReviewContent(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
+            }
         } else {
             Spacer(modifier = Modifier.height(14.dp))
             PointIqEmptyMatchReviewSection(
@@ -1047,6 +1170,15 @@ private fun MatchReviewContent(
                 }
             }
             Spacer(modifier = Modifier.height(14.dp))
+            if (manualModeOpened) {
+                if (showManualPanel) {
+                    manualOcrPanel(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = manualSurfaceMinHeight),
+                    )
+                }
+            } else {
             PointIqEmptyMatchReviewSection(
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
                 contentSpacing = if (uiState.resultScreenshots.any { it.hasSelection() }) {
@@ -1098,6 +1230,8 @@ private fun MatchReviewContent(
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
+    }
+        if (!manualModeOpened) {
         if (showLegacyManualReviewContent) {
             ResultScreenshotSelector(
                 resultScreenshots = uiState.resultScreenshots,
@@ -1228,6 +1362,31 @@ private fun MatchReviewContent(
                     fontSize = 14.sp,
                     fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
                 )
+            }
+            if (!showLegacyManualReviewContent && !hasResultScreenshotSelection) {
+                Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
+                Button(
+                    onClick = {
+                        onManualModeOpenedChange(true)
+                        onOcrReviewOpenedChange(true)
+                        onOpenManualReview()
+                    },
+                    enabled = uiState.isEditable,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                ) {
+                    Text(
+                        "Manual",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
         if (!showLegacyManualReviewContent &&
@@ -1482,6 +1641,8 @@ private fun MatchReviewContent(
             ) {
                 Text(stringResource(R.string.back_to_match_details_action))
             }
+        }
+        }
         }
     }
 
@@ -2104,6 +2265,7 @@ private fun MatchReviewResultOcrDetailsContent(
     onFinalizeOcrCorrection: () -> Unit,
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
+    onManualBack: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -2152,6 +2314,22 @@ private fun MatchReviewResultOcrDetailsContent(
                 onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onDismissFinalizeWarnings,
             )
+        }
+        onManualBack?.let { onBack ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Button(
+                    onClick = onBack,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Text(stringResource(R.string.back_action))
+                }
+            }
         }
     }
 }
