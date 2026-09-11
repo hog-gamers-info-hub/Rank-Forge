@@ -93,9 +93,13 @@ class MatchLobbyScreenshotIntakeViewModelTest {
 
     @After
     fun tearDown() {
-        createdViewModels.forEach { it.viewModelScope.cancel() }
-        createdViewModels.clear()
-        Dispatchers.resetMain()
+        try {
+            createdViewModels.forEach { it.viewModelScope.cancel() }
+            createdViewModels.clear()
+            dispatcher.scheduler.advanceUntilIdle()
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

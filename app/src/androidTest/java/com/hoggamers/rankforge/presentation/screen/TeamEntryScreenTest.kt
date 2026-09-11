@@ -40,6 +40,7 @@ class TeamEntryScreenTest {
                         slots = teamEntrySlots(),
                     ),
                     onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
                     onSave = {},
                     onBackToDetails = {},
                 )
@@ -79,6 +80,7 @@ class TeamEntryScreenTest {
                             }
                         }
                     },
+                    onBulkTeamNamesApplied = {},
                     onSave = {
                         savedNamesBySlotNumber = slots.associate { it.slotNumber to it.teamName }
                     },
@@ -116,6 +118,7 @@ class TeamEntryScreenTest {
                         slots = teamEntrySlots(),
                     ),
                     onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
                     onSave = {},
                     onBackToDetails = {},
                 )
@@ -145,6 +148,7 @@ class TeamEntryScreenTest {
                         ),
                     ),
                     onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
                     onSave = {},
                     onBackToDetails = {},
                 )
@@ -191,6 +195,7 @@ class TeamEntryScreenTest {
                         hasSaveError = true,
                     ),
                     onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
                     onSave = {},
                     onBackToDetails = {},
                 )
@@ -217,6 +222,7 @@ class TeamEntryScreenTest {
                         hasTeamNameGap = true,
                     ),
                     onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
                     onSave = {},
                     onBackToDetails = {},
                 )
