@@ -68,6 +68,49 @@ class MatchLobbySlotNumberOcrRunnerTest {
         assertTeamAvailability(unavailableSlots = setOf(2, 4))
     }
 
+    @Test
+    fun geometryUnavailableTeamCombinesWithSuccessfulMappedTeams() {
+        val mapping = LobbyPanelPpMapper.map(
+            panelWidth = 1_000,
+            panelHeight = 900,
+            fragments = (1..4).mapIndexed { index, slot ->
+                panelFragment(
+                    text = slot.toString(),
+                    left = if (index % 2 == 0) 40 else 540,
+                    top = if (index < 2) 210 else 610,
+                    right = if (index % 2 == 0) 80 else 580,
+                    bottom = if (index < 2) 230 else 630,
+                )
+            },
+        ) as LobbyPanelSemanticMappingResult.Available
+        val unavailableTeam = mapping.mapping.teams.single { team ->
+            team.crop.visibleSlotPosition == RosterVisibleSlotPosition.TOP_LEFT
+        }.let { team ->
+            LobbyPanelPpUnavailableTeam(
+                visibleSlotPosition = team.crop.visibleSlotPosition,
+                detectedSlotNumber = team.crop.detectedSlotNumber,
+                reason = MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
+            )
+        }
+
+        val outcomes = createMatchLobbyTeamCropPreviewOutcomes(
+            panelImage = FakeImage,
+            semanticPosition = RosterScreenshotPosition.ONE,
+            teams = mapping.mapping.teams.filterNot { team ->
+                team.crop.visibleSlotPosition == unavailableTeam.visibleSlotPosition
+            },
+            unavailableTeams = listOf(unavailableTeam),
+            factory = MatchLobbyTeamCropPreviewFactory { _, _ -> TestTeamCropPreviewImage },
+        )
+
+        assertEquals(3, outcomes.count { it is MatchLobbyTeamCropPreviewOutcome.Available })
+        assertEquals(
+            MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
+            (outcomes.single { it.visibleSlotPosition == RosterVisibleSlotPosition.TOP_LEFT }
+                as MatchLobbyTeamCropPreviewOutcome.Unavailable).reason,
+        )
+    }
+
     private fun assertTeamAvailability(unavailableSlots: Set<Int>) {
         val mapping = LobbyPanelPpMapper.map(
             panelWidth = 1_000,

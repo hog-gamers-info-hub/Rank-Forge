@@ -47,6 +47,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 
@@ -152,6 +153,29 @@ class MatchLobbyPlayersOcrRunnerTest {
         assertEquals(null, result.slots[5].players[0].playerName)
         assertEquals("S1P1", result.slots[6].players[0].playerName)
         assertEquals("S1P1", result.slots[7].players[0].playerName)
+    }
+
+    @Test
+    fun oneSuccessfulTeamContributionKeepsTheOtherElevenSlotsUnavailable() = runTest {
+        val result = runner(
+            assets = FakeAssetRepository(mapOf(1 to asset(1))),
+            cache = FakeCacheRepository(),
+            extractor = PositionTrackingExtractor(),
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(1, 2, 3, 4),
+            ),
+            unavailableVisibleSlots = RosterVisibleSlotPosition.entries
+                .filterNot { it == RosterVisibleSlotPosition.TOP_LEFT }
+                .toSet(),
+        ).process("tournament-1", "match-1")
+
+        assertEquals((1..12).toList(), result.slots.map { it.slotNumber })
+        assertEquals("S1P1", result.slots.first().players.first().playerName)
+        assertTrue(
+            result.slots.drop(1).all { slot ->
+                slot.players.all { player -> player.playerName == null }
+            },
+        )
     }
 
     @Test

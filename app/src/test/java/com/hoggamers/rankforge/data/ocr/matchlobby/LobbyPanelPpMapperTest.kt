@@ -121,6 +121,36 @@ class LobbyPanelPpMapperTest {
     }
 
     @Test
+    fun individualTeamCropGeometryFailureKeepsThePanelMappingAvailable() {
+        val result = mapped(
+            listOf(
+                fragment("1", 60, 10, confidence = 0.91f),
+                fragment("2", 560, 280, confidence = 0.82f),
+                fragment("3", 60, 620, confidence = 0.83f),
+                fragment("4", 560, 620, confidence = 0.84f),
+            ),
+        )
+
+        assertEquals(3, result.teams.size)
+        assertEquals(
+            listOf(
+                RosterVisibleSlotPosition.TOP_RIGHT,
+                RosterVisibleSlotPosition.BOTTOM_LEFT,
+                RosterVisibleSlotPosition.BOTTOM_RIGHT,
+            ),
+            result.teams.map { it.crop.visibleSlotPosition },
+        )
+        assertEquals(
+            LobbyPanelPpUnavailableTeam(
+                visibleSlotPosition = RosterVisibleSlotPosition.TOP_LEFT,
+                detectedSlotNumber = 1,
+                reason = MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
+            ),
+            result.unavailableTeams.single(),
+        )
+    }
+
+    @Test
     fun missingPlayerNameDoesNotMakeTeamUnavailable() {
         val result = mapped(
             fragmentsFor(RosterScreenshotPosition.ONE) + fragment("player-one", 110, 70),

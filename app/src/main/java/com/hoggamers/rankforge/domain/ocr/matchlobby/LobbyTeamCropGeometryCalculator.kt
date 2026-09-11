@@ -30,6 +30,12 @@ data class LobbyTeamCrop(
     val bounds: LobbyTeamCropBounds,
 )
 
+data class LobbyTeamCropUnavailable(
+    val visibleSlotPosition: RosterVisibleSlotPosition,
+    val detectedSlotNumber: Int,
+    val reason: LobbyTeamCropUnavailableReason,
+)
+
 enum class LobbyTeamCropUnavailableReason {
     REQUIRED_SLOT_NUMBER_UNAVAILABLE,
     SLOT_NUMBER_GEOMETRY_UNAVAILABLE,
@@ -40,10 +46,16 @@ enum class LobbyTeamCropUnavailableReason {
 sealed interface LobbyTeamCropGeometryResult {
     data class Available(
         val crops: List<LobbyTeamCrop>,
+        val unavailable: List<LobbyTeamCropUnavailable> = emptyList(),
     ) : LobbyTeamCropGeometryResult {
         init {
-            require(crops.map { it.visibleSlotPosition } == RosterVisibleSlotPosition.entries) {
-                "Team crops must contain every visible slot position exactly once."
+            val positions = crops.map { it.visibleSlotPosition } + unavailable.map { it.visibleSlotPosition }
+            require(
+                positions.size == RosterVisibleSlotPosition.entries.size &&
+                    positions.toSet().size == positions.size &&
+                    positions.toSet() == RosterVisibleSlotPosition.entries.toSet(),
+            ) {
+                "Team crops must contain one outcome for every visible slot position."
             }
         }
     }
@@ -91,7 +103,10 @@ object LobbyTeamCropGeometryCalculator {
         val slotLeftInset = observedSlotLeftInsets.average()
         val panelRight = panelWidth.toDouble()
         val panelBottom = panelHeight.toDouble()
-        val crops = grid.points.map { point ->
+        val crops = mutableListOf<LobbyTeamCrop>()
+        val unavailable = mutableListOf<LobbyTeamCropUnavailable>()
+        grid.points.forEach { point ->
+            val visibleSlotPosition = RosterVisibleSlotPosition.entries[point.role.ordinal]
             val cropLeft = point.centerX - slotLeftInset
             val cropTop = point.centerY - grid.rowPitch / 2.0
             val cropBottom = point.centerY + grid.rowPitch / 2.0
@@ -100,16 +115,22 @@ object LobbyTeamCropGeometryCalculator {
                 panelRight,
             )
             if (!(cropRight > cropLeft && cropBottom > cropTop)) {
-                return LobbyTeamCropGeometryResult.Unavailable(
-                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                unavailable += LobbyTeamCropUnavailable(
+                    visibleSlotPosition = visibleSlotPosition,
+                    detectedSlotNumber = point.slotNumber,
+                    reason = LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
                 )
+                return@forEach
             }
             val rawBounds = LobbyTeamCropBounds(cropLeft, cropTop, cropRight, cropBottom)
             val boundaryTolerance = maxOf(grid.columnPitch, grid.rowPitch) * MAX_BOUNDARY_CLAMP_FRACTION
             if (!rawBounds.isSafelyWithin(panelRight, panelBottom, boundaryTolerance)) {
-                return LobbyTeamCropGeometryResult.Unavailable(
-                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                unavailable += LobbyTeamCropUnavailable(
+                    visibleSlotPosition = visibleSlotPosition,
+                    detectedSlotNumber = point.slotNumber,
+                    reason = LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
                 )
+                return@forEach
             }
             val bounded = LobbyTeamCropBounds(
                 left = rawBounds.left.coerceIn(0.0, panelRight),
@@ -118,17 +139,20 @@ object LobbyTeamCropGeometryCalculator {
                 bottom = rawBounds.bottom.coerceIn(0.0, panelBottom),
             )
             if (!bounded.isPositive()) {
-                return LobbyTeamCropGeometryResult.Unavailable(
-                    LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
+                unavailable += LobbyTeamCropUnavailable(
+                    visibleSlotPosition = visibleSlotPosition,
+                    detectedSlotNumber = point.slotNumber,
+                    reason = LobbyTeamCropUnavailableReason.INVALID_CROP_BOUNDS,
                 )
+                return@forEach
             }
-            LobbyTeamCrop(
-                visibleSlotPosition = RosterVisibleSlotPosition.entries[point.role.ordinal],
+            crops += LobbyTeamCrop(
+                visibleSlotPosition = visibleSlotPosition,
                 detectedSlotNumber = point.slotNumber,
                 bounds = bounded,
             )
         }
-        return LobbyTeamCropGeometryResult.Available(crops)
+        return LobbyTeamCropGeometryResult.Available(crops, unavailable)
     }
 
     fun calculate(

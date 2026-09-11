@@ -38,16 +38,29 @@ data class LobbyPanelPpMappedTeam(
     val unavailableReason: MatchLobbyTeamCropPreviewUnavailableReason? = null,
 )
 
+data class LobbyPanelPpUnavailableTeam(
+    val visibleSlotPosition: RosterVisibleSlotPosition,
+    val detectedSlotNumber: Int,
+    val reason: MatchLobbyTeamCropPreviewUnavailableReason,
+)
+
 sealed interface LobbyPanelPpMappingResult {
     data class Available(
         val slots: List<MatchLobbySlotNumberOcrSlot>,
         val teams: List<LobbyPanelPpMappedTeam>,
         val observedAnchorCount: Int,
         val fragmentCount: Int,
+        val unavailableTeams: List<LobbyPanelPpUnavailableTeam> = emptyList(),
     ) : LobbyPanelPpMappingResult {
         init {
             require(slots.map { it.visibleSlotPosition } == RosterVisibleSlotPosition.entries)
-            require(teams.map { it.crop.visibleSlotPosition } == RosterVisibleSlotPosition.entries)
+            val positions = teams.map { it.crop.visibleSlotPosition } +
+                unavailableTeams.map { it.visibleSlotPosition }
+            require(
+                positions.size == RosterVisibleSlotPosition.entries.size &&
+                    positions.toSet().size == positions.size &&
+                    positions.toSet() == RosterVisibleSlotPosition.entries.toSet(),
+            )
         }
     }
 
@@ -187,7 +200,7 @@ object LobbyPanelPpMapper {
                 observedSlotLeftInsets = observedSlotLeftInsets,
             )
         ) {
-            is LobbyTeamCropGeometryResult.Available -> calculated.crops
+            is LobbyTeamCropGeometryResult.Available -> calculated
             is LobbyTeamCropGeometryResult.Unavailable -> return unavailable(
                 calculated.toPreviewUnavailableReason(),
                 fragments,
@@ -196,7 +209,7 @@ object LobbyPanelPpMapper {
         }
 
         val selectedIndices = selectedSlotEvidence.values.map { it.fragment.readingOrderIndex }.toSet()
-        val teams = geometry.map { crop ->
+        val teams = geometry.crops.map { crop ->
             val cropLeft = crop.bounds.left
             val cropTop = crop.bounds.top
             val cropWidth = (crop.bounds.right - cropLeft).toInt()
@@ -305,6 +318,13 @@ object LobbyPanelPpMapper {
                 },
             )
         }
+        val unavailableTeams = geometry.unavailable.map { unavailable ->
+            LobbyPanelPpUnavailableTeam(
+                visibleSlotPosition = unavailable.visibleSlotPosition,
+                detectedSlotNumber = unavailable.detectedSlotNumber,
+                reason = unavailable.reason.toPreviewUnavailableReason(),
+            )
+        }
 
         val slots = RosterVisibleSlotPosition.entries.map { visiblePosition ->
             val slotNumber = position.tournamentSlotFor(visiblePosition)
@@ -319,6 +339,7 @@ object LobbyPanelPpMapper {
             teams = teams,
             observedAnchorCount = observedAnchors.size,
             fragmentCount = fragments.size,
+            unavailableTeams = unavailableTeams,
         )
     }
 
@@ -532,7 +553,10 @@ object LobbyPanelPpMapper {
         )
 
     private fun LobbyTeamCropGeometryResult.Unavailable.toPreviewUnavailableReason(): MatchLobbyTeamCropPreviewUnavailableReason =
-        when (reason) {
+        reason.toPreviewUnavailableReason()
+
+    private fun com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropUnavailableReason.toPreviewUnavailableReason(): MatchLobbyTeamCropPreviewUnavailableReason =
+        when (this) {
             com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE ->
                 MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE
             com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropUnavailableReason.SLOT_NUMBER_GEOMETRY_UNAVAILABLE ->
