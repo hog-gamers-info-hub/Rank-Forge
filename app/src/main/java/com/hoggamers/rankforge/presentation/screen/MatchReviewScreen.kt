@@ -790,6 +790,11 @@ private fun MatchReviewContent(
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
     val hasDisplayableResultOcrData = shouldShowInlineOcrDetails &&
         ocrUiState.hasDisplayableResultOcrData()
+    val transientResultPositionCropPreviews = if (uiState.status == MatchStatus.FINALIZED) {
+        emptyMap()
+    } else {
+        uiState.resultPositionCropPreviews
+    }
     val hasLobbyPlayerOcrEvidence = shouldShowInlineOcrDetails && ocrUiState.hasLobbyPlayerEvidence()
     val liveLobbyTeamCropPreviewsByScreenshotIndex = (ocrUiState as? MatchOcrReviewUiState.Ready)
         ?.phase1LobbySlotNumberOcr
@@ -820,7 +825,7 @@ private fun MatchReviewContent(
         ?.toSet()
         .orEmpty()
     val hasCombinedPositionCropPreviews = uiState.resultScreenshots.any { slot ->
-        slot.hasSelection() && uiState.resultPositionCropPreviews[slot.role]
+        slot.hasSelection() && transientResultPositionCropPreviews[slot.role]
             ?.sortedCrops()
             ?.isNotEmpty() == true
     }
@@ -1002,7 +1007,7 @@ private fun MatchReviewContent(
                 }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
-                    resultPositionCropPreviews = uiState.resultPositionCropPreviews,
+                    resultPositionCropPreviews = transientResultPositionCropPreviews,
                     explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
@@ -1010,7 +1015,8 @@ private fun MatchReviewContent(
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    showSourceScreenshot = !hasDisplayableResultOcrData,
+                    showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
+                        !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
                 )
@@ -1068,7 +1074,7 @@ private fun MatchReviewContent(
                 }
                 ResultScreenshotSelector(
                     resultScreenshots = uiState.resultScreenshots,
-                    resultPositionCropPreviews = uiState.resultPositionCropPreviews,
+                    resultPositionCropPreviews = transientResultPositionCropPreviews,
                     explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
@@ -1076,7 +1082,8 @@ private fun MatchReviewContent(
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    showSourceScreenshot = !hasDisplayableResultOcrData,
+                    showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
+                        !hasDisplayableResultOcrData,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
                 )
