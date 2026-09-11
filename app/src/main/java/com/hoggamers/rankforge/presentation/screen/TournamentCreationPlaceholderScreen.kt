@@ -73,6 +73,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val tournamentDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+private const val SHOW_ORGANIZER_CONTACT_NUMBER = false
 
 private val PointIqCreateNavy = Color(0xFF071B3E)
 private val PointIqCreateBody = Color(0xFF607393)
@@ -199,6 +200,7 @@ fun TournamentCreationScreen(
             options = listOf(freeFireMax),
             isOptionEnabled = { true },
             onOptionSelected = { selectedGame = it },
+            enabled = false,
             fieldTestTag = TOURNAMENT_GAME_DROPDOWN_TEST_TAG,
             optionTestTag = { TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG },
         )
@@ -210,6 +212,7 @@ fun TournamentCreationScreen(
             options = listOf(solo, duo, squad),
             isOptionEnabled = { it == squad },
             onOptionSelected = { selectedMode = it },
+            enabled = false,
             fieldTestTag = TOURNAMENT_MODE_DROPDOWN_TEST_TAG,
             optionTestTag = { option ->
                 when (option) {
@@ -284,15 +287,16 @@ fun TournamentCreationScreen(
             error = uiState.validationErrors[TournamentField.ORGANIZER_NAME],
             onValueChange = onOrganizerNameChanged,
         )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        PointIqTournamentTextField(
-            value = uiState.organizerContactNumber,
-            label = stringResource(R.string.pointiq_contact_number_label),
-            error = uiState.validationErrors[TournamentField.ORGANIZER_CONTACT_NUMBER],
-            keyboardType = KeyboardType.Phone,
-            onValueChange = onOrganizerContactNumberChanged,
-        )
+        if (SHOW_ORGANIZER_CONTACT_NUMBER) {
+            Spacer(modifier = Modifier.height(16.dp))
+            PointIqTournamentTextField(
+                value = uiState.organizerContactNumber,
+                label = stringResource(R.string.pointiq_contact_number_label),
+                error = uiState.validationErrors[TournamentField.ORGANIZER_CONTACT_NUMBER],
+                keyboardType = KeyboardType.Phone,
+                onValueChange = onOrganizerContactNumberChanged,
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
 
         if (uiState.submissionError != null) {
@@ -382,22 +386,33 @@ private fun PointIqTournamentDropdownField(
     options: List<String>,
     isOptionEnabled: (String) -> Boolean,
     onOptionSelected: (String) -> Unit,
+    enabled: Boolean = true,
     fieldTestTag: String,
     optionTestTag: (String) -> String,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val isExpanded = enabled && expanded
+
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            expanded = false
+        }
+    }
 
     ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
+        expanded = isExpanded,
+        onExpandedChange = { shouldExpand ->
+            expanded = enabled && shouldExpand
+        },
     ) {
         OutlinedTextField(
             value = value,
             onValueChange = {},
             readOnly = true,
             singleLine = true,
+            enabled = enabled,
             label = { Text(text = label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isExpanded) },
             shape = RoundedCornerShape(14.dp),
             colors = pointIqTournamentFieldColors(),
             modifier = Modifier
@@ -406,17 +421,19 @@ private fun PointIqTournamentDropdownField(
                 .testTag(fieldTestTag),
         )
         ExposedDropdownMenu(
-            expanded = expanded,
+            expanded = isExpanded,
             onDismissRequest = { expanded = false },
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(text = option) },
                     onClick = {
-                        onOptionSelected(option)
+                        if (enabled) {
+                            onOptionSelected(option)
+                        }
                         expanded = false
                     },
-                    enabled = isOptionEnabled(option),
+                    enabled = enabled && isOptionEnabled(option),
                     modifier = Modifier.testTag(optionTestTag(option)),
                 )
             }
