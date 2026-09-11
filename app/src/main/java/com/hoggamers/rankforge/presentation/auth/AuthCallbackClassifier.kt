@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 enum class AuthCallbackKind {
     NORMAL_AUTH_CALLBACK,
     PASSWORD_RECOVERY_CALLBACK,
+    INVALID_CALLBACK,
 }
 
 object AuthCallbackClassifier {
@@ -12,14 +13,18 @@ object AuthCallbackClassifier {
         scheme: String?,
         host: String?,
         path: String?,
-    ): AuthCallbackKind =
+    ): AuthCallbackKind {
         if (
-            scheme == SupabaseAuthConfig.AUTH_CALLBACK_SCHEME &&
-                host == SupabaseAuthConfig.AUTH_CALLBACK_HOST &&
-                path == "/password-recovery"
+            scheme != SupabaseAuthConfig.AUTH_CALLBACK_SCHEME ||
+                host != SupabaseAuthConfig.AUTH_CALLBACK_HOST
         ) {
-            AuthCallbackKind.PASSWORD_RECOVERY_CALLBACK
-        } else {
-            AuthCallbackKind.NORMAL_AUTH_CALLBACK
+            return AuthCallbackKind.INVALID_CALLBACK
         }
+
+        return when (path) {
+            null, "" -> AuthCallbackKind.NORMAL_AUTH_CALLBACK
+            "/password-recovery" -> AuthCallbackKind.PASSWORD_RECOVERY_CALLBACK
+            else -> AuthCallbackKind.INVALID_CALLBACK
+        }
+    }
 }

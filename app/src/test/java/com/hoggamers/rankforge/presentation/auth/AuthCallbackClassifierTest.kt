@@ -2,7 +2,6 @@ package com.hoggamers.rankforge.presentation.auth
 
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class AuthCallbackClassifierTest {
@@ -19,7 +18,7 @@ class AuthCallbackClassifierTest {
     }
 
     @Test
-    fun existingCallbackWithoutRecoveryPathRemainsNormalAuthCallback() {
+    fun callbackWithoutPathRemainsNormalAuthCallback() {
         assertEquals(
             AuthCallbackKind.NORMAL_AUTH_CALLBACK,
             AuthCallbackClassifier.classify(
@@ -31,21 +30,46 @@ class AuthCallbackClassifierTest {
     }
 
     @Test
-    fun wrongSchemeOrHostIsNeverClassifiedAsPasswordRecovery() {
-        assertNotEquals(
-            AuthCallbackKind.PASSWORD_RECOVERY_CALLBACK,
+    fun callbackWithEmptyPathRemainsNormalAuthCallback() {
+        assertEquals(
+            AuthCallbackKind.NORMAL_AUTH_CALLBACK,
+            AuthCallbackClassifier.classify(
+                scheme = SupabaseAuthConfig.AUTH_CALLBACK_SCHEME,
+                host = SupabaseAuthConfig.AUTH_CALLBACK_HOST,
+                path = "",
+            ),
+        )
+    }
+
+    @Test
+    fun unexpectedCallbackPathIsRejected() {
+        assertEquals(
+            AuthCallbackKind.INVALID_CALLBACK,
+            AuthCallbackClassifier.classify(
+                scheme = SupabaseAuthConfig.AUTH_CALLBACK_SCHEME,
+                host = SupabaseAuthConfig.AUTH_CALLBACK_HOST,
+                path = "/unexpected",
+            ),
+        )
+    }
+
+    @Test
+    fun wrongSchemeOrHostIsRejected() {
+        assertEquals(
+            AuthCallbackKind.INVALID_CALLBACK,
             AuthCallbackClassifier.classify(
                 scheme = "https",
                 host = SupabaseAuthConfig.AUTH_CALLBACK_HOST,
-                path = "/password-recovery",
+                path = null,
             ),
         )
-        assertNotEquals(
-            AuthCallbackKind.PASSWORD_RECOVERY_CALLBACK,
+
+        assertEquals(
+            AuthCallbackKind.INVALID_CALLBACK,
             AuthCallbackClassifier.classify(
                 scheme = SupabaseAuthConfig.AUTH_CALLBACK_SCHEME,
                 host = "other-host",
-                path = "/password-recovery",
+                path = null,
             ),
         )
     }
