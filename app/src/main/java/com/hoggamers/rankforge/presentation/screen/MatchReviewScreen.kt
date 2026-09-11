@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
@@ -960,7 +959,9 @@ private fun MatchReviewContent(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(RankForgeSpacing.Large),
             ) {
                 MatchReviewResultOcrDetailsContent(
@@ -981,19 +982,28 @@ private fun MatchReviewContent(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val manualSurfaceMinHeight = maxHeight
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(RankForgePageBackground)
-                .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(RankForgeSpacing.Large),
-            horizontalAlignment = androidx.compose.ui.Alignment.Start,
-            verticalArrangement = Arrangement.Top,
-        ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RankForgePageBackground)
+            .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
+            .then(
+                if (manualModeOpened) {
+                    Modifier.padding(
+                        start = RankForgeSpacing.Large,
+                        top = RankForgeSpacing.Large,
+                        end = RankForgeSpacing.Large,
+                    )
+                } else {
+                    Modifier
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(RankForgeSpacing.Large)
+                },
+            ),
+        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+        verticalArrangement = Arrangement.Top,
+    ) {
         val reviewTitle = stringResource(
             if (showLegacyManualReviewContent) {
                 R.string.match_review_title
@@ -1101,7 +1111,7 @@ private fun MatchReviewContent(
                     manualOcrPanel(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = manualSurfaceMinHeight),
+                            .weight(1f),
                     )
                 }
             } else {
@@ -1150,7 +1160,9 @@ private fun MatchReviewContent(
                     ocrPositionContent = resultOcrPositionContent,
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            if (!manualModeOpened) {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             }
         } else {
             Spacer(modifier = Modifier.height(14.dp))
@@ -1175,7 +1187,7 @@ private fun MatchReviewContent(
                     manualOcrPanel(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = manualSurfaceMinHeight),
+                            .weight(1f),
                     )
                 }
             } else {
@@ -1228,7 +1240,9 @@ private fun MatchReviewContent(
                     ocrPositionContent = resultOcrPositionContent,
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            if (!manualModeOpened) {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
         if (!manualModeOpened) {
@@ -1645,7 +1659,6 @@ private fun MatchReviewContent(
         }
         }
         }
-    }
 
     uiState.pendingNextMatchTeamCountConfirmation?.let { confirmation ->
         TeamCountConfirmationDialog(
