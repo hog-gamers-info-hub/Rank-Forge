@@ -745,6 +745,7 @@ class MatchReviewViewModel @Inject constructor(
                 if (deleted && clearGeneration == calculatedEvidenceSaveGeneration) {
                     calculatedEvidenceSnapshot = null
                     _hasCalculatedEvidenceRecord.value = false
+                    clearAllResultPositionCropPreviews()
                     _uiState.update { current ->
                         if (current.tournamentId != tournamentId || current.matchId != matchId) {
                             current
@@ -754,7 +755,6 @@ class MatchReviewViewModel @Inject constructor(
                                 restoredCalculatedEvidence = null,
                                 restoredLobbyTeamCropPreviews = emptyMap(),
                                 restoredLobbyTeamNamesBySlot = emptyMap(),
-                                resultPositionCropPreviews = defaultMatchResultPositionCropPreviewStates(),
                             )
                         }
                     }
