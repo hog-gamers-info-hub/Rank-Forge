@@ -448,17 +448,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             ) {
                 _uiState.update { state ->
                     when (state) {
-                        is MatchOcrReviewUiState.Ready -> {
-                            if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                                MatchOcrReviewUiState.Empty(
-                                    tournamentId = tournamentId,
-                                    matchId = matchId,
-                                    teamNamesBySlot = state.teamNamesBySlot,
-                                )
-                            } else {
-                                state
-                            }
-                        }
+                        is MatchOcrReviewUiState.Ready -> state
                         is MatchOcrReviewUiState.Empty -> {
                             if (state.tournamentId == tournamentId && state.matchId == matchId) {
                                 state

@@ -351,13 +351,6 @@ fun MatchReviewRoute(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 customDesignFormatAvailabilityViewModel.refresh()
-                if (uiState.isAvailable &&
-                    uiState.status != MatchStatus.FINALIZED &&
-                    uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.RESTORED &&
-                    uiState.calculatedEvidenceRestoreStatus != CalculatedEvidenceRestoreStatus.CHECKING
-                ) {
-                    resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
-                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
