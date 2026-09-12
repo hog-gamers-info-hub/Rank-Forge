@@ -181,8 +181,10 @@ class MatchReviewViewModel @Inject constructor(
     private var calculatedEvidenceSaveEnabled = false
     private var calculatedEvidenceSaved = false
     private var calculatedEvidenceSnapshot: MatchCalculatedEvidence? = null
+    private var resumeReadyCalculatedEvidenceSnapshot: ResumeReadyCalculatedEvidenceSnapshot? = null
     private var calculatedEvidenceSaveGeneration = 0L
     private var calculatedEvidenceSaveGenerationRequested: Long? = null
+    private var resumePersistentEvidenceSaveGeneration: Long? = null
     private val _calculatedEvidenceSaveStatus =
         MutableStateFlow(MatchCalculatedEvidenceSaveStatus.IDLE)
     internal val calculatedEvidenceSaveStatus: StateFlow<MatchCalculatedEvidenceSaveStatus> =
@@ -245,9 +247,11 @@ class MatchReviewViewModel @Inject constructor(
         calculatedEvidenceSaveEnabled = false
         calculatedEvidenceSaved = false
         calculatedEvidenceSnapshot = null
+        resumeReadyCalculatedEvidenceSnapshot = null
         _hasCalculatedEvidenceRecord.value = false
         calculatedEvidenceSaveGeneration++
         calculatedEvidenceSaveGenerationRequested = null
+        resumePersistentEvidenceSaveGeneration = calculatedEvidenceSaveGeneration
         _calculatedEvidenceSaveStatus.value = MatchCalculatedEvidenceSaveStatus.IDLE
         calculatedEvidenceRestoreJob?.cancel()
         calculatedEvidenceRestoreJob = null
@@ -372,7 +376,26 @@ class MatchReviewViewModel @Inject constructor(
             }.collect { state ->
                 markRestoredMissingIfNeeded(state)
                 markRestoredResultMissingIfNeeded(state)
+                if (!state.isAvailable) {
+                    val current = _uiState.value
+                    val sameActiveIdentity = current.tournamentId == tournamentId &&
+                        current.matchId == matchId &&
+                        (state.tournamentId == null || state.tournamentId == tournamentId) &&
+                        (state.matchId == null || state.matchId == matchId)
+                    if (!sameActiveIdentity) clearStaleResultPositionCropPreviews()
+                }
                 _uiState.update { current ->
+                    val mergedResultState = preserveMatchReviewResultStateAcrossRepositoryUpdate(
+                        current = current,
+                        next = state.copy(
+                            resultScreenshots = mergeResultScreenshotSlots(
+                                restored = state.resultScreenshots,
+                                current = current.resultScreenshots,
+                            ),
+                        ),
+                        activeTournamentId = tournamentId,
+                        activeMatchId = matchId,
+                    )
                     state.copy(
                         navigation = current.navigation,
                         isDeleting = current.isDeleting,
@@ -415,11 +438,8 @@ class MatchReviewViewModel @Inject constructor(
                         isScreenshotUploaded = current.isScreenshotUploaded || state.isScreenshotUploaded,
                         screenshotUploadObjectPath = current.screenshotUploadObjectPath ?: state.screenshotUploadObjectPath,
                         screenshotUploadError = current.screenshotUploadError ?: state.screenshotUploadError,
-                        resultScreenshots = mergeResultScreenshotSlots(
-                            restored = state.resultScreenshots,
-                            current = current.resultScreenshots,
-                        ),
-                        resultPositionCropPreviews = current.resultPositionCropPreviews,
+                        resultScreenshots = mergedResultState.resultScreenshots,
+                        resultPositionCropPreviews = mergedResultState.resultPositionCropPreviews,
                         calculatedEvidenceRestoreStatus = current.calculatedEvidenceRestoreStatus,
                         restoredCalculatedEvidence = current.restoredCalculatedEvidence,
                         restoredLobbyTeamCropPreviews = current.restoredLobbyTeamCropPreviews,
@@ -428,7 +448,9 @@ class MatchReviewViewModel @Inject constructor(
                         resultScreenshotMultiPhotoPickerRequest = current.resultScreenshotMultiPhotoPickerRequest,
                     )
                 }
-                clearStaleResultPositionCropPreviews()
+                if (state.isAvailable) {
+                    clearStaleResultPositionCropPreviews()
+                }
                 if (state.isAvailable && state.status != MatchStatus.FINALIZED) {
                     startCalculatedEvidenceRestoreIfNeeded(tournamentId, matchId)
                 }
@@ -632,6 +654,7 @@ class MatchReviewViewModel @Inject constructor(
         calculatedEvidenceSaveEnabled = true
         calculatedEvidenceSaved = false
         calculatedEvidenceSnapshot = null
+        resumeReadyCalculatedEvidenceSnapshot = null
         calculatedEvidenceSaveGeneration++
         calculatedEvidenceSaveGenerationRequested = null
         _calculatedEvidenceSaveStatus.value = MatchCalculatedEvidenceSaveStatus.IDLE
@@ -687,6 +710,28 @@ class MatchReviewViewModel @Inject constructor(
         val readyOcrState = ocrReviewState as? MatchOcrReviewUiState.Ready ?: return
         val reviewState = _uiState.value
         val evidence = MatchCalculatedEvidenceMapper.map(reviewState, readyOcrState) ?: return
+        resumeReadyCalculatedEvidenceSnapshot = ResumeReadyCalculatedEvidenceSnapshot(
+            tournamentId = readyOcrState.tournamentId,
+            matchId = readyOcrState.matchId,
+            generation = calculatedEvidenceSaveGeneration,
+            evidence = evidence,
+        )
+        if (_calculatedEvidenceSaveStatus.value != MatchCalculatedEvidenceSaveStatus.CLEARING) {
+            _uiState.update { current ->
+                if (
+                    current.tournamentId == readyOcrState.tournamentId &&
+                    current.matchId == readyOcrState.matchId &&
+                    current.calculatedEvidenceRestoreStatus == CalculatedEvidenceRestoreStatus.CLEARED &&
+                    _calculatedEvidenceSaveStatus.value != MatchCalculatedEvidenceSaveStatus.CLEARING
+                ) {
+                    current.copy(
+                        calculatedEvidenceRestoreStatus = CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                    )
+                } else {
+                    current
+                }
+            }
+        }
         if (calculatedEvidenceSaveCoordinator == null) return
         if (calculatedEvidenceSnapshot == evidence &&
             (calculatedEvidenceSaved || calculatedEvidenceSaveGenerationRequested == calculatedEvidenceSaveGeneration)
@@ -702,6 +747,32 @@ class MatchReviewViewModel @Inject constructor(
             evidence = evidence,
             isCurrentGeneration = { generation -> generation == calculatedEvidenceSaveGeneration },
         )
+    }
+
+    internal fun resumeCalculatedEvidenceFor(
+        tournamentId: String,
+        matchId: String,
+    ): MatchCalculatedEvidence? {
+        val state = _uiState.value
+        if (!state.isEditable ||
+            state.tournamentId != tournamentId ||
+            state.matchId != matchId ||
+            _calculatedEvidenceSaveStatus.value == MatchCalculatedEvidenceSaveStatus.CLEARING
+        ) {
+            return null
+        }
+        val snapshot = resumeReadyCalculatedEvidenceSnapshot
+        if (snapshot != null &&
+            snapshot.tournamentId == tournamentId &&
+            snapshot.matchId == matchId &&
+            snapshot.generation == calculatedEvidenceSaveGeneration
+        ) {
+            return snapshot.evidence
+        }
+        return state.restoredCalculatedEvidence.takeIf {
+            state.calculatedEvidenceRestoreStatus == CalculatedEvidenceRestoreStatus.RESTORED &&
+                resumePersistentEvidenceSaveGeneration == calculatedEvidenceSaveGeneration
+        }
     }
 
     /** Saves only accepted Result OCR corrections against the existing evidence record. */
@@ -749,11 +820,13 @@ class MatchReviewViewModel @Inject constructor(
 
         calculatedEvidenceSaveEnabled = false
         calculatedEvidenceSaved = false
+        resumeReadyCalculatedEvidenceSnapshot = null
         calculatedEvidenceRestoreGeneration++
         calculatedEvidenceRestoreJob?.cancel()
         calculatedEvidenceRestoreJob = null
         calculatedEvidenceSaveGeneration++
         calculatedEvidenceSaveGenerationRequested = null
+        resumePersistentEvidenceSaveGeneration = null
         val clearGeneration = calculatedEvidenceSaveGeneration
         coordinator.clear(
             generation = clearGeneration,
@@ -3296,6 +3369,30 @@ class MatchReviewViewModel @Inject constructor(
     }
 }
 
+internal fun preserveMatchReviewResultStateAcrossRepositoryUpdate(
+    current: MatchReviewUiState,
+    next: MatchReviewUiState,
+    activeTournamentId: String,
+    activeMatchId: String,
+): MatchReviewUiState {
+    val sameMatch = current.tournamentId == activeTournamentId &&
+        current.matchId == activeMatchId &&
+        (next.tournamentId == null || next.tournamentId == activeTournamentId) &&
+        (next.matchId == null || next.matchId == activeMatchId)
+    return next.copy(
+        resultScreenshots = if (sameMatch && !next.isAvailable) {
+            current.resultScreenshots
+        } else {
+            next.resultScreenshots
+        },
+        resultPositionCropPreviews = if (sameMatch) {
+            current.resultPositionCropPreviews
+        } else {
+            next.resultPositionCropPreviews
+        },
+    )
+}
+
 private data class MatchReviewLoadInputs(
     val matches: List<Match>,
     val slots: List<TeamSlot>,
@@ -3550,6 +3647,13 @@ private fun MatchResultScreenshotAssetCloudFailure.toUiError(): ScreenshotUpload
     MatchResultScreenshotAssetCloudFailure.AUTHORIZATION -> ScreenshotUploadError.RLS_DENIED
     else -> ScreenshotUploadError.CLOUD_METADATA_WRITE_FAILED
 }
+
+private data class ResumeReadyCalculatedEvidenceSnapshot(
+    val tournamentId: String,
+    val matchId: String,
+    val generation: Long,
+    val evidence: MatchCalculatedEvidence,
+)
 
 private data class PendingResultDocument(
     val format: ResultExportFileFormat,

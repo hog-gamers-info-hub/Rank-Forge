@@ -104,6 +104,36 @@ private enum class MatchReviewScreenshotActionStyle {
     REMOVE,
 }
 
+internal enum class MatchReviewResumeRecoveryAction {
+    NONE,
+    ARMED,
+    CONSUMED,
+}
+
+internal class MatchReviewResumeRecoveryGate {
+    private var backgroundedSinceLastResume = false
+
+    fun onLifecycleEvent(event: Lifecycle.Event): MatchReviewResumeRecoveryAction = when (event) {
+        Lifecycle.Event.ON_PAUSE,
+        Lifecycle.Event.ON_STOP,
+        -> if (backgroundedSinceLastResume) {
+            MatchReviewResumeRecoveryAction.NONE
+        } else {
+            backgroundedSinceLastResume = true
+            MatchReviewResumeRecoveryAction.ARMED
+        }
+
+        Lifecycle.Event.ON_RESUME -> if (backgroundedSinceLastResume) {
+            backgroundedSinceLastResume = false
+            MatchReviewResumeRecoveryAction.CONSUMED
+        } else {
+            MatchReviewResumeRecoveryAction.NONE
+        }
+
+        else -> MatchReviewResumeRecoveryAction.NONE
+    }
+}
+
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
 const val MATCH_REVIEW_VALID_STATUS_TEST_TAG = "match_review_valid_status"
@@ -294,10 +324,19 @@ fun MatchReviewRoute(
                  CalculatedEvidenceRestoreStatus.NOT_FOUND,
                  CalculatedEvidenceRestoreStatus.FAILED,
                  CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
-                 -> resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
-                 CalculatedEvidenceRestoreStatus.CLEARED -> {
-                     resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(tournamentId, matchId)
+                 -> {
+                     if (shouldLoadCachedForCalculatedEvidenceRestore(
+                             restoreStatus = uiState.calculatedEvidenceRestoreStatus,
+                             ocrUiState = ocrUiState,
+                             tournamentId = tournamentId,
+                             matchId = matchId,
+                         )
+                     ) {
+                         resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+                     }
                  }
+                 CalculatedEvidenceRestoreStatus.CLEARED ->
+                     resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(tournamentId, matchId)
                  CalculatedEvidenceRestoreStatus.CHECKING -> Unit
             }
         }
@@ -344,13 +383,53 @@ fun MatchReviewRoute(
         lifecycleOwner,
         tournamentId,
         matchId,
-        uiState.isAvailable,
-        uiState.status,
-        uiState.calculatedEvidenceRestoreStatus,
+        viewModel,
+        resolvedOcrReviewViewModel,
+        customDesignFormatAvailabilityViewModel,
     ) {
+        val resumeRecoveryGate = MatchReviewResumeRecoveryGate()
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                customDesignFormatAvailabilityViewModel.refresh()
+            when (event) {
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                -> resumeRecoveryGate.onLifecycleEvent(event)
+
+                Lifecycle.Event.ON_RESUME -> {
+                    customDesignFormatAvailabilityViewModel.refresh()
+                    if (
+                        resumeRecoveryGate.onLifecycleEvent(event) !=
+                            MatchReviewResumeRecoveryAction.CONSUMED
+                    ) {
+                        return@LifecycleEventObserver
+                    }
+                    val currentState = viewModel.uiState.value
+                    if (currentState.isEditable) {
+                        val resumeEvidence = viewModel.resumeCalculatedEvidenceFor(
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                        )
+                        if (resumeEvidence != null) {
+                            resolvedOcrReviewViewModel.restoreCalculatedEvidence(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                evidence = resumeEvidence,
+                            )
+                        } else if (
+                            viewModel.calculatedEvidenceSaveStatus.value !=
+                                MatchCalculatedEvidenceSaveStatus.SAVING &&
+                            viewModel.calculatedEvidenceSaveStatus.value !=
+                                MatchCalculatedEvidenceSaveStatus.CLEARING &&
+                            currentState.calculatedEvidenceRestoreStatus in setOf(
+                                CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                                CalculatedEvidenceRestoreStatus.FAILED,
+                            )
+                        ) {
+                            resolvedOcrReviewViewModel.loadCached(tournamentId, matchId)
+                        }
+                    }
+                }
+
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -2250,6 +2329,40 @@ private fun MatchOcrReviewUiState.hasDisplayableResultOcrData(): Boolean = when 
     MatchOcrReviewUiState.Loading,
     is MatchOcrReviewUiState.Calculating,
     is MatchOcrReviewUiState.Error,
+    -> false
+}
+
+internal fun MatchOcrReviewUiState.hasDisplayableResultForMatch(
+    tournamentId: String,
+    matchId: String,
+): Boolean = when (this) {
+    is MatchOcrReviewUiState.Empty ->
+        this.tournamentId == tournamentId &&
+            this.matchId == matchId &&
+            hasDisplayableResultOcrData()
+    is MatchOcrReviewUiState.Ready ->
+        this.tournamentId == tournamentId &&
+            this.matchId == matchId &&
+            hasDisplayableResultOcrData()
+    MatchOcrReviewUiState.Loading,
+    is MatchOcrReviewUiState.Calculating,
+    is MatchOcrReviewUiState.Error,
+    -> false
+}
+
+internal fun shouldLoadCachedForCalculatedEvidenceRestore(
+    restoreStatus: CalculatedEvidenceRestoreStatus,
+    ocrUiState: MatchOcrReviewUiState,
+    tournamentId: String,
+    matchId: String,
+): Boolean = when (restoreStatus) {
+    CalculatedEvidenceRestoreStatus.NOT_FOUND,
+    CalculatedEvidenceRestoreStatus.FAILED,
+    CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+    -> !ocrUiState.hasDisplayableResultForMatch(tournamentId, matchId)
+    CalculatedEvidenceRestoreStatus.RESTORED,
+    CalculatedEvidenceRestoreStatus.CLEARED,
+    CalculatedEvidenceRestoreStatus.CHECKING,
     -> false
 }
 

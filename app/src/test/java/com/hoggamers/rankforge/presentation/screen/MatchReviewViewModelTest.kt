@@ -449,6 +449,247 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun readyMappedEvidenceBecomesTheResumeAuthoritativeSnapshot() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.calculateResultPositionCrops()
+        val readyState = resumeReadyOcrState(teamSlot = 2)
+        val expected = requireNotNull(MatchCalculatedEvidenceMapper.map(viewModel.uiState.value, readyState))
+        viewModel.saveCalculatedEvidenceIfReady(readyState)
+
+        assertEquals(
+            expected,
+            viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId),
+        )
+    }
+
+    @Test
+    fun freshReadyEvidenceSupersedesClearedRestoreStatus() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = ControlledCalculatedEvidenceRepository(null),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+            viewModel.calculateResultPositionCrops()
+            advanceUntilIdle()
+            viewModel.clearResult()
+            advanceUntilIdle()
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.CLEARED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+
+            viewModel.calculateResultPositionCrops()
+            viewModel.saveCalculatedEvidenceIfReady(resumeReadyOcrState(teamSlot = 1))
+
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun nonReadyEvidenceDoesNotSupersedeClearedRestoreStatus() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = ControlledCalculatedEvidenceRepository(null),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+            viewModel.calculateResultPositionCrops()
+            advanceUntilIdle()
+            viewModel.clearResult()
+            advanceUntilIdle()
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.CLEARED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+
+            viewModel.saveCalculatedEvidenceIfReady(
+                MatchOcrReviewUiState.Calculating(TOURNAMENT_ID, matchId),
+            )
+
+            assertEquals(
+                CalculatedEvidenceRestoreStatus.CLEARED,
+                viewModel.uiState.value.calculatedEvidenceRestoreStatus,
+            )
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun initialWorkingSetIsNotAvailableAsResumeEvidenceBeforeReadyMapping() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.calculateResultPositionCrops()
+
+        assertNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+    }
+
+    @Test
+    fun startingAutomaticCalculationInvalidatesThePreviousResumeSnapshot() = runTest {
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.calculateResultPositionCrops()
+        viewModel.saveCalculatedEvidenceIfReady(resumeReadyOcrState(teamSlot = 1))
+        assertNotNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+
+        viewModel.calculateResultPositionCrops()
+
+        assertNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+        viewModel.saveCalculatedEvidenceIfReady(resumeReadyOcrState(teamSlot = 2))
+        assertEquals(
+            MatchCalculatedEvidenceMapper.map(
+                viewModel.uiState.value,
+                resumeReadyOcrState(teamSlot = 2),
+            ),
+            viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId),
+        )
+    }
+
+    @Test
+    fun clearResultInvalidatesTheResumeSnapshotBeforeDeletionCompletes() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = ControlledCalculatedEvidenceRepository(null),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+            viewModel.calculateResultPositionCrops()
+            viewModel.saveCalculatedEvidenceIfReady(resumeReadyOcrState(teamSlot = 1))
+            advanceUntilIdle()
+            assertNotNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+
+            viewModel.clearResult()
+
+            assertNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun resumeSnapshotCannotBeReusedForAnotherMatch() = runTest {
+        val otherMatchId = "other-resume-match-id"
+        repository.createDraftMatch(
+            Match(
+                id = otherMatchId,
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+        val viewModel = reviewViewModel()
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.calculateResultPositionCrops()
+        viewModel.saveCalculatedEvidenceIfReady(resumeReadyOcrState(teamSlot = 1))
+        assertNotNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+
+        viewModel.load(TOURNAMENT_ID, otherMatchId)
+        advanceUntilIdle()
+
+        assertNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, otherMatchId))
+    }
+
+    @Test
+    fun restoredCalculatedEvidenceRemainsAvailableAsResumeFallback() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val evidence = MatchCalculatedEvidence(
+                result = com.hoggamers.rankforge.data.local.ResultCalculatedEvidence(
+                    positions = listOf(
+                        com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence(
+                            position = 1,
+                            slotNumber = 1,
+                        ),
+                    ),
+                ),
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = ControlledCalculatedEvidenceRepository(
+                    evidence = evidence,
+                    matchId = matchId,
+                ),
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(
+                    CompletableDeferred<Unit>().also { it.complete(Unit) },
+                ),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+
+            assertEquals(
+                evidence,
+                viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId),
+            )
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun startingAutomaticCalculationInvalidatesThePreviousPersistentResumeFallback() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val evidence = MatchCalculatedEvidence()
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = ControlledCalculatedEvidenceRepository(
+                    evidence = evidence,
+                    matchId = matchId,
+                ),
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(
+                    CompletableDeferred<Unit>().also { it.complete(Unit) },
+                ),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+            assertEquals(evidence, viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+
+            viewModel.calculateResultPositionCrops()
+
+            assertNull(viewModel.resumeCalculatedEvidenceFor(TOURNAMENT_ID, matchId))
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
     fun clearingThenCalculatingAgainAllowsAFreshRestore() = runTest {
         val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
         try {
@@ -1074,6 +1315,195 @@ class MatchReviewViewModelTest {
         viewModel.onNavigationHandled()
 
         assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun sameMatchTransientUnavailableStatePreservesResultPreviewsAndScreenshotIdentity() {
+        val currentScreenshots = defaultMatchResultScreenshotSlots().map { slot ->
+            slot.copy(localPreviewUri = "content://current/${slot.role.name}")
+        }
+        val currentPreviews = defaultMatchResultPositionCropPreviewStates().toMutableMap().apply {
+            this[MatchResultScreenshotRole.MATCH_RESULT_UPPER] = availablePositionCropPreviews(1..10)
+        }
+        val current = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            resultScreenshots = currentScreenshots,
+            resultPositionCropPreviews = currentPreviews,
+        )
+        val next = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = false,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+        )
+
+        val actual = preserveMatchReviewResultStateAcrossRepositoryUpdate(
+            current,
+            next,
+            TOURNAMENT_ID,
+            matchId,
+        )
+
+        assertEquals(currentScreenshots, actual.resultScreenshots)
+        assertEquals(currentPreviews, actual.resultPositionCropPreviews)
+    }
+
+    @Test
+    fun differentMatchRepositoryStateDoesNotInheritResultPreviews() {
+        val currentPreviews = defaultMatchResultPositionCropPreviewStates().toMutableMap().apply {
+            this[MatchResultScreenshotRole.MATCH_RESULT_UPPER] = availablePositionCropPreviews(1..10)
+        }
+        val current = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            resultPositionCropPreviews = currentPreviews,
+        )
+        val next = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = "another-match",
+        )
+
+        val actual = preserveMatchReviewResultStateAcrossRepositoryUpdate(
+            current,
+            next,
+            TOURNAMENT_ID,
+            matchId,
+        )
+
+        assertEquals(next.resultScreenshots, actual.resultScreenshots)
+        assertEquals(next.resultPositionCropPreviews, actual.resultPositionCropPreviews)
+    }
+
+    @Test
+    fun sameMatchAvailableStateUsesRepositoryScreenshotStateButKeepsCurrentPreviews() {
+        val currentPreviews = defaultMatchResultPositionCropPreviewStates().toMutableMap().apply {
+            this[MatchResultScreenshotRole.MATCH_RESULT_UPPER] = availablePositionCropPreviews(1..10)
+        }
+        val current = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            resultPositionCropPreviews = currentPreviews,
+        )
+        val nextScreenshots = defaultMatchResultScreenshotSlots().map { slot ->
+            slot.copy(localPreviewUri = "content://next/${slot.role.name}")
+        }
+        val next = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            resultScreenshots = nextScreenshots,
+        )
+
+        val actual = preserveMatchReviewResultStateAcrossRepositoryUpdate(
+            current,
+            next,
+            TOURNAMENT_ID,
+            matchId,
+        )
+
+        assertEquals(nextScreenshots, actual.resultScreenshots)
+        assertEquals(currentPreviews, actual.resultPositionCropPreviews)
+    }
+
+    @Test
+    fun clearedCurrentPreviewsRemainEmptyAcrossSameMatchTransientUnavailableState() {
+        val current = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = true,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+        )
+        val next = MatchReviewUiState(
+            isLoading = false,
+            isAvailable = false,
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            resultPositionCropPreviews = defaultMatchResultPositionCropPreviewStates().mapValues {
+                MatchResultPositionCropPreviewState.Available(
+                    listOf(MatchResultPositionCropPreview(1, FakeMatchResultPositionCropPreviewImage)),
+                )
+            },
+        )
+
+        val actual = preserveMatchReviewResultStateAcrossRepositoryUpdate(
+            current,
+            next,
+            TOURNAMENT_ID,
+            matchId,
+        )
+
+        assertEquals(current.resultPositionCropPreviews, actual.resultPositionCropPreviews)
+    }
+
+    @Test
+    fun loadCollectionPreservesPreviewsAcrossRepeatedSameMatchUnavailableEmissions() = runTest {
+        val activeMatch = repository.observeMatchById(matchId).first()!!
+        val observedMatches = MutableStateFlow(listOf(activeMatch))
+        val generator = RecordingMatchResultPositionCropPreviewGenerator(
+            statesByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to availablePositionCropPreviews(1..11),
+            ),
+        )
+        val scenario = readyResultPreviewScenario(
+            roles = arrayOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+            generator = generator,
+            observeMatches = ObserveMatchesUseCase { observedMatches },
+        )
+
+        scenario.viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        scenario.viewModel.calculateResultPositionCrops()
+        advanceUntilIdle()
+
+        assertEquals(
+            11,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Available).crops.size,
+        )
+
+        observedMatches.value = emptyList()
+        advanceUntilIdle()
+        assertFalse(
+            "state=${scenario.viewModel.uiState.value} flow=${observedMatches.value}",
+            scenario.viewModel.uiState.value.isAvailable,
+        )
+        assertEquals(
+            11,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Available).crops.size,
+        )
+
+        observedMatches.value = listOf(activeMatch.copy(id = "another-match"))
+        advanceUntilIdle()
+        assertFalse(scenario.viewModel.uiState.value.isAvailable)
+        assertEquals(
+            11,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Available).crops.size,
+        )
+
+        observedMatches.value = listOf(activeMatch)
+        advanceUntilIdle()
+        assertTrue(scenario.viewModel.uiState.value.isAvailable)
+        assertEquals(
+            11,
+            (scenario.viewModel.uiState.value.resultPositionCropPreviews
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                as MatchResultPositionCropPreviewState.Available).crops.size,
+        )
     }
 
     @Test
@@ -2968,9 +3398,10 @@ class MatchReviewViewModelTest {
                 MatchLobbyScreenshotUploadCheckpointResult.Skipped
             },
         ),
+        observeMatches: ObserveMatchesUseCase = ObserveMatchesUseCase(repository),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
-        observeMatches = ObserveMatchesUseCase(repository),
+        observeMatches = observeMatches,
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         observeRoster = ObserveRosterByTournamentUseCase(repository),
         observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
@@ -3109,6 +3540,41 @@ class MatchReviewViewModelTest {
         }
     }
 
+    private fun resumeReadyOcrState(teamSlot: Int): MatchOcrReviewUiState.Ready =
+        MatchOcrReviewUiState.Ready(
+            tournamentId = TOURNAMENT_ID,
+            matchId = matchId,
+            rowCount = 1,
+            rows = listOf(
+                MatchOcrReviewRowUiState(
+                    rowIndex = 0,
+                    expectedPlacementLabel = "1",
+                    detectedPlacementDisplayValue = "1",
+                    placementStatusLabel = "test",
+                    detectedKillDisplayValue = "1",
+                    killStatusLabel = "test",
+                    detectedPlayerNameEvidenceLabel = "Player",
+                    playerNameStatusLabel = "test",
+                    suggestedTeamSlotDisplayValue = teamSlot.toString(),
+                    confidenceScoreDisplayValue = "test",
+                    confidenceTierLabel = "test",
+                    assignmentSafetyStatusLabel = "test",
+                    topThreeSuggestionsSummary = emptyList(),
+                    warningLabels = emptyList(),
+                    blockerLabels = emptyList(),
+                    severity = MatchOcrReviewSeverity.INFORMATIONAL,
+                ),
+            ),
+            blockerCount = 0,
+            warningCount = 0,
+            safeRowCount = 1,
+            manualRequiredRowCount = 0,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = false,
+            hasUnavailableEvidence = false,
+            teamNamesBySlot = mapOf(teamSlot to "Team $teamSlot"),
+        )
+
     private fun reviewViewModelWithReadyResultRoles(
         vararg roles: MatchResultScreenshotRole,
     ): MatchReviewViewModel = readyResultPreviewScenario(roles = roles).viewModel
@@ -3118,6 +3584,7 @@ class MatchReviewViewModelTest {
         generator: RecordingMatchResultPositionCropPreviewGenerator =
             RecordingMatchResultPositionCropPreviewGenerator(),
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction = RecordingFinalizedMatchCloudSync(),
+        observeMatches: ObserveMatchesUseCase = ObserveMatchesUseCase(repository),
     ): ReadyResultPreviewScenario {
         val preserver = localImagePreserver()
         val assets = roles.map { role ->
@@ -3137,6 +3604,7 @@ class MatchReviewViewModelTest {
         val assetRepository = FakeMatchResultScreenshotAssetRepository(assets)
         return ReadyResultPreviewScenario(
             viewModel = reviewViewModel(
+            observeMatches = observeMatches,
             localImagePreserver = preserver,
             matchResultScreenshotAssetRepository = assetRepository,
             matchResultPositionCropPreviewGenerator = generator,

@@ -496,6 +496,103 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun sameMatchReadyRowsSuppressCalculatedEvidenceCacheFallback() {
+        val state = readyState()
+
+        listOf(
+            CalculatedEvidenceRestoreStatus.NOT_FOUND,
+            CalculatedEvidenceRestoreStatus.FAILED,
+            CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+        ).forEach { restoreStatus ->
+            assertFalse(
+                shouldLoadCachedForCalculatedEvidenceRestore(
+                    restoreStatus = restoreStatus,
+                    ocrUiState = state,
+                    tournamentId = TOURNAMENT_ID,
+                    matchId = MATCH_ID,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun sameMatchReadyPreviewRowsSuppressCalculatedEvidenceCacheFallback() {
+        val state = readyState(rows = emptyList(), correctionDraft = null).copy(
+            matchResultOcrPreview = MatchResultOcrPreviewUiState.Ready(
+                roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                rows = listOf(
+                    MatchResultOcrPreviewRowUiState(
+                        position = 1,
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        sourceLabel = "Synthetic",
+                        placementText = "1",
+                        slots = emptyList(),
+                    ),
+                ),
+                ignoredLowerRows = emptyList(),
+                manualReviewRows = emptyList(),
+            ),
+        )
+
+        assertFalse(
+            shouldLoadCachedForCalculatedEvidenceRestore(
+                restoreStatus = CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                ocrUiState = state,
+                tournamentId = TOURNAMENT_ID,
+                matchId = MATCH_ID,
+            ),
+        )
+    }
+
+    @Test
+    fun differentMatchReadyStateDoesNotSuppressCalculatedEvidenceCacheFallback() {
+        assertTrue(
+            shouldLoadCachedForCalculatedEvidenceRestore(
+                restoreStatus = CalculatedEvidenceRestoreStatus.NOT_FOUND,
+                ocrUiState = readyState().copy(matchId = "other-match"),
+                tournamentId = TOURNAMENT_ID,
+                matchId = MATCH_ID,
+            ),
+        )
+    }
+
+    @Test
+    fun nonDisplayableOrLoadingStateUsesCalculatedEvidenceCacheFallback() {
+        listOf(
+            MatchOcrReviewUiState.Loading,
+            MatchOcrReviewUiState.Empty(TOURNAMENT_ID, MATCH_ID),
+            readyState(rows = emptyList(), correctionDraft = null),
+        ).forEach { state ->
+            assertTrue(
+                shouldLoadCachedForCalculatedEvidenceRestore(
+                    restoreStatus = CalculatedEvidenceRestoreStatus.FAILED,
+                    ocrUiState = state,
+                    tournamentId = TOURNAMENT_ID,
+                    matchId = MATCH_ID,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun nonFallbackRestoreStatusesDoNotRequestCalculatedEvidenceCacheFallback() {
+        listOf(
+            CalculatedEvidenceRestoreStatus.RESTORED,
+            CalculatedEvidenceRestoreStatus.CLEARED,
+            CalculatedEvidenceRestoreStatus.CHECKING,
+        ).forEach { restoreStatus ->
+            assertFalse(
+                shouldLoadCachedForCalculatedEvidenceRestore(
+                    restoreStatus = restoreStatus,
+                    ocrUiState = readyState(),
+                    tournamentId = TOURNAMENT_ID,
+                    matchId = MATCH_ID,
+                ),
+            )
+        }
+    }
+
+    @Test
     fun emptyStateStillSurvivesUnavailableCache() = runTest(dispatcher) {
         val repository = createRepository()
         val initialState = MatchOcrReviewUiState.Empty(TOURNAMENT_ID, MATCH_ID)
