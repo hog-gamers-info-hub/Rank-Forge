@@ -442,6 +442,102 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun matchingReadyStateSurvivesCacheReadFailure() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = readyState()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                error("synthetic cache read failure")
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertEquals(initialState, viewModel.uiState.value)
+    }
+
+    @Test
+    fun matchingReadyStateSurvivesUnavailableCache() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = readyState()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertEquals(initialState, viewModel.uiState.value)
+    }
+
+    @Test
+    fun matchingReadyStateSurvivesIncompleteCache() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = readyState()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.STALE_OR_INCOMPLETE)
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertEquals(initialState, viewModel.uiState.value)
+    }
+
+    @Test
+    fun emptyStateStillSurvivesUnavailableCache() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = MatchOcrReviewUiState.Empty(TOURNAMENT_ID, MATCH_ID)
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.loadCached(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        assertEquals(initialState, viewModel.uiState.value)
+    }
+
+    @Test
+    fun clearCalculatedEvidenceDisplayStillClearsMatchingReadyState() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = readyState()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.clearCalculatedEvidenceDisplay(TOURNAMENT_ID, MATCH_ID)
+
+        assertEquals(
+            MatchOcrReviewUiState.Empty(
+                tournamentId = TOURNAMENT_ID,
+                matchId = MATCH_ID,
+                teamNamesBySlot = initialState.teamNamesBySlot,
+            ),
+            viewModel.uiState.value,
+        )
+    }
+
+    @Test
     fun repeatedLoadForSameRouteKeepsDeterministicCalculatingState() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 
