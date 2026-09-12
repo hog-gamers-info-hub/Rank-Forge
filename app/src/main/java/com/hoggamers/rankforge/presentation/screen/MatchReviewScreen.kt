@@ -1,5 +1,17 @@
 ﻿package com.hoggamers.rankforge.presentation.screen
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -20,6 +32,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -54,12 +67,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -82,7 +97,6 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
-import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -96,6 +110,9 @@ private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
 private val PointIqMatchReviewEmptyCardBorder = Color(0xFF9DB5D3)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
+private val PointIqMatchReviewSkeletonBase = Color(0xFFE5ECF5)
+private val PointIqMatchReviewSkeletonHighlight = Color(0xFFF1F5FA)
+private val PointIqMatchReviewSkeletonButton = Color(0xFFD8E6F9)
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private enum class MatchReviewScreenshotActionStyle {
@@ -135,6 +152,7 @@ internal class MatchReviewResumeRecoveryGate {
 }
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
+const val MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG = "match_review_restore_skeleton"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
 const val MATCH_REVIEW_VALID_STATUS_TEST_TAG = "match_review_valid_status"
 const val MATCH_REVIEW_ISSUES_STATUS_TEST_TAG = "match_review_issues_status"
@@ -293,6 +311,12 @@ fun MatchReviewRoute(
         .collectAsStateWithLifecycle(MatchLobbyScreenshotIntakeUiState(isLoading = false))
     val resolvedOcrReviewViewModel = ocrReviewViewModel ?: hiltViewModel<MatchOcrReviewViewModel>()
     val ocrUiState by resolvedOcrReviewViewModel.uiState.collectAsStateWithLifecycle()
+    val holdForCalculatedEvidenceRestore = shouldHoldMatchReviewForCalculatedEvidenceRestore(
+        uiState = uiState,
+        ocrUiState = ocrUiState,
+    )
+    val initialCalculatedRestoreTransitionActive =
+        isInitialCalculatedRestoreTransitionActive(uiState)
     val ocrCacheAvailability by resolvedOcrReviewViewModel.cacheAvailability.collectAsStateWithLifecycle()
     val customDesignFormatAvailabilityViewModel =
         hiltViewModel<CustomDesignFormatAvailabilityViewModel>()
@@ -674,6 +698,8 @@ fun MatchReviewRoute(
         customDesignFormatAvailabilityUiState = customDesignFormatAvailabilityUiState,
         ocrCacheAvailability = ocrCacheAvailability,
         ocrUiState = ocrUiState,
+        holdForCalculatedEvidenceRestore = holdForCalculatedEvidenceRestore,
+        initialCalculatedRestoreTransitionActive = initialCalculatedRestoreTransitionActive,
         onOcrPlacementChanged = { rowIndex, value ->
             resolvedOcrReviewViewModel.onPlacementChanged(rowIndex, value)
             saveAcceptedResultCorrections()
@@ -750,6 +776,8 @@ fun MatchReviewScreen(
         CustomDesignFormatAvailabilityUiState(),
     ocrCacheAvailability: MatchOcrCacheAvailability = MatchOcrCacheAvailability.UNKNOWN,
     ocrUiState: MatchOcrReviewUiState = MatchOcrReviewUiState.Loading,
+    holdForCalculatedEvidenceRestore: Boolean = false,
+    initialCalculatedRestoreTransitionActive: Boolean = false,
     onOcrPlacementChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrKillsChanged: (rowIndex: Int, value: String) -> Unit = { _, _ -> },
     onOcrPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
@@ -776,16 +804,8 @@ fun MatchReviewScreen(
         }
     }
 
-    when {
-        ocrUiState is MatchOcrReviewUiState.Calculating ->
-            MatchOcrReviewCalculatingState()
-        uiState.isLoading ||
-            (uiState.isAvailable && !showLegacyManualReviewContent && lobbyUiState.isLoading) ->
-            RankForgeLoadingState(
-            message = stringResource(R.string.match_review_loading),
-        )
-        uiState.isNotFound -> MatchReviewNotFoundState(onBackToDetails)
-        uiState.isAvailable -> MatchReviewContent(
+    val renderMatchReviewContent: @Composable () -> Unit = {
+        MatchReviewContent(
             uiState = uiState,
             lobbyUiState = lobbyUiState,
             onEnterPlacements = onEnterPlacements,
@@ -843,6 +863,348 @@ fun MatchReviewScreen(
             onOcrDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
         )
     }
+
+    when {
+        ocrUiState is MatchOcrReviewUiState.Calculating ->
+            MatchOcrReviewCalculatingState()
+        uiState.isLoading ||
+            (uiState.isAvailable && !showLegacyManualReviewContent && lobbyUiState.isLoading) ->
+            MatchReviewRestoreSkeleton(matchNumber = uiState.matchNumber)
+        uiState.isNotFound -> MatchReviewNotFoundState(onBackToDetails)
+        initialCalculatedRestoreTransitionActive ->
+            MatchReviewCalculatedEvidenceRestoreTransition(
+                ready = !shouldShowMatchReviewRestoreSkeleton(
+                    holdForCalculatedEvidenceRestore = holdForCalculatedEvidenceRestore,
+                    initialCalculatedRestoreTransitionActive = initialCalculatedRestoreTransitionActive,
+                ),
+                matchNumber = uiState.matchNumber,
+                content = renderMatchReviewContent,
+            )
+        uiState.isAvailable -> renderMatchReviewContent()
+    }
+}
+
+@Composable
+private fun MatchReviewCalculatedEvidenceRestoreTransition(
+    ready: Boolean,
+    matchNumber: Int?,
+    content: @Composable () -> Unit,
+) {
+    AnimatedContent(
+        targetState = ready,
+        transitionSpec = {
+            if (targetState) {
+                (
+                    fadeIn(animationSpec = tween(durationMillis = 220)) +
+                        slideInVertically(
+                            animationSpec = tween(durationMillis = 220),
+                            initialOffsetY = { height -> height / 40 },
+                        ) +
+                        scaleIn(
+                            animationSpec = tween(durationMillis = 220),
+                            initialScale = 0.985f,
+                        )
+                    ).togetherWith(
+                        fadeOut(animationSpec = tween(durationMillis = 110)),
+                    )
+            } else {
+                fadeIn(animationSpec = tween(durationMillis = 220)).togetherWith(
+                    fadeOut(animationSpec = tween(durationMillis = 110)),
+                )
+            }
+        },
+        label = "calculated evidence restore transition",
+    ) { isReady ->
+        if (isReady) {
+            content()
+        } else {
+            MatchReviewRestoreSkeleton(matchNumber = matchNumber)
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreSkeleton(
+    matchNumber: Int?,
+) {
+    val breathingTransition = rememberInfiniteTransition(label = "match review restore skeleton")
+    val placeholderAlpha by breathingTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "match review restore placeholder alpha",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RankForgePageBackground)
+            .testTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(RankForgeSpacing.Large),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Top,
+    ) {
+        Text(
+            text = matchNumber?.let { "Review Match $it" } ?: "Review Match",
+            color = PointIqMatchReviewNavy,
+            fontSize = 28.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        PointIqEmptyMatchReviewSection(emphasizedSurface = true) {
+            MatchReviewRestoreSkeletonSectionHeader(
+                step = 1,
+                title = "Lobby Details",
+            ) {
+                Text(
+                    text = "Save Lobby",
+                    color = PointIqMatchReviewBody,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                MatchReviewRestoreSwitchPlaceholder(placeholderAlpha)
+            }
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(142.dp),
+                alpha = placeholderAlpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 12.dp,
+            )
+            MatchReviewRestoreLobbySummaryPlaceholder(placeholderAlpha)
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        PointIqEmptyMatchReviewSection(emphasizedSurface = true) {
+            MatchReviewRestoreSkeletonSectionHeader(
+                step = 2,
+                title = "Result Details",
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                alpha = placeholderAlpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 10.dp,
+            )
+            MatchReviewRestoreResultDetailsPlaceholder(placeholderAlpha)
+            MatchReviewRestoreFieldPlaceholders(placeholderAlpha)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        MatchReviewRestorePlaceholder(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            alpha = placeholderAlpha,
+            color = PointIqMatchReviewSkeletonButton,
+            cornerRadius = 14.dp,
+        )
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreSkeletonSectionHeader(
+    step: Int,
+    title: String,
+    trailingContent: @Composable (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ReviewStepBadge(
+            number = step,
+            backgroundColor = PointIqMatchReviewNavy,
+        )
+        Text(
+            text = title,
+            color = PointIqMatchReviewNavy,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            trailingContent()
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreSwitchPlaceholder(
+    alpha: Float,
+) {
+    Box(
+        modifier = Modifier
+            .width(36.dp)
+            .height(20.dp)
+            .alpha(alpha)
+            .clearAndSetSemantics { }
+            .background(PointIqMatchReviewSkeletonBase, RoundedCornerShape(12.dp)),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 3.dp)
+                .size(14.dp)
+                .background(PointIqMatchReviewSkeletonHighlight, RoundedCornerShape(50)),
+        )
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreLobbySummaryPlaceholder(
+    alpha: Float,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(104.dp)
+            .border(1.dp, PointIqMatchReviewBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+            .clearAndSetSemantics { },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.68f)
+                    .height(12.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonHighlight,
+                cornerRadius = 6.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.78f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.58f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreResultDetailsPlaceholder(
+    alpha: Float,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(122.dp)
+            .border(1.dp, PointIqMatchReviewBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+            .clearAndSetSemantics { },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.36f)
+                    .height(12.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonHighlight,
+                cornerRadius = 6.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.78f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+            MatchReviewRestorePlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.66f)
+                    .height(10.dp),
+                alpha = alpha,
+                color = PointIqMatchReviewSkeletonBase,
+                cornerRadius = 5.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewRestoreFieldPlaceholders(
+    alpha: Float,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf("Position", "Kills", "Slot").forEach { label ->
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .border(1.dp, PointIqMatchReviewBorder, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = PointIqMatchReviewBody,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                )
+                MatchReviewRestorePlaceholder(
+                    modifier = Modifier
+                        .fillMaxWidth(0.72f)
+                        .height(8.dp),
+                    alpha = alpha,
+                    color = PointIqMatchReviewSkeletonBase,
+                    cornerRadius = 4.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewRestorePlaceholder(
+    modifier: Modifier,
+    alpha: Float,
+    color: Color,
+    cornerRadius: Dp,
+) {
+    Box(
+        modifier = modifier
+            .alpha(alpha)
+            .clearAndSetSemantics { }
+            .background(color, RoundedCornerShape(cornerRadius)),
+    )
 }
 
 @Composable
@@ -2349,6 +2711,56 @@ internal fun MatchOcrReviewUiState.hasDisplayableResultForMatch(
     is MatchOcrReviewUiState.Error,
     -> false
 }
+
+internal fun shouldHoldMatchReviewForCalculatedEvidenceRestore(
+    uiState: MatchReviewUiState,
+    ocrUiState: MatchOcrReviewUiState,
+): Boolean {
+    if (!uiState.isAvailable || uiState.status == MatchStatus.FINALIZED) return false
+
+    return when (uiState.calculatedEvidenceRestoreStatus) {
+        CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+        CalculatedEvidenceRestoreStatus.CHECKING,
+        -> true
+        CalculatedEvidenceRestoreStatus.RESTORED -> {
+            val hasSavedResult =
+                uiState.restoredCalculatedEvidence?.result?.positions?.isNotEmpty() == true
+            val tournamentId = uiState.tournamentId
+            val matchId = uiState.matchId
+            hasSavedResult &&
+                tournamentId != null &&
+                matchId != null &&
+                !ocrUiState.hasDisplayableResultForMatch(tournamentId, matchId)
+        }
+        CalculatedEvidenceRestoreStatus.NOT_FOUND,
+        CalculatedEvidenceRestoreStatus.FAILED,
+        CalculatedEvidenceRestoreStatus.CLEARED,
+        -> false
+    }
+}
+
+internal fun isInitialCalculatedRestoreTransitionActive(
+    uiState: MatchReviewUiState,
+): Boolean {
+    if (!uiState.isAvailable || uiState.status == MatchStatus.FINALIZED) return false
+
+    return when (uiState.calculatedEvidenceRestoreStatus) {
+        CalculatedEvidenceRestoreStatus.NOT_REQUESTED,
+        CalculatedEvidenceRestoreStatus.CHECKING,
+        -> true
+        CalculatedEvidenceRestoreStatus.RESTORED ->
+            uiState.restoredCalculatedEvidence?.result?.positions?.isNotEmpty() == true
+        CalculatedEvidenceRestoreStatus.NOT_FOUND,
+        CalculatedEvidenceRestoreStatus.FAILED,
+        CalculatedEvidenceRestoreStatus.CLEARED,
+        -> false
+    }
+}
+
+internal fun shouldShowMatchReviewRestoreSkeleton(
+    holdForCalculatedEvidenceRestore: Boolean,
+    initialCalculatedRestoreTransitionActive: Boolean,
+): Boolean = holdForCalculatedEvidenceRestore && initialCalculatedRestoreTransitionActive
 
 internal fun shouldLoadCachedForCalculatedEvidenceRestore(
     restoreStatus: CalculatedEvidenceRestoreStatus,
