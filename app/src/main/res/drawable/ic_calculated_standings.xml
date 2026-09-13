@@ -1,0 +1,68 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+
+    <!-- Baseline -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:pathData="M34,202 H222" />
+
+    <!-- Position 2 podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M51,122 H77 A11,11 0,0 1,88 133 V191 A11,11 0,0 1,77 202 H51 A11,11 0,0 1,40 191 V133 A11,11 0,0 1,51 122 Z" />
+
+    <!-- Position 1 podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M115,86 H141 A11,11 0,0 1,152 97 V191 A11,11 0,0 1,141 202 H115 A11,11 0,0 1,104 191 V97 A11,11 0,0 1,115 86 Z" />
+
+    <!-- Position 3 podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M179,142 H205 A11,11 0,0 1,216 153 V191 A11,11 0,0 1,205 202 H179 A11,11 0,0 1,168 191 V153 A11,11 0,0 1,179 142 Z" />
+
+    <!-- Rank 2: slightly larger, with clear gap above left podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M51,82 C53,74 60,69 68,69 C77,69 84,74 84,82 C84,90 78,95 72,100 L58,108 H85" />
+
+    <!-- Rank 1: slightly larger and clearly separated above tallest podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M121,44 L128,37 V69" />
+
+    <!-- Rank 3: slightly larger, with clear gap above right podium -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M176,90 C180,84 186,81 193,82 C201,83 207,87 206,94 C205,99 201,102 195,102 C201,102 206,106 206,113 C206,120 200,124 192,124 C185,124 179,121 176,116" />
+</vector>

@@ -1,0 +1,86 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+
+    <!-- Scan / screenshot frame. The lower-right corner is intentionally omitted
+         because the result card overlaps that area. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M36,76 V48 H64" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M146,48 H174 V76" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M36,146 V174 H64" />
+
+    <!-- Minimal scan line; it stops before the overlapping result card. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:pathData="M74,112 H104" />
+
+    <!-- Overlapping result card. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M130,112 H202 A18,18 0,0 1,220 130 V190 A18,18 0,0 1,202 208 H130 A18,18 0,0 1,112 190 V130 A18,18 0,0 1,130 112 Z" />
+
+    <!-- Result rows. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="@android:color/transparent"
+        android:pathData="M136,136 A4,4 0,1 0,136 144 A4,4 0,1 0,136 136 Z" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:pathData="M152,140 H188" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="@android:color/transparent"
+        android:pathData="M136,156 A4,4 0,1 0,136 164 A4,4 0,1 0,136 156 Z" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:pathData="M152,160 H194" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="@android:color/transparent"
+        android:pathData="M136,176 A4,4 0,1 0,136 184 A4,4 0,1 0,136 176 Z" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:pathData="M152,180 H182" />
+</vector>
