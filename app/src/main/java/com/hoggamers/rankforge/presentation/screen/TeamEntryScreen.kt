@@ -1,31 +1,44 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import androidx.compose.foundation.BorderStroke
+import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,25 +46,45 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.toArgb
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
-private val PointIqTeamsNavy = Color(0xFF071B3E)
-private val PointIqTeamsBody = Color(0xFF607393)
+private val PointIqTeamsBackground = Color(0xFF031225)
+private val PointIqTeamsAmbientBlue = Color(0xFF0B386F)
+private val PointIqTeamsNavy = Color(0xFFF6F8FF)
+private val PointIqTeamsBody = Color(0xFF91AFE0)
 private val PointIqTeamsBlue = Color(0xFF176AF7)
-private val PointIqTeamsBorder = Color(0xFFD6E3F4)
-private val PointIqTeamsCard = Color(0xFFFFFFFF)
+private val PointIqTeamsFieldText = Color(0xFFF6F8FF)
+private val PointIqTeamsFieldInactive = Color(0xFF7D9DCE)
+private val PointIqTeamsFieldCyan = Color(0xFF17C9F2)
+private val PointIqTeamsDarkSurface = PointIqTeamsAmbientBlue.copy(alpha = 0.42f)
+private val PointIqTeamsCtaDeepBlue = Color(0xFF0D4DBA)
+private val PointIqTeamsCtaShadowLightBlue = Color(0xFF8EE7FF)
+private val PointIqTeamsFieldHorizontalInset = 16.dp
 
 const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
@@ -148,6 +181,33 @@ private fun TeamEntryContent(
 ) {
     val focusRequester = remember { BringIntoViewRequester() }
     var isPasteTeamListDialogVisible by remember { mutableStateOf(false) }
+    val backDescription = stringResource(R.string.back_action)
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqTeamsBackground.toArgb()
+            window.navigationBarColor = PointIqTeamsBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
 
     LaunchedEffect(focusSlotNumber) {
         if (focusSlotNumber != null) {
@@ -155,10 +215,23 @@ private fun TeamEntryContent(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(RankForgePageBackground)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+            .background(PointIqTeamsBackground)
+            .drawBehind {
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            PointIqTeamsAmbientBlue.copy(alpha = 0.42f),
+                            PointIqTeamsAmbientBlue.copy(alpha = 0.16f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(-size.width * 0.04f, size.height * 0.34f),
+                        radius = size.width * 0.78f,
+                    ),
+                )
+            }
             .testTag(TEAM_ENTRY_SCREEN_TEST_TAG)
             .imePadding()
             .verticalScroll(rememberScrollState())
@@ -168,42 +241,84 @@ private fun TeamEntryContent(
                 end = 24.dp,
                 bottom = 32.dp,
             ),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Top,
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top,
     ) {
-        Text(
-            text = stringResource(R.string.team_entry_title),
-            color = PointIqTeamsNavy,
-            fontSize = 28.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(7.dp))
-        Text(
-            text = stringResource(R.string.pointiq_team_entry_description),
-            color = PointIqTeamsBody,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedButton(
-            onClick = { isPasteTeamListDialogVisible = true },
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = PointIqTeamsNavy,
-            ),
-            border = BorderStroke(1.dp, PointIqTeamsBorder),
-            shape = RoundedCornerShape(14.dp),
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .offset(x = (-8).dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            Text(
-                text = stringResource(R.string.team_entry_paste_list_action),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            IconButton(
+                onClick = onBackToDetails,
+                modifier = Modifier
+                    .size(40.dp)
+                    .semantics {
+                        contentDescription = backDescription
+                    },
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = backDescription,
+                    tint = PointIqTeamsNavy,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .offset(y = (-6).dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = stringResource(R.string.team_entry_title),
+                        color = PointIqTeamsNavy,
+                        fontSize = 24.sp,
+                        lineHeight = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    FilledTonalButton(
+                        onClick = { isPasteTeamListDialogVisible = true },
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = PointIqTeamsDarkSurface,
+                            contentColor = PointIqTeamsFieldCyan,
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(
+                            horizontal = 8.dp,
+                            vertical = 0.dp,
+                        ),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_team_entry_paste),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.team_entry_paste_list_action),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(7.dp))
+                Text(
+                    text = stringResource(R.string.pointiq_team_entry_description),
+                    color = PointIqTeamsBody,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    )
+            }
         }
-        Spacer(modifier = Modifier.height(22.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         if (SHOW_TEAM_ENTRY_VALIDATION_ISSUES) {
             RosterValidationIssues(issues = validationIssues)
@@ -234,7 +349,7 @@ private fun TeamEntryContent(
         slots.forEach { slot ->
             val isFocusedSlot = slot.slotNumber == focusSlotNumber
 
-            Surface(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
@@ -244,75 +359,40 @@ private fun TeamEntryContent(
                             Modifier
                         },
                     ),
-                shape = RoundedCornerShape(16.dp),
-                color = PointIqTeamsCard,
-                border = BorderStroke(1.dp, PointIqTeamsBorder),
-                shadowElevation = 1.dp,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.team_slot_label, slot.slotNumber),
-                        color = PointIqTeamsNavy,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = slot.teamName,
-                        onValueChange = { teamName ->
-                            onTeamNameChanged(slot.slotNumber, teamName)
-                        },
-                        label = {
-                            Text(
-                                text = stringResource(
-                                    R.string.team_name_slot_label,
-                                    slot.slotNumber,
-                                ),
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PointIqTeamsBlue,
-                            unfocusedBorderColor = PointIqTeamsBorder,
-                            focusedLabelColor = PointIqTeamsBlue,
-                            unfocusedLabelColor = PointIqTeamsBody,
-                            focusedTextColor = PointIqTeamsNavy,
-                            unfocusedTextColor = PointIqTeamsNavy,
-                            cursorColor = PointIqTeamsBlue,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                        ),
-                        shape = RoundedCornerShape(13.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
-                        singleLine = true,
-                    )
+                PointIqTeamNameField(
+                    slotNumber = slot.slotNumber,
+                    value = slot.teamName,
+                    placeholder = stringResource(R.string.team_entry_team_name_placeholder),
+                    fieldDescription = stringResource(
+                        R.string.team_name_slot_label,
+                        slot.slotNumber,
+                    ),
+                    onValueChange = { teamName ->
+                        onTeamNameChanged(slot.slotNumber, teamName)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = PointIqTeamsFieldHorizontalInset)
+                        .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
+                )
 
-                    if (SHOW_TEAM_ENTRY_ROSTER_ACTIONS) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = { onEditRoster(slot.slotNumber) },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = PointIqTeamsBlue,
+                if (SHOW_TEAM_ENTRY_ROSTER_ACTIONS) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Button(
+                        onClick = { onEditRoster(slot.slotNumber) },
+                        modifier = Modifier
+                            .height(44.dp)
+                            .testTag(
+                                TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber,
                             ),
-                            border = BorderStroke(1.dp, PointIqTeamsBorder),
-                            shape = RoundedCornerShape(13.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .testTag(
-                                    TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber,
-                                ),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.enter_players_name_action),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.enter_players_name_action),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }
@@ -335,31 +415,12 @@ private fun TeamEntryContent(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Button(
+        Spacer(modifier = Modifier.height(14.dp))
+        PointIqSaveTeamsButton(
+            isSaving = isSaving,
             onClick = onSave,
-            enabled = !isSaving,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = PointIqTeamsBlue,
-                disabledContainerColor = PointIqTeamsBlue.copy(alpha = 0.45f),
-            ),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-        ) {
-            Text(
-                text = stringResource(
-                    if (isSaving) {
-                        R.string.saving_team_names_action
-                    } else {
-                        R.string.save_team_names_action
-                    },
-                ),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
+            modifier = Modifier.padding(horizontal = PointIqTeamsFieldHorizontalInset),
+        )
 
         if (hasSaveError) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -371,24 +432,6 @@ private fun TeamEntryContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = onBackToDetails,
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = PointIqTeamsNavy,
-            ),
-            border = BorderStroke(1.dp, PointIqTeamsBorder),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.back_to_tournament_details_action),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
     }
 
     if (isPasteTeamListDialogVisible) {
@@ -399,6 +442,168 @@ private fun TeamEntryContent(
                 isPasteTeamListDialogVisible = false
             },
         )
+    }
+}
+
+@Composable
+private fun PointIqTeamNameField(
+    slotNumber: Int,
+    value: String,
+    placeholder: String,
+    fieldDescription: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val textStyle = TextStyle(
+        color = PointIqTeamsFieldText,
+        fontSize = 18.sp,
+        lineHeight = 22.sp,
+    )
+    val placeholderStyle = TextStyle(
+        color = PointIqTeamsFieldInactive,
+        fontSize = 18.sp,
+        lineHeight = 22.sp,
+    )
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(PointIqTeamsFieldCyan),
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused }
+            .semantics {
+                contentDescription = fieldDescription
+            },
+        decorationBox = { innerTextField ->
+            val lineColor = if (isFocused) PointIqTeamsFieldCyan else PointIqTeamsFieldInactive
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .drawBehind {
+                        val strokeWidth = if (isFocused) 1.5.dp else 1.dp
+                        val strokeWidthPx = strokeWidth.toPx()
+                        val bottomY = size.height - 9.dp.toPx() - strokeWidthPx / 2f
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(0f, bottomY),
+                            end = Offset(size.width, bottomY),
+                            strokeWidth = strokeWidthPx,
+                        )
+                    }
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = slotNumber.toString().padStart(2, '0'),
+                        color = lineColor,
+                        fontSize = 20.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (value.isEmpty() && !isFocused) {
+                            Text(text = placeholder, style = placeholderStyle)
+                        }
+                        innerTextField()
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PointIqSaveTeamsButton(
+    isSaving: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val alpha = if (isSaving) 0.55f else 1f
+    val gradientColors = listOf(
+        PointIqTeamsFieldCyan.copy(alpha = alpha),
+        PointIqTeamsBlue.copy(alpha = alpha),
+        PointIqTeamsCtaDeepBlue.copy(alpha = alpha),
+    )
+    val edgeColor = PointIqTeamsFieldCyan.copy(alpha = if (isSaving) 0.55f else 0.72f)
+    val glowAlpha = if (isSaving) 0.14f else 0.16f
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(y = 2.dp)
+                .blur(
+                    radius = 7.dp,
+                    edgeTreatment = BlurredEdgeTreatment.Unbounded,
+                )
+                .background(
+                    color = PointIqTeamsCtaShadowLightBlue.copy(alpha = glowAlpha),
+                    shape = shape,
+                ),
+        )
+        Button(
+            onClick = onClick,
+            enabled = !isSaving,
+            shape = shape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                contentColor = Color.White,
+                disabledContentColor = Color.White.copy(alpha = 0.85f),
+            ),
+            contentPadding = ButtonDefaults.ContentPadding,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0f to gradientColors[0],
+                            0.52f to gradientColors[1],
+                            1f to gradientColors[2],
+                        ),
+                    ),
+                    shape = shape,
+                )
+                .border(width = 1.dp, color = edgeColor, shape = shape),
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = stringResource(
+                    if (isSaving) {
+                        R.string.saving_team_names_action
+                    } else {
+                        R.string.save_team_names_action
+                    },
+                ),
+                fontSize = if (isSaving) 15.sp else 16.sp,
+                fontWeight = if (isSaving) FontWeight.SemiBold else FontWeight.Bold,
+            )
+        }
     }
 }
 
