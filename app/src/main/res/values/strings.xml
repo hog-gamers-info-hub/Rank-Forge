@@ -180,9 +180,9 @@
     <string name="team_slot_label">Slot %1$d</string>
     <string name="empty_team_slot_subtitle">Empty team slot</string>
     <string name="enter_teams_action">Enter Teams</string>
-    <string name="team_entry_title">Enter teams</string>
+    <string name="team_entry_title">Enter Teams</string>
     <string name="team_entry_loading">Loading team slots</string>
-    <string name="team_entry_paste_list_action">Paste Team List</string>
+    <string name="team_entry_paste_list_action">Paste List</string>
     <string name="team_entry_paste_list_title">Paste Team List</string>
     <string name="team_entry_paste_list_description">Paste up to 12 team names, one per line.</string>
     <string name="team_entry_paste_list_label">Team names</string>

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="pointiq_team_entry_description">Add team names for each tournament slot.</string>
+    <string name="pointiq_team_entry_description">Add the team names for this tournament</string>
+    <string name="team_entry_team_name_placeholder">Enter team name</string>
 </resources>
