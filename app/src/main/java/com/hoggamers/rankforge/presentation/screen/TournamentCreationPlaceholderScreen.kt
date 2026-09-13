@@ -1,14 +1,15 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,8 +20,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,15 +38,15 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,26 +55,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -75,11 +94,17 @@ import java.util.Locale
 private val tournamentDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 private const val SHOW_ORGANIZER_CONTACT_NUMBER = false
 
-private val PointIqCreateNavy = Color(0xFF071B3E)
-private val PointIqCreateBody = Color(0xFF607393)
+private val PointIqCreateBackground = Color(0xFF031225)
+private val PointIqCreateAmbientBlue = Color(0xFF0B386F)
+private val PointIqCreateHeader = Color(0xFFF6F8FF)
+private val PointIqCreateSubtitle = Color(0xFF91AFE0)
+private val PointIqCreateFieldText = Color(0xFFF6F8FF)
+private val PointIqCreateFieldInactive = Color(0xFF7D9DCE)
 private val PointIqCreateBlue = Color(0xFF176AF7)
 private val PointIqCreateCyan = Color(0xFF17C9F2)
-private val PointIqCreateBorder = Color(0xFFD6E3F4)
+private val PointIqCreateCtaDeepBlue = Color(0xFF0D4DBA)
+private val PointIqCreateCtaShadowLightBlue = Color(0xFF8EE7FF)
+private val PointIqCreateFieldHorizontalInset = 24.dp
 
 const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
 const val TOURNAMENT_DATE_FIELD_TEST_TAG = "tournament_date_field"
@@ -150,189 +175,240 @@ fun TournamentCreationScreen(
     var selectedMode by rememberSaveable { mutableStateOf(squad) }
     val scrollState = rememberScrollState()
     val tournamentDateLabel = stringResource(R.string.tournament_date_label)
+    val backDescription = stringResource(R.string.back_action)
     val openDatePicker = { showDatePicker = true }
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqCreateBackground.toArgb()
+            window.navigationBarColor = PointIqCreateBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
 
     BackHandler(enabled = uiState.navigation == null, onBack = onBackPressed)
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
+            .background(PointIqCreateBackground)
             .testTag(TOURNAMENT_CREATION_SCREEN_TEST_TAG)
-            .imePadding()
-            .verticalScroll(scrollState)
-            .padding(
-                start = 24.dp,
-                top = 28.dp,
-                end = 24.dp,
-                bottom = 32.dp,
-            ),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Top,
     ) {
-        Text(
-            text = stringResource(R.string.pointiq_tournament_creation_title),
-            color = PointIqCreateNavy,
-            fontSize = 28.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(7.dp))
-        Text(
-            text = stringResource(R.string.pointiq_tournament_creation_description),
-            color = PointIqCreateBody,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-        )
-        Spacer(modifier = Modifier.height(28.dp))
+        PointIqCreateBackgroundDecoration(modifier = Modifier.matchParentSize())
 
-        PointIqTournamentTextField(
-            value = uiState.tournamentName,
-            label = stringResource(R.string.tournament_name_label),
-            error = uiState.validationErrors[TournamentField.NAME],
-            onValueChange = onTournamentNameChanged,
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        PointIqTournamentDropdownField(
-            value = selectedGame,
-            label = stringResource(R.string.tournament_game_label),
-            options = listOf(freeFireMax),
-            isOptionEnabled = { true },
-            onOptionSelected = { selectedGame = it },
-            enabled = false,
-            fieldTestTag = TOURNAMENT_GAME_DROPDOWN_TEST_TAG,
-            optionTestTag = { TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG },
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        PointIqTournamentDropdownField(
-            value = selectedMode,
-            label = stringResource(R.string.tournament_mode_label),
-            options = listOf(solo, duo, squad),
-            isOptionEnabled = { it == squad },
-            onOptionSelected = { selectedMode = it },
-            enabled = false,
-            fieldTestTag = TOURNAMENT_MODE_DROPDOWN_TEST_TAG,
-            optionTestTag = { option ->
-                when (option) {
-                    solo -> TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG
-                    duo -> TOURNAMENT_MODE_OPTION_DUO_TEST_TAG
-                    else -> TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG
-                }
-            },
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .testTag(TOURNAMENT_DATE_FIELD_TEST_TAG)
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        awaitFirstDown(pass = PointerEventPass.Initial)
-                        val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                        if (up != null) {
-                            openDatePicker()
-                        }
-                    }
-                }
-                .clickable(
-                    role = Role.Button,
-                    onClick = openDatePicker,
-                )
-                .semantics(mergeDescendants = true) {
-                    contentDescription = tournamentDateLabel
-                },
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(scrollState)
+                .padding(
+                    start = 16.dp,
+                    top = 28.dp,
+                    end = 16.dp,
+                    bottom = 32.dp,
+                ),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top,
         ) {
-            OutlinedTextField(
-                value = uiState.tournamentDate?.format(tournamentDateFormatter).orEmpty(),
-                onValueChange = {},
-                readOnly = true,
-                singleLine = true,
-                label = {
-                    Text(
-                        text = stringResource(R.string.tournament_date_label),
-                    )
-                },
-                isError = uiState.validationErrors.containsKey(TournamentField.DATE),
-                supportingText = uiState.validationErrors[TournamentField.DATE]?.let { error ->
-                    {
-                        ValidationText(error)
-                    }
-                },
-                trailingIcon = {
-                    TextButton(
-                        onClick = openDatePicker,
-                        modifier = Modifier.testTag(TOURNAMENT_DATE_TRAILING_ACTION_TEST_TAG),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.select_date_action),
-                            color = PointIqCreateBlue,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                },
-                shape = RoundedCornerShape(14.dp),
-                colors = pointIqTournamentFieldColors(),
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        PointIqTournamentTextField(
-            value = uiState.organizerName,
-            label = stringResource(R.string.organizer_name_label),
-            error = uiState.validationErrors[TournamentField.ORGANIZER_NAME],
-            onValueChange = onOrganizerNameChanged,
-        )
-        if (SHOW_ORGANIZER_CONTACT_NUMBER) {
-            Spacer(modifier = Modifier.height(16.dp))
-            PointIqTournamentTextField(
-                value = uiState.organizerContactNumber,
-                label = stringResource(R.string.pointiq_contact_number_label),
-                error = uiState.validationErrors[TournamentField.ORGANIZER_CONTACT_NUMBER],
-                keyboardType = KeyboardType.Phone,
-                onValueChange = onOrganizerContactNumberChanged,
-            )
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (uiState.submissionError != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = stringResource(
-                        when (uiState.submissionError) {
-                            TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED ->
-                                R.string.tournament_creation_limit_reached_error
-                            TournamentCreationSubmissionError.QUOTA_CHECK_FAILED ->
-                                R.string.tournament_creation_quota_check_error
-                            TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED ->
-                                R.string.tournament_creation_authentication_required_error
-                            TournamentCreationSubmissionError.UNKNOWN ->
-                                R.string.tournament_creation_error
+                IconButton(
+                    onClick = onBackPressed,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics {
+                            contentDescription = backDescription
                         },
-                    ),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    style = MaterialTheme.typography.bodyMedium,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = backDescription,
+                        tint = PointIqCreateHeader,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.padding(start = 0.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.pointiq_tournament_creation_title),
+                        color = PointIqCreateHeader,
+                        fontSize = 24.sp,
+                        lineHeight = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(7.dp))
+                    Text(
+                        text = stringResource(R.string.pointiq_tournament_creation_description)
+                            .replace("set up", "create"),
+                        color = PointIqCreateSubtitle,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(44.dp))
+
+            PointIqTournamentField(
+                value = uiState.tournamentName,
+                label = stringResource(R.string.tournament_name_label),
+                error = uiState.validationErrors[TournamentField.NAME],
+                onValueChange = onTournamentNameChanged,
+                leadingIcon = { tint ->
+                    Icon(
+                        painter = painterResource(R.drawable.ic_tournament_trophy),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PointIqTournamentSelectionField(
+                value = selectedGame,
+                label = stringResource(R.string.tournament_game_label),
+                options = listOf(freeFireMax),
+                isOptionEnabled = { true },
+                onOptionSelected = { selectedGame = it },
+                enabled = false,
+                fieldTestTag = TOURNAMENT_GAME_DROPDOWN_TEST_TAG,
+                optionTestTag = { TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG },
+                leadingIcon = { tint ->
+                    Icon(
+                        painter = painterResource(R.drawable.ic_tournament_game),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PointIqTournamentSelectionField(
+                value = selectedMode,
+                label = stringResource(R.string.tournament_mode_label),
+                options = listOf(solo, duo, squad),
+                isOptionEnabled = { it == squad },
+                onOptionSelected = { selectedMode = it },
+                enabled = false,
+                fieldTestTag = TOURNAMENT_MODE_DROPDOWN_TEST_TAG,
+                optionTestTag = { option ->
+                    when (option) {
+                        solo -> TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG
+                        duo -> TOURNAMENT_MODE_OPTION_DUO_TEST_TAG
+                        else -> TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG
+                    }
+                },
+                leadingIcon = { tint ->
+                    Icon(
+                        painter = painterResource(R.drawable.ic_tournament_groups),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PointIqTournamentDateField(
+                value = uiState.tournamentDate?.format(tournamentDateFormatter).orEmpty(),
+                error = uiState.validationErrors[TournamentField.DATE],
+                onOpenDatePicker = openDatePicker,
+                fieldDescription = tournamentDateLabel,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PointIqTournamentField(
+                value = uiState.organizerName,
+                label = stringResource(R.string.organizer_name_label),
+                error = uiState.validationErrors[TournamentField.ORGANIZER_NAME],
+                onValueChange = onOrganizerNameChanged,
+                leadingIcon = { tint ->
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+            )
+            if (SHOW_ORGANIZER_CONTACT_NUMBER) {
+                Spacer(modifier = Modifier.height(16.dp))
+                PointIqTournamentField(
+                    value = uiState.organizerContactNumber,
+                    label = stringResource(R.string.pointiq_contact_number_label),
+                    error = uiState.validationErrors[TournamentField.ORGANIZER_CONTACT_NUMBER],
+                    keyboardType = KeyboardType.Phone,
+                    onValueChange = onOrganizerContactNumberChanged,
+                    leadingIcon = { tint ->
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = null,
+                            tint = tint,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+            Spacer(modifier = Modifier.height(24.dp))
 
-        PointIqCreateTournamentButton(
-            isSubmitting = uiState.isSubmitting,
-            onClick = onSubmit,
-        )
+            if (uiState.submissionError != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(
+                            when (uiState.submissionError) {
+                                TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED ->
+                                    R.string.tournament_creation_limit_reached_error
+                                TournamentCreationSubmissionError.QUOTA_CHECK_FAILED ->
+                                    R.string.tournament_creation_quota_check_error
+                                TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED ->
+                                    R.string.tournament_creation_authentication_required_error
+                                TournamentCreationSubmissionError.UNKNOWN ->
+                                    R.string.tournament_creation_error
+                            },
+                        ),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            PointIqCreateTournamentButton(
+                isSubmitting = uiState.isSubmitting,
+                onClick = onSubmit,
+            )
+        }
     }
 
     if (showDatePicker) {
@@ -378,9 +454,240 @@ fun TournamentCreationScreen(
     }
 }
 
+@Composable
+private fun PointIqCreateBackgroundDecoration(
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqCreateAmbientBlue.copy(alpha = 0.42f),
+                    PointIqCreateAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = Offset(-size.width * 0.04f, size.height * 0.34f),
+                radius = size.width * 0.78f,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun PointIqTournamentField(
+    value: String,
+    label: String,
+    error: TournamentValidationError?,
+    onValueChange: (String) -> Unit,
+    leadingIcon: @Composable (Color) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    readOnly: Boolean = false,
+    enabled: Boolean = true,
+    isFocusedOverride: Boolean? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val visualFocused = isFocusedOverride ?: isFocused
+    val fieldHeight = 48.dp
+    val contentHorizontalPadding = 16.dp
+    val contentLeadingPadding = contentHorizontalPadding / 2
+    val iconSize = 24.dp
+    val iconTextGap = 12.dp
+    val floatingLabelFontSize = 12.sp
+    val floatingLabelLineHeight = 16.sp
+    val valueFontSize = 18.sp
+    val valueLineHeight = 22.sp
+    val bottomBorderInset = 9.dp
+    val focusedStrokeWidth = 1.5.dp
+    val inactiveStrokeWidth = 1.dp
+    val textStyle = TextStyle(
+        color = PointIqCreateFieldText,
+        fontSize = valueFontSize,
+        lineHeight = valueLineHeight,
+    )
+    val labelStyle = TextStyle(
+        color = if (visualFocused) PointIqCreateCyan else PointIqCreateFieldInactive,
+        fontSize = floatingLabelFontSize,
+        lineHeight = floatingLabelLineHeight,
+        fontWeight = FontWeight.Medium,
+    )
+    val placeholderStyle = TextStyle(
+        color = PointIqCreateFieldInactive,
+        fontSize = valueFontSize,
+        lineHeight = valueLineHeight,
+        fontWeight = FontWeight.Normal,
+    )
+    val textMeasurer = rememberTextMeasurer()
+    val labelLayout = textMeasurer.measure(label, labelStyle)
+    val labelGlyphCenterPx = if (label.isEmpty()) {
+        labelLayout.size.height / 2f
+    } else {
+        var glyphTop = Float.POSITIVE_INFINITY
+        var glyphBottom = Float.NEGATIVE_INFINITY
+        label.indices.forEach { index ->
+            val glyphBounds = labelLayout.getBoundingBox(index)
+            glyphTop = minOf(glyphTop, glyphBounds.top)
+            glyphBottom = maxOf(glyphBottom, glyphBounds.bottom)
+        }
+        (glyphTop + glyphBottom) / 2f
+    }
+    val labelBorderY = (if (visualFocused) focusedStrokeWidth else inactiveStrokeWidth) / 2f
+    val labelOffsetY = with(LocalDensity.current) {
+        (labelBorderY.toPx() - labelGlyphCenterPx).toDp()
+    }
+    val validationMessage = error?.let { validationErrorMessage(it) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            readOnly = readOnly,
+            enabled = enabled,
+            textStyle = textStyle,
+            cursorBrush = SolidColor(PointIqCreateCyan),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = PointIqCreateFieldHorizontalInset)
+                .align(Alignment.CenterHorizontally)
+                .onFocusChanged { focusState -> isFocused = focusState.isFocused }
+                .semantics(mergeDescendants = true) {},
+            decorationBox = { innerTextField ->
+                val floating = visualFocused || value.isNotEmpty()
+                val lineColor = when {
+                    error != null -> MaterialTheme.colorScheme.error
+                    visualFocused -> PointIqCreateCyan
+                    else -> PointIqCreateFieldInactive
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(fieldHeight)
+                        .drawBehind {
+                            val borderWidthDp = if (visualFocused) focusedStrokeWidth else inactiveStrokeWidth
+                            val borderWidth = borderWidthDp.toPx()
+                            val contentRowBottom = fieldHeight / 2 + iconSize / 2
+                            val currentBottomSpace = contentRowBottom.let { rowBottom ->
+                                fieldHeight - bottomBorderInset - borderWidthDp - rowBottom
+                            }
+                            val bottomY = contentRowBottom.toPx() +
+                                currentBottomSpace.toPx() * 1.5f +
+                                borderWidth / 2f
+                            drawLine(
+                                color = lineColor,
+                                start = Offset(0f, bottomY),
+                                end = Offset(size.width, bottomY),
+                                strokeWidth = borderWidth,
+                            )
+                        },
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.CenterStart)
+                            .padding(start = contentLeadingPadding, end = contentHorizontalPadding),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        leadingIcon(lineColor)
+                        Spacer(modifier = Modifier.width(iconTextGap))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (!floating) {
+                                Text(
+                                    text = label,
+                                    style = placeholderStyle,
+                                )
+                            }
+                            innerTextField()
+                        }
+                        trailingContent?.invoke()
+                    }
+
+                    if (floating) {
+                        Text(
+                                text = label,
+                                style = labelStyle,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(start = contentLeadingPadding)
+                                    .offset(y = labelOffsetY)
+                                    .background(Color.Transparent),
+                        )
+                    }
+                }
+            },
+        )
+
+        if (validationMessage != null) {
+            Text(
+                text = validationMessage,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PointIqCreateFieldHorizontalInset)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(start = 16.dp, top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun validationErrorMessage(error: TournamentValidationError): String = when (error) {
+    TournamentValidationError.REQUIRED -> stringResource(R.string.required_field_error)
+    TournamentValidationError.PAST_DATE -> stringResource(R.string.past_date_error)
+    TournamentValidationError.UNSUPPORTED_STATUS -> stringResource(R.string.unsupported_status_error)
+}
+
+@Composable
+private fun PointIqTournamentDateField(
+    value: String,
+    error: TournamentValidationError?,
+    onOpenDatePicker: () -> Unit,
+    fieldDescription: String,
+) {
+    val dateLabel = stringResource(R.string.tournament_date_label)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_DATE_TRAILING_ACTION_TEST_TAG)
+            .clickable(
+                role = Role.Button,
+                onClick = onOpenDatePicker,
+            )
+            .semantics {
+                contentDescription = fieldDescription
+            },
+    ) {
+        PointIqTournamentField(
+            value = value,
+            onValueChange = {},
+            label = dateLabel,
+            error = error,
+            leadingIcon = { tint ->
+                Icon(
+                    imageVector = Icons.Filled.DateRange,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            readOnly = true,
+            enabled = false,
+            isFocusedOverride = false,
+            modifier = Modifier.testTag(TOURNAMENT_DATE_FIELD_TEST_TAG),
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PointIqTournamentDropdownField(
+private fun PointIqTournamentSelectionField(
     value: String,
     label: String,
     options: List<String>,
@@ -389,6 +696,7 @@ private fun PointIqTournamentDropdownField(
     enabled: Boolean = true,
     fieldTestTag: String,
     optionTestTag: (String) -> String,
+    leadingIcon: @Composable (Color) -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val isExpanded = enabled && expanded
@@ -405,19 +713,25 @@ private fun PointIqTournamentDropdownField(
             expanded = enabled && shouldExpand
         },
     ) {
-        OutlinedTextField(
+        PointIqTournamentField(
             value = value,
             onValueChange = {},
+            label = label,
+            error = null,
+            leadingIcon = leadingIcon,
             readOnly = true,
-            singleLine = true,
             enabled = enabled,
-            label = { Text(text = label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isExpanded) },
-            shape = RoundedCornerShape(14.dp),
-            colors = pointIqTournamentFieldColors(),
+            isFocusedOverride = isExpanded,
+            trailingContent = {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = if (isExpanded) PointIqCreateCyan else PointIqCreateFieldInactive,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
             modifier = Modifier
                 .menuAnchor()
-                .fillMaxWidth()
                 .testTag(fieldTestTag),
         )
         ExposedDropdownMenu(
@@ -442,116 +756,108 @@ private fun PointIqTournamentDropdownField(
 }
 
 @Composable
-private fun PointIqTournamentTextField(
-    value: String,
-    label: String,
-    error: TournamentValidationError?,
-    onValueChange: (String) -> Unit,
-    keyboardType: KeyboardType = KeyboardType.Text,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        singleLine = true,
-        label = { Text(text = label) },
-        isError = error != null,
-        supportingText = error?.let {
-            {
-                ValidationText(it)
-            }
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = RoundedCornerShape(14.dp),
-        colors = pointIqTournamentFieldColors(),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
 private fun PointIqCreateTournamentButton(
     isSubmitting: Boolean,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(18.dp)
+    val enabledAlpha = if (isSubmitting) 0.55f else 1f
     val gradientColors = if (isSubmitting) {
         listOf(
-            PointIqCreateBlue.copy(alpha = 0.55f),
-            PointIqCreateCyan.copy(alpha = 0.55f),
+            PointIqCreateCyan.copy(alpha = enabledAlpha),
+            PointIqCreateBlue.copy(alpha = enabledAlpha),
+            PointIqCreateCtaDeepBlue.copy(alpha = enabledAlpha),
         )
     } else {
-        listOf(PointIqCreateBlue, PointIqCreateCyan)
+        listOf(PointIqCreateCyan, PointIqCreateBlue, PointIqCreateCtaDeepBlue)
     }
+    val edgeColor = PointIqCreateCyan.copy(alpha = if (isSubmitting) 0.55f else 0.72f)
+    val glowAlpha = if (isSubmitting) 0.14f else 0.16f
 
-    Button(
-        onClick = onClick,
-        enabled = !isSubmitting,
-        shape = shape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
-            disabledContainerColor = Color.Transparent,
-            contentColor = Color.White,
-            disabledContentColor = Color.White.copy(alpha = 0.85f),
-        ),
-        contentPadding = ButtonDefaults.ContentPadding,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
-            .shadow(
-                elevation = 8.dp,
-                shape = shape,
-                ambientColor = PointIqCreateBlue.copy(alpha = 0.12f),
-                spotColor = PointIqCreateBlue.copy(alpha = 0.18f),
-            )
-            .background(
-                brush = Brush.horizontalGradient(gradientColors),
-                shape = shape,
-            ),
+            .padding(horizontal = PointIqCreateFieldHorizontalInset)
+            .height(48.dp)
     ) {
-        if (isSubmitting) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                color = Color.White,
-                strokeWidth = 2.dp,
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = stringResource(R.string.tournament_creation_submitting),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        } else {
-            Text(
-                text = stringResource(R.string.pointiq_create_tournament_action),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-            )
+        PointIqCreateCtaGlowLayer(
+            alpha = glowAlpha,
+            offsetY = 2.dp,
+        )
+
+        Button(
+            onClick = onClick,
+            enabled = !isSubmitting,
+            shape = shape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                contentColor = Color.White,
+                disabledContentColor = Color.White.copy(alpha = 0.85f),
+            ),
+            contentPadding = ButtonDefaults.ContentPadding,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0f to gradientColors[0],
+                            0.52f to gradientColors[1],
+                            1f to gradientColors[2],
+                        ),
+                    ),
+                    shape = shape,
+                )
+                .border(width = 1.dp, color = edgeColor, shape = shape),
+        ) {
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.tournament_creation_submitting),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.pointiq_create_tournament_action),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun pointIqTournamentFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = PointIqCreateNavy,
-    unfocusedTextColor = PointIqCreateNavy,
-    focusedContainerColor = Color.White,
-    unfocusedContainerColor = Color.White,
-    focusedBorderColor = PointIqCreateBlue,
-    unfocusedBorderColor = PointIqCreateBorder,
-    focusedLabelColor = PointIqCreateBlue,
-    unfocusedLabelColor = PointIqCreateBody,
-    cursorColor = PointIqCreateBlue,
-)
-
-@Composable
-private fun ValidationText(error: TournamentValidationError?) {
-    if (error == null) return
-
-    val message = when (error) {
-        TournamentValidationError.REQUIRED -> stringResource(R.string.required_field_error)
-        TournamentValidationError.PAST_DATE -> stringResource(R.string.past_date_error)
-        TournamentValidationError.UNSUPPORTED_STATUS -> stringResource(R.string.unsupported_status_error)
-    }
-    Text(text = message)
+private fun PointIqCreateCtaGlowLayer(
+    alpha: Float,
+    offsetY: Dp,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .offset(y = offsetY)
+            .blur(
+                radius = 7.dp,
+                edgeTreatment = BlurredEdgeTreatment.Unbounded,
+            )
+            .background(
+                color = PointIqCreateCtaShadowLightBlue.copy(alpha = alpha),
+                shape = RoundedCornerShape(18.dp),
+            ),
+    )
 }
 
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
