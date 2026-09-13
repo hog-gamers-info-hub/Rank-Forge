@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="pointiq_tournament_details_subtitle">Manage teams, matches and tournament standings.</string>
+    <string name="tournament_details_overflow_content_description">Tournament actions</string>
+    <string name="tournament_details_edit_teams_action">Edit Teams</string>
+    <string name="tournament_details_game_mode_presentation">Free Fire MAX  •  Squad</string>
+    <string name="tournament_details_hero_date">%1$s</string>
+    <string name="tournament_details_match_processing_title">Match Results</string>
+    <string name="tournament_details_match_processing_subtitle">Process screenshots into result</string>
+    <string name="tournament_details_match_number_action">Match %1$d</string>
+    <string name="tournament_details_match_number_label">Match %1$d</string>
+    <string name="tournament_details_match_status_ready">Created</string>
+    <string name="tournament_details_match_status_finalized">Finalized</string>
+    <string name="tournament_details_view_calculated_standings_title">View Standings</string>
+    <string name="tournament_details_view_calculated_standings_subtitle">View current calculated tournament standings</string>
 </resources>
