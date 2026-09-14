@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,15 +36,20 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
@@ -60,12 +70,12 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
-import kotlinx.coroutines.delay
 
 private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private val PointIqOcrReviewBackground = Color(0xFF031225)
+private val PointIqOcrReviewAmbientBlue = Color(0xFF0B386F)
 private val PointIqOcrReviewHeader = Color(0xFFF6F8FF)
 private val PointIqOcrReviewSubtitle = Color(0xFF91AFE0)
 private val PointIqOcrReviewCyan = Color(0xFF17C9F2)
@@ -203,55 +213,93 @@ fun MatchOcrReviewScreen(
 
 @Composable
 internal fun MatchOcrReviewCalculatingState() {
-    val dotCount = remember { mutableStateOf(1) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(450L)
-            dotCount.value = if (dotCount.value == 3) 1 else dotCount.value + 1
-        }
-    }
-    RankForgeScreenContainer(
-        modifier = Modifier.testTag(MatchOcrReviewTestTags.SCREEN),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Center,
+    PointIqOcrReviewSystemBars()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointIqOcrReviewBackground()
+            .testTag(MatchOcrReviewTestTags.SCREEN),
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 32.dp)
                 .testTag(MatchOcrReviewTestTags.CALCULATING),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start,
-            ) {
-                Text(
-                    text = stringResource(R.string.match_ocr_review_calculating_title),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Box(
-                    modifier = Modifier.width(24.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Text(
-                        text = ".".repeat(dotCount.value),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-            }
+            CircularProgressIndicator(
+                modifier = Modifier.size(40.dp),
+                color = PointIqOcrReviewCyan,
+                strokeWidth = 3.dp,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.match_ocr_review_calculating_title),
+                color = PointIqOcrReviewHeader,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.match_ocr_review_calculating_message),
-                style = MaterialTheme.typography.bodyMedium,
+                color = PointIqOcrReviewSubtitle,
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
+                fontWeight = FontWeight.Normal,
                 modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Start,
+                textAlign = TextAlign.Center,
             )
         }
     }
 }
+
+@Composable
+private fun PointIqOcrReviewSystemBars() {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqOcrReviewBackground.toArgb()
+            window.navigationBarColor = PointIqOcrReviewBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
+}
+
+private fun Modifier.pointIqOcrReviewBackground(): Modifier =
+    background(PointIqOcrReviewBackground).drawBehind {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqOcrReviewAmbientBlue.copy(alpha = 0.42f),
+                    PointIqOcrReviewAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = Offset(-size.width * 0.04f, size.height * 0.34f),
+                radius = size.width * 0.78f,
+            ),
+        )
+    }
 
 @Composable
 private fun MatchOcrReviewLoadingState() {
