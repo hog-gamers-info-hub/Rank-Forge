@@ -11,6 +11,6 @@
     <string name="pointiq_home_match_count_one">%1$d match</string>
     <string name="pointiq_home_match_count_many">%1$d matches</string>
     <string name="pointiq_home_summary_line">%1$s  •  %2$s</string>
-    <string name="pointiq_home_last_updated">Last updated %1$s</string>
+    <string name="pointiq_home_last_updated">Updated %1$s</string>
     <string name="pointiq_home_last_updated_unknown">—</string>
 </resources>
