@@ -2,23 +2,30 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.hoggamers.rankforge.R
@@ -26,10 +33,11 @@ import com.hoggamers.rankforge.presentation.component.LoggedInHomeMenuShell
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 
-private val PointIqListNavy = Color(0xFF071B3E)
-private val PointIqListBlue = Color(0xFF176AF7)
-private val PointIqListBody = Color(0xFF607393)
-private val PointIqListContainer = Color(0xFFF7FAFF)
+private val PointIqListCard = Color(0xFF071B3E)
+private val PointIqListBorder = Color(0xFF176AF7).copy(alpha = 0.55f)
+private val PointIqListHeader = Color(0xFFF6F8FF)
+private val PointIqListSecondary = Color(0xFF91AFE0)
+private val PointIqListCyan = Color(0xFF17C9F2)
 
 const val TOURNAMENT_LIST_SCREEN_TEST_TAG = "tournament_list_screen"
 const val TOURNAMENT_LIST_EMPTY_TEST_TAG = "tournament_list_empty"
@@ -124,60 +132,84 @@ internal fun TournamentCloudRestorationSection(
     onLoadCloudTournaments: () -> Unit,
     onRestoreCloudTournament: (String) -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(RankForgeSpacing.Medium),
-        colors = CardDefaults.cardColors(containerColor = PointIqListContainer),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(RankForgeSpacing.Medium),
-            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
-        ) {
-            Button(
-                onClick = onLoadCloudTournaments,
-                enabled = uiState !is TournamentCloudRestorationUiState.Loading &&
-                    uiState !is TournamentCloudRestorationUiState.Restoring,
-                colors = ButtonDefaults.buttonColors(containerColor = PointIqListBlue),
-                shape = RoundedCornerShape(RankForgeSpacing.Medium),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG),
-            ) {
+        when (uiState) {
+            TournamentCloudRestorationUiState.Idle,
+            TournamentCloudRestorationUiState.Loading,
+            is TournamentCloudRestorationUiState.Restoring,
+            -> {
+                OutlinedButton(
+                    onClick = onLoadCloudTournaments,
+                    enabled = uiState is TournamentCloudRestorationUiState.Idle,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = PointIqListCard,
+                        contentColor = PointIqListHeader,
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = PointIqListBorder,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag(TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null,
+                        tint = PointIqListCyan,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(
+                        text = if (
+                            uiState is TournamentCloudRestorationUiState.Loading ||
+                            uiState is TournamentCloudRestorationUiState.Restoring
+                        ) {
+                            stringResource(R.string.restore_tournament_loading)
+                        } else {
+                            stringResource(R.string.restore_tournament_action)
+                        },
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+
+            else -> {
                 Text(
-                    text = if (
-                        uiState is TournamentCloudRestorationUiState.Loading ||
-                        uiState is TournamentCloudRestorationUiState.Restoring
-                    ) {
-                        stringResource(R.string.restore_tournament_loading)
-                    } else {
-                        stringResource(R.string.restore_tournament_action)
-                    },
+                    text = uiState.restoreStatusText(),
+                    color = PointIqListSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.testTag(
+                        TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message",
+                    ),
                 )
             }
-            Text(
-                text = uiState.restoreStatusText(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = PointIqListBody,
-                modifier = Modifier.testTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG + "_message"),
-            )
-            if (uiState is TournamentCloudRestorationUiState.Available) {
-                if (uiState.tournaments.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.restore_tournament_empty),
-                        color = PointIqListBody,
+        }
+
+        if (uiState is TournamentCloudRestorationUiState.Available) {
+            if (uiState.tournaments.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.restore_tournament_empty),
+                    color = PointIqListSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            } else {
+                uiState.tournaments.forEach { tournament ->
+                    CloudTournamentRestoreItem(
+                        tournament = tournament,
+                        onRestore = { onRestoreCloudTournament(tournament.id) },
                     )
-                } else {
-                    uiState.tournaments.forEach { tournament ->
-                        CloudTournamentRestoreItem(
-                            tournament = tournament,
-                            onRestore = { onRestoreCloudTournament(tournament.id) },
-                        )
-                    }
                 }
             }
         }
@@ -191,13 +223,45 @@ private fun CloudTournamentRestoreItem(
 ) {
     OutlinedButton(
         onClick = onRestore,
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = PointIqListBlue),
-        shape = RoundedCornerShape(RankForgeSpacing.Medium),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = PointIqListCard,
+            contentColor = PointIqListHeader,
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = PointIqListBorder,
+        ),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .height(54.dp)
             .testTag(TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX + tournament.id),
     ) {
-        Text(text = stringResource(R.string.restore_tournament_item, tournament.name))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = tournament.name,
+                color = PointIqListHeader,
+                fontSize = 16.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.size(12.dp))
+            Text(
+                text = stringResource(R.string.pointiq_restore_action),
+                color = PointIqListCyan,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
