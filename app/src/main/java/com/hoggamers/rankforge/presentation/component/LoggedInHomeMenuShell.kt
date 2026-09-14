@@ -403,7 +403,7 @@ private fun PointIqHomeHeader(
 }
 
 @Composable
-private fun PointIqHomeSystemBars() {
+internal fun PointIqHomeSystemBars() {
     val view = LocalView.current
     val window = (view.context as? Activity)?.window
 
@@ -432,7 +432,7 @@ private fun PointIqHomeSystemBars() {
     }
 }
 
-private fun Modifier.pointIqHomeBackground(): Modifier =
+internal fun Modifier.pointIqHomeBackground(): Modifier =
     background(PointIqHomeBackground).drawBehind {
         drawRect(
             brush = Brush.radialGradient(
