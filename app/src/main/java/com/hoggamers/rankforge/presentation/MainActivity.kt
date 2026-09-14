@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.presentation
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,9 +25,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            setRecentsScreenshotEnabled(false)
-        }
         handleAuthCallback(intent)
         splashScreen.setKeepOnScreenCondition {
             authViewModel.uiState.value.let { state ->
