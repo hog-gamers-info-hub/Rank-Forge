@@ -635,6 +635,23 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun clearCalculatedEvidenceDisplayIgnoresDifferentMatch() = runTest(dispatcher) {
+        val repository = createRepository()
+        val initialState = readyState()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchOcrCacheReader = MatchOcrCacheReader { _, _ ->
+                MatchOcrCacheReadResult(MatchOcrCacheAvailability.NOT_AVAILABLE)
+            },
+            initialUiState = initialState,
+        )
+
+        viewModel.clearCalculatedEvidenceDisplay(TOURNAMENT_ID, "different-match")
+
+        assertEquals(initialState, viewModel.uiState.value)
+    }
+
+    @Test
     fun repeatedLoadForSameRouteKeepsDeterministicCalculatingState() {
         val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
 

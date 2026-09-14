@@ -418,6 +418,78 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun successfulClearInvokesDisplayClearCallbackOnlyAfterDeletion() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val repository = ControlledCalculatedEvidenceRepository(
+                evidence = MatchCalculatedEvidence(),
+                matchId = matchId,
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = repository,
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(
+                    CompletableDeferred<Unit>().also { it.complete(Unit) },
+                ),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+
+            var callbackCount = 0
+            viewModel.clearResult { callbackCount++ }
+
+            assertEquals(0, callbackCount)
+            advanceUntilIdle()
+
+            assertEquals(1, callbackCount)
+            assertNull(repository.evidence)
+            assertEquals(CalculatedEvidenceRestoreStatus.CLEARED, viewModel.uiState.value.calculatedEvidenceRestoreStatus)
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
+    fun failedClearDoesNotInvokeDisplayClearCallbackOrHidePersistedEvidence() = runTest {
+        val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val repository = ControlledCalculatedEvidenceRepository(
+                evidence = MatchCalculatedEvidence(),
+                matchId = matchId,
+                deleteResult = false,
+            )
+            val viewModel = reviewViewModel(
+                calculatedEvidenceRepository = repository,
+                calculatedEvidencePreviewRestorer = DelayedCalculatedEvidencePreviewRestorer(
+                    CompletableDeferred<Unit>().also { it.complete(Unit) },
+                ),
+                calculatedEvidenceSaveScheduler = ScreenshotReconciliationScheduler(
+                    schedulerScope,
+                    testOnly = true,
+                ),
+            )
+            viewModel.load(TOURNAMENT_ID, matchId)
+            advanceUntilIdle()
+
+            var callbackCount = 0
+            viewModel.clearResult { callbackCount++ }
+            advanceUntilIdle()
+
+            assertEquals(0, callbackCount)
+            assertNotNull(repository.evidence)
+            assertTrue(viewModel.hasCalculatedEvidenceRecord.value)
+            assertNotNull(viewModel.uiState.value.restoredCalculatedEvidence)
+            assertEquals(MatchCalculatedEvidenceSaveStatus.FAILED, viewModel.calculatedEvidenceSaveStatus.value)
+            assertEquals(CalculatedEvidenceRestoreStatus.RESTORED, viewModel.uiState.value.calculatedEvidenceRestoreStatus)
+        } finally {
+            schedulerScope.cancel()
+        }
+    }
+
+    @Test
     fun calculatedEvidenceRestorePublishesNormallyWhenNotCleared() = runTest {
         val schedulerScope = CoroutineScope(SupervisorJob() + dispatcher)
         try {
@@ -4065,6 +4137,7 @@ class MatchReviewViewModelTest {
     private class ControlledCalculatedEvidenceRepository(
         var evidence: MatchCalculatedEvidence?,
         var matchId: String? = null,
+        private val deleteResult: Boolean = true,
     ) : MatchCalculatedEvidenceRepository {
         var deleteCalls = 0
 
@@ -4092,6 +4165,7 @@ class MatchReviewViewModelTest {
         ): Boolean {
             if (this.matchId != matchId) return false
             deleteCalls++
+            if (!deleteResult) return false
             evidence = null
             this.matchId = null
             return true
