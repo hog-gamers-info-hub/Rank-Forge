@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
@@ -21,17 +22,21 @@ internal fun ReviewStepBadge(
     number: Int,
     backgroundColor: Color,
     modifier: Modifier = Modifier,
+    borderColor: Color? = null,
+    numberColor: Color = Color.White,
 ) {
+    val shape = CircleShape
     Box(
         modifier = modifier
             .size(20.dp)
-            .clip(CircleShape)
-            .background(backgroundColor),
+            .clip(shape)
+            .background(backgroundColor)
+            .then(borderColor?.let { Modifier.border(1.dp, it, shape) } ?: Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = number.toString(),
-            color = Color.White,
+            color = numberColor,
             style = TextStyle(
                 fontSize = 11.sp,
                 lineHeight = 11.sp,
