@@ -132,7 +132,6 @@ import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_DRAWER_TEST
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_SCREEN_TEST_TAG
-import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
@@ -566,7 +565,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 .assertIsDisplayed()
         }
 
-        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG).performClick()
         composeTestRule.waitForIdle()
         listOf("test2-id", "test3-id", "test4-id").forEach { tournamentId ->
             composeTestRule
@@ -578,47 +577,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             .onAllNodesWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + "test1-id")
             .assertCountEquals(0)
     }
-
-    @Test
-    fun allTournamentsHomeReturnsToHomepageWithDrawerClosed() {
-    val repository = InMemoryTournamentRepository()
-    val listViewModel = TournamentListViewModel(
-        ObserveTournamentsUseCase(repository),
-    )
-
-    composeTestRule.setContent {
-        RankForgeTheme {
-            RankForgeNavHost(
-                authUiState = AuthUiState(isSignedIn = true),
-                listViewModel = listViewModel,
-            )
-        }
-    }
-
-    composeTestRule
-        .onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
-        .performClick()
-
-    composeTestRule
-        .onNodeWithTag(LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG)
-        .performClick()
-
-    composeTestRule.waitForIdle()
-
-    composeTestRule
-        .onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG)
-        .performClick()
-
-    composeTestRule.waitForIdle()
-
-    composeTestRule
-        .onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG)
-        .assertIsDisplayed()
-
-    composeTestRule
-        .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
-        .assertIsNotDisplayed()
-}
 
     @Test
     fun allTournamentsBackReturnsToHomepageWithDrawerOpen() {

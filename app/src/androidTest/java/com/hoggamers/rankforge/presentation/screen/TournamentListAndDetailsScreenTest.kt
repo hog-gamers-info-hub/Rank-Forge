@@ -438,8 +438,12 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(ALL_TOURNAMENTS_BACK_ACTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("All Tournaments").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Your Tournaments").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cloud Tournaments").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(ALL_TOURNAMENTS_HOME_ACTION_TEST_TAG)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
         composeTestRule.onNodeWithTag(TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title))
