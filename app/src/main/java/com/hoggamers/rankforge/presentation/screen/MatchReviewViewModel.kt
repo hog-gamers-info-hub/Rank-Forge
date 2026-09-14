@@ -803,7 +803,7 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     /** Deletes the current owner-scoped calculated-evidence snapshot after queued saves drain. */
-    fun clearResult() {
+    fun clearResult(onCleared: () -> Unit = {}) {
         val state = _uiState.value
         val tournamentId = state.tournamentId
         val matchId = state.matchId
@@ -850,6 +850,7 @@ class MatchReviewViewModel @Inject constructor(
                             )
                         }
                     }
+                    onCleared()
                 }
             },
         )

@@ -685,7 +685,16 @@ fun MatchReviewRoute(
                 calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.SAVING ||
                 calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING),
         isClearResultInProgress = calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING,
-        onClearResult = viewModel::clearResult,
+        onClearResult = {
+            viewModel.clearResult(
+                onCleared = {
+                    resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                    )
+                },
+            )
+        },
         onStartCorrection = viewModel::openCorrection,
         onRequestNextMatchCreation = viewModel::requestNextMatchCreation,
         onCancelNextMatchTeamCountConfirmation = viewModel::cancelNextMatchTeamCountConfirmation,
