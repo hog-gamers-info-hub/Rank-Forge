@@ -1,15 +1,24 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import android.app.Activity
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,9 +27,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHost
@@ -29,33 +41,40 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
+import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.Flow
 
-private val PointIqStandingsNavy = Color(0xFF071B3E)
-private val PointIqStandingsBody = Color(0xFF607393)
+private val PointIqStandingsBackground = Color(0xFF031225)
+private val PointIqStandingsAmbientBlue = Color(0xFF0B386F)
+private val PointIqStandingsHeader = Color(0xFFF6F8FF)
+private val PointIqStandingsSubtitle = Color(0xFF91AFE0)
 private val PointIqStandingsBlue = Color(0xFF176AF7)
-private val PointIqStandingsBorder = Color(0xFFD9E6F7)
-private val PointIqStandingsBanner = Color(0xFFF5F8FF)
-private val PointIqStandingsBannerBorder = Color(0xFFCFE0FF)
-private val PointIqStandingsDivider = Color(0xFFE2EAF4)
+private val PointIqStandingsCyan = Color(0xFF17C9F2)
+private val PointIqStandingsDivider = PointIqStandingsBlue.copy(alpha = 0.24f)
 
 private data class StandingRankStyle(
     val accent: Color,
@@ -138,8 +157,10 @@ fun TournamentStandingsScreen(
     onBackToTournamentDetails: () -> Unit,
     onShareStandings: () -> Unit,
 ) {
+    PointIqTournamentStandingsSystemBars()
+
     when {
-        uiState.isLoading -> RankForgeLoadingState(
+        uiState.isLoading -> PointIqTournamentStandingsLoadingState(
             message = stringResource(R.string.tournament_standings_loading),
         )
         uiState.rows.isEmpty() -> TournamentStandingsEmptyState(onBackToTournamentDetails)
@@ -162,21 +183,19 @@ private fun TournamentStandingsContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
+            .pointIqStandingsBackground()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp)
+            .padding(horizontal = 16.dp, vertical = 24.dp)
             .testTag(TOURNAMENT_STANDINGS_SCREEN_TEST_TAG),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        TournamentStandingsHeader(
+        TournamentStandingsHeaderEntrance(
             isPublishing = isPublishing,
             onShareStandings = onShareStandings,
             onBackToTournamentDetails = onBackToTournamentDetails,
         )
         Spacer(modifier = Modifier.height(18.dp))
-        TournamentStandingsInfoBanner()
-        Spacer(modifier = Modifier.height(20.dp))
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -191,6 +210,28 @@ private fun TournamentStandingsContent(
 }
 
 @Composable
+private fun TournamentStandingsHeaderEntrance(
+    isPublishing: Boolean = false,
+    onShareStandings: (() -> Unit)? = null,
+    onBackToTournamentDetails: () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(animationSpec = tween(220)) +
+            slideInVertically(
+                animationSpec = tween(220),
+                initialOffsetY = { -4 },
+            ),
+    ) {
+        TournamentStandingsHeader(
+            isPublishing = isPublishing,
+            onShareStandings = onShareStandings,
+            onBackToTournamentDetails = onBackToTournamentDetails,
+        )
+    }
+}
+
+@Composable
 private fun TournamentStandingsHeader(
     isPublishing: Boolean = false,
     onShareStandings: (() -> Unit)? = null,
@@ -198,37 +239,58 @@ private fun TournamentStandingsHeader(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = stringResource(R.string.tournament_standings_title),
-            color = PointIqStandingsNavy,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        IconButton(
+            onClick = onBackToTournamentDetails,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.back_action),
+                tint = PointIqStandingsHeader,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.tournament_standings_title),
+                color = PointIqStandingsHeader,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(7.dp))
+            Text(
+                text = stringResource(R.string.tournament_standings_finalized_matches_only),
+                color = PointIqStandingsSubtitle,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+        }
         onShareStandings?.let { share ->
             TextButton(
                 onClick = share,
                 enabled = !isPublishing,
                 modifier = Modifier.testTag(TOURNAMENT_STANDINGS_SHARE_ACTION_TEST_TAG),
             ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = null,
+                    tint = PointIqStandingsCyan,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = stringResource(R.string.share_action),
-                    color = PointIqStandingsBlue,
+                    color = PointIqStandingsCyan,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-        TextButton(onClick = onBackToTournamentDetails) {
-            Text(
-                text = stringResource(R.string.back_action),
-                color = PointIqStandingsBlue,
-                fontWeight = FontWeight.SemiBold,
-            )
         }
     }
 }
@@ -246,45 +308,10 @@ internal fun createTournamentStandingsShareChooserIntent(
 }
 
 @Composable
-private fun TournamentStandingsInfoBanner() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = PointIqStandingsBanner,
-        border = BorderStroke(1.dp, PointIqStandingsBannerBorder),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = PointIqStandingsBlue,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = stringResource(R.string.tournament_standings_finalized_only_message),
-                color = PointIqStandingsNavy,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
-}
-
-@Composable
 private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
     val rankStyle = standingRankStyle(row.displayOrder)
-    val teamLabel = row.teamName
+    val teamName = row.teamName
         ?.takeIf { it.isNotBlank() }
-        ?.let { teamName ->
-            stringResource(R.string.tournament_standing_team_name_inline, teamName)
-        }
         ?: stringResource(
             R.string.tournament_standing_team_slot_inline,
             row.teamSlotNumber,
@@ -294,99 +321,150 @@ private fun TournamentStandingRow(row: TournamentStandingRowUiState) {
             .fillMaxWidth()
             .testTag(TOURNAMENT_STANDING_ROW_TEST_TAG_PREFIX + row.teamSlotNumber),
         shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, PointIqStandingsBorder),
+        color = PointIqStandingsAmbientBlue.copy(alpha = 0.42f),
+        border = BorderStroke(1.dp, rankStyle.accent.copy(alpha = 0.62f)),
         tonalElevation = 0.dp,
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.Top,
+                .fillMaxWidth(),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StandingRankBadge(row.displayOrder, rankStyle)
-                    Text(
-                        text = teamLabel,
-                        color = PointIqStandingsBody,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StandingRankBadge(row.displayOrder, rankStyle)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = teamName,
+                            color = PointIqStandingsHeader,
+                            fontSize = 18.sp,
+                            lineHeight = 23.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(
+                        color = PointIqStandingsDivider,
+                        thickness = 1.dp,
                     )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(
-                    color = PointIqStandingsDivider,
-                    thickness = 1.dp,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    StandingMetric(
-                        label = stringResource(R.string.tournament_standing_kill_points_label),
-                        value = row.totalKillPoints.toString(),
-                        modifier = Modifier.weight(1f),
+                    Spacer(modifier = Modifier.height(6.dp))
+                    StandingMetricRow {
+                        StandingMetric(
+                            label = stringResource(R.string.tournament_standing_kill_points_label),
+                            value = row.totalKillPoints.toString(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        StandingMetricColumnDivider()
+                        StandingMetric(
+                            label = stringResource(R.string.tournament_standing_position_points_label),
+                            value = row.totalPositionPoints.toString(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        StandingMetricColumnDivider()
+                        StandingMetric(
+                            label = stringResource(R.string.tournament_standing_total_points_label),
+                            value = row.totalPoints.toString(),
+                            valueColor = rankStyle.accent,
+                            valueFontSize = 20.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider(
+                        color = PointIqStandingsDivider,
+                        thickness = 1.dp,
                     )
-                    StandingMetric(
-                        label = stringResource(R.string.tournament_standing_position_points_label),
-                        value = row.totalPositionPoints.toString(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StandingMetric(
-                        label = stringResource(R.string.tournament_standing_total_points_label),
-                        value = row.totalPoints.toString(),
-                        valueColor = rankStyle.accent,
-                        valueFontSize = 22.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    StandingMetric(
-                        label = stringResource(
-                            R.string.tournament_standing_first_place_finishes_label,
-                        ),
-                        value = row.firstPlaceFinishes.toString(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StandingMetric(
-                        label = stringResource(R.string.tournament_standing_latest_placement_label),
-                        value = row.latestMatchPlacement?.toString()
-                            ?: stringResource(
-                                R.string.tournament_standing_latest_placement_none_value,
+                    Spacer(modifier = Modifier.height(6.dp))
+                    StandingMetricRow {
+                        StandingMetric(
+                            label = stringResource(
+                                R.string.tournament_standing_first_place_finishes_label,
                             ),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StandingMetric(
-                        label = stringResource(R.string.tournament_standing_matches_included_label),
-                        value = row.matchesIncluded.toString(),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (row.isCompleteTie) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.tournament_standing_complete_tie_message),
-                        color = PointIqStandingsBody,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag(
-                            TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX + row.teamSlotNumber,
-                        ),
-                    )
+                            value = row.firstPlaceFinishes.toString(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        StandingMetricColumnDivider()
+                        StandingMetric(
+                            label = stringResource(R.string.tournament_standing_latest_placement_label),
+                            value = row.latestMatchPlacement?.let { placement -> "#$placement" }
+                                ?: stringResource(
+                                    R.string.tournament_standing_latest_placement_none_value,
+                                ),
+                            modifier = Modifier.weight(1f),
+                        )
+                        StandingMetricColumnDivider()
+                        StandingMetric(
+                            label = stringResource(R.string.tournament_standing_matches_included_label),
+                            value = row.matchesIncluded.toString(),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (row.isCompleteTie) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.tournament_standing_complete_tie_message),
+                            color = PointIqStandingsSubtitle,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.testTag(
+                                TOURNAMENT_STANDING_COMPLETE_TIE_TEST_TAG_PREFIX + row.teamSlotNumber,
+                            ),
+                        )
+                    }
                 }
             }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(1.dp)
+                    .border(
+                        width = 1.dp,
+                        color = rankStyle.accent.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(17.dp),
+                    ),
+            )
         }
+    }
+}
+
+@Composable
+private fun StandingMetricRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.Top,
+        content = content,
+    )
+}
+
+@Composable
+private fun RowScope.StandingMetricColumnDivider() {
+    Box(
+        modifier = Modifier
+            .width(12.dp)
+            .fillMaxHeight()
+            .padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(PointIqStandingsDivider),
+        )
     }
 }
 
@@ -397,14 +475,19 @@ private fun StandingRankBadge(
 ) {
     Box(
         modifier = Modifier
-            .size(width = 28.dp, height = 38.dp)
-            .background(rankStyle.badgeBackground, RoundedCornerShape(10.dp)),
+            .size(36.dp)
+            .background(rankStyle.badgeBackground, RoundedCornerShape(12.dp))
+            .border(
+                width = 1.dp,
+                color = rankStyle.accent.copy(alpha = 0.78f),
+                shape = RoundedCornerShape(12.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = displayOrder.toString(),
             color = rankStyle.accent,
-            fontSize = 17.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
     }
@@ -415,45 +498,52 @@ private fun StandingMetric(
     label: String,
     value: String,
     modifier: Modifier,
-    valueColor: Color = PointIqStandingsNavy,
+    valueColor: Color = PointIqStandingsHeader,
     valueFontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
 ) {
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             text = label,
-            color = PointIqStandingsBody,
-            fontSize = 11.sp,
-            lineHeight = 14.sp,
-            maxLines = 2,
+            color = PointIqStandingsSubtitle,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = value,
             color = valueColor,
             fontSize = valueFontSize,
-            lineHeight = (valueFontSize.value + 3).sp,
+            lineHeight = 23.sp,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
 private fun standingRankStyle(displayOrder: Int): StandingRankStyle = when (displayOrder) {
     1 -> StandingRankStyle(
-        accent = Color(0xFFC28A00),
-        badgeBackground = Color(0xFFFFF2C7),
+        accent = Color(0xFFF6C817),
+        badgeBackground = Color(0xFFF6C817).copy(alpha = 0.18f),
     )
     2 -> StandingRankStyle(
-        accent = Color(0xFF176AF7),
-        badgeBackground = Color(0xFFE8F0FF),
+        accent = Color(0xFFB9D8FF),
+        badgeBackground = Color(0xFFB9D8FF).copy(alpha = 0.18f),
     )
     3 -> StandingRankStyle(
-        accent = Color(0xFFD46B2C),
-        badgeBackground = Color(0xFFFFEBDD),
+        accent = Color(0xFFFF9B42),
+        badgeBackground = Color(0xFFFF9B42).copy(alpha = 0.18f),
     )
     else -> StandingRankStyle(
-        accent = PointIqStandingsNavy,
-        badgeBackground = Color(0xFFEFF4FA),
+        accent = PointIqStandingsCyan,
+        badgeBackground = PointIqStandingsCyan.copy(alpha = 0.16f),
     )
 }
 
@@ -462,23 +552,25 @@ private fun TournamentStandingsEmptyState(onBackToTournamentDetails: () -> Unit)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
-            .padding(24.dp)
+            .pointIqStandingsBackground()
+            .padding(horizontal = 16.dp, vertical = 24.dp)
             .testTag(TOURNAMENT_STANDINGS_EMPTY_TEST_TAG),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        TournamentStandingsHeader(onBackToTournamentDetails = onBackToTournamentDetails)
+        TournamentStandingsHeaderEntrance(
+            onBackToTournamentDetails = onBackToTournamentDetails,
+        )
         Spacer(modifier = Modifier.height(28.dp))
         Text(
             text = stringResource(R.string.tournament_standings_empty_title),
-            color = PointIqStandingsNavy,
+            color = PointIqStandingsHeader,
             style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.tournament_standings_empty_message),
-            color = PointIqStandingsBody,
+            color = PointIqStandingsSubtitle,
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onBackToTournamentDetails) {
@@ -486,3 +578,71 @@ private fun TournamentStandingsEmptyState(onBackToTournamentDetails: () -> Unit)
         }
     }
 }
+
+@Composable
+private fun PointIqTournamentStandingsSystemBars() {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqStandingsBackground.toArgb()
+            window.navigationBarColor = PointIqStandingsBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
+}
+
+@Composable
+private fun PointIqTournamentStandingsLoadingState(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointIqStandingsBackground(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.padding(RankForgeSpacing.Large),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(color = PointIqStandingsCyan)
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            Text(
+                text = message,
+                color = PointIqStandingsSubtitle,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+private fun Modifier.pointIqStandingsBackground(): Modifier =
+    background(PointIqStandingsBackground).drawBehind {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqStandingsAmbientBlue.copy(alpha = 0.42f),
+                    PointIqStandingsAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = Offset(size.width * 0.5f, size.height * 0.22f),
+                radius = size.width * 1.15f,
+            ),
+        )
+    }
