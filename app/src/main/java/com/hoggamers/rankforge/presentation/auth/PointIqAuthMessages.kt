@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -13,13 +14,15 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
 
+private val PointIqAuthMessageSecondary = Color(0xFF91AFE0)
+
 @Composable
 internal fun PointIqAuthMessages(uiState: AuthUiState) {
     uiState.statusMessage?.let { message ->
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = message.asPointIqText(),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = PointIqAuthMessageSecondary,
             modifier = Modifier.testTag(AUTH_STATUS_TEST_TAG),
         )
     }
@@ -27,7 +30,7 @@ internal fun PointIqAuthMessages(uiState: AuthUiState) {
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = message.asPointIqText(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = PointIqAuthMessageSecondary,
             modifier = Modifier.testTag(AUTH_WARNING_TEST_TAG),
         )
     }

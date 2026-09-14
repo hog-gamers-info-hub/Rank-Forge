@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.LocalAutofillHighlightColor
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -22,6 +26,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,17 +49,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 
-private val LoginNavy = Color(0xFF071B3E)
-private val LoginBody = Color(0xFF40536F)
-private val LoginMuted = Color(0xFF7A8BA4)
-private val LoginBlue = Color(0xFF176AF7)
-private val LoginBorder = Color(0xFFD9E4F2)
-private val LoginButtonStart = Color(0xFF082A63)
-private val LoginButtonMiddle = Color(0xFF0A4AA6)
-private val LoginButtonEnd = Color(0xFF0C6CD9)
-private val LoginButtonDisabledStart = Color(0xFF18365F)
-private val LoginButtonDisabledMiddle = Color(0xFF1B4F87)
-private val LoginButtonDisabledEnd = Color(0xFF2B6FA5)
+private val LoginText = Color(0xFFF6F8FF)
+private val LoginSecondary = Color(0xFF91AFE0)
+private val LoginInactive = Color(0xFF7D9DCE)
+private val LoginCyan = Color(0xFF17C9F2)
+private val LoginBorder = Color(0xFF176AF7).copy(alpha = 0.6f)
+private val LoginButtonStart = Color(0xFF159CF8)
+private val LoginButtonMiddle = Color(0xFF1688F7)
+private val LoginButtonEnd = Color(0xFF1675F0)
+private val LoginButtonBorder = Color(0xFF4AAFF7)
+private val LoginFieldSurface = Color(0xFF071B3E)
+private val LoginAutofillHighlight = Color(0xFF0B2B55)
 
 @Composable
 internal fun PointIqLoginScreen(
@@ -102,7 +107,7 @@ internal fun PointIqLoginScreen(
             ) {
                 Text(
                     text = stringResource(R.string.auth_forgot_password_action),
-                    color = LoginBlue,
+                    color = LoginCyan,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -140,7 +145,7 @@ internal fun PointIqLoginScreen(
 private fun PointIqFieldLabel(text: String) {
     Text(
         text = text,
-        color = LoginNavy,
+        color = LoginText,
         fontWeight = FontWeight.SemiBold,
     )
 }
@@ -151,25 +156,27 @@ private fun PointIqEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.pointiq_email_placeholder),
-                color = LoginMuted,
-            )
-        },
-        leadingIcon = { PointIqMailIcon() },
-        shape = RoundedCornerShape(16.dp),
-        colors = pointIqFieldColors(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
-    )
+    CompositionLocalProvider(LocalAutofillHighlightColor provides LoginAutofillHighlight) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.pointiq_email_placeholder),
+                    color = LoginSecondary,
+                )
+            },
+            leadingIcon = { PointIqMailIcon() },
+            shape = RoundedCornerShape(16.dp),
+            colors = pointIqFieldColors(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
+        )
+    }
 }
 
 @Composable
@@ -180,53 +187,55 @@ private fun PointIqPasswordField(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.pointiq_password_placeholder),
-                color = LoginMuted,
-            )
-        },
-        leadingIcon = { PointIqLockIcon() },
-        trailingIcon = {
-            IconButton(
-                onClick = { passwordVisible = !passwordVisible },
-                enabled = enabled,
-                modifier = Modifier.testTag(AUTH_PASSWORD_VISIBILITY_TEST_TAG),
-            ) {
-                PointIqEyeIcon(visible = passwordVisible)
-            }
-        },
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        shape = RoundedCornerShape(16.dp),
-        colors = pointIqFieldColors(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
-    )
+    CompositionLocalProvider(LocalAutofillHighlightColor provides LoginAutofillHighlight) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.pointiq_password_placeholder),
+                    color = LoginSecondary,
+                )
+            },
+            leadingIcon = { PointIqLockIcon() },
+            trailingIcon = {
+                IconButton(
+                    onClick = { passwordVisible = !passwordVisible },
+                    enabled = enabled,
+                    modifier = Modifier.testTag(AUTH_PASSWORD_VISIBILITY_TEST_TAG),
+                ) {
+                    PointIqEyeIcon(visible = passwordVisible)
+                }
+            },
+            visualTransformation = if (passwordVisible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            shape = RoundedCornerShape(16.dp),
+            colors = pointIqFieldColors(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
+        )
+    }
 }
 
 @Composable
 private fun pointIqFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = LoginNavy,
-    unfocusedTextColor = LoginNavy,
-    disabledTextColor = LoginMuted,
-    focusedBorderColor = LoginBlue,
+    focusedTextColor = LoginText,
+    unfocusedTextColor = LoginText,
+    disabledTextColor = LoginInactive,
+    focusedBorderColor = LoginCyan,
     unfocusedBorderColor = LoginBorder,
     disabledBorderColor = LoginBorder,
-    focusedContainerColor = Color.White,
-    unfocusedContainerColor = Color.White,
-    disabledContainerColor = Color.White,
-    cursorColor = LoginBlue,
+    focusedContainerColor = LoginFieldSurface,
+    unfocusedContainerColor = LoginFieldSurface,
+    disabledContainerColor = LoginFieldSurface,
+    cursorColor = LoginCyan,
 )
 
 @Composable
@@ -236,29 +245,20 @@ private fun PointIqPrimaryButton(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val gradient = if (enabled) {
-        Brush.horizontalGradient(
-            listOf(LoginButtonStart, LoginButtonMiddle, LoginButtonEnd),
-        )
-    } else {
-        Brush.horizontalGradient(
-            listOf(
-                LoginButtonDisabledStart,
-                LoginButtonDisabledMiddle,
-                LoginButtonDisabledEnd,
-            ),
-        )
-    }
+    val gradient = Brush.horizontalGradient(
+        listOf(LoginButtonStart, LoginButtonMiddle, LoginButtonEnd),
+    )
 
     Button(
         onClick = onClick,
         enabled = enabled,
         shape = shape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, LoginButtonBorder),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
-            contentColor = Color.White,
-            disabledContentColor = Color.White.copy(alpha = 0.92f),
+            contentColor = LoginText,
+            disabledContentColor = LoginText,
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier
@@ -267,8 +267,8 @@ private fun PointIqPrimaryButton(
             .shadow(
                 elevation = 9.dp,
                 shape = shape,
-                ambientColor = LoginBlue.copy(alpha = 0.16f),
-                spotColor = LoginBlue.copy(alpha = 0.24f),
+                ambientColor = Color.Transparent,
+                spotColor = Color.Transparent,
             )
             .background(gradient, shape)
             .testTag(AUTH_SUBMIT_ACTION_TEST_TAG),
@@ -301,7 +301,7 @@ private fun PointIqDivider() {
         )
         Text(
             text = stringResource(R.string.auth_or_divider),
-            color = LoginMuted,
+            color = LoginSecondary,
         )
         HorizontalDivider(
             modifier = Modifier.weight(1f),
@@ -321,10 +321,10 @@ private fun PointIqGoogleButton(
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, LoginBorder),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = Color.White,
-            contentColor = LoginNavy,
-            disabledContainerColor = Color.White,
-            disabledContentColor = LoginMuted,
+            containerColor = LoginFieldSurface,
+            contentColor = LoginText,
+            disabledContainerColor = LoginFieldSurface,
+            disabledContentColor = LoginInactive,
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -355,13 +355,13 @@ private fun PointIqSignUpPrompt(
     ) {
         Text(
             text = stringResource(R.string.pointiq_no_account_prompt),
-            color = LoginBody,
+            color = LoginSecondary,
             style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
         )
         TextButton(onClick = onSignUp) {
             Text(
                 text = stringResource(R.string.auth_signup_mode),
-                color = LoginBlue,
+                color = LoginCyan,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -376,7 +376,7 @@ private fun PointIqMailIcon() {
         val right = size.width * 0.88f
         val top = size.height * 0.24f
         val bottom = size.height * 0.76f
-        val color = LoginMuted
+        val color = LoginSecondary
 
         drawRoundRect(
             color = color,
@@ -404,7 +404,7 @@ private fun PointIqMailIcon() {
 private fun PointIqLockIcon() {
     Canvas(modifier = Modifier.size(22.dp)) {
         val stroke = 1.7.dp.toPx()
-        val color = LoginMuted
+        val color = LoginSecondary
         drawRoundRect(
             color = color,
             topLeft = Offset(size.width * 0.2f, size.height * 0.43f),
@@ -428,7 +428,7 @@ private fun PointIqLockIcon() {
 private fun PointIqEyeIcon(visible: Boolean) {
     Canvas(modifier = Modifier.size(22.dp)) {
         val stroke = 1.6.dp.toPx()
-        val color = LoginMuted
+        val color = LoginSecondary
         val eye = Path().apply {
             moveTo(size.width * 0.08f, size.height * 0.5f)
             quadraticBezierTo(
@@ -472,26 +472,10 @@ private fun PointIqEyeIcon(visible: Boolean) {
 
 @Composable
 private fun PointIqArrowIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val stroke = 2.dp.toPx()
-        val color = Color.White
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.22f, size.height * 0.5f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.56f, size.height * 0.3f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.56f, size.height * 0.7f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-    }
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+        contentDescription = null,
+        tint = LoginText,
+        modifier = modifier,
+    )
 }

@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.LocalAutofillHighlightColor
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -22,6 +26,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,17 +49,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.hoggamers.rankforge.R
 
-private val SignUpNavy = Color(0xFF071B3E)
-private val SignUpBody = Color(0xFF40536F)
-private val SignUpMuted = Color(0xFF7A8BA4)
-private val SignUpBlue = Color(0xFF176AF7)
-private val SignUpBorder = Color(0xFFD9E4F2)
-private val SignUpButtonStart = Color(0xFF082A63)
-private val SignUpButtonMiddle = Color(0xFF0A4AA6)
-private val SignUpButtonEnd = Color(0xFF0C6CD9)
-private val SignUpButtonDisabledStart = Color(0xFF18365F)
-private val SignUpButtonDisabledMiddle = Color(0xFF1B4F87)
-private val SignUpButtonDisabledEnd = Color(0xFF2B6FA5)
+private val SignUpText = Color(0xFFF6F8FF)
+private val SignUpSecondary = Color(0xFF91AFE0)
+private val SignUpInactive = Color(0xFF7D9DCE)
+private val SignUpCyan = Color(0xFF17C9F2)
+private val SignUpBorder = Color(0xFF176AF7).copy(alpha = 0.6f)
+private val SignUpButtonStart = Color(0xFF159CF8)
+private val SignUpButtonMiddle = Color(0xFF1688F7)
+private val SignUpButtonEnd = Color(0xFF1675F0)
+private val SignUpButtonBorder = Color(0xFF4AAFF7)
+private val SignUpFieldSurface = Color(0xFF071B3E)
+private val SignUpAutofillHighlight = Color(0xFF0B2B55)
 
 @Composable
 internal fun PointIqSignUpScreen(
@@ -123,7 +128,7 @@ internal fun PointIqSignUpScreen(
 private fun PointIqSignUpFieldLabel(text: String) {
     Text(
         text = text,
-        color = SignUpNavy,
+        color = SignUpText,
         fontWeight = FontWeight.SemiBold,
     )
 }
@@ -134,25 +139,27 @@ private fun PointIqSignUpEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.pointiq_email_placeholder),
-                color = SignUpMuted,
-            )
-        },
-        leadingIcon = { PointIqSignUpMailIcon() },
-        shape = RoundedCornerShape(16.dp),
-        colors = pointIqSignUpFieldColors(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
-    )
+    CompositionLocalProvider(LocalAutofillHighlightColor provides SignUpAutofillHighlight) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.pointiq_email_placeholder),
+                    color = SignUpSecondary,
+                )
+            },
+            leadingIcon = { PointIqSignUpMailIcon() },
+            shape = RoundedCornerShape(16.dp),
+            colors = pointIqSignUpFieldColors(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
+        )
+    }
 }
 
 @Composable
@@ -163,53 +170,55 @@ private fun PointIqSignUpPasswordField(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.pointiq_password_placeholder),
-                color = SignUpMuted,
-            )
-        },
-        leadingIcon = { PointIqSignUpLockIcon() },
-        trailingIcon = {
-            IconButton(
-                onClick = { passwordVisible = !passwordVisible },
-                enabled = enabled,
-                modifier = Modifier.testTag(AUTH_PASSWORD_VISIBILITY_TEST_TAG),
-            ) {
-                PointIqSignUpEyeIcon(visible = passwordVisible)
-            }
-        },
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        shape = RoundedCornerShape(16.dp),
-        colors = pointIqSignUpFieldColors(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
-    )
+    CompositionLocalProvider(LocalAutofillHighlightColor provides SignUpAutofillHighlight) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.pointiq_password_placeholder),
+                    color = SignUpSecondary,
+                )
+            },
+            leadingIcon = { PointIqSignUpLockIcon() },
+            trailingIcon = {
+                IconButton(
+                    onClick = { passwordVisible = !passwordVisible },
+                    enabled = enabled,
+                    modifier = Modifier.testTag(AUTH_PASSWORD_VISIBILITY_TEST_TAG),
+                ) {
+                    PointIqSignUpEyeIcon(visible = passwordVisible)
+                }
+            },
+            visualTransformation = if (passwordVisible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            shape = RoundedCornerShape(16.dp),
+            colors = pointIqSignUpFieldColors(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
+        )
+    }
 }
 
 @Composable
 private fun pointIqSignUpFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = SignUpNavy,
-    unfocusedTextColor = SignUpNavy,
-    disabledTextColor = SignUpMuted,
-    focusedBorderColor = SignUpBlue,
+    focusedTextColor = SignUpText,
+    unfocusedTextColor = SignUpText,
+    disabledTextColor = SignUpInactive,
+    focusedBorderColor = SignUpCyan,
     unfocusedBorderColor = SignUpBorder,
     disabledBorderColor = SignUpBorder,
-    focusedContainerColor = Color.White,
-    unfocusedContainerColor = Color.White,
-    disabledContainerColor = Color.White,
-    cursorColor = SignUpBlue,
+    focusedContainerColor = SignUpFieldSurface,
+    unfocusedContainerColor = SignUpFieldSurface,
+    disabledContainerColor = SignUpFieldSurface,
+    cursorColor = SignUpCyan,
 )
 
 @Composable
@@ -219,29 +228,20 @@ private fun PointIqSignUpPrimaryButton(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val gradient = if (enabled) {
-        Brush.horizontalGradient(
-            listOf(SignUpButtonStart, SignUpButtonMiddle, SignUpButtonEnd),
-        )
-    } else {
-        Brush.horizontalGradient(
-            listOf(
-                SignUpButtonDisabledStart,
-                SignUpButtonDisabledMiddle,
-                SignUpButtonDisabledEnd,
-            ),
-        )
-    }
+    val gradient = Brush.horizontalGradient(
+        listOf(SignUpButtonStart, SignUpButtonMiddle, SignUpButtonEnd),
+    )
 
     Button(
         onClick = onClick,
         enabled = enabled,
         shape = shape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, SignUpButtonBorder),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
-            contentColor = Color.White,
-            disabledContentColor = Color.White.copy(alpha = 0.8f),
+            contentColor = SignUpText,
+            disabledContentColor = SignUpText,
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier
@@ -250,8 +250,8 @@ private fun PointIqSignUpPrimaryButton(
             .shadow(
                 elevation = 9.dp,
                 shape = shape,
-                ambientColor = SignUpBlue.copy(alpha = 0.16f),
-                spotColor = SignUpBlue.copy(alpha = 0.24f),
+                ambientColor = Color.Transparent,
+                spotColor = Color.Transparent,
             )
             .background(gradient, shape)
             .testTag(AUTH_SUBMIT_ACTION_TEST_TAG),
@@ -284,7 +284,7 @@ private fun PointIqSignUpDivider() {
         )
         Text(
             text = stringResource(R.string.auth_or_divider),
-            color = SignUpMuted,
+            color = SignUpSecondary,
         )
         HorizontalDivider(
             modifier = Modifier.weight(1f),
@@ -304,10 +304,10 @@ private fun PointIqSignUpGoogleButton(
         shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, SignUpBorder),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = Color.White,
-            contentColor = SignUpNavy,
-            disabledContainerColor = Color.White,
-            disabledContentColor = SignUpMuted,
+            containerColor = SignUpFieldSurface,
+            contentColor = SignUpText,
+            disabledContainerColor = SignUpFieldSurface,
+            disabledContentColor = SignUpInactive,
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -338,13 +338,13 @@ private fun PointIqLoginPrompt(
     ) {
         Text(
             text = stringResource(R.string.pointiq_have_account_prompt),
-            color = SignUpBody,
+            color = SignUpSecondary,
             style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
         )
         TextButton(onClick = onLogIn) {
             Text(
                 text = stringResource(R.string.auth_log_in_mode),
-                color = SignUpBlue,
+                color = SignUpCyan,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -361,14 +361,14 @@ private fun PointIqSignUpMailIcon() {
         val bottom = size.height * 0.76f
 
         drawRoundRect(
-            color = SignUpMuted,
+            color = SignUpSecondary,
             topLeft = Offset(left, top),
             size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
             style = Stroke(stroke),
         )
-        drawLine(SignUpMuted, Offset(left + stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
-        drawLine(SignUpMuted, Offset(right - stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
+        drawLine(SignUpSecondary, Offset(left + stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
+        drawLine(SignUpSecondary, Offset(right - stroke, top + stroke), Offset(size.width / 2f, size.height * 0.52f), stroke)
     }
 }
 
@@ -377,14 +377,14 @@ private fun PointIqSignUpLockIcon() {
     Canvas(modifier = Modifier.size(22.dp)) {
         val stroke = 1.7.dp.toPx()
         drawRoundRect(
-            color = SignUpMuted,
+            color = SignUpSecondary,
             topLeft = Offset(size.width * 0.2f, size.height * 0.43f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.43f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
             style = Stroke(stroke),
         )
         drawArc(
-            color = SignUpMuted,
+            color = SignUpSecondary,
             startAngle = 180f,
             sweepAngle = 180f,
             useCenter = false,
@@ -407,11 +407,11 @@ private fun PointIqSignUpEyeIcon(visible: Boolean) {
             quadraticBezierTo(size.width * 0.28f, size.height * 0.82f, size.width * 0.08f, size.height * 0.5f)
             close()
         }
-        drawPath(eye, color = SignUpMuted, style = Stroke(stroke))
-        drawCircle(color = SignUpMuted, radius = size.minDimension * 0.1f, center = center)
+        drawPath(eye, color = SignUpSecondary, style = Stroke(stroke))
+        drawCircle(color = SignUpSecondary, radius = size.minDimension * 0.1f, center = center)
         if (!visible) {
             drawLine(
-                color = SignUpMuted,
+                color = SignUpSecondary,
                 start = Offset(size.width * 0.18f, size.height * 0.18f),
                 end = Offset(size.width * 0.82f, size.height * 0.82f),
                 strokeWidth = stroke,
@@ -422,25 +422,10 @@ private fun PointIqSignUpEyeIcon(visible: Boolean) {
 
 @Composable
 private fun PointIqSignUpArrowIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val stroke = 2.dp.toPx()
-        drawLine(
-            color = Color.White,
-            start = Offset(size.width * 0.22f, size.height * 0.5f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(size.width * 0.56f, size.height * 0.3f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(size.width * 0.56f, size.height * 0.7f),
-            end = Offset(size.width * 0.76f, size.height * 0.5f),
-            strokeWidth = stroke,
-        )
-    }
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+        contentDescription = null,
+        tint = SignUpText,
+        modifier = modifier,
+    )
 }
