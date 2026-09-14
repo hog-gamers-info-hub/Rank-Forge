@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,15 +12,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -57,7 +62,9 @@ private val PointIqHomeBackground = Color(0xFF031225)
 private val PointIqHomeAmbientBlue = Color(0xFF0B386F)
 private val PointIqHomeHeader = Color(0xFFF6F8FF)
 private val PointIqHomeHeaderBlue = Color(0xFF176AF7)
-private val PointIqMenuMuted = Color(0xFF91AFE0)
+private val PointIqMenuEnabledIcon = Color(0xFF5AAEFF)
+private val PointIqMenuDisabled = Color(0xFF7D9DCE)
+private val PointIqMenuSeparator = Color(0xFF176AF7).copy(alpha = 0.55f)
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
 const val LOGGED_IN_HOME_BACK_ITEM_TEST_TAG = "logged_in_home_back_item"
@@ -150,114 +157,163 @@ private fun PointIqFullScreenMenu(
             .fillMaxSize()
             .pointIqHomeBackground()
             .testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
-            .padding(horizontal = 20.dp),
+            .padding(start = 24.dp, top = 28.dp, end = 24.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 18.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .offset(x = (-8).dp),
+            verticalAlignment = Alignment.Top,
         ) {
+            val backDescription = stringResource(R.string.back_action)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(onClick = onBack)
+                    .testTag(LOGGED_IN_HOME_BACK_ITEM_TEST_TAG)
+                    .semantics {
+                        contentDescription = backDescription
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "<",
+                    color = PointIqHomeHeader,
+                    fontSize = 36.sp,
+                    lineHeight = 40.sp,
+                    fontWeight = FontWeight.Normal,
+                    modifier = Modifier.offset(y = (-6).dp),
+                )
+            }
             Text(
                 text = stringResource(R.string.logged_in_home_menu_title),
                 color = PointIqHomeHeader,
-                fontSize = 20.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Bold,
             )
-
-            TextButton(
-                onClick = onBack,
-                modifier = Modifier.testTag(LOGGED_IN_HOME_BACK_ITEM_TEST_TAG),
-            ) {
-                Text(
-                    text = stringResource(R.string.back_action),
-                    color = PointIqHomeHeaderBlue,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
         PointIqMenuPrimaryItem(
+            icon = Icons.Filled.Person,
             text = stringResource(R.string.auth_account_section_title),
             testTag = LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG,
             onClick = onOpenAccount,
         )
+        PointIqMenuSeparator()
 
         PointIqMenuPrimaryItem(
+            icon = Icons.AutoMirrored.Filled.List,
             text = stringResource(R.string.logged_in_home_all_tournaments),
             testTag = LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG,
             onClick = onOpenAllTournaments,
         )
+        PointIqMenuSeparator()
 
         PointIqMenuPrimaryItem(
+            icon = Icons.Filled.Email,
             text = stringResource(R.string.logged_in_home_contact_us),
             testTag = LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG,
             onClick = onOpenContactUs,
         )
+        PointIqMenuSeparator()
 
         PointIqMenuDisabledItem(
+            icon = Icons.Filled.Notifications,
             text = stringResource(R.string.logged_in_home_notifications),
             testTag = LOGGED_IN_HOME_NOTIFICATIONS_ITEM_TEST_TAG,
         )
+        PointIqMenuSeparator()
 
         PointIqMenuDisabledItem(
+            icon = Icons.Filled.Settings,
             text = stringResource(R.string.logged_in_home_settings),
             testTag = LOGGED_IN_HOME_SETTINGS_ITEM_TEST_TAG,
         )
+        PointIqMenuSeparator()
     }
 }
 
 @Composable
 private fun PointIqMenuPrimaryItem(
+    icon: ImageVector,
     text: String,
     testTag: String,
     onClick: () -> Unit,
 ) {
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(48.dp)
             .clickable(onClick = onClick)
-            .testTag(testTag)
-            .padding(horizontal = 4.dp),
-        contentAlignment = Alignment.CenterStart,
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PointIqMenuEnabledIcon,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(modifier = Modifier.size(16.dp))
         Text(
             text = text,
             color = PointIqHomeHeader,
-            fontSize = 15.sp,
-            lineHeight = 19.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = PointIqMenuEnabledIcon,
+            modifier = Modifier.size(28.dp),
         )
     }
 }
 
 @Composable
-private fun PointIqMenuDisabledItem(
-    text: String,
-    testTag: String,
-) {
+private fun PointIqMenuSeparator() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(1.dp)
+            .background(PointIqMenuSeparator),
+    )
+}
+
+@Composable
+private fun PointIqMenuDisabledItem(
+    icon: ImageVector,
+    text: String,
+    testTag: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
             .testTag(testTag)
             .semantics {
                 disabled()
-            }
-            .padding(horizontal = 4.dp),
-        contentAlignment = Alignment.CenterStart,
+            },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PointIqMenuDisabled,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(modifier = Modifier.size(16.dp))
         Text(
             text = text,
-            color = PointIqMenuMuted,
-            fontSize = 15.sp,
-            lineHeight = 19.sp,
-            fontWeight = FontWeight.Normal,
+            color = PointIqMenuDisabled,
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
