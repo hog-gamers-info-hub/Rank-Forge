@@ -473,16 +473,29 @@ class MatchReviewScreenTest {
                 MatchReviewScreen(
                     uiState = originalState,
                     lobbyUiState = allLobbyReadyState(),
+                    ocrUiState = inlineOcrState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
                     onCalculatePoints = { calculateCount++ },
-                    showClearResult = true,
                     onClearResult = { clearCount++ },
                 )
             }
         }
 
+        val finalizeY = composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .fetchSemanticsNode()
+            .positionInRoot
+            .y
+        val clearY = composeTestRule.onNodeWithTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .fetchSemanticsNode()
+            .positionInRoot
+            .y
+        assertTrue(finalizeY < clearY)
+        composeTestRule.onNodeWithText("Finalize Result").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Finalize Match").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
@@ -495,6 +508,25 @@ class MatchReviewScreenTest {
             assertEquals("7", originalState.rows.first().placementInput)
             assertEquals("3", originalState.rows.first().killsInput)
         }
+    }
+
+    @Test
+    fun simplifiedReviewDoesNotShowClearResultForScreenshotSelectionWithoutDisplayedOcr() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showClearResult = true,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -2696,8 +2728,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
             .assertIsNotEnabled()
     }
@@ -4070,8 +4102,8 @@ class MatchReviewScreenTest {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertCountEquals(0)
     }
 
     @Test

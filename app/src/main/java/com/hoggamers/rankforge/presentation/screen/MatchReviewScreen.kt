@@ -355,7 +355,6 @@ fun MatchReviewRoute(
     val customDesignFormatAvailabilityUiState by
         customDesignFormatAvailabilityViewModel.uiState.collectAsStateWithLifecycle()
     val calculatedEvidenceSaveStatus by viewModel.calculatedEvidenceSaveStatus.collectAsStateWithLifecycle()
-    val hasCalculatedEvidenceRecord by viewModel.hasCalculatedEvidenceRecord.collectAsStateWithLifecycle()
     fun saveAcceptedResultCorrections() {
         viewModel.saveAcceptedResultCorrections(resolvedOcrReviewViewModel.uiState.value)
     }
@@ -681,11 +680,11 @@ fun MatchReviewRoute(
             viewModel.enableManualCalculatedEvidenceSaving()
         },
         showClearResult = uiState.isEditable &&
-            (hasCalculatedEvidenceRecord ||
-                calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.SAVING ||
-                calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING),
+            ocrUiState.hasDisplayableResultForMatch(tournamentId, matchId),
         isClearResultInProgress = calculatedEvidenceSaveStatus == MatchCalculatedEvidenceSaveStatus.CLEARING,
         onClearResult = {
+            viewModel.enableManualCalculatedEvidenceSaving()
+            viewModel.saveCalculatedEvidenceIfReady(resolvedOcrReviewViewModel.uiState.value)
             viewModel.clearResult(
                 onCleared = {
                     resolvedOcrReviewViewModel.clearCalculatedEvidenceDisplay(
@@ -1336,6 +1335,13 @@ private fun MatchReviewContent(
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
     var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
+    fun openResultDownload() {
+        selectedResultScope = null
+        selectedResultFormat = null
+        showResultFormatDialog = false
+        showResultScopeDialog = true
+        showOverflowMenu = false
+    }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
         lobbySlots = lobbyUiState.slots,
         resultSlots = uiState.resultScreenshots,
@@ -1565,7 +1571,7 @@ private fun MatchReviewContent(
                         tonalElevation = 0.dp,
                         shadowElevation = 4.dp,
                     ) {
-                        if (showClearResult) {
+                        if (showLegacyManualReviewContent && showClearResult) {
                             DropdownMenuItem(
                                 text = { Text("Clear Result") },
                                 onClick = {
@@ -1580,13 +1586,7 @@ private fun MatchReviewContent(
                         if (uiState.status == MatchStatus.FINALIZED) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.match_review_download_result_action)) },
-                                onClick = {
-                                    selectedResultScope = null
-                                    selectedResultFormat = null
-                                    showResultFormatDialog = false
-                                    showResultScopeDialog = true
-                                    showOverflowMenu = false
-                                },
+                                onClick = ::openResultDownload,
                                 enabled = uiState.canDownloadResult,
                                 colors = overflowItemColors,
                                 modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
@@ -1915,15 +1915,29 @@ private fun MatchReviewContent(
             -> Unit
         }
         val readyOcrUiState = ocrUiState as? MatchOcrReviewUiState.Ready
-        if (!showLegacyManualReviewContent && shouldShowInlineOcrDetails) {
+        if (!showLegacyManualReviewContent &&
+            uiState.status != MatchStatus.FINALIZED &&
+            shouldShowInlineOcrDetails
+        ) {
             readyOcrUiState?.correctionDraft?.let { correctionDraft ->
-                MatchOcrReviewFinalizeAction(
+                MatchReviewFinalizeAction(
                     correctionDraft = correctionDraft,
                     finalization = readyOcrUiState.finalization,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
+        }
+        val showSimplifiedClearResult = !showLegacyManualReviewContent &&
+            uiState.isEditable &&
+            hasDisplayableResultOcrData
+        if (showSimplifiedClearResult) {
+            ReviewMatchActionButton(
+                label = "Clear Result",
+                enabled = !isClearResultInProgress,
+                onClick = onClearResult,
+                modifier = Modifier.testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
+            )
         }
         if (!showLegacyManualReviewContent && hasCombinedPositionCropPreviews) {
             readyOcrUiState?.finalization?.error?.let { error ->
@@ -2074,12 +2088,7 @@ private fun MatchReviewContent(
         if (uiState.status == MatchStatus.FINALIZED) {
             if (showLegacyManualReviewContent) {
                 Button(
-                    onClick = {
-                        selectedResultScope = null
-                        selectedResultFormat = null
-                        showResultFormatDialog = false
-                        showResultScopeDialog = true
-                    },
+                    onClick = ::openResultDownload,
                     enabled = uiState.canDownloadResult,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF176AF7),
@@ -2098,6 +2107,13 @@ private fun MatchReviewContent(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            } else {
+                ReviewMatchActionButton(
+                    label = stringResource(R.string.match_review_download_result_action),
+                    enabled = uiState.canDownloadResult,
+                    onClick = ::openResultDownload,
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
+                )
             }
             when (val downloadState = uiState.resultDownloadUiState) {
                 is ResultDownloadUiState.Generating -> Text(
@@ -2423,12 +2439,53 @@ private fun Modifier.pointIqMatchReviewBackground(): Modifier =
 }
 
 @Composable
+private fun MatchReviewFinalizeAction(
+    correctionDraft: MatchOcrReviewCorrectionDraft,
+    finalization: MatchOcrReviewFinalizationUiState,
+    onFinalizeOcrCorrection: () -> Unit,
+) {
+    ReviewMatchActionButton(
+        label = stringResource(
+            if (finalization.isFinalizing) {
+                R.string.match_ocr_review_finalization_in_progress
+            } else {
+                R.string.match_review_finalize_result_action
+            },
+        ),
+        enabled = correctionDraft.blockerCount == 0 &&
+            !finalization.isFinalizing &&
+            !finalization.isFinalized,
+        onClick = onFinalizeOcrCorrection,
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+    )
+}
+
+@Composable
 private fun ReviewMatchCalculationButton(
     label: String,
     iconRes: Int,
     iconSize: Dp,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    ReviewMatchActionButton(
+        label = label,
+        iconRes = iconRes,
+        iconSize = iconSize,
+        enabled = enabled,
+        modifier = modifier,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun ReviewMatchActionButton(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    iconRes: Int? = null,
+    iconSize: Dp = 0.dp,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -2472,12 +2529,14 @@ private fun ReviewMatchCalculationButton(
             horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = Color.White.copy(alpha = contentAlpha),
-                modifier = Modifier.size(iconSize),
-            )
+            iconRes?.let { resource ->
+                Icon(
+                    painter = painterResource(resource),
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = contentAlpha),
+                    modifier = Modifier.size(iconSize),
+                )
+            }
             Text(
                 text = label,
                 color = Color.White.copy(alpha = contentAlpha),
