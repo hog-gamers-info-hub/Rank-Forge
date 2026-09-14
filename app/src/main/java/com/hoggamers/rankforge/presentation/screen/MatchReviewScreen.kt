@@ -1,5 +1,6 @@
 ﻿package com.hoggamers.rankforge.presentation.screen
 
+import android.app.Activity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,13 +48,21 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -65,13 +75,20 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -80,6 +97,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -98,7 +119,6 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
@@ -108,11 +128,24 @@ private val PointIqMatchReviewNavy = Color(0xFF071B3E)
 private val PointIqMatchReviewBody = Color(0xFF607393)
 private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
-private val PointIqMatchReviewEmptyCardBorder = Color(0xFF9DB5D3)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
 private val PointIqMatchReviewSkeletonBase = Color(0xFFE5ECF5)
 private val PointIqMatchReviewSkeletonHighlight = Color(0xFFF1F5FA)
 private val PointIqMatchReviewSkeletonButton = Color(0xFFD8E6F9)
+private val PointIqMatchReviewBackground = Color(0xFF031225)
+private val PointIqMatchReviewAmbientBlue = Color(0xFF0B386F)
+private val PointIqMatchReviewHeader = Color(0xFFF6F8FF)
+private val PointIqMatchReviewSubtitle = Color(0xFF91AFE0)
+private val PointIqMatchReviewDanger = Color(0xFFD92D3A)
+private val PointIqMatchReviewBadgeFill = PointIqMatchReviewNavy
+private val PointIqMatchReviewBadgeBorder = Color(0xFF17C9F2).copy(alpha = 0.4f)
+private val PointIqMatchReviewInnerOcrSurface = PointIqMatchReviewAmbientBlue.copy(alpha = 0.38f)
+private val PointIqMatchReviewSectionSurface = PointIqMatchReviewAmbientBlue.copy(alpha = 0.42f)
+private val PointIqMatchReviewSectionBorder = PointIqMatchReviewBlue.copy(alpha = 0.5f)
+private val PointIqMatchReviewCtaTopBlue = Color(0xFF159CF8)
+private val PointIqMatchReviewCtaMiddleBlue = Color(0xFF1688F7)
+private val PointIqMatchReviewCtaBottomBlue = Color(0xFF1675F0)
+private val PointIqMatchReviewCtaBorder = Color(0xFF4AAFF7)
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private enum class MatchReviewScreenshotActionStyle {
@@ -152,6 +185,7 @@ internal class MatchReviewResumeRecoveryGate {
 }
 
 const val MATCH_REVIEW_SCREEN_TEST_TAG = "match_review_screen"
+const val MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG = "match_review_overflow_action"
 const val MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG = "match_review_restore_skeleton"
 const val MATCH_REVIEW_ROW_TEST_TAG_PREFIX = "match_review_row_"
 const val MATCH_REVIEW_VALID_STATUS_TEST_TAG = "match_review_valid_status"
@@ -789,6 +823,8 @@ fun MatchReviewScreen(
     onOcrConfirmFinalizeWarnings: () -> Unit = {},
     onOcrDismissFinalizeWarnings: () -> Unit = {},
 ) {
+    PointIqMatchReviewSystemBars()
+
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
     var manualModeOpened by rememberSaveable { mutableStateOf(false) }
     val closeManualMode = {
@@ -941,7 +977,7 @@ private fun MatchReviewRestoreSkeleton(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
+            .pointIqMatchReviewBackground()
             .testTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
             .imePadding()
             .verticalScroll(rememberScrollState())
@@ -964,7 +1000,7 @@ private fun MatchReviewRestoreSkeleton(
             ) {
                 Text(
                     text = "Save Lobby",
-                    color = PointIqMatchReviewBody,
+                    color = PointIqMatchReviewSubtitle,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -1022,11 +1058,13 @@ private fun MatchReviewRestoreSkeletonSectionHeader(
     ) {
         ReviewStepBadge(
             number = step,
-            backgroundColor = PointIqMatchReviewNavy,
+            backgroundColor = PointIqMatchReviewBadgeFill,
+            borderColor = PointIqMatchReviewBadgeBorder,
+            numberColor = PointIqMatchReviewHeader,
         )
         Text(
             text = title,
-            color = PointIqMatchReviewNavy,
+            color = PointIqMatchReviewHeader,
             style = MaterialTheme.typography.titleMedium,
         )
         if (trailingContent != null) {
@@ -1272,6 +1310,7 @@ private fun MatchReviewContent(
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
     var showResultScopeDialog by remember { mutableStateOf(false) }
     var showResultFormatDialog by remember { mutableStateOf(false) }
+    var showOverflowMenu by rememberSaveable { mutableStateOf(false) }
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
     var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
@@ -1389,7 +1428,7 @@ private fun MatchReviewContent(
                 bottomStart = 0.dp,
                 bottomEnd = 0.dp,
             ),
-            color = PointIqMatchReviewCard,
+            color = Color(0xFF06182E),
         ) {
             Column(
                 modifier = Modifier
@@ -1419,7 +1458,7 @@ private fun MatchReviewContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
+            .pointIqMatchReviewBackground()
             .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
             .then(
                 if (manualModeOpened) {
@@ -1432,7 +1471,7 @@ private fun MatchReviewContent(
                     Modifier
                         .imePadding()
                         .verticalScroll(rememberScrollState())
-                        .padding(RankForgeSpacing.Large)
+                        .padding(horizontal = 16.dp, vertical = RankForgeSpacing.Large)
                 },
             ),
         horizontalAlignment = androidx.compose.ui.Alignment.Start,
@@ -1452,13 +1491,122 @@ private fun MatchReviewContent(
                 style = MaterialTheme.typography.headlineMedium,
             )
         } else {
-            Text(
-                text = reviewTitle,
-                color = PointIqMatchReviewNavy,
-                fontSize = 28.sp,
-                lineHeight = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
+                IconButton(
+                    onClick = onBackToDetails,
+                    enabled = !uiState.isDeleting,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.back_action),
+                        tint = PointIqMatchReviewHeader,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .offset(y = (-6).dp),
+                    )
+                }
+                Text(
+                    text = reviewTitle,
+                    color = PointIqMatchReviewHeader,
+                    fontSize = 24.sp,
+                    lineHeight = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    val overflowItemColors = MenuDefaults.itemColors(
+                        textColor = PointIqMatchReviewHeader,
+                        disabledTextColor = PointIqMatchReviewHeader.copy(alpha = 0.38f),
+                    )
+                    IconButton(
+                        onClick = { showOverflowMenu = true },
+                        enabled = !uiState.isDeleting,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = stringResource(R.string.logged_in_home_open_menu),
+                            tint = PointIqMatchReviewHeader,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false },
+                        containerColor = PointIqMatchReviewBackground,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 4.dp,
+                    ) {
+                        if (showClearResult) {
+                            DropdownMenuItem(
+                                text = { Text("Clear Result") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onClearResult()
+                                },
+                                enabled = !isClearResultInProgress,
+                                colors = overflowItemColors,
+                                modifier = Modifier.testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
+                            )
+                        }
+                        if (uiState.status == MatchStatus.FINALIZED) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.match_review_download_result_action)) },
+                                onClick = {
+                                    selectedResultScope = null
+                                    selectedResultFormat = null
+                                    showResultFormatDialog = false
+                                    showResultScopeDialog = true
+                                    showOverflowMenu = false
+                                },
+                                enabled = uiState.canDownloadResult,
+                                colors = overflowItemColors,
+                                modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
+                            )
+                        }
+                        if (uiState.shouldShowCreateNextMatch) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.create_match_number_action,
+                                            uiState.nextMatchNumber ?: 0,
+                                        ),
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onRequestNextMatchCreation()
+                                },
+                                enabled = uiState.canCreateNextMatch,
+                                colors = overflowItemColors,
+                                modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.match_review_delete_action),
+                                    color = PointIqMatchReviewDanger,
+                                )
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                showDeleteConfirmation = true
+                            },
+                            enabled = !uiState.isDeleting,
+                            colors = overflowItemColors,
+                            modifier = Modifier.testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
+                        )
+                    }
+                }
+            }
         }
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -1560,19 +1708,21 @@ private fun MatchReviewContent(
                 ) {
                     ReviewStepBadge(
                         number = 2,
-                        backgroundColor = PointIqMatchReviewNavy,
+                        backgroundColor = PointIqMatchReviewBadgeFill,
+                        borderColor = PointIqMatchReviewBadgeBorder,
+                        numberColor = PointIqMatchReviewHeader,
                         modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
                     )
                     Text(
                         text = stringResource(R.string.match_review_result_screenshots_title),
-                        color = PointIqMatchReviewNavy,
+                        color = PointIqMatchReviewHeader,
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
                 if (!hasResultScreenshotSelection) {
                     Text(
                         text = stringResource(R.string.pointiq_match_review_result_description),
-                        color = PointIqMatchReviewBody,
+                        color = PointIqMatchReviewSubtitle,
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                     )
@@ -1640,19 +1790,21 @@ private fun MatchReviewContent(
                 ) {
                     ReviewStepBadge(
                         number = 2,
-                        backgroundColor = PointIqMatchReviewNavy,
+                        backgroundColor = PointIqMatchReviewBadgeFill,
+                        borderColor = PointIqMatchReviewBadgeBorder,
+                        numberColor = PointIqMatchReviewHeader,
                         modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
                     )
                     Text(
                         text = stringResource(R.string.match_review_result_screenshots_title),
-                        color = PointIqMatchReviewNavy,
+                        color = PointIqMatchReviewHeader,
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
                 if (!hasResultScreenshotSelection) {
                     Text(
                         text = stringResource(R.string.pointiq_match_review_result_description),
-                        color = PointIqMatchReviewBody,
+                        color = PointIqMatchReviewSubtitle,
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                     )
@@ -1774,35 +1926,24 @@ private fun MatchReviewContent(
         ) {
             if (!showLegacyManualReviewContent && !hasResultScreenshotSelection) {
                 Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
-                Button(
+                ReviewMatchCalculationButton(
+                    label = stringResource(R.string.manual_calculate_action),
+                    iconRes = R.drawable.ic_manual_calculate,
+                    iconSize = 24.dp,
                     onClick = {
                         onManualModeOpenedChange(true)
                         onOcrReviewOpenedChange(true)
                         onOpenManualReview()
                     },
                     enabled = uiState.isEditable,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
-                        contentColor = Color.White,
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                ) {
-                    Text(
-                        "Manual",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            } else {
-                Button(
+                )
+            } else if (!showLegacyManualReviewContent) {
+                ReviewMatchCalculationButton(
+                    label = stringResource(R.string.auto_calculate_action),
+                    iconRes = R.drawable.ic_match_processing,
+                    iconSize = 26.dp,
                     onClick = {
-                        if (showLegacyManualReviewContent) {
-                            onOcrReviewOpenedChange(true)
-                            onOpenOcrReview()
-                        } else if (ocrPreflightItems.isEmpty()) {
+                        if (ocrPreflightItems.isEmpty()) {
                             onOcrReviewOpenedChange(true)
                             onCalculatePoints()
                         } else {
@@ -1810,42 +1951,37 @@ private fun MatchReviewContent(
                         }
                     },
                     enabled = uiState.isEditable,
-                    colors = if (!showLegacyManualReviewContent) {
-                        ButtonDefaults.buttonColors(
-                            containerColor = PointIqMatchReviewBlue,
-                            contentColor = Color.White,
-                        )
-                    } else {
-                        ButtonDefaults.buttonColors()
+                    modifier = Modifier.testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
+                )
+            } else {
+                Button(
+                    onClick = {
+                        onOcrReviewOpenedChange(true)
+                        onOpenOcrReview()
                     },
-                    shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
+                    enabled = uiState.isEditable,
+                    colors = ButtonDefaults.buttonColors(),
+                    shape = ButtonDefaults.shape,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
                         .testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
                 ) {
                     Text(
-                        stringResource(
-                            if (!showLegacyManualReviewContent) {
-                                R.string.calculate_points_action
-                            } else {
-                                R.string.match_ocr_review_title
-                            },
-                        ),
+                        stringResource(R.string.match_ocr_review_title),
                         fontSize = 14.sp,
-                        fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
+                        fontWeight = FontWeight.Normal,
                     )
                 }
             }
         }
-        if (!showLegacyManualReviewContent &&
+        if (showLegacyManualReviewContent &&
             uiState.isEditable &&
             !hasDisplayableResultOcrData &&
             showClearResult
         ) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
         }
-        if (showClearResult) {
+        if (showLegacyManualReviewContent && showClearResult) {
             Button(
                 onClick = onClearResult,
                 enabled = !isClearResultInProgress,
@@ -1914,30 +2050,32 @@ private fun MatchReviewContent(
             }
         }
         if (uiState.status == MatchStatus.FINALIZED) {
-            Button(
-                onClick = {
-                    selectedResultScope = null
-                    selectedResultFormat = null
-                    showResultFormatDialog = false
-                    showResultScopeDialog = true
-                },
-                enabled = uiState.canDownloadResult,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF176AF7),
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFB8C7DC),
-                    disabledContentColor = Color.White.copy(alpha = 0.85f),
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    text = stringResource(R.string.match_review_download_result_action),
-                    fontWeight = FontWeight.SemiBold,
-                )
+            if (showLegacyManualReviewContent) {
+                Button(
+                    onClick = {
+                        selectedResultScope = null
+                        selectedResultFormat = null
+                        showResultFormatDialog = false
+                        showResultScopeDialog = true
+                    },
+                    enabled = uiState.canDownloadResult,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF176AF7),
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFFB8C7DC),
+                        disabledContentColor = Color.White.copy(alpha = 0.85f),
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
+                ) {
+                    Text(
+                        text = stringResource(R.string.match_review_download_result_action),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
             when (val downloadState = uiState.resultDownloadUiState) {
                 is ResultDownloadUiState.Generating -> Text(
@@ -1971,29 +2109,31 @@ private fun MatchReviewContent(
             }
         }
         if (uiState.shouldShowCreateNextMatch) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = onRequestNextMatchCreation,
-                enabled = uiState.canCreateNextMatch,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PointIqMatchReviewBlue,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFB8C7DC),
-                    disabledContentColor = Color.White.copy(alpha = 0.85f),
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.create_match_number_action,
-                        uiState.nextMatchNumber ?: 0,
+            if (showLegacyManualReviewContent) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onRequestNextMatchCreation,
+                    enabled = uiState.canCreateNextMatch,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PointIqMatchReviewBlue,
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFFB8C7DC),
+                        disabledContentColor = Color.White.copy(alpha = 0.85f),
                     ),
-                    fontWeight = FontWeight.SemiBold,
-                )
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.create_match_number_action,
+                            uiState.nextMatchNumber ?: 0,
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
             if (uiState.nextMatchCreationMessage != null) {
                 Text(
@@ -2037,62 +2177,35 @@ private fun MatchReviewContent(
                 Text(stringResource(R.string.match_review_deleting_action))
             }
         }
-        if (!showLegacyManualReviewContent) {
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-        Button(
-            onClick = { showDeleteConfirmation = true },
-            enabled = !uiState.isDeleting,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = MaterialTheme.colorScheme.onError,
-            ),
-            shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
-                .testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
-        ) {
-            Text(
-                text = stringResource(R.string.match_review_delete_action),
-                fontSize = 14.sp,
-                fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
-            )
-        }
-        if (!showLegacyManualReviewContent) {
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedButton(
-                onClick = onBackToDetails,
+        if (showLegacyManualReviewContent) {
+            Button(
+                onClick = { showDeleteConfirmation = true },
                 enabled = !uiState.isDeleting,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = PointIqMatchReviewBlue,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
                 ),
-                border = BorderStroke(1.dp, PointIqMatchReviewBorder),
-                shape = RoundedCornerShape(14.dp),
+                shape = ButtonDefaults.shape,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
+                    .testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
             ) {
                 Text(
-                    text = stringResource(R.string.match_review_simplified_back_action),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = stringResource(R.string.match_review_delete_action),
                 )
             }
-        } else {
             TextButton(
                 onClick = onBackToDetails,
                 enabled = !uiState.isDeleting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
-            ) {
-                Text(stringResource(R.string.back_to_match_details_action))
+                ) {
+                    Text(stringResource(R.string.back_to_match_details_action))
             }
         }
         }
-        }
+    }
 
     uiState.pendingNextMatchTeamCountConfirmation?.let { confirmation ->
         TeamCountConfirmationDialog(
@@ -2243,6 +2356,151 @@ private fun MatchReviewContent(
 }
 
 @Composable
+private fun PointIqMatchReviewSystemBars() {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqMatchReviewBackground.toArgb()
+            window.navigationBarColor = PointIqMatchReviewBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
+}
+
+private fun Modifier.pointIqMatchReviewBackground(): Modifier =
+    background(PointIqMatchReviewBackground).drawBehind {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqMatchReviewAmbientBlue.copy(alpha = 0.42f),
+                    PointIqMatchReviewAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = Offset(-size.width * 0.04f, size.height * 0.34f),
+                radius = size.width * 0.78f,
+            ),
+    )
+}
+
+@Composable
+private fun ReviewMatchCalculationButton(
+    label: String,
+    iconRes: Int,
+    iconSize: Dp,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val contentAlpha = if (enabled) 1f else 0.55f
+    val gradientColors = listOf(
+        PointIqMatchReviewCtaTopBlue.copy(alpha = contentAlpha),
+        PointIqMatchReviewCtaMiddleBlue.copy(alpha = contentAlpha),
+        PointIqMatchReviewCtaBottomBlue.copy(alpha = contentAlpha),
+    )
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+            contentColor = Color.White,
+            disabledContentColor = Color.White.copy(alpha = 0.85f),
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(
+                brush = Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to gradientColors[0],
+                        0.52f to gradientColors[1],
+                        1f to gradientColors[2],
+                    ),
+                ),
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = PointIqMatchReviewCtaBorder.copy(alpha = contentAlpha),
+                shape = shape,
+            ),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = contentAlpha),
+                modifier = Modifier.size(iconSize),
+            )
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = contentAlpha),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun MatchReviewScreenshotUploadButton(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = PointIqMatchReviewSectionSurface,
+            disabledContainerColor = PointIqMatchReviewSectionSurface.copy(alpha = 0.22f),
+            contentColor = PointIqMatchReviewHeader,
+            disabledContentColor = PointIqMatchReviewHeader.copy(alpha = 0.55f),
+        ),
+        border = BorderStroke(1.5.dp, PointIqMatchReviewBlue.copy(alpha = 0.95f)),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) PointIqMatchReviewHeader else PointIqMatchReviewHeader.copy(alpha = 0.55f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
 private fun PointIqEmptyMatchReviewSection(
     modifier: Modifier = Modifier,
     contentSpacing: Dp = RankForgeSpacing.Small,
@@ -2252,19 +2510,47 @@ private fun PointIqEmptyMatchReviewSection(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = PointIqMatchReviewCard,
+        color = PointIqMatchReviewSectionSurface,
+        contentColor = PointIqMatchReviewHeader,
         border = BorderStroke(
-            if (emphasizedSurface) 1.5.dp else 1.dp,
-            if (emphasizedSurface) PointIqMatchReviewEmptyCardBorder else PointIqMatchReviewBorder,
+            1.dp,
+            if (emphasizedSurface) {
+                PointIqMatchReviewSectionBorder
+            } else {
+                PointIqMatchReviewSectionBorder.copy(alpha = 0.35f)
+            },
         ),
         tonalElevation = 0.dp,
-        shadowElevation = if (emphasizedSurface) 3.dp else 2.dp,
+        shadowElevation = 0.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp),
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(contentSpacing),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MatchReviewOcrContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = PointIqMatchReviewNavy,
+        border = BorderStroke(1.dp, PointIqMatchReviewBlue.copy(alpha = 0.4f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
         ) {
             content()
         }
@@ -2658,7 +2944,7 @@ private fun MatchReviewLobbyPlayersPager(
                 .testTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG),
             ) { page ->
                 orderedSlots.getOrNull(page)?.let { slot ->
-                    OcrReviewContainer {
+                    MatchReviewOcrContainer {
                         MatchOcrReviewLobbySlotContent(
                             slot = slot,
                             teamNamesBySlot = teamNamesBySlot,
@@ -2848,18 +3134,42 @@ private fun MatchReviewResultOcrDetailsContent(
             )
         }
         onManualBack?.let { onBack ->
+            val shape = RoundedCornerShape(8.dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
                 Button(
                     onClick = onBack,
+                    shape = shape,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
+                        containerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
                         contentColor = Color.White,
+                        disabledContentColor = Color.White.copy(alpha = 0.85f),
                     ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0f to PointIqMatchReviewCtaTopBlue,
+                                    0.52f to PointIqMatchReviewCtaMiddleBlue,
+                                    1f to PointIqMatchReviewCtaBottomBlue,
+                                ),
+                            ),
+                            shape = shape,
+                        )
+                        .border(1.dp, PointIqMatchReviewCtaBorder, shape),
                 ) {
-                    Text(stringResource(R.string.back_action))
+                    Text(
+                        text = stringResource(R.string.back_action),
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }
@@ -2883,7 +3193,7 @@ private fun MatchReviewResultOcrPositionContent(
                 ?.rows
                 ?.singleOrNull { it.position == position }
                 ?: return
-            OcrReviewContainer {
+            MatchReviewOcrContainer {
                 MatchOcrReviewCompactRow(
                     previewRow = previewRow,
                     reviewRow = null,
@@ -2902,7 +3212,7 @@ private fun MatchReviewResultOcrPositionContent(
                 ?.rows
                 ?.singleOrNull { it.position == position }
             val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
-            OcrReviewContainer {
+            MatchReviewOcrContainer {
                 MatchOcrReviewRow(
                     row = row,
                     previewRow = previewRow,
@@ -2968,7 +3278,7 @@ private fun MatchReviewResultPreviewPager(
                     .testTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG),
             ) { page ->
                 rows.getOrNull(page)?.let { previewRow ->
-                    OcrReviewContainer {
+                    MatchReviewOcrContainer {
                         MatchOcrReviewCompactRow(
                             previewRow = previewRow,
                             reviewRow = reviewRowsByPosition[previewRow.position],
@@ -3045,7 +3355,7 @@ private fun MatchReviewResultRowsPagerContent(
                     .testTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG),
             ) { page ->
                 rows.getOrNull(page)?.let { row ->
-                    OcrReviewContainer {
+                    MatchReviewOcrContainer {
                         MatchOcrReviewRow(
                             row = row,
                             previewRow = previewRowsByPosition[row.rowIndex + 1],
@@ -3217,22 +3527,12 @@ private fun ResultScreenshotSelector(
         }
         nextEmptyRole?.takeIf { showSourceScreenshot }?.let { role ->
             val slot = resultScreenshots.slot(role)
-            Button(
+            MatchReviewScreenshotUploadButton(
+                label = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
                 enabled = isEditable && !slot.isBusy,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PointIqMatchReviewBlue,
-                    contentColor = Color.White,
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
-            ) {
-                Text(
-                    text = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
-                )
-            }
+                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
+            )
         }
     }
 }
@@ -3296,7 +3596,13 @@ private fun ResultScreenshotPage(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(imageAreaHeight),
+                        .height(imageAreaHeight)
+                        .clip(MaterialTheme.shapes.medium)
+                        .border(
+                            width = 1.dp,
+                            color = PointIqMatchReviewSectionBorder,
+                            shape = MaterialTheme.shapes.medium,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -3486,6 +3792,9 @@ private fun ResultPositionCropPreviews(
                                         .fillMaxWidth()
                                         .height(maxDisplayHeight)
                                         .testTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + preview.position),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = PointIqMatchReviewInnerOcrSurface,
+                                    ),
                                 ) {
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
@@ -3654,14 +3963,41 @@ private fun MatchReviewScreenshotActionButton(
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = textColor.copy(alpha = treatmentAlpha),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false,
-        )
+        if (style == MatchReviewScreenshotActionStyle.REPLACE) {
+            Text(
+                text = label,
+                color = textColor.copy(alpha = treatmentAlpha),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+            )
+        } else {
+            val actionIcon = when (style) {
+                MatchReviewScreenshotActionStyle.EDIT -> Icons.Filled.Edit
+                MatchReviewScreenshotActionStyle.REMOVE -> Icons.Filled.Delete
+                MatchReviewScreenshotActionStyle.REPLACE -> error("Replace action has no icon")
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = actionIcon,
+                    contentDescription = null,
+                    tint = textColor.copy(alpha = treatmentAlpha),
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = label,
+                    color = textColor.copy(alpha = treatmentAlpha),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        }
     }
 }
 
@@ -3716,7 +4052,9 @@ private fun ResultScreenshotActionRow(
                         else MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG
                     },
                 ),
-        ) { Text(stringResource(R.string.match_review_result_screenshot_replace_short_action)) }
+        ) {
+            Text(stringResource(R.string.match_review_result_screenshot_replace_short_action))
+        }
         TextButton(
             onClick = { onOpenCrop(role) },
             enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
@@ -3726,7 +4064,19 @@ private fun ResultScreenshotActionRow(
             ),
             modifier = Modifier
                 .testTag(if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG else MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG),
-        ) { Text(stringResource(R.string.match_review_result_screenshot_crop_short_action)) }
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(stringResource(R.string.match_review_result_screenshot_crop_short_action))
+            }
+        }
         TextButton(
             onClick = { onRemoveScreenshot(role) },
             enabled = slot.hasLinkedAsset && !slot.isBusy,
@@ -3736,7 +4086,19 @@ private fun ResultScreenshotActionRow(
             ),
             modifier = Modifier
                 .testTag(if (isUpper) MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG else MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG),
-        ) { Text(stringResource(R.string.match_review_result_screenshot_remove_short_action)) }
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(stringResource(R.string.match_review_result_screenshot_remove_short_action))
+            }
+        }
     }
 }
 

@@ -198,6 +198,8 @@
     <string name="team_count_confirmation_cancel">Cancel</string>
     <string name="team_count_confirmation_use_teams">Use %1$d Teams</string>
     <string name="team_count_confirmation_use_defaults">Use Defaults</string>
+    <string name="auto_calculate_action">Auto Calculate</string>
+    <string name="manual_calculate_action">Manual Calculate</string>
     <string name="calculate_points_action">Calculate Points</string>
     <string name="enter_and_save_teams_before_calculating_message">Enter and save team names before calculating points.</string>
     <string name="invalid_team_slots_before_calculating_message">Team names must be entered in order from Slot 1 before calculating points.</string>
@@ -372,14 +374,14 @@
     <string name="match_ocr_preflight_crop_action_result">Crop Result Screenshot %1$d</string>
     <string name="match_ocr_review_lobby_players_title">Lobby Players</string>
     <string name="match_ocr_review_lobby_player">%1$d. %2$s</string>
-    <string name="match_ocr_review_lobby_team">Slot - %1$s | Team Name - %2$s</string>
+    <string name="match_ocr_review_lobby_team">Team Name - %2$s</string>
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_calculating_title">Calculating Results</string>
     <string name="match_ocr_review_calculating_message">Please wait. This will only take a few seconds.</string>
     <string name="match_ocr_review_empty_title">No OCR evidence</string>
     <string name="match_ocr_review_empty_message">No OCR review evidence is available for this match.</string>
     <string name="match_ocr_review_compact_position">Position - %1$s</string>
-    <string name="match_ocr_review_compact_team">Slot - %1$s | Team name - %2$s</string>
+    <string name="match_ocr_review_compact_team">Team Name - %2$s</string>
     <string name="match_ocr_review_manual_team_name">Team name - %1$s</string>
     <string name="match_ocr_review_compact_player">%1$d. %2$s - [%3$s]</string>
     <string name="match_ocr_review_compact_not_detected">Not detected</string>

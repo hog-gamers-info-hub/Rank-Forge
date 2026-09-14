@@ -1,0 +1,98 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+
+    <!-- Calculator outer body -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M50,34 H154 A18,18 0,0 1,172 52 V180 A18,18 0,0 1,154 198 H50 A18,18 0,0 1,32 180 V52 A18,18 0,0 1,50 34 Z" />
+
+    <!-- Calculator display -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M57,58 H147 A9,9 0,0 1,156 67 V92 A9,9 0,0 1,147 101 H57 A9,9 0,0 1,48 92 V67 A9,9 0,0 1,57 58 Z" />
+
+    <!-- Keypad buttons -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,120 H68 A7,7 0,0 1,75 127 V141 A7,7 0,0 1,68 148 H54 A7,7 0,0 1,47 141 V127 A7,7 0,0 1,54 120 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M94,120 H108 A7,7 0,0 1,115 127 V141 A7,7 0,0 1,108 148 H94 A7,7 0,0 1,87 141 V127 A7,7 0,0 1,94 120 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M134,120 H148 A7,7 0,0 1,155 127 V141 A7,7 0,0 1,148 148 H134 A7,7 0,0 1,127 141 V127 A7,7 0,0 1,134 120 Z" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,160 H68 A7,7 0,0 1,75 167 V181 A7,7 0,0 1,68 188 H54 A7,7 0,0 1,47 181 V167 A7,7 0,0 1,54 160 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M94,160 H108 A7,7 0,0 1,115 167 V181 A7,7 0,0 1,108 188 H94 A7,7 0,0 1,87 181 V167 A7,7 0,0 1,94 160 Z" />
+
+    <!-- Pencil overlay -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M122,194 L193,123 L219,149 L148,220 Z" />
+
+    <!-- Pencil cap -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M193,123 L206,110 A10,10 0,0 1,220 110 L232,122 A10,10 0,0 1,232 136 L219,149" />
+
+    <!-- Pencil tip -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M122,194 L113,229 L148,220" />
+
+    <!-- Pencil inner stroke -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:pathData="M145,190 L196,139" />
+
+</vector>

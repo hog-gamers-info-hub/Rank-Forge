@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,13 +28,16 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -73,6 +77,10 @@ import kotlinx.coroutines.launch
 private val PointIqMatchReviewNavy = Color(0xFF071B3E)
 private val PointIqMatchReviewBody = Color(0xFF607393)
 private val PointIqMatchReviewBlue = Color(0xFF176AF7)
+private val PointIqMatchReviewBadgeFill = PointIqMatchReviewNavy
+private val PointIqMatchReviewBadgeBorder = Color(0xFF17C9F2).copy(alpha = 0.4f)
+private val PointIqMatchReviewSaveLobbyEnabledTrack = Color(0xFF0B386F)
+private val PointIqMatchReviewInnerOcrSurface = Color(0xFF0B386F).copy(alpha = 0.38f)
 
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG = "match_lobby_screenshot_intake_screen"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX = "match_lobby_screenshot_select_"
@@ -279,30 +287,45 @@ fun MatchLobbyScreenshotIntakeScreen(
                         ) {
                             ReviewStepBadge(
                                 number = 1,
-                                backgroundColor = PointIqMatchReviewNavy,
+                                backgroundColor = if (compactActions) {
+                                    PointIqMatchReviewBadgeFill
+                                } else {
+                                    PointIqMatchReviewBlue
+                                },
+                                borderColor = if (compactActions) {
+                                    PointIqMatchReviewBadgeBorder
+                                } else {
+                                    null
+                                },
+                                numberColor = if (compactActions) {
+                                    Color(0xFFF6F8FF)
+                                } else {
+                                    Color.White
+                                },
                                 modifier = Modifier.testTag(MATCH_LOBBY_DETAILS_STEP_TEST_TAG),
                             )
                             Text(
                                 text = stringResource(R.string.match_review_lobby_screenshots_title),
                                 style = MaterialTheme.typography.titleMedium,
-                                color = if (selectedSlots.isEmpty()) {
-                                    PointIqMatchReviewNavy
-                                } else {
-                                    Color.Unspecified
-                                },
+                                color = Color.Unspecified,
                             )
                         }
                         LobbyTemplateToggle(
                             uiState = uiState,
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                             onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                            compactActions = compactActions,
                             modifier = Modifier.align(Alignment.Top),
                         )
                     }
                     if (selectedSlots.isEmpty()) {
                         Text(
                             text = stringResource(R.string.pointiq_match_review_lobby_description),
-                            color = PointIqMatchReviewBody,
+                            color = if (compactActions) {
+                                Color(0xFF91AFE0)
+                            } else {
+                                PointIqMatchReviewBody
+                            },
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
                         )
@@ -346,6 +369,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             uiState = uiState,
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                             onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                            compactActions = compactActions,
                         )
                     }
                 }
@@ -389,28 +413,14 @@ fun MatchLobbyScreenshotIntakeScreen(
                     .filterNot { it.hasScreenshotSelection() }
                     .minByOrNull { it.index }
                     ?.let { nextEmptySlot ->
-                        Button(
+                        MatchReviewScreenshotUploadButton(
+                            label = stringResource(R.string.pointiq_match_review_upload_lobby_screenshots),
                             onClick = { (onSelectBatch ?: { onSelect(nextEmptySlot.index) })() },
                             enabled = uiState.isAvailable &&
                                 !uiState.isFinalized &&
                                 !nextEmptySlot.isBusy,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PointIqMatchReviewBlue,
-                                contentColor = Color.White,
-                            ),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(
-                                horizontal = RankForgeSpacing.Small,
-                                vertical = RankForgeSpacing.ExtraSmall,
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.pointiq_match_review_upload_lobby_screenshots),
-                            )
-                        }
+                            modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
+                        )
                     }
             }
             if (sourceSectionVisible && !compactActions) activeSlotIndex?.let { activeIndex ->
@@ -432,6 +442,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                     uiState = uiState,
                     onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                     onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
+                    compactActions = compactActions,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -453,6 +464,7 @@ private fun LobbyTemplateToggle(
     uiState: MatchLobbyScreenshotIntakeUiState,
     onSaveLobbyForNextMatches: () -> Unit,
     onUnsaveLobbyForNextMatches: () -> Unit,
+    compactActions: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val isSaved = uiState.isLobbySavedForNextMatches
@@ -491,7 +503,15 @@ private fun LobbyTemplateToggle(
                     },
                 )
                 .background(
-                    color = if (isSaved) PointIqMatchReviewBlue else Color(0xFFD7DEE8),
+                    color = if (isSaved) {
+                        if (compactActions) {
+                            PointIqMatchReviewSaveLobbyEnabledTrack
+                        } else {
+                            PointIqMatchReviewBlue
+                        }
+                    } else {
+                        Color(0xFFD7DEE8)
+                    },
                     shape = CircleShape,
                 )
                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
@@ -618,7 +638,18 @@ private fun LobbyScreenshotDetail(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(imageAreaHeight)
-                        .clip(MaterialTheme.shapes.medium),
+                        .clip(MaterialTheme.shapes.medium)
+                        .then(
+                            if (compactActions) {
+                                Modifier.border(
+                                    width = 1.dp,
+                                    color = PointIqMatchReviewBlue.copy(alpha = 0.5f),
+                                    shape = MaterialTheme.shapes.medium,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     LocalScreenshotPreview(
@@ -730,9 +761,12 @@ private fun LobbyTeamCropPreviewPager(
                             .height(maxDisplayHeight)
                             .testTag(
                                 MATCH_LOBBY_TEAM_CROP_CARD_TEST_TAG_PREFIX +
-                                    "slot_" + preview.detectedSlotNumber,
+                                "slot_" + preview.detectedSlotNumber,
                             ),
                         shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = PointIqMatchReviewInnerOcrSurface,
+                        ),
                     ) {
                         Box(
                             modifier = Modifier
@@ -760,7 +794,7 @@ private fun LobbyTeamCropPreviewPager(
                         }
                     }
                     if (preview.playerRowPreviews.isNotEmpty()) {
-                        OcrReviewContainer(
+                        MatchReviewLobbyOcrContainer(
                             modifier = Modifier.testTag(
                                 MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX +
                                     "slot_" + preview.detectedSlotNumber,
@@ -790,12 +824,36 @@ private fun LobbyPlayerRowPreviewColumn(
         playerNames = preview.playerRowPreviews.associate { rowPreview ->
             rowPreview.row.ordinal + 1 to (rowPreview.playerName ?: rowPreview.structuralEvidence)
         },
+        darkPointIqStyle = true,
         slotTestTag = MATCH_LOBBY_TEAM_CROP_TEAM_SLOT_LABEL_TEST_TAG_PREFIX + preview.detectedSlotNumber,
         playerTestTag = { playerNumber ->
             MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX +
                 "slot_${preview.detectedSlotNumber}_row_$playerNumber"
         },
     )
+}
+
+@Composable
+private fun MatchReviewLobbyOcrContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = PointIqMatchReviewNavy,
+        border = BorderStroke(1.dp, PointIqMatchReviewBlue.copy(alpha = 0.4f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
