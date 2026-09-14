@@ -55,8 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -76,7 +74,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -100,10 +97,11 @@ private val PointIqCreateHeader = Color(0xFFF6F8FF)
 private val PointIqCreateSubtitle = Color(0xFF91AFE0)
 private val PointIqCreateFieldText = Color(0xFFF6F8FF)
 private val PointIqCreateFieldInactive = Color(0xFF7D9DCE)
-private val PointIqCreateBlue = Color(0xFF176AF7)
 private val PointIqCreateCyan = Color(0xFF17C9F2)
-private val PointIqCreateCtaDeepBlue = Color(0xFF0D4DBA)
-private val PointIqCreateCtaShadowLightBlue = Color(0xFF8EE7FF)
+private val PointIqCreateCtaTopBlue = Color(0xFF159CF8)
+private val PointIqCreateCtaMiddleBlue = Color(0xFF1688F7)
+private val PointIqCreateCtaDeepBlue = Color(0xFF1675F0)
+private val PointIqCreateCtaBorder = Color(0xFF4AAFF7)
 private val PointIqCreateFieldHorizontalInset = 24.dp
 
 const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
@@ -760,19 +758,14 @@ private fun PointIqCreateTournamentButton(
     isSubmitting: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(8.dp)
     val enabledAlpha = if (isSubmitting) 0.55f else 1f
-    val gradientColors = if (isSubmitting) {
-        listOf(
-            PointIqCreateCyan.copy(alpha = enabledAlpha),
-            PointIqCreateBlue.copy(alpha = enabledAlpha),
-            PointIqCreateCtaDeepBlue.copy(alpha = enabledAlpha),
-        )
-    } else {
-        listOf(PointIqCreateCyan, PointIqCreateBlue, PointIqCreateCtaDeepBlue)
-    }
-    val edgeColor = PointIqCreateCyan.copy(alpha = if (isSubmitting) 0.55f else 0.72f)
-    val glowAlpha = if (isSubmitting) 0.14f else 0.16f
+    val gradientColors = listOf(
+        PointIqCreateCtaTopBlue.copy(alpha = enabledAlpha),
+        PointIqCreateCtaMiddleBlue.copy(alpha = enabledAlpha),
+        PointIqCreateCtaDeepBlue.copy(alpha = enabledAlpha),
+    )
+    val edgeColor = PointIqCreateCtaBorder.copy(alpha = if (isSubmitting) 0.55f else 1f)
 
     Box(
         modifier = Modifier
@@ -780,11 +773,6 @@ private fun PointIqCreateTournamentButton(
             .padding(horizontal = PointIqCreateFieldHorizontalInset)
             .height(48.dp)
     ) {
-        PointIqCreateCtaGlowLayer(
-            alpha = glowAlpha,
-            offsetY = 2.dp,
-        )
-
         Button(
             onClick = onClick,
             enabled = !isSubmitting,
@@ -838,26 +826,6 @@ private fun PointIqCreateTournamentButton(
             }
         }
     }
-}
-
-@Composable
-private fun PointIqCreateCtaGlowLayer(
-    alpha: Float,
-    offsetY: Dp,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .offset(y = offsetY)
-            .blur(
-                radius = 7.dp,
-                edgeTreatment = BlurredEdgeTreatment.Unbounded,
-            )
-            .background(
-                color = PointIqCreateCtaShadowLightBlue.copy(alpha = alpha),
-                shape = RoundedCornerShape(18.dp),
-            ),
-    )
 }
 
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
