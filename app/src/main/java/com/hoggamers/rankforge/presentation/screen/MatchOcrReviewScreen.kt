@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,7 +23,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +51,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,6 +64,12 @@ import kotlinx.coroutines.delay
 
 private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
+
+private val PointIqOcrReviewBackground = Color(0xFF031225)
+private val PointIqOcrReviewHeader = Color(0xFFF6F8FF)
+private val PointIqOcrReviewSubtitle = Color(0xFF91AFE0)
+private val PointIqOcrReviewCyan = Color(0xFF17C9F2)
+private val PointIqOcrReviewFieldBorder = Color(0xFF7D9DCE)
 
 object MatchOcrReviewTestTags {
     const val SCREEN = "match_ocr_review_screen"
@@ -431,6 +436,7 @@ internal fun MatchOcrReviewLobbySlotContent(
         slotNumber = slot.slotNumber,
         teamName = teamName,
         playerNames = slot.players.associate { it.playerNumber to it.playerName },
+        darkPointIqStyle = true,
         slotTestTag = MatchOcrReviewTestTags.lobbySlot(slot.slotNumber),
         playerTestTag = { playerNumber ->
             MatchOcrReviewTestTags.lobbyPlayer(slot.slotNumber, playerNumber)
@@ -443,6 +449,7 @@ internal fun LobbyPlayerNamePresentation(
     slotNumber: Int,
     teamName: String,
     playerNames: Map<Int, String?>,
+    darkPointIqStyle: Boolean = false,
     slotTestTag: String? = null,
     playerTestTag: ((Int) -> String)? = null,
 ) {
@@ -459,8 +466,16 @@ internal fun LobbyPlayerNamePresentation(
         ) {
             Text(
                 text = stringResource(R.string.match_ocr_review_lobby_team, slotNumber, teamName),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
+                color = if (darkPointIqStyle) PointIqOcrReviewHeader else Color.Unspecified,
+                style = if (darkPointIqStyle) {
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                    )
+                } else {
+                    MaterialTheme.typography.bodyMedium
+                },
+                fontWeight = if (darkPointIqStyle) FontWeight.SemiBold else FontWeight.Bold,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
@@ -470,12 +485,14 @@ internal fun LobbyPlayerNamePresentation(
             playerNumbers = listOf(1, 3),
             playerNames = playerNames,
             notDetected = notDetected,
+            darkPointIqStyle = darkPointIqStyle,
             playerTestTag = playerTestTag,
         )
         LobbyPlayerNamePresentationRow(
             playerNumbers = listOf(2, 4),
             playerNames = playerNames,
             notDetected = notDetected,
+            darkPointIqStyle = darkPointIqStyle,
             playerTestTag = playerTestTag,
         )
     }
@@ -486,6 +503,7 @@ private fun LobbyPlayerNamePresentationRow(
     playerNumbers: List<Int>,
     playerNames: Map<Int, String?>,
     notDetected: String,
+    darkPointIqStyle: Boolean,
     playerTestTag: ((Int) -> String)?,
 ) {
     Row(
@@ -502,7 +520,15 @@ private fun LobbyPlayerNamePresentationRow(
                 modifier = Modifier
                     .weight(1f)
                     .then(playerTestTag?.invoke(playerNumber)?.let { Modifier.testTag(it) } ?: Modifier),
-                style = MaterialTheme.typography.bodySmall,
+                color = if (darkPointIqStyle) PointIqOcrReviewHeader else Color.Unspecified,
+                style = if (darkPointIqStyle) {
+                    MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                } else {
+                    MaterialTheme.typography.bodySmall
+                },
                 fontWeight = FontWeight.Normal,
                 maxLines = 1,
                 softWrap = false,
@@ -673,8 +699,10 @@ internal fun MatchOcrReviewCompactRow(
                 slotLabel,
                 teamNameLabel,
             ),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
+            color = PointIqOcrReviewHeader,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -779,7 +807,9 @@ private fun CompactPlayerCell(
     if (playerKillDraft == null) {
         Text(
             text = stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill),
-            style = MaterialTheme.typography.bodySmall,
+            color = PointIqOcrReviewHeader,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -795,9 +825,13 @@ private fun CompactPlayerCell(
             3 -> 26.dp
             else -> (killCharacterCount * 8 + 2).dp
         }
-        val killTextStyle = MaterialTheme.typography.bodySmall
+        val killTextStyle = MaterialTheme.typography.bodySmall.copy(
+            color = PointIqOcrReviewHeader,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        )
         val killInputHeight = with(LocalDensity.current) {
-            killTextStyle.fontSize.toDp()
+            killTextStyle.lineHeight.toDp()
         }
         val killBracketColor = if (isKillEmpty) MaterialTheme.colorScheme.error else Color.Unspecified
         Row(
@@ -828,15 +862,13 @@ private fun CompactPlayerCell(
                 enabled = correctionEnabled,
                 singleLine = true,
                 textStyle = killTextStyle.copy(
-                    color = Color.Unspecified,
                     textAlign = TextAlign.Center,
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                cursorBrush = SolidColor(PointIqOcrReviewCyan),
                 modifier = Modifier
                     .width(killInputWidth)
                     .height(killInputHeight)
-                    .offset(y = if (isKillEmpty) 0.dp else (-2).dp)
                     .background(
                         color = if (isKillEmpty) {
                             MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
@@ -1177,8 +1209,10 @@ private fun MatchOcrReviewMissingPreviewRow(
                 R.string.match_ocr_review_manual_team_name,
                 teamName,
             ),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            color = PointIqOcrReviewSubtitle,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -1206,9 +1240,10 @@ private fun MatchOcrReviewPositionHeader(
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.titleMedium.copy(
-                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
-            ),
+            color = PointIqOcrReviewHeader,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier
                 .weight(1f)
                 .testTag(placementTestTag),
@@ -1228,24 +1263,7 @@ private fun MatchOcrReviewPositionHeader(
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = stringResource(R.string.match_ocr_review_exclude_row_action),
-                )
-            }
-        }
-        if (onCompactReset != null && compactResetTestTag != null) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable(
-                        enabled = compactResetEnabled,
-                        role = Role.Button,
-                        onClick = onCompactReset,
-                    )
-                    .testTag(compactResetTestTag),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.match_ocr_review_reset_row_action),
+                    tint = PointIqOcrReviewCyan,
                 )
             }
         }
@@ -1263,11 +1281,25 @@ private fun CompactOcrNumberField(
     modifier: Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val colors = OutlinedTextFieldDefaults.colors()
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = PointIqOcrReviewHeader,
+        unfocusedTextColor = PointIqOcrReviewHeader,
+        disabledTextColor = PointIqOcrReviewHeader.copy(alpha = 0.38f),
+        focusedContainerColor = PointIqOcrReviewBackground,
+        unfocusedContainerColor = PointIqOcrReviewBackground,
+        disabledContainerColor = PointIqOcrReviewBackground,
+        focusedBorderColor = PointIqOcrReviewCyan,
+        unfocusedBorderColor = PointIqOcrReviewFieldBorder.copy(alpha = 0.6f),
+        disabledBorderColor = PointIqOcrReviewFieldBorder.copy(alpha = 0.35f),
+        focusedLabelColor = PointIqOcrReviewSubtitle,
+        unfocusedLabelColor = PointIqOcrReviewSubtitle,
+        disabledLabelColor = PointIqOcrReviewSubtitle.copy(alpha = 0.38f),
+        cursorColor = PointIqOcrReviewCyan,
+    )
     val textColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
+        PointIqOcrReviewHeader
     } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        PointIqOcrReviewHeader.copy(alpha = 0.38f)
     }
     val cursorColor = if (isError) {
         MaterialTheme.colorScheme.error
@@ -1297,6 +1329,15 @@ private fun CompactOcrNumberField(
                 label = label,
                 colors = colors,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                },
             )
         },
     )
@@ -1330,6 +1371,7 @@ private fun MatchOcrReviewCorrectionFields(
                             R.string.match_ocr_review_correction_placement_label
                         },
                     ),
+                    color = PointIqOcrReviewSubtitle,
                 )
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1355,6 +1397,7 @@ private fun MatchOcrReviewCorrectionFields(
                             R.string.match_ocr_review_correction_kills_label
                         },
                     ),
+                    color = PointIqOcrReviewSubtitle,
                 )
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1380,6 +1423,7 @@ private fun MatchOcrReviewCorrectionFields(
                             R.string.match_ocr_review_correction_team_slot_label
                         },
                     ),
+                    color = PointIqOcrReviewSubtitle,
                 )
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1416,7 +1460,10 @@ private fun MatchOcrReviewCorrectionFields(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            Text(text = stringResource(R.string.match_ocr_review_remaining_team_slots_options))
+            Text(
+                text = stringResource(R.string.match_ocr_review_remaining_team_slots_options),
+                color = if (compactFieldRow) PointIqOcrReviewSubtitle else Color.Unspecified,
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1429,6 +1476,7 @@ private fun MatchOcrReviewCorrectionFields(
                             R.string.match_ocr_review_remaining_team_slot,
                             option.teamSlot,
                         ),
+                        color = if (compactFieldRow) PointIqOcrReviewHeader else Color.Unspecified,
                         modifier = Modifier
                             .testTag(
                                 MatchOcrReviewTestTags.teamSlotOption(
