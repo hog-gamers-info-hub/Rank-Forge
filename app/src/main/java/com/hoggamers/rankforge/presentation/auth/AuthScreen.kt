@@ -1,7 +1,7 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -26,31 +27,42 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 
@@ -84,6 +96,16 @@ const val AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG = "auth_delete_account_cancel"
 const val AUTH_DELETE_ACCOUNT_PROGRESS_TEST_TAG = "auth_delete_account_progress"
 const val AUTH_DELETE_ACCOUNT_PENDING_LOCAL_CLEANUP_TEST_TAG = "auth_delete_account_pending_local_cleanup"
 
+private val PointIqAccountBackground = Color(0xFF031225)
+private val PointIqAccountAmbientBlue = Color(0xFF0B386F)
+private val PointIqAccountCard = Color(0xFF071B3E)
+private val PointIqAccountBlue = Color(0xFF176AF7)
+private val PointIqAccountCyan = Color(0xFF17C9F2)
+private val PointIqAccountHeader = Color(0xFFF6F8FF)
+private val PointIqAccountSecondary = Color(0xFF91AFE0)
+private val PointIqAccountDanger = Color(0xFFD92D3A)
+private val PointIqAccountDangerText = Color(0xFFFF6B75)
+
 @Composable
 fun AuthScreen(
     uiState: AuthUiState,
@@ -104,81 +126,145 @@ fun AuthScreen(
     onExitPasswordRecovery: () -> Unit = {},
     onDeleteAccountConfirmed: () -> Unit = {},
 ) {
-    RankForgeScreenContainer(
-        modifier = Modifier
-            .testTag(AUTH_SCREEN_TEST_TAG)
-            .then(
-                if (!uiState.isSignedIn) {
-                    Modifier
-                        .verticalScroll(rememberScrollState())
-                        .imePadding()
-                } else {
-                    Modifier
-                },
-            ),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Top,
-    ) {
-        if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
-            uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
+    if (uiState.isSignedIn) {
+        PointIqAccountScreenContainer(
+            modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
         ) {
-            AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
-        } else if (uiState.isSignedIn) {
-            SignedInAuthContent(
-                uiState = uiState,
-                onLogout = onLogout,
-                onHome = onSignedInHome,
-                onBack = onSignedInBack,
-                onDeleteAccountConfirmed = onDeleteAccountConfirmed,
-            )
-        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.REQUEST_EMAIL) {
-            PasswordRecoveryRequestContent(
-                uiState = uiState,
-                onEmailChanged = onEmailChanged,
-                onRequestPasswordReset = onRequestPasswordReset,
-                onCancelPasswordRecovery = onCancelPasswordRecovery,
-            )
-        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.EMAIL_SENT) {
-            PasswordRecoveryEmailSentContent(
-                uiState = uiState,
-                onCancelPasswordRecovery = onCancelPasswordRecovery,
-            )
-        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.VERIFYING_LINK) {
-            PasswordRecoveryVerifyingContent()
-        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.LINK_ERROR) {
-            PasswordRecoveryLinkErrorContent(
-                onExitPasswordRecovery = onExitPasswordRecovery,
-            )
-        } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.SET_NEW_PASSWORD) {
-            PasswordRecoverySetNewPasswordContent(
-                uiState = uiState,
-                onNewPasswordChanged = onNewPasswordChanged,
-                onConfirmNewPasswordChanged = onConfirmNewPasswordChanged,
-                onUpdateRecoveredPassword = onUpdateRecoveredPassword,
-                onExitPasswordRecovery = onExitPasswordRecovery,
-            )
-        } else if (uiState.mode == AuthMode.SignUp) {
-            SignUpAuthContent(
-                uiState = uiState,
-                onModeSelected = onModeSelected,
-                onEmailChanged = onEmailChanged,
-                onPasswordChanged = onPasswordChanged,
-                onSubmit = onSubmit,
-                onGoogleSignIn = onGoogleSignIn,
-            )
-        } else {
-            LoginAuthContent(
-                uiState = uiState,
-                onModeSelected = onModeSelected,
-                onEmailChanged = onEmailChanged,
-                onPasswordChanged = onPasswordChanged,
-                onSubmit = onSubmit,
-                onGoogleSignIn = onGoogleSignIn,
-                onBeginPasswordRecovery = onBeginPasswordRecovery,
-            )
+            if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
+                uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
+            ) {
+                AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
+            } else {
+                SignedInAuthContent(
+                    uiState = uiState,
+                    onLogout = onLogout,
+                    onBack = onSignedInBack,
+                    onDeleteAccountConfirmed = onDeleteAccountConfirmed,
+                )
+            }
+        }
+    } else {
+        RankForgeScreenContainer(
+            modifier = Modifier
+                .testTag(AUTH_SCREEN_TEST_TAG)
+                .verticalScroll(rememberScrollState())
+                .imePadding(),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top,
+        ) {
+            if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
+                uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
+            ) {
+                AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
+            } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.REQUEST_EMAIL) {
+                PasswordRecoveryRequestContent(
+                    uiState = uiState,
+                    onEmailChanged = onEmailChanged,
+                    onRequestPasswordReset = onRequestPasswordReset,
+                    onCancelPasswordRecovery = onCancelPasswordRecovery,
+                )
+            } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.EMAIL_SENT) {
+                PasswordRecoveryEmailSentContent(
+                    uiState = uiState,
+                    onCancelPasswordRecovery = onCancelPasswordRecovery,
+                )
+            } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.VERIFYING_LINK) {
+                PasswordRecoveryVerifyingContent()
+            } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.LINK_ERROR) {
+                PasswordRecoveryLinkErrorContent(
+                    onExitPasswordRecovery = onExitPasswordRecovery,
+                )
+            } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.SET_NEW_PASSWORD) {
+                PasswordRecoverySetNewPasswordContent(
+                    uiState = uiState,
+                    onNewPasswordChanged = onNewPasswordChanged,
+                    onConfirmNewPasswordChanged = onConfirmNewPasswordChanged,
+                    onUpdateRecoveredPassword = onUpdateRecoveredPassword,
+                    onExitPasswordRecovery = onExitPasswordRecovery,
+                )
+            } else if (uiState.mode == AuthMode.SignUp) {
+                SignUpAuthContent(
+                    uiState = uiState,
+                    onModeSelected = onModeSelected,
+                    onEmailChanged = onEmailChanged,
+                    onPasswordChanged = onPasswordChanged,
+                    onSubmit = onSubmit,
+                    onGoogleSignIn = onGoogleSignIn,
+                )
+            } else {
+                LoginAuthContent(
+                    uiState = uiState,
+                    onModeSelected = onModeSelected,
+                    onEmailChanged = onEmailChanged,
+                    onPasswordChanged = onPasswordChanged,
+                    onSubmit = onSubmit,
+                    onGoogleSignIn = onGoogleSignIn,
+                    onBeginPasswordRecovery = onBeginPasswordRecovery,
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun PointIqAccountScreenContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqAccountBackground.toArgb()
+            window.navigationBarColor = PointIqAccountBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .fillMaxSize()
+            .pointIqAccountBackground()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Top,
+        content = content,
+    )
+}
+
+private fun Modifier.pointIqAccountBackground(): Modifier =
+    background(PointIqAccountBackground).drawBehind {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqAccountAmbientBlue.copy(alpha = 0.42f),
+                    PointIqAccountAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = androidx.compose.ui.geometry.Offset(-size.width * 0.04f, size.height * 0.34f),
+                radius = size.width * 0.78f,
+            ),
+        )
+    }
 
 @Composable
 private fun LoginAuthContent(
@@ -538,7 +624,6 @@ private fun PasswordRecoverySetNewPasswordContent(
 private fun SignedInAuthContent(
     uiState: AuthUiState,
     onLogout: () -> Unit,
-    onHome: () -> Unit,
     onBack: () -> Unit,
     onDeleteAccountConfirmed: () -> Unit,
 ) {
@@ -548,123 +633,117 @@ private fun SignedInAuthContent(
     }
     var showDeleteAccountConfirmation by remember { mutableStateOf(false) }
 
-    val pointIqNavy = Color(0xFF071B3E)
-    val pointIqBlue = Color(0xFF176AF7)
-    val pointIqBody = Color(0xFF607393)
-    val pointIqAccountContainer = Color(0xFFF7FAFF)
-    val pointIqProfileBackground = Color(0xFFF0F6FF)
-    val pointIqProfileBorder = Color(0xFFBBD5FF)
-    val pointIqDanger = Color(0xFFD92D3A)
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            onClick = onHome,
-            enabled = !deletionInProgress,
-            modifier = Modifier.testTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG),
-        ) {
-            Text(
-                text = stringResource(R.string.auth_home_action),
-                color = pointIqBlue,
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        TextButton(
-            onClick = onBack,
-            enabled = !deletionInProgress,
-            modifier = Modifier.testTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG),
-        ) {
-            Text(
-                text = stringResource(R.string.back_action),
-                color = pointIqBlue,
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-    Text(
-        text = stringResource(R.string.auth_account_section_title),
-        style = MaterialTheme.typography.headlineMedium,
-        color = pointIqNavy,
-    )
-    Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
-    Text(
-        text = stringResource(R.string.pointiq_account_description),
-        style = MaterialTheme.typography.bodyMedium,
-        color = pointIqBody,
+    PointIqPageHeader(
+        title = stringResource(R.string.auth_account_section_title),
+        onBack = onBack,
+        backTestTag = AUTH_ACCOUNT_BACK_ACTION_TEST_TAG,
+        backEnabled = !deletionInProgress,
     )
 
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Spacer(modifier = Modifier.height(24.dp))
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = pointIqAccountContainer,
-                shape = RoundedCornerShape(RankForgeSpacing.Medium),
+                color = PointIqAccountCard,
+                shape = RoundedCornerShape(12.dp),
             )
-            .padding(RankForgeSpacing.Medium),
+            .border(
+                width = 1.dp,
+                color = PointIqAccountBlue.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(12.dp),
+            )
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PointIqAccountProfileIcon(
-            color = pointIqBlue,
-            backgroundColor = pointIqProfileBackground,
-            borderColor = pointIqProfileBorder,
-        )
-        Spacer(modifier = Modifier.width(RankForgeSpacing.Medium))
+        PointIqAccountAvatar()
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.pointiq_signed_in_account_label),
-                style = MaterialTheme.typography.labelLarge,
-                color = pointIqBlue,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PointIqAccountSecondary,
             )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = uiState.accountEmail?.takeIf { it.isNotBlank() }
                     ?: stringResource(R.string.auth_unknown_account),
-                style = MaterialTheme.typography.titleMedium,
-                color = pointIqNavy,
+                fontSize = 17.sp,
+                lineHeight = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PointIqAccountHeader,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(AUTH_ACCOUNT_EMAIL_TEST_TAG),
             )
         }
     }
 
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Large))
+    Spacer(modifier = Modifier.height(18.dp))
     OutlinedButton(
         onClick = onLogout,
         enabled = !deletionInProgress && !uiState.isSubmitting,
         colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = pointIqDanger,
+            containerColor = PointIqAccountCard,
+            contentColor = PointIqAccountHeader,
         ),
-        shape = RoundedCornerShape(RankForgeSpacing.Medium),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = PointIqAccountBlue.copy(alpha = 0.7f),
+        ),
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .height(48.dp)
             .testTag(AUTH_LOGOUT_ACTION_TEST_TAG),
     ) {
+        Icon(
+            imageVector = Icons.Filled.ExitToApp,
+            contentDescription = null,
+            tint = PointIqAccountHeader,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = stringResource(R.string.auth_logout_action),
-            style = MaterialTheme.typography.labelLarge,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Bold,
         )
     }
 
-    Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+    Spacer(modifier = Modifier.height(12.dp))
     OutlinedButton(
         onClick = { showDeleteAccountConfirmation = true },
         enabled = !deletionInProgress && !uiState.isSubmitting,
         colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = pointIqDanger,
+            containerColor = PointIqAccountDanger.copy(alpha = 0.12f),
+            contentColor = PointIqAccountDangerText,
         ),
-        shape = RoundedCornerShape(RankForgeSpacing.Medium),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = PointIqAccountDanger,
+        ),
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .height(48.dp)
             .testTag(AUTH_DELETE_ACCOUNT_ACTION_TEST_TAG),
     ) {
+        Icon(
+            imageVector = Icons.Filled.Delete,
+            contentDescription = null,
+            tint = PointIqAccountDangerText,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = stringResource(R.string.auth_delete_account_action),
-            style = MaterialTheme.typography.labelLarge,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Bold,
         )
     }
 
@@ -703,7 +782,7 @@ private fun SignedInAuthContent(
                     enabled = !deletionInProgress,
                     modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG),
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = pointIqDanger,
+                        contentColor = PointIqAccountDanger,
                     ),
                 ) {
                     Text(text = stringResource(R.string.auth_delete_account_action))
@@ -743,36 +822,20 @@ private fun AccountDeletionPendingLocalCleanupContent(
 }
 
 @Composable
-private fun PointIqAccountProfileIcon(
-    color: Color,
-    backgroundColor: Color,
-    borderColor: Color,
-) {
+private fun PointIqAccountAvatar() {
     Box(
         modifier = Modifier
-            .size(76.dp)
-            .background(backgroundColor, CircleShape)
-            .border(1.dp, borderColor, CircleShape),
+            .size(46.dp)
+            .background(PointIqAccountBlue.copy(alpha = 0.32f), CircleShape)
+            .border(1.dp, PointIqAccountCyan.copy(alpha = 0.7f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(46.dp)) {
-            val strokeWidth = 2.8.dp.toPx()
-            drawCircle(
-                color = color,
-                radius = size.minDimension * 0.18f,
-                center = Offset(size.width / 2f, size.height * 0.31f),
-                style = Stroke(width = strokeWidth),
-            )
-            drawArc(
-                color = color,
-                startAngle = 205f,
-                sweepAngle = 130f,
-                useCenter = false,
-                topLeft = Offset(size.width * 0.17f, size.height * 0.48f),
-                size = Size(size.width * 0.66f, size.height * 0.44f),
-                style = Stroke(width = strokeWidth),
-            )
-        }
+        Icon(
+            imageVector = Icons.Filled.Person,
+            contentDescription = null,
+            tint = PointIqAccountCyan,
+            modifier = Modifier.size(28.dp),
+        )
     }
 }
 

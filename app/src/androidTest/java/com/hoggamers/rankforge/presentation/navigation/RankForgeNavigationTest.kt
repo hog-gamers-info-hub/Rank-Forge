@@ -60,7 +60,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.auth.AUTH_ACCOUNT_BACK_ACTION_TEST_TAG
-import com.hoggamers.rankforge.presentation.auth.AUTH_ACCOUNT_HOME_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_LOGOUT_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
@@ -341,35 +340,6 @@ class RankForgeNavigationTest {
         composeTestRule.onNodeWithTag(AUTH_SCREEN_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_LOGOUT_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_list_title)).assertCountEquals(0)
-    }
-
-    @Test
-    fun accountHomeReturnsToHomepageWithDrawerClosed() {
-        val repository = InMemoryTournamentRepository()
-        val listViewModel = TournamentListViewModel(ObserveTournamentsUseCase(repository))
-
-        composeTestRule.setContent {
-            RankForgeTheme {
-                RankForgeNavHost(
-                    authUiState = AuthUiState(
-                        isSignedIn = true,
-                        accountEmail = "user@example.com",
-                    ),
-                    listViewModel = listViewModel,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG).performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG).performClick()
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule
-        .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
-        .assertIsNotDisplayed()
     }
 
     @Test

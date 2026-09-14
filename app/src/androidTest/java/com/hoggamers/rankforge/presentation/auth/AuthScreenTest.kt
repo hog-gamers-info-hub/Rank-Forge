@@ -321,9 +321,10 @@ class AuthScreenTest {
         }
 
         composeTestRule.onNodeWithText(context.getString(R.string.auth_title)).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText(context.getString(R.string.auth_email_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.pointiq_signed_in_account_label),
+        ).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_ACCOUNT_EMAIL_TEST_TAG)
             .assertIsDisplayed()
             .assertTextEquals("user@example.com")
@@ -342,8 +343,7 @@ class AuthScreenTest {
     }
 
     @Test
-    fun signedInAccountHomeBackAndSystemBackUseSeparateCallbacks() {
-        var homeCount by mutableIntStateOf(0)
+    fun signedInAccountBackAndSystemBackUseExistingCallback() {
         var backCount by mutableIntStateOf(0)
 
         composeTestRule.setContent {
@@ -355,17 +355,14 @@ class AuthScreenTest {
                     onPasswordChanged = {},
                     onSubmit = {},
                     onLogout = {},
-                    onSignedInHome = { homeCount += 1 },
                     onSignedInBack = { backCount += 1 },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(AUTH_ACCOUNT_HOME_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(AUTH_ACCOUNT_BACK_ACTION_TEST_TAG).performClick()
         composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
 
-        assertEquals(1, homeCount)
         assertEquals(2, backCount)
     }
 

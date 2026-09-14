@@ -80,6 +80,49 @@ const val LOGGED_IN_HOME_CONTACT_US_ITEM_TEST_TAG =
     "logged_in_home_contact_us_item"
 
 @Composable
+fun PointIqPageHeader(
+    title: String,
+    onBack: () -> Unit,
+    backTestTag: String,
+    backEnabled: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(x = (-8).dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        val backDescription = stringResource(R.string.back_action)
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable(enabled = backEnabled, onClick = onBack)
+                .testTag(backTestTag)
+                .semantics {
+                    contentDescription = backDescription
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "<",
+                color = PointIqHomeHeader,
+                fontSize = 36.sp,
+                lineHeight = 40.sp,
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier.offset(y = (-6).dp),
+            )
+        }
+        Text(
+            text = title,
+            color = PointIqHomeHeader,
+            fontSize = 24.sp,
+            lineHeight = 28.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
 fun LoggedInHomeMenuShell(
     onOpenAccount: () -> Unit,
     onOpenAllTournaments: () -> Unit,
@@ -159,40 +202,11 @@ private fun PointIqFullScreenMenu(
             .testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
             .padding(start = 24.dp, top = 28.dp, end = 24.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset(x = (-8).dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            val backDescription = stringResource(R.string.back_action)
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(onClick = onBack)
-                    .testTag(LOGGED_IN_HOME_BACK_ITEM_TEST_TAG)
-                    .semantics {
-                        contentDescription = backDescription
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "<",
-                    color = PointIqHomeHeader,
-                    fontSize = 36.sp,
-                    lineHeight = 40.sp,
-                    fontWeight = FontWeight.Normal,
-                    modifier = Modifier.offset(y = (-6).dp),
-                )
-            }
-            Text(
-                text = stringResource(R.string.logged_in_home_menu_title),
-                color = PointIqHomeHeader,
-                fontSize = 24.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+        PointIqPageHeader(
+            title = stringResource(R.string.logged_in_home_menu_title),
+            onBack = onBack,
+            backTestTag = LOGGED_IN_HOME_BACK_ITEM_TEST_TAG,
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
