@@ -1,9 +1,10 @@
 package com.hoggamers.rankforge.presentation.component
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,7 +32,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -41,12 +50,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 
-private val PointIqHomeHeaderNavy = Color(0xFF071B3E)
+private val PointIqHomeBackground = Color(0xFF031225)
+private val PointIqHomeAmbientBlue = Color(0xFF0B386F)
+private val PointIqHomeHeader = Color(0xFFF6F8FF)
 private val PointIqHomeHeaderBlue = Color(0xFF176AF7)
-private val PointIqMenuMuted = Color(0xFFA3AFC4)
+private val PointIqMenuMuted = Color(0xFF91AFE0)
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
 const val LOGGED_IN_HOME_BACK_ITEM_TEST_TAG = "logged_in_home_back_item"
@@ -90,6 +101,8 @@ fun LoggedInHomeMenuShell(
         isMenuOpen = false
     }
 
+    PointIqHomeSystemBars()
+
     if (isMenuOpen) {
         PointIqFullScreenMenu(
             onBack = { isMenuOpen = false },
@@ -107,7 +120,7 @@ fun LoggedInHomeMenuShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(RankForgePageBackground),
+                .pointIqHomeBackground(),
         ) {
             PointIqHomeHeader(
                 onMenuClick = { isMenuOpen = true },
@@ -135,7 +148,7 @@ private fun PointIqFullScreenMenu(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RankForgePageBackground)
+            .pointIqHomeBackground()
             .testTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
             .padding(horizontal = 20.dp),
     ) {
@@ -148,7 +161,7 @@ private fun PointIqFullScreenMenu(
         ) {
             Text(
                 text = stringResource(R.string.logged_in_home_menu_title),
-                color = PointIqHomeHeaderNavy,
+                color = PointIqHomeHeader,
                 fontSize = 20.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -215,7 +228,7 @@ private fun PointIqMenuPrimaryItem(
     ) {
         Text(
             text = text,
-            color = PointIqHomeHeaderNavy,
+            color = PointIqHomeHeader,
             fontSize = 15.sp,
             lineHeight = 19.sp,
             fontWeight = FontWeight.Medium,
@@ -273,20 +286,12 @@ private fun PointIqHomeHeader(
                     contentDescription = openMenuDescription
                 },
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.width(28.dp),
-            ) {
-                repeat(3) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.5.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(PointIqHomeHeaderNavy),
-                    )
-                }
-            }
+            Icon(
+                imageVector = Icons.Filled.Menu,
+                contentDescription = null,
+                tint = PointIqHomeHeader,
+                modifier = Modifier.size(28.dp),
+            )
         }
 
         Spacer(modifier = Modifier.size(12.dp))
@@ -302,7 +307,7 @@ private fun PointIqHomeHeader(
         val brandText = buildAnnotatedString {
             withStyle(
                 SpanStyle(
-                    color = PointIqHomeHeaderNavy,
+                    color = PointIqHomeHeader,
                     fontWeight = FontWeight.Bold,
                 ),
             ) {
@@ -325,3 +330,48 @@ private fun PointIqHomeHeader(
         )
     }
 }
+
+@Composable
+private fun PointIqHomeSystemBars() {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window
+
+    DisposableEffect(window, view) {
+        if (window == null) {
+            onDispose { }
+        } else {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            val previousStatusBarColor = window.statusBarColor
+            val previousNavigationBarColor = window.navigationBarColor
+            val previousLightStatusBars = windowInsetsController.isAppearanceLightStatusBars
+            val previousLightNavigationBars = windowInsetsController.isAppearanceLightNavigationBars
+
+            window.statusBarColor = PointIqHomeBackground.toArgb()
+            window.navigationBarColor = PointIqHomeBackground.toArgb()
+            windowInsetsController.isAppearanceLightStatusBars = false
+            windowInsetsController.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                window.statusBarColor = previousStatusBarColor
+                window.navigationBarColor = previousNavigationBarColor
+                windowInsetsController.isAppearanceLightStatusBars = previousLightStatusBars
+                windowInsetsController.isAppearanceLightNavigationBars = previousLightNavigationBars
+            }
+        }
+    }
+}
+
+private fun Modifier.pointIqHomeBackground(): Modifier =
+    background(PointIqHomeBackground).drawBehind {
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    PointIqHomeAmbientBlue.copy(alpha = 0.42f),
+                    PointIqHomeAmbientBlue.copy(alpha = 0.16f),
+                    Color.Transparent,
+                ),
+                center = Offset(-size.width * 0.04f, size.height * 0.34f),
+                radius = size.width * 0.78f,
+            ),
+        )
+    }
