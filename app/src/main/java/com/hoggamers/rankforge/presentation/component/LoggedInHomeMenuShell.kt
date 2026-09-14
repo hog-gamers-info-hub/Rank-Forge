@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Email
@@ -93,23 +94,23 @@ fun PointIqPageHeader(
         verticalAlignment = Alignment.Top,
     ) {
         val backDescription = stringResource(R.string.back_action)
-        Box(
+        IconButton(
+            onClick = onBack,
+            enabled = backEnabled,
             modifier = Modifier
                 .size(40.dp)
-                .clickable(enabled = backEnabled, onClick = onBack)
                 .testTag(backTestTag)
                 .semantics {
                     contentDescription = backDescription
                 },
-            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "<",
-                color = PointIqHomeHeader,
-                fontSize = 36.sp,
-                lineHeight = 40.sp,
-                fontWeight = FontWeight.Normal,
-                modifier = Modifier.offset(y = (-6).dp),
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = backDescription,
+                tint = PointIqHomeHeader,
+                modifier = Modifier
+                    .size(32.dp)
+                    .offset(y = (-6).dp),
             )
         }
         Text(
