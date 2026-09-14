@@ -2,8 +2,7 @@
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.infiniteRepeatable
@@ -77,12 +76,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
@@ -129,9 +128,8 @@ private val PointIqMatchReviewBody = Color(0xFF607393)
 private val PointIqMatchReviewBlue = Color(0xFF176AF7)
 private val PointIqMatchReviewBorder = Color(0xFFD9E6F7)
 private val PointIqMatchReviewCard = Color(0xFFFFFFFF)
-private val PointIqMatchReviewSkeletonBase = Color(0xFFE5ECF5)
-private val PointIqMatchReviewSkeletonHighlight = Color(0xFFF1F5FA)
-private val PointIqMatchReviewSkeletonButton = Color(0xFFD8E6F9)
+private val PointIqMatchReviewSkeletonBase = Color(0xFF082440)
+private val PointIqMatchReviewSkeletonHighlight = Color(0xFF124A78)
 private val PointIqMatchReviewBackground = Color(0xFF031225)
 private val PointIqMatchReviewAmbientBlue = Color(0xFF0B386F)
 private val PointIqMatchReviewHeader = Color(0xFFF6F8FF)
@@ -963,15 +961,14 @@ private fun MatchReviewCalculatedEvidenceRestoreTransition(
 private fun MatchReviewRestoreSkeleton(
     matchNumber: Int?,
 ) {
-    val breathingTransition = rememberInfiniteTransition(label = "match review restore skeleton")
-    val placeholderAlpha by breathingTransition.animateFloat(
-        initialValue = 0.9f,
+    val shimmerTransition = rememberInfiniteTransition(label = "match review restore skeleton")
+    val shimmerProgress by shimmerTransition.animateFloat(
+        initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 380, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
         ),
-        label = "match review restore placeholder alpha",
+        label = "match review restore shimmer progress",
     )
 
     Column(
@@ -1004,17 +1001,16 @@ private fun MatchReviewRestoreSkeleton(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MatchReviewRestoreSwitchPlaceholder(placeholderAlpha)
+                MatchReviewRestoreSwitchPlaceholder(shimmerProgress)
             }
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(142.dp),
-                alpha = placeholderAlpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 12.dp,
             )
-            MatchReviewRestoreLobbySummaryPlaceholder(placeholderAlpha)
+            MatchReviewRestoreLobbySummaryPlaceholder(shimmerProgress)
         }
         Spacer(modifier = Modifier.height(14.dp))
         PointIqEmptyMatchReviewSection(emphasizedSurface = true) {
@@ -1026,20 +1022,18 @@ private fun MatchReviewRestoreSkeleton(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                alpha = placeholderAlpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 10.dp,
             )
-            MatchReviewRestoreResultDetailsPlaceholder(placeholderAlpha)
-            MatchReviewRestoreFieldPlaceholders(placeholderAlpha)
+            MatchReviewRestoreResultDetailsPlaceholder(shimmerProgress)
+            MatchReviewRestoreFieldPlaceholders(shimmerProgress)
         }
         Spacer(modifier = Modifier.height(12.dp))
         MatchReviewRestorePlaceholder(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
-            alpha = placeholderAlpha,
-            color = PointIqMatchReviewSkeletonButton,
+            shimmerProgress = shimmerProgress,
             cornerRadius = 14.dp,
         )
     }
@@ -1076,29 +1070,34 @@ private fun MatchReviewRestoreSkeletonSectionHeader(
 
 @Composable
 private fun MatchReviewRestoreSwitchPlaceholder(
-    alpha: Float,
+    shimmerProgress: Float,
 ) {
     Box(
         modifier = Modifier
             .width(36.dp)
             .height(20.dp)
-            .alpha(alpha)
             .clearAndSetSemantics { }
-            .background(PointIqMatchReviewSkeletonBase, RoundedCornerShape(12.dp)),
+            .matchReviewRestoreShimmer(
+                shimmerProgress = shimmerProgress,
+                cornerRadius = 12.dp,
+            ),
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(start = 3.dp)
                 .size(14.dp)
-                .background(PointIqMatchReviewSkeletonHighlight, RoundedCornerShape(50)),
+                .matchReviewRestoreShimmer(
+                    shimmerProgress = shimmerProgress,
+                    cornerRadius = 50.dp,
+                ),
         )
     }
 }
 
 @Composable
 private fun MatchReviewRestoreLobbySummaryPlaceholder(
-    alpha: Float,
+    shimmerProgress: Float,
 ) {
     Box(
         modifier = Modifier
@@ -1113,32 +1112,28 @@ private fun MatchReviewRestoreLobbySummaryPlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.68f)
                     .height(12.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonHighlight,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 6.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.9f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.78f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.58f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
         }
@@ -1147,7 +1142,7 @@ private fun MatchReviewRestoreLobbySummaryPlaceholder(
 
 @Composable
 private fun MatchReviewRestoreResultDetailsPlaceholder(
-    alpha: Float,
+    shimmerProgress: Float,
 ) {
     Box(
         modifier = Modifier
@@ -1162,32 +1157,28 @@ private fun MatchReviewRestoreResultDetailsPlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.36f)
                     .height(12.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonHighlight,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 6.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.78f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
             MatchReviewRestorePlaceholder(
                 modifier = Modifier
                     .fillMaxWidth(0.66f)
                     .height(10.dp),
-                alpha = alpha,
-                color = PointIqMatchReviewSkeletonBase,
+                shimmerProgress = shimmerProgress,
                 cornerRadius = 5.dp,
             )
         }
@@ -1196,7 +1187,7 @@ private fun MatchReviewRestoreResultDetailsPlaceholder(
 
 @Composable
 private fun MatchReviewRestoreFieldPlaceholders(
-    alpha: Float,
+    shimmerProgress: Float,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1221,8 +1212,7 @@ private fun MatchReviewRestoreFieldPlaceholders(
                     modifier = Modifier
                         .fillMaxWidth(0.72f)
                         .height(8.dp),
-                    alpha = alpha,
-                    color = PointIqMatchReviewSkeletonBase,
+                    shimmerProgress = shimmerProgress,
                     cornerRadius = 4.dp,
                 )
             }
@@ -1233,17 +1223,40 @@ private fun MatchReviewRestoreFieldPlaceholders(
 @Composable
 private fun MatchReviewRestorePlaceholder(
     modifier: Modifier,
-    alpha: Float,
-    color: Color,
+    shimmerProgress: Float,
     cornerRadius: Dp,
 ) {
     Box(
         modifier = modifier
-            .alpha(alpha)
             .clearAndSetSemantics { }
-            .background(color, RoundedCornerShape(cornerRadius)),
+            .matchReviewRestoreShimmer(
+                shimmerProgress = shimmerProgress,
+                cornerRadius = cornerRadius,
+            ),
     )
 }
+
+private fun Modifier.matchReviewRestoreShimmer(
+    shimmerProgress: Float,
+    cornerRadius: Dp,
+): Modifier =
+    clip(RoundedCornerShape(cornerRadius))
+        .drawWithCache {
+            val shimmerWidth = size.width * 0.45f
+            val shimmerStart = shimmerProgress * (size.width + shimmerWidth) - shimmerWidth
+            val shimmerBrush = Brush.linearGradient(
+                colors = listOf(
+                    PointIqMatchReviewSkeletonBase,
+                    PointIqMatchReviewSkeletonHighlight,
+                    PointIqMatchReviewSkeletonBase,
+                ),
+                start = Offset(shimmerStart, 0f),
+                end = Offset(shimmerStart + shimmerWidth, 0f),
+            )
+            onDrawBehind {
+                drawRect(shimmerBrush)
+            }
+        }
 
 @Composable
 private fun MatchReviewContent(
