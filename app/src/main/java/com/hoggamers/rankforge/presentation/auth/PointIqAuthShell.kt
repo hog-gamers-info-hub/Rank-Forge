@@ -34,13 +34,13 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoggamers.rankforge.R
-import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
+import com.hoggamers.rankforge.presentation.component.PointIqHomeSystemBars
 
-private val PointIqNavy = Color(0xFF071B3E)
-private val PointIqBody = Color(0xFF40536F)
-private val PointIqMuted = Color(0xFF7A8BA4)
+private val PointIqBackground = Color(0xFF031225)
+private val PointIqAmbientBlue = Color(0xFF0B386F)
+private val PointIqHeader = Color(0xFFF6F8FF)
+private val PointIqSecondary = Color(0xFF91AFE0)
 private val PointIqBlue = Color(0xFF176AF7)
-private val PointIqCyan = Color(0xFF17C9F2)
 
 @Composable
 internal fun PointIqAuthShell(
@@ -50,10 +50,12 @@ internal fun PointIqAuthShell(
     titleModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    PointIqHomeSystemBars()
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(RankForgePageBackground),
+            .background(PointIqBackground),
     ) {
         PointIqBackgroundDecoration()
 
@@ -75,7 +77,7 @@ internal fun PointIqAuthShell(
                 text = title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = PointIqNavy,
+                color = PointIqHeader,
                 modifier = titleModifier,
             )
 
@@ -84,7 +86,7 @@ internal fun PointIqAuthShell(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = PointIqBody,
+                    color = PointIqSecondary,
                 )
             }
 
@@ -120,7 +122,7 @@ private fun PointIqBrandHeader(
                 val brandText = buildAnnotatedString {
                     withStyle(
                         SpanStyle(
-                            color = PointIqNavy,
+                            color = PointIqHeader,
                             fontWeight = FontWeight.Bold,
                         ),
                     ) {
@@ -144,7 +146,7 @@ private fun PointIqBrandHeader(
                 Text(
                     text = stringResource(R.string.pointiq_brand_tagline),
                     style = MaterialTheme.typography.bodySmall,
-                    color = PointIqMuted,
+                    color = PointIqSecondary,
                 )
             }
         }
@@ -158,7 +160,7 @@ private fun PointIqBackgroundDecoration() {
             x = size.width - 6.dp.toPx(),
             y = 100.dp.toPx(),
         )
-        val color = PointIqCyan.copy(alpha = 0.08f)
+        val color = PointIqAmbientBlue.copy(alpha = 0.08f)
         val strokeWidth = 1.dp.toPx()
 
         drawCircle(
