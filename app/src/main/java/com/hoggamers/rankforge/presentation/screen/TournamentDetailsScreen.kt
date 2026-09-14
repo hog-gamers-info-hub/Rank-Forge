@@ -503,13 +503,6 @@ private fun PointIqMatchProcessingHeader(
             .testTag(MATCH_PROCESSING_SECTION_TEST_TAG),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_match_processing),
-            contentDescription = null,
-            tint = PointIqDetailsCyan,
-            modifier = Modifier.size(36.dp),
-        )
-        Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.tournament_details_match_processing_title),
@@ -535,9 +528,9 @@ private fun PointIqMatchProcessingHeader(
                 enabled = !isCreatingMatch,
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = PointIqDetailsDarkSurface,
-                    contentColor = PointIqDetailsSubtitle,
+                    contentColor = PointIqDetailsHeader,
                     disabledContainerColor = PointIqDetailsDarkSurface.copy(alpha = 0.55f),
-                    disabledContentColor = PointIqDetailsSubtitle.copy(alpha = 0.55f),
+                    disabledContentColor = PointIqDetailsHeader.copy(alpha = 0.55f),
                 ),
                 border = BorderStroke(1.dp, PointIqDetailsBlue.copy(alpha = 0.85f)),
                 shape = RoundedCornerShape(12.dp),
