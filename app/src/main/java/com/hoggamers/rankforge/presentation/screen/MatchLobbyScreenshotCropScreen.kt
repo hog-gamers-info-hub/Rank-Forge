@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,11 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.StateFlow
 
@@ -92,7 +96,7 @@ fun MatchLobbyScreenshotCropScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(PointIqOcrVisualCropTheme.pageBackground)
                 .testTag(MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG),
             contentAlignment = Alignment.Center,
         ) {
@@ -102,8 +106,12 @@ fun MatchLobbyScreenshotCropScreen(
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_CROP_LOADING_TEST_TAG),
+                    color = PointIqOcrVisualCropTheme.cropHandle,
                 )
-                Text(text = stringResource(R.string.match_lobby_screenshot_loading))
+                Text(
+                    text = stringResource(R.string.match_lobby_screenshot_loading),
+                    color = PointIqOcrVisualCropTheme.secondaryText,
+                )
             }
         }
         return
@@ -115,16 +123,20 @@ fun MatchLobbyScreenshotCropScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(PointIqOcrVisualCropTheme.pageBackground)
             .padding(RankForgeSpacing.Medium)
             .testTag(MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Medium),
     ) {
-        Text(
-            text = stringResource(R.string.match_lobby_screenshot_crop_title, index),
-            style = MaterialTheme.typography.headlineMedium,
+        PointIqPageHeader(
+            title = stringResource(R.string.match_lobby_screenshot_crop_title, index),
+            onBack = onCancel,
+            backTestTag = MATCH_LOBBY_SCREENSHOT_CROP_SCREEN_TEST_TAG + "_back",
         )
-        Text(text = stringResource(R.string.match_lobby_screenshot_crop_guidance))
+        Text(
+            text = stringResource(R.string.match_lobby_screenshot_crop_guidance),
+            color = PointIqOcrVisualCropTheme.secondaryText,
+        )
         if (isPreparationFailed) {
             Text(
                 text = stringResource(R.string.match_lobby_screenshot_preservation_failed),
@@ -162,17 +174,31 @@ fun MatchLobbyScreenshotCropScreen(
                     },
                 ),
                 previewContentDescription = stringResource(R.string.match_lobby_screenshot_crop_preview_description, index),
+                theme = PointIqOcrVisualCropTheme,
                 modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_CROP_EDITOR_TEST_TAG),
             )
         }
         if (candidateUri != null && !isPreparationReady && !isPreparationFailed) {
-            Text(text = stringResource(R.string.match_lobby_screenshot_saving))
+            Text(
+                text = stringResource(R.string.match_lobby_screenshot_saving),
+                color = PointIqOcrVisualCropTheme.secondaryText,
+            )
         }
         OutlinedButton(
             onClick = onCancel,
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = PointIqOcrVisualCropTheme.secondaryActionSurface,
+                contentColor = PointIqOcrVisualCropTheme.cancelText,
+            ),
+            border = BorderStroke(1.dp, PointIqOcrVisualCropTheme.secondaryActionBorder),
             modifier = Modifier.fillMaxWidth().testTag(MATCH_LOBBY_SCREENSHOT_CROP_CANCEL_TEST_TAG),
         ) { Text(text = stringResource(R.string.match_lobby_screenshot_cancel_action)) }
-        if (uiState.isSaving) Text(text = stringResource(R.string.match_lobby_screenshot_saving))
+        if (uiState.isSaving) {
+            Text(
+                text = stringResource(R.string.match_lobby_screenshot_saving),
+                color = PointIqOcrVisualCropTheme.secondaryText,
+            )
+        }
     }
 }
 
