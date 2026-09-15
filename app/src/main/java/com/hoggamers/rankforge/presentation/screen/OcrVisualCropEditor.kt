@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,6 +57,44 @@ import kotlin.math.roundToInt
 private val CropHandleTouchTargetSize = 56.dp
 private val CropHandleTouchTargetOffset = -(CropHandleTouchTargetSize / 2)
 private val CropHandleVisibleSize = 24.dp
+
+data class OcrVisualCropTheme(
+    val pageBackground: Color,
+    val primaryText: Color,
+    val secondaryText: Color,
+    val previewSurface: Color,
+    val dimensionSurface: Color,
+    val dimensionBorder: Color,
+    val secondaryActionSurface: Color,
+    val secondaryActionBorder: Color,
+    val cancelText: Color,
+    val confirmTopBlue: Color,
+    val confirmMiddleBlue: Color,
+    val confirmDeepBlue: Color,
+    val confirmBorder: Color,
+    val cropOutline: Color,
+    val cropHandle: Color,
+    val cropHandleBorder: Color,
+)
+
+internal val PointIqOcrVisualCropTheme = OcrVisualCropTheme(
+    pageBackground = Color(0xFF031225),
+    primaryText = Color(0xFFF6F8FF),
+    secondaryText = Color(0xFF91AFE0),
+    previewSurface = Color(0xFF071B3E),
+    dimensionSurface = Color(0xFF071B3E),
+    dimensionBorder = Color(0xFF176AF7).copy(alpha = 0.55f),
+    secondaryActionSurface = Color(0xFF071B3E),
+    secondaryActionBorder = Color(0xFF176AF7).copy(alpha = 0.55f),
+    cancelText = Color(0xFF91AFE0),
+    confirmTopBlue = Color(0xFF159CF8),
+    confirmMiddleBlue = Color(0xFF1688F7),
+    confirmDeepBlue = Color(0xFF1675F0),
+    confirmBorder = Color(0xFF4AAFF7),
+    cropOutline = Color(0xFFF6F8FF),
+    cropHandle = Color(0xFF17C9F2),
+    cropHandleBorder = Color(0xFFF6F8FF),
+)
 
 const val OCR_VISUAL_CROP_PREVIEW_TEST_TAG = "ocr_visual_crop_preview"
 const val OCR_VISUAL_CROP_OVERLAY_TEST_TAG = "ocr_visual_crop_overlay"
@@ -83,6 +123,7 @@ fun OcrVisualCropEditor(
     confirmEnabled: Boolean = true,
     confirmButtonText: String = stringResource(R.string.ocr_visual_crop_confirm_action),
     previewContentDescription: String = stringResource(R.string.ocr_visual_crop_preview_description),
+    theme: OcrVisualCropTheme? = null,
 ) {
     val validation = remember(crop, profile) {
         OcrCropValidator.validate(crop, profile)
@@ -109,11 +150,13 @@ fun OcrVisualCropEditor(
             previewContentDescription = previewContentDescription,
             sourceImageWidth = sourceImageWidth,
             sourceImageHeight = sourceImageHeight,
+            theme = theme,
         )
-        CropDimensionRow(pixelSize = pixelSize)
+        CropDimensionRow(pixelSize = pixelSize, theme = theme)
         Text(
             text = stringResource(R.string.ocr_visual_crop_instruction),
             style = MaterialTheme.typography.bodySmall,
+            color = theme?.secondaryText ?: Color.Unspecified,
         )
         if (validation is OcrCropValidationResult.Invalid) {
             Text(
@@ -125,6 +168,14 @@ fun OcrVisualCropEditor(
         Row(horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
             OutlinedButton(
                 onClick = { onCropChanged(defaultCrop) },
+                colors = theme?.let {
+                    ButtonDefaults.outlinedButtonColors(
+                        containerColor = it.secondaryActionSurface,
+                        contentColor = it.primaryText,
+                    )
+                } ?: ButtonDefaults.outlinedButtonColors(),
+                border = theme?.let { BorderStroke(1.dp, it.secondaryActionBorder) }
+                    ?: ButtonDefaults.outlinedButtonBorder,
                 modifier = Modifier
                     .weight(1f)
                     .testTag(OCR_VISUAL_CROP_RESET_ACTION_TEST_TAG),
@@ -136,7 +187,37 @@ fun OcrVisualCropEditor(
                 enabled = confirmEnabled && validation is OcrCropValidationResult.Valid,
                 modifier = Modifier
                     .weight(1f)
+                    .then(
+                        theme?.let { pointIqTheme ->
+                            Modifier
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            pointIqTheme.confirmTopBlue,
+                                            pointIqTheme.confirmMiddleBlue,
+                                            pointIqTheme.confirmDeepBlue,
+                                        ),
+                                    ),
+                                    ButtonDefaults.shape,
+                                )
+                                .border(1.dp, pointIqTheme.confirmBorder, ButtonDefaults.shape)
+                        } ?: Modifier,
+                    )
                     .testTag(OCR_VISUAL_CROP_CONFIRM_ACTION_TEST_TAG),
+                colors = theme?.let {
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = it.primaryText,
+                        disabledContainerColor = Color.Transparent,
+                    )
+                } ?: ButtonDefaults.buttonColors(),
+                elevation = theme?.let {
+                    ButtonDefaults.buttonElevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        disabledElevation = 0.dp,
+                    )
+                } ?: ButtonDefaults.buttonElevation(),
             ) {
                 Text(text = confirmButtonText)
             }
@@ -147,6 +228,7 @@ fun OcrVisualCropEditor(
 @Composable
 private fun CropDimensionRow(
     pixelSize: OcrVisualCropPixelSize?,
+    theme: OcrVisualCropTheme?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -159,6 +241,7 @@ private fun CropDimensionRow(
             } ?: stringResource(R.string.ocr_visual_crop_dimension_unavailable),
             valueTestTag = OCR_VISUAL_CROP_WIDTH_VALUE_TEST_TAG,
             modifier = Modifier.weight(1f),
+            theme = theme,
         )
         CropDimensionBox(
             label = stringResource(R.string.ocr_visual_crop_height_label),
@@ -167,6 +250,7 @@ private fun CropDimensionRow(
             } ?: stringResource(R.string.ocr_visual_crop_dimension_unavailable),
             valueTestTag = OCR_VISUAL_CROP_HEIGHT_VALUE_TEST_TAG,
             modifier = Modifier.weight(1f),
+            theme = theme,
         )
     }
 }
@@ -177,6 +261,7 @@ private fun CropDimensionBox(
     value: String,
     valueTestTag: String,
     modifier: Modifier = Modifier,
+    theme: OcrVisualCropTheme?,
 ) {
     Column(
         modifier = modifier,
@@ -185,14 +270,15 @@ private fun CropDimensionBox(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
+            color = theme?.primaryText ?: Color.Unspecified,
         )
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp),
             shape = MaterialTheme.shapes.small,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, theme?.dimensionBorder ?: MaterialTheme.colorScheme.outline),
+            color = theme?.dimensionSurface ?: MaterialTheme.colorScheme.surface,
         ) {
             Box(
                 modifier = Modifier
@@ -206,6 +292,7 @@ private fun CropDimensionBox(
                 Text(
                     text = value,
                     style = MaterialTheme.typography.bodyMedium,
+                    color = theme?.primaryText ?: Color.Unspecified,
                     modifier = Modifier.testTag(valueTestTag),
                 )
             }
@@ -222,6 +309,7 @@ private fun CropPreview(
     previewContentDescription: String,
     sourceImageWidth: Int?,
     sourceImageHeight: Int?,
+    theme: OcrVisualCropTheme?,
 ) {
     val imageAspectRatio = sourceImageAspectRatio(sourceImageWidth, sourceImageHeight)
     BoxWithConstraints(
@@ -229,7 +317,7 @@ private fun CropPreview(
             .fillMaxWidth()
             .aspectRatio(imageAspectRatio)
             .clipToBounds()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(theme?.previewSurface ?: MaterialTheme.colorScheme.surfaceVariant)
             .testTag(OCR_VISUAL_CROP_PREVIEW_TEST_TAG),
     ) {
         val previewCrop = remember(crop) {
@@ -256,6 +344,7 @@ private fun CropPreview(
         } else {
             Text(
                 text = stringResource(R.string.ocr_visual_crop_preview_unavailable),
+                color = theme?.secondaryText ?: Color.Unspecified,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -270,7 +359,7 @@ private fun CropPreview(
                     width = with(density) { cropWidthPx.toFloat().toDp() },
                     height = with(density) { cropHeightPx.toFloat().toDp() },
                 )
-                .border(2.dp, MaterialTheme.colorScheme.primary)
+                .border(2.dp, theme?.cropOutline ?: MaterialTheme.colorScheme.primary)
                 .background(Color.Transparent)
                 .testTag(OCR_VISUAL_CROP_OVERLAY_TEST_TAG),
         ) {
@@ -302,6 +391,7 @@ private fun CropPreview(
                 handle = OcrVisualCropResizeHandle.TOP,
                 currentCrop = { latestPreviewCrop.value },
                 onCropChanged = { latestOnCropChanged.value(it) },
+                theme = theme,
             )
             CropEdgeHandle(
                 alignment = Alignment.BottomCenter,
@@ -313,6 +403,7 @@ private fun CropPreview(
                 handle = OcrVisualCropResizeHandle.BOTTOM,
                 currentCrop = { latestPreviewCrop.value },
                 onCropChanged = { latestOnCropChanged.value(it) },
+                theme = theme,
             )
             CropEdgeHandle(
                 alignment = Alignment.CenterStart,
@@ -324,6 +415,7 @@ private fun CropPreview(
                 handle = OcrVisualCropResizeHandle.LEFT,
                 currentCrop = { latestPreviewCrop.value },
                 onCropChanged = { latestOnCropChanged.value(it) },
+                theme = theme,
             )
             CropEdgeHandle(
                 alignment = Alignment.CenterEnd,
@@ -335,6 +427,7 @@ private fun CropPreview(
                 handle = OcrVisualCropResizeHandle.RIGHT,
                 currentCrop = { latestPreviewCrop.value },
                 onCropChanged = { latestOnCropChanged.value(it) },
+                theme = theme,
             )
         }
     }
@@ -351,6 +444,7 @@ private fun BoxScope.CropEdgeHandle(
     handle: OcrVisualCropResizeHandle,
     currentCrop: () -> OcrNormalizedCropRect,
     onCropChanged: (OcrNormalizedCropRect) -> Unit,
+    theme: OcrVisualCropTheme?,
 ) {
     Box(
         modifier = Modifier
@@ -380,8 +474,8 @@ private fun BoxScope.CropEdgeHandle(
         Box(
             modifier = Modifier
                 .size(CropHandleVisibleSize)
-                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                .background(theme?.cropHandle ?: MaterialTheme.colorScheme.primary, CircleShape)
+                .border(2.dp, theme?.cropHandleBorder ?: MaterialTheme.colorScheme.surface, CircleShape),
         )
     }
 }
