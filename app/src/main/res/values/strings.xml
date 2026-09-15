@@ -449,6 +449,23 @@
     <string name="match_ocr_review_finalization_warning_count">Warnings requiring confirmation: %1$d.</string>
     <string name="match_ocr_review_finalize_action">Finalize Match</string>
     <string name="match_review_finalize_result_action">Finalize Result</string>
+    <string name="match_review_finalize_blockers_title">Fix errors before finalizing</string>
+    <string name="match_review_finalize_blocker_result_row">Result row %1$d: %2$s</string>
+    <string name="match_review_finalize_blocker_position">Position %1$d: %2$s</string>
+    <string name="match_review_finalize_missing_placement">Position is missing.</string>
+    <string name="match_review_finalize_invalid_placement">Position is invalid.</string>
+    <string name="match_review_finalize_duplicate_placement">Position is already used.</string>
+    <string name="match_review_finalize_missing_kills">Player kills are missing</string>
+    <string name="match_review_finalize_invalid_kills">Player kills are invalid</string>
+    <string name="match_review_finalize_negative_kills">Player kills cannot be negative</string>
+    <string name="match_review_finalize_missing_team_slot">Team slot is missing.</string>
+    <string name="match_review_finalize_invalid_team_slot">Team slot is invalid.</string>
+    <string name="match_review_finalize_duplicate_team_slot">Team slot is already assigned.</string>
+    <string name="match_review_finalize_malformed_row">Result row contains invalid data.</string>
+    <plurals name="match_review_finalize_missing_team_names">
+        <item quantity="one">%1$d team name is missing.</item>
+        <item quantity="other">%1$d team names are missing.</item>
+    </plurals>
     <string name="match_ocr_review_finalization_in_progress">Finalizing corrected match</string>
     <string name="match_ocr_review_finalize_warning_title">Finalize with warnings?</string>
     <string name="match_ocr_review_finalize_warning_message">This corrected match has %1$d warning row(s). Confirm only after reviewing the OCR evidence and corrections.</string>
