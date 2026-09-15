@@ -104,6 +104,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Warning
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -150,6 +151,8 @@ private val PointIqMatchReviewCtaTopBlue = Color(0xFF159CF8)
 private val PointIqMatchReviewCtaMiddleBlue = Color(0xFF1688F7)
 private val PointIqMatchReviewCtaBottomBlue = Color(0xFF1675F0)
 private val PointIqMatchReviewCtaBorder = Color(0xFF4AAFF7)
+private val PointIqMatchReviewBlockerIcon = Color(0xFFFF6B6B)
+private val PointIqMatchReviewBlockerMessage = Color(0xFFF4D7DB)
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 
 private enum class MatchReviewScreenshotActionStyle {
@@ -2487,30 +2490,7 @@ private fun MatchReviewFinalizeAction(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         if (blockers.hasBlockers) {
-            Text(text = stringResource(R.string.match_review_finalize_blockers_title))
-            blockers.rowBlockers.forEach { blocker ->
-                val reason = stringResource(blocker.reason.toMatchReviewFinalizeBlockerMessageRes())
-                Text(
-                    text = stringResource(
-                        if (blocker.correctedPlacement != null) {
-                            R.string.match_review_finalize_blocker_position
-                        } else {
-                            R.string.match_review_finalize_blocker_result_row
-                        },
-                        blocker.correctedPlacement ?: blocker.rowIndex + 1,
-                        reason,
-                    ),
-                )
-            }
-            if (blockers.missingTeamNameCount > 0) {
-                Text(
-                    text = pluralStringResource(
-                        R.plurals.match_review_finalize_missing_team_names,
-                        blockers.missingTeamNameCount,
-                        blockers.missingTeamNameCount,
-                    ),
-                )
-            }
+            MatchReviewFinalizeBlockerContainer(blockers = blockers)
         }
         ReviewMatchActionButton(
             label = stringResource(
@@ -2526,6 +2506,67 @@ private fun MatchReviewFinalizeAction(
             onClick = onFinalizeOcrCorrection,
             modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
         )
+    }
+}
+
+@Composable
+private fun MatchReviewFinalizeBlockerContainer(
+    blockers: MatchReviewFinalizationBlockers,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = PointIqMatchReviewBlockerIcon,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = stringResource(R.string.match_review_finalize_blockers_title),
+                color = PointIqMatchReviewHeader,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            blockers.rowBlockers.forEach { blocker ->
+                val reason = stringResource(blocker.reason.toMatchReviewFinalizeBlockerMessageRes())
+                Text(
+                    text = stringResource(
+                        if (blocker.correctedPlacement != null) {
+                            R.string.match_review_finalize_blocker_position
+                        } else {
+                            R.string.match_review_finalize_blocker_result_row
+                        },
+                        blocker.correctedPlacement ?: blocker.rowIndex + 1,
+                        reason,
+                    ),
+                    color = PointIqMatchReviewBlockerMessage,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+            if (blockers.missingTeamNameCount > 0) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.match_review_finalize_missing_team_names,
+                        blockers.missingTeamNameCount,
+                        blockers.missingTeamNameCount,
+                    ),
+                    color = PointIqMatchReviewBlockerMessage,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+        }
     }
 }
 
