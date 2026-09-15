@@ -78,6 +78,8 @@ data class MatchReviewDestination(
 data class DownloadResultDestination(
     val tournamentId: String,
     val matchId: String,
+    val initialDesign: String? = null,
+    val initialDownloadScope: String? = null,
 )
 
 @Serializable
