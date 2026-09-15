@@ -2486,7 +2486,7 @@ private fun ReviewMatchCalculationButton(
 }
 
 @Composable
-private fun ReviewMatchActionButton(
+internal fun ReviewMatchActionButton(
     label: String,
     enabled: Boolean,
     modifier: Modifier = Modifier,

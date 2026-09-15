@@ -2,7 +2,7 @@
 <resources>
     <string name="pointiq_home_title">Tournament Control</string>
     <string name="pointiq_home_subtitle">Create, manage and score your tournaments.</string>
-    <string name="pointiq_home_create_title">Create New Tournament</string>
+    <string name="pointiq_home_create_title">New Tournament</string>
     <string name="pointiq_home_create_subtitle">Set up teams and start scoring</string>
     <string name="pointiq_home_recent_title">Recent Tournaments</string>
     <string name="pointiq_home_view_all">View all</string>
