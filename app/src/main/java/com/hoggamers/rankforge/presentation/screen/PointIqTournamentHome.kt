@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,10 +43,6 @@ private val PointIqHomeBlue = Color(0xFF176AF7)
 private val PointIqHomeCyan = Color(0xFF17C9F2)
 private val PointIqHomeCard = Color(0xFF071B3E)
 private val PointIqHomeBorder = PointIqHomeBlue.copy(alpha = 0.55f)
-private val PointIqHomeCreateCtaTop = Color(0xFF071B3E)
-private val PointIqHomeCreateCtaMiddle = Color(0xFF0B2B55)
-private val PointIqHomeCreateCtaBottom = Color(0xFF0D3769)
-private val PointIqHomeCreateCtaBorder = PointIqHomeCyan.copy(alpha = 0.78f)
 
 const val POINTIQ_HOME_CREATE_TOURNAMENT_TEST_TAG = "pointiq_home_create_tournament"
 
@@ -96,7 +91,10 @@ internal fun PointIqTournamentHomeContent(
             }
 
             item {
-                PointIqCreateTournamentCta(onClick = onCreateTournament)
+                PointIqCreateTournamentCta(
+                    hasTournamentCards = !uiState.isEmpty,
+                    onClick = onCreateTournament,
+                )
             }
         }
     }
@@ -104,52 +102,23 @@ internal fun PointIqTournamentHomeContent(
 
 @Composable
 private fun PointIqCreateTournamentCta(
+    hasTournamentCards: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    val gradient = androidx.compose.ui.graphics.Brush.verticalGradient(
-        colors = listOf(
-            PointIqHomeCreateCtaTop,
-            PointIqHomeCreateCtaMiddle,
-            PointIqHomeCreateCtaBottom,
-        ),
-    )
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 12.dp),
+            .padding(
+                top = if (hasTournamentCards) 14.dp else 0.dp,
+                bottom = 12.dp,
+            ),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .clip(shape)
-                .background(gradient)
-                .border(1.dp, PointIqHomeCreateCtaBorder, shape)
-                .clickable(onClick = onClick)
-                .testTag(POINTIQ_HOME_CREATE_TOURNAMENT_TEST_TAG),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Add,
-                contentDescription = null,
-                tint = PointIqHomeHeader,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp)
-                    .size(22.dp),
-            )
-            Text(
-                text = stringResource(R.string.pointiq_home_create_title),
-                color = PointIqHomeHeader,
-                fontSize = 16.sp,
-                lineHeight = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.Center),
-                textAlign = TextAlign.Center,
-            )
-        }
+        ReviewMatchActionButton(
+            label = stringResource(R.string.pointiq_home_create_title),
+            enabled = true,
+            onClick = onClick,
+            modifier = Modifier.testTag(POINTIQ_HOME_CREATE_TOURNAMENT_TEST_TAG),
+        )
     }
 }
 
