@@ -5,6 +5,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -210,6 +211,7 @@ fun MatchLobbyScreenshotIntakeScreen(
 ) {
     val teamCropPreviewsByScreenshotIndex = LocalMatchLobbyTeamCropPreviews.current
     val sourceSectionVisible = LocalMatchLobbySourceSectionVisible.current
+    val screenshotActionExpansion = LocalMatchReviewScreenshotActionExpansion.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,6 +404,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 onSelectBatch = onSelectBatch,
                                 onCrop = onCrop,
                                 onRemove = onRemove,
+                                screenshotActionExpansion = screenshotActionExpansion,
                             )
                         }
                     }
@@ -608,6 +611,7 @@ private fun LobbyScreenshotDetail(
     onSelectBatch: (() -> Unit)?,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    screenshotActionExpansion: MatchReviewScreenshotActionExpansion?,
 ) {
     val previewImageUri = if (
         slot.hasLinkedAsset && !slot.isLocalFileMissing && slot.hasConfirmedCrop
@@ -629,6 +633,8 @@ private fun LobbyScreenshotDetail(
             )
         }
         previewImageUri?.let { imageUri ->
+            val screenshotActionKey = "lobby-${slot.index}"
+            val supportsExpandableActions = compactActions && !isFinalized && screenshotActionExpansion != null
             Column(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -649,6 +655,15 @@ private fun LobbyScreenshotDetail(
                             } else {
                                 Modifier
                             },
+                        )
+                        .then(
+                            if (supportsExpandableActions) {
+                                Modifier.clickable {
+                                    screenshotActionExpansion.onToggle(screenshotActionKey)
+                                }
+                            } else {
+                                Modifier
+                            },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -666,8 +681,11 @@ private fun LobbyScreenshotDetail(
                         testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
                     )
                 }
-                if (compactActions && !isFinalized) {
-                    MatchReviewScreenshotActionRow(
+                if (supportsExpandableActions) {
+                    MatchReviewExpandableScreenshotActions(
+                        expanded = screenshotActionExpansion.expandedScreenshotKey == screenshotActionKey,
+                    ) {
+                        MatchReviewScreenshotActionRow(
                         replaceLabel = stringResource(R.string.match_lobby_screenshot_replace_action),
                         editLabel = stringResource(R.string.match_review_screenshot_edit_action),
                         removeLabel = stringResource(R.string.match_lobby_screenshot_remove_action),
@@ -686,10 +704,11 @@ private fun LobbyScreenshotDetail(
                         replaceTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index,
                         editTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index,
                         removeTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index,
-                        onReplace = { onSelect(slot.index) },
-                        onEdit = { onCrop(slot.index) },
-                        onRemove = { onRemove(slot.index) },
-                    )
+                            onReplace = { onSelect(slot.index) },
+                            onEdit = { onCrop(slot.index) },
+                            onRemove = { onRemove(slot.index) },
+                        )
+                    }
                 }
             }
         }

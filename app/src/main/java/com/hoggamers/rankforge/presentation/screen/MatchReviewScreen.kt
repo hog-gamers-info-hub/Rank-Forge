@@ -2,6 +2,7 @@
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -9,7 +10,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.activity.compose.BackHandler
@@ -71,6 +74,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -151,6 +155,14 @@ private enum class MatchReviewScreenshotActionStyle {
     EDIT,
     REMOVE,
 }
+
+internal data class MatchReviewScreenshotActionExpansion(
+    val expandedScreenshotKey: String?,
+    val onToggle: (String) -> Unit,
+)
+
+internal val LocalMatchReviewScreenshotActionExpansion =
+    staticCompositionLocalOf<MatchReviewScreenshotActionExpansion?> { null }
 
 internal enum class MatchReviewResumeRecoveryAction {
     NONE,
@@ -1340,6 +1352,13 @@ private fun MatchReviewContent(
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
     var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
+    var expandedScreenshotKey by remember { mutableStateOf<String?>(null) }
+    val screenshotActionExpansion = MatchReviewScreenshotActionExpansion(
+        expandedScreenshotKey = expandedScreenshotKey,
+        onToggle = { key ->
+            expandedScreenshotKey = if (expandedScreenshotKey == key) null else key
+        },
+    )
     fun openResultDownload() {
         selectedResultScope = null
         selectedResultFormat = null
@@ -1711,6 +1730,7 @@ private fun MatchReviewContent(
                     LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
                     LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
                     LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                    LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
                 ) {
                     matchLobbyScreenshotIntake()
                 }
@@ -1770,6 +1790,7 @@ private fun MatchReviewContent(
                     showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
+                    screenshotActionExpansion = screenshotActionExpansion,
                 )
             }
             if (!manualModeOpened) {
@@ -1786,6 +1807,7 @@ private fun MatchReviewContent(
                     LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
                     LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
                     LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                    LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
                 ) {
                     matchLobbyScreenshotIntake()
                 }
@@ -1852,6 +1874,7 @@ private fun MatchReviewContent(
                     showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                     ocrDetailsContent = resultOcrDetailsContent,
                     ocrPositionContent = resultOcrPositionContent,
+                    screenshotActionExpansion = screenshotActionExpansion,
                 )
             }
             if (!manualModeOpened) {
@@ -1871,6 +1894,7 @@ private fun MatchReviewContent(
                 onOpenCrop = onOpenResultScreenshotCrop,
                 onRemoveScreenshot = onRemoveResultScreenshot,
                 onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
+                screenshotActionExpansion = screenshotActionExpansion,
             )
         }
         if (showOcrPreflight) {
@@ -3492,6 +3516,7 @@ private fun ResultScreenshotSelector(
     showOcrDetailsOutsideScreenshotPager: Boolean = false,
     ocrDetailsContent: @Composable () -> Unit = {},
     ocrPositionContent: @Composable (Int) -> Unit = {},
+    screenshotActionExpansion: MatchReviewScreenshotActionExpansion,
 ) {
     DisposableEffect(resultPositionCropPreviews) {
         onDispose { onPositionCropPreviewsDisposed(resultPositionCropPreviews) }
@@ -3596,6 +3621,7 @@ private fun ResultScreenshotSelector(
                             onSelectScreenshot = onSelectScreenshot,
                             onOpenCrop = onOpenCrop,
                             onRemoveScreenshot = onRemoveScreenshot,
+                            screenshotActionExpansion = screenshotActionExpansion,
                         )
                     }
                 }
@@ -3652,6 +3678,7 @@ private fun ResultScreenshotPage(
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+    screenshotActionExpansion: MatchReviewScreenshotActionExpansion,
 ) {
     val role = if (screenshotNumber == 1) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER
@@ -3666,6 +3693,8 @@ private fun ResultScreenshotPage(
         null
     }
     val hasPositionCropPreviews = showPositionCropPreviews && positionCropPreviews.isNotEmpty()
+    val screenshotActionKey = "result-${role.name}"
+    val supportsExpandableActions = showSourceScreenshot && isEditable && previewImageUri != null
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3680,34 +3709,77 @@ private fun ResultScreenshotPage(
     ) {
         if (showSourceScreenshot) {
             previewImageUri?.let { imageUri ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(imageAreaHeight)
-                        .clip(MaterialTheme.shapes.medium)
-                        .border(
-                            width = 1.dp,
-                            color = PointIqMatchReviewSectionBorder,
-                            shape = MaterialTheme.shapes.medium,
-                        ),
-                    contentAlignment = Alignment.Center,
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
                 ) {
-                    LocalScreenshotPreview(
-                        imageUri = imageUri,
-                        crop = slot.confirmedCrop,
-                        contentDescription = stringResource(
-                            R.string.match_review_result_screenshot_preview_description,
-                            screenshotNumber,
-                        ),
-                        sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
-                        sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                        modifier = Modifier.fillMaxWidth(),
-                        testTag = if (screenshotNumber == 1) {
-                            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
-                        } else {
-                            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
-                        },
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(imageAreaHeight)
+                            .clip(MaterialTheme.shapes.medium)
+                            .border(
+                                width = 1.dp,
+                                color = PointIqMatchReviewSectionBorder,
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                            .then(
+                                if (supportsExpandableActions) {
+                                    Modifier.clickable {
+                                        screenshotActionExpansion.onToggle(screenshotActionKey)
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LocalScreenshotPreview(
+                            imageUri = imageUri,
+                            crop = slot.confirmedCrop,
+                            contentDescription = stringResource(
+                                R.string.match_review_result_screenshot_preview_description,
+                                screenshotNumber,
+                            ),
+                            sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                            sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = if (screenshotNumber == 1) {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                            } else {
+                                MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                            },
+                        )
+                    }
+                    if (supportsExpandableActions) {
+                        MatchReviewExpandableScreenshotActions(
+                            expanded = screenshotActionExpansion.expandedScreenshotKey == screenshotActionKey,
+                        ) {
+                            MatchReviewScreenshotActionRow(
+                                replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
+                                editLabel = stringResource(R.string.match_review_screenshot_edit_action),
+                                removeLabel = stringResource(R.string.match_review_result_screenshot_remove_short_action),
+                                replaceContentDescription = stringResource(
+                                    R.string.match_review_screenshot_replace_content_description,
+                                ),
+                                editContentDescription = stringResource(
+                                    R.string.match_review_screenshot_crop_content_description,
+                                ),
+                                removeContentDescription = stringResource(
+                                    R.string.match_review_screenshot_remove_content_description,
+                                ),
+                                replaceEnabled = !slot.isBusy,
+                                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
+                                removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
+                                replaceTestTag = role.replaceActionTestTag(),
+                                editTestTag = role.cropActionTestTag(),
+                                removeTestTag = role.removeActionTestTag(),
+                                onReplace = { onSelectScreenshot(role) },
+                                onEdit = { onOpenCrop(role) },
+                                onRemove = { onRemoveScreenshot(role) },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -3717,31 +3789,6 @@ private fun ResultScreenshotPage(
                     ResultPositionPageItem(role = role, preview = preview)
                 },
                 ocrPositionContent = ocrPositionContent,
-            )
-        }
-        if (showSourceScreenshot && isEditable && previewImageUri != null) {
-            MatchReviewScreenshotActionRow(
-                replaceLabel = stringResource(R.string.match_review_result_screenshot_replace_short_action),
-                editLabel = stringResource(R.string.match_review_screenshot_edit_action),
-                removeLabel = stringResource(R.string.match_review_result_screenshot_remove_short_action),
-                replaceContentDescription = stringResource(
-                    R.string.match_review_screenshot_replace_content_description,
-                ),
-                editContentDescription = stringResource(
-                    R.string.match_review_screenshot_crop_content_description,
-                ),
-                removeContentDescription = stringResource(
-                    R.string.match_review_screenshot_remove_content_description,
-                ),
-                replaceEnabled = !slot.isBusy,
-                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
-                removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
-                replaceTestTag = role.replaceActionTestTag(),
-                editTestTag = role.cropActionTestTag(),
-                removeTestTag = role.removeActionTestTag(),
-                onReplace = { onSelectScreenshot(role) },
-                onEdit = { onOpenCrop(role) },
-                onRemove = { onRemoveScreenshot(role) },
             )
         }
         if (slot.isValidationInProgress) {
@@ -3956,6 +4003,26 @@ private fun StableHeightHorizontalPager(
         layout(pager.width, pageHeight) {
             pager.place(0, 0)
         }
+    }
+}
+
+@Composable
+internal fun MatchReviewExpandableScreenshotActions(
+    expanded: Boolean,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically(
+            expandFrom = Alignment.Top,
+            animationSpec = tween(durationMillis = 220),
+        ) + fadeIn(animationSpec = tween(durationMillis = 220)),
+        exit = shrinkVertically(
+            shrinkTowards = Alignment.Top,
+            animationSpec = tween(durationMillis = 220),
+        ) + fadeOut(animationSpec = tween(durationMillis = 220)),
+    ) {
+        content()
     }
 }
 
