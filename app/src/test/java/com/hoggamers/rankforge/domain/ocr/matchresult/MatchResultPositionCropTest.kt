@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.ocr.matchresult
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -37,7 +38,17 @@ class MatchResultPositionCropTest {
         assertEquals(75, result.crops.first { it.position == 6 }.bounds.bottom)
         assertEquals(35.0, result.crops.first { it.position == 6 }.structuralCenterYInSource!!, 0.001)
         assertEquals(315, result.crops.first { it.position == 10 }.bounds.top)
-        assertEquals(407, result.crops.first { it.position == 10 }.bounds.bottom)
+        assertEquals(395, result.crops.first { it.position == 10 }.bounds.bottom)
+        assertEquals(80, result.crops.first { it.position == 9 }.bounds.bottom - result.crops.first { it.position == 9 }.bounds.top)
+        assertEquals(80, result.crops.first { it.position == 10 }.bounds.bottom - result.crops.first { it.position == 10 }.bounds.top)
+        assertEquals(
+            result.crops.first { it.position == 9 }.bounds.left,
+            result.crops.first { it.position == 10 }.bounds.left,
+        )
+        assertEquals(
+            result.crops.first { it.position == 9 }.bounds.right,
+            result.crops.first { it.position == 10 }.bounds.right,
+        )
         assertEquals(355.0, result.crops.first { it.position == 10 }.structuralCenterYInSource!!, 0.001)
     }
 
@@ -133,6 +144,12 @@ class MatchResultPositionCropTest {
         assertEquals(MatchResultPositionPitchSource.RIGHT_CONSECUTIVE, result.rightPitchSource)
         assertEquals(80.0, result.rightRowPitch, 0.001)
         assertTrue(result.crops.all { it.column == MatchResultPositionColumn.RIGHT })
+        val positionEleven = result.crops.first { it.position == 11 }
+        val positionTwelve = result.crops.first { it.position == 12 }
+        assertEquals(295, positionEleven.bounds.top)
+        assertEquals(375, positionEleven.bounds.bottom)
+        assertEquals(375, positionTwelve.bounds.top)
+        assertEquals(455, positionTwelve.bounds.bottom)
     }
 
     @Test
@@ -449,10 +466,10 @@ class MatchResultPositionCropTest {
         assertEquals(600, left.right)
         assertEquals(611, right.left)
         assertEquals(1_160, right.right)
-        assertEquals(54, left.top)
-        assertEquals(146, left.bottom)
-        assertEquals(54, right.top)
-        assertEquals(146, right.bottom)
+        assertEquals(50, left.top)
+        assertEquals(150, left.bottom)
+        assertEquals(50, right.top)
+        assertEquals(150, right.bottom)
     }
 
     @Test
@@ -490,7 +507,7 @@ class MatchResultPositionCropTest {
     }
 
     @Test
-    fun fallbackThreeAppliesFifteenPercentVerticalPaddingWithoutMovingStructuralCenter() {
+    fun fallbackThreeAppliesTwentyTwoPercentVerticalPaddingWithoutMovingStructuralCenter() {
         val result = availableResult(
             evidence = sparseRightFallbackThreeEvidence(
                 listOf(100 to 140, 160 to 200),
@@ -498,9 +515,60 @@ class MatchResultPositionCropTest {
         )
         val right = result.crops.first { it.position == 6 }
 
-        assertEquals(85, right.bounds.top)
-        assertEquals(215, right.bounds.bottom)
+        assertEquals(78, right.bounds.top)
+        assertEquals(222, right.bounds.bottom)
         assertEquals(150.0, right.structuralCenterYInSource!!, 0.0)
+    }
+
+    @Test
+    fun fallbackThreeMultiRowCropsApproachHundredPixelPitchAfterMidpointClipping() {
+        val result = availableResult(
+            evidence = fallbackThreeEvidence(includeFourthColumn = true),
+        )
+        val positionOne = result.crops.first { it.position == 1 }
+        val positionTwo = result.crops.first { it.position == 2 }
+
+        val positionFive = result.crops.first { it.position == 5 }
+
+        assertEquals(100, positionOne.bounds.bottom - positionOne.bounds.top)
+        assertEquals(100, positionFive.bounds.bottom - positionFive.bounds.top)
+        assertEquals(50, positionOne.bounds.top)
+        assertEquals(150, positionOne.bounds.bottom)
+        assertEquals(450, positionFive.bounds.top)
+        assertEquals(550, positionFive.bounds.bottom)
+        assertTrue(positionOne.bounds.bottom <= 150)
+        assertTrue(positionFive.bounds.top >= 450)
+    }
+
+    @Test
+    fun endpointNormalizationDoesNotTrimOriginalCropContent() {
+        val crops = listOf(
+            MatchResultPositionCrop(
+                position = 1,
+                column = MatchResultPositionColumn.RIGHT,
+                bounds = OcrPixelCropRect(left = 0, top = 40, right = 100, bottom = 60),
+                structuralCenterYInSource = 100.0,
+            ),
+            MatchResultPositionCrop(
+                position = 2,
+                column = MatchResultPositionColumn.RIGHT,
+                bounds = OcrPixelCropRect(left = 0, top = 190, right = 100, bottom = 210),
+                structuralCenterYInSource = 200.0,
+            ),
+        )
+        val applyPadding = MatchResultPositionCropCalculator::class.java.getDeclaredMethod(
+            "applyVerticalPositionPadding",
+            List::class.java,
+            Int::class.javaPrimitiveType,
+            java.lang.Double.TYPE,
+        )
+        applyPadding.isAccessible = true
+
+        @Suppress("UNCHECKED_CAST")
+        val padded = applyPadding.invoke(calculator, crops, 300, 0.15) as List<MatchResultPositionCrop>
+
+        assertEquals(37, padded.first().bounds.top)
+        assertEquals(63, padded.first().bounds.bottom)
     }
 
     @Test
@@ -511,14 +579,14 @@ class MatchResultPositionCropTest {
             ),
         ).crops.first { it.position == 6 }
         assertEquals(0, topClamped.bounds.top)
-        assertEquals(63, topClamped.bounds.bottom)
+        assertEquals(66, topClamped.bounds.bottom)
 
         val bottomClamped = availableResult(
             evidence = sparseRightFallbackThreeEvidence(
                 listOf(645 to 665, 675 to 695),
             ),
         ).crops.first { it.position == 6 }
-        assertEquals(637, bottomClamped.bounds.top)
+        assertEquals(634, bottomClamped.bounds.top)
         assertEquals(700, bottomClamped.bounds.bottom)
     }
 
@@ -822,8 +890,8 @@ class MatchResultPositionCropTest {
         assertTrue("Expected fallback-three geometry, got $result", result is MatchResultPositionCropCalculationResult.Available)
         result as MatchResultPositionCropCalculationResult.Available
         val centered = result.crops.first { it.position == 3 }.bounds
-        assertEquals(254, centered.top)
-        assertEquals(346, centered.bottom)
+        assertEquals(250, centered.top)
+        assertEquals(350, centered.bottom)
     }
 
     @Test
@@ -839,8 +907,8 @@ class MatchResultPositionCropTest {
         assertTrue("Expected fallback-three geometry, got $result", result is MatchResultPositionCropCalculationResult.Available)
         result as MatchResultPositionCropCalculationResult.Available
         val onePlayer = result.crops.first { it.position == 3 }.bounds
-        assertEquals(254, onePlayer.top)
-        assertEquals(346, onePlayer.bottom)
+        assertEquals(250, onePlayer.top)
+        assertEquals(350, onePlayer.bottom)
     }
 
     @Test
@@ -939,8 +1007,8 @@ class MatchResultPositionCropTest {
 
         assertTrue("Expected fallback-three geometry, got $result", result is MatchResultPositionCropCalculationResult.Available)
         result as MatchResultPositionCropCalculationResult.Available
-        assertEquals(54, result.crops.first { it.position == 1 }.bounds.top)
-        assertEquals(104, result.crops.first { it.position == 6 }.bounds.top)
+        assertEquals(50, result.crops.first { it.position == 1 }.bounds.top)
+        assertEquals(100, result.crops.first { it.position == 6 }.bounds.top)
     }
 
     @Test

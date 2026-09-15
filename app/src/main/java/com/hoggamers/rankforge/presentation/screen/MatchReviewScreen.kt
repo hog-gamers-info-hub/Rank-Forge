@@ -3729,6 +3729,15 @@ private fun ResultScreenshotSelector(
         else -> null
     }
     val pagerState = rememberPagerState(pageCount = { selectedPages.size })
+    val innerContentSpacing = if (
+        hasCombinedPositionCropPreviews &&
+        !showSourceScreenshot &&
+        !showOcrDetailsOutsideScreenshotPager
+    ) {
+        0.dp
+    } else {
+        RankForgeSpacing.Small
+    }
 
     LaunchedEffect(selectedRoles) {
         if (selectedRoles.isEmpty()) {
@@ -3753,7 +3762,7 @@ private fun ResultScreenshotSelector(
     Column(
         modifier = Modifier
             .fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+        verticalArrangement = Arrangement.spacedBy(innerContentSpacing),
     ) {
         if (selectedPages.isNotEmpty()) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -4037,6 +4046,11 @@ private data class ResultPositionPageItem(
     val preview: MatchResultPositionCropPreview,
 )
 
+internal fun calculateResultPositionPreviewHeight(
+    availableWidth: Dp,
+    maxCropHeightRatio: Float,
+): Dp = availableWidth * maxCropHeightRatio
+
 @Composable
 private fun ResultPositionCropPreviews(
     items: List<ResultPositionPageItem>,
@@ -4052,18 +4066,20 @@ private fun ResultPositionCropPreviews(
     }
     val previews = items.map { it.preview }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val maxDisplayHeight = maxWidth * (
-            previews
-                .mapNotNull { preview ->
-                    (preview.image as? AndroidMatchResultPositionCropPreviewImage)
-                        ?.bitmap
-                        ?.takeIf { bitmap -> bitmap.height > 0 }
-                        ?.let { bitmap -> bitmap.height.toFloat() / bitmap.width.toFloat() }
-                }
-                .maxOrNull()
-                ?.coerceAtMost(1f)
-                ?: 1f
-            )
+        val maxCropHeightRatio = previews
+            .mapNotNull { preview ->
+                (preview.image as? AndroidMatchResultPositionCropPreviewImage)
+                    ?.bitmap
+                    ?.takeIf { bitmap -> bitmap.height > 0 }
+                    ?.let { bitmap -> bitmap.height.toFloat() / bitmap.width.toFloat() }
+            }
+            .maxOrNull()
+            ?.coerceAtMost(1f)
+            ?: 1f
+        val maxDisplayHeight = calculateResultPositionPreviewHeight(
+            availableWidth = maxWidth,
+            maxCropHeightRatio = maxCropHeightRatio,
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -4083,7 +4099,6 @@ private fun ResultPositionCropPreviews(
                 ) { page ->
                     previews.getOrNull(page)?.let { preview ->
                         (preview.image as? AndroidMatchResultPositionCropPreviewImage)?.let { image ->
-                            val aspectRatio = image.bitmap.width.toFloat() / image.bitmap.height.toFloat()
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
@@ -4106,8 +4121,7 @@ private fun ResultPositionCropPreviews(
                                             contentDescription = null,
                                             contentScale = ContentScale.Fit,
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .aspectRatio(aspectRatio),
+                                                .fillMaxSize(),
                                         )
                                     }
                                 }

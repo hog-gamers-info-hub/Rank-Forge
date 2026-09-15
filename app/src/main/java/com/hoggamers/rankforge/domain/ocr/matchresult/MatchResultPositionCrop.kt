@@ -573,13 +573,15 @@ class MatchResultPositionCropCalculator(
             ) ?: return null
         }
 
-        val crops = left.crops + right.crops
-        val paddedCrops = MatchResultPositionColumn.entries.flatMap { column ->
-            applyVerticalPositionPadding(
-                crops = crops.filter { it.column == column },
-                imageHeight = dimensions.height,
-            )
-        }
+        val paddedCrops = applyVerticalPositionPadding(
+            crops = left.crops,
+            imageHeight = dimensions.height,
+            paddingFraction = left.pitch.verticalPositionPaddingFraction(),
+        ) + applyVerticalPositionPadding(
+            crops = right.crops,
+            imageHeight = dimensions.height,
+            paddingFraction = right.pitch.verticalPositionPaddingFraction(),
+        )
         return MatchResultPositionCropCalculationResult.Available(
             crops = paddedCrops,
             leftRowPitch = left.pitch.pitch,
@@ -1378,12 +1380,13 @@ class MatchResultPositionCropCalculator(
     private fun applyVerticalPositionPadding(
         crops: List<MatchResultPositionCrop>,
         imageHeight: Int,
+        paddingFraction: Double = POSITION_RECT_VERTICAL_PADDING_FRACTION,
     ): List<MatchResultPositionCrop> {
         if (crops.isEmpty()) return crops
         val padded = crops.map { crop ->
             val originalBounds = crop.bounds
             val originalHeight = (originalBounds.bottom - originalBounds.top).toDouble()
-            val verticalPadding = originalHeight * POSITION_RECT_VERTICAL_PADDING_FRACTION
+            val verticalPadding = originalHeight * paddingFraction
             crop.copy(
                 bounds = originalBounds.copy(
                     top = floor(originalBounds.top - verticalPadding)
@@ -1422,8 +1425,60 @@ class MatchResultPositionCropCalculator(
                 )
             }
         }
+        val firstIndex = orderedIndices.firstOrNull()
+        val secondIndex = orderedIndices.getOrNull(1)
+        if (firstIndex != null && secondIndex != null) {
+            val firstCenter = crops[firstIndex].structuralCenterYInSource
+            val secondCenter = crops[secondIndex].structuralCenterYInSource
+            if (
+                firstCenter != null && firstCenter.isFinite() &&
+                secondCenter != null && secondCenter.isFinite() &&
+                secondCenter > firstCenter
+            ) {
+                val inferredTopBoundary = firstCenter - (secondCenter - firstCenter) / 2.0
+                val roundedTopBoundary = ceil(inferredTopBoundary.coerceIn(0.0, imageHeight.toDouble())).toInt()
+                val firstBounds = padded[firstIndex].bounds
+                val originalFirstTop = crops[firstIndex].bounds.top
+                if (firstBounds.top < roundedTopBoundary && originalFirstTop >= inferredTopBoundary) {
+                    padded[firstIndex] = padded[firstIndex].copy(
+                        bounds = firstBounds.copy(top = roundedTopBoundary),
+                    )
+                }
+            }
+        }
+
+        val previousIndex = orderedIndices.getOrNull(orderedIndices.lastIndex - 1)
+        val lastIndex = orderedIndices.lastOrNull()
+        if (previousIndex != null && lastIndex != null) {
+            val previousCenter = crops[previousIndex].structuralCenterYInSource
+            val lastCenter = crops[lastIndex].structuralCenterYInSource
+            if (
+                previousCenter != null && previousCenter.isFinite() &&
+                lastCenter != null && lastCenter.isFinite() &&
+                lastCenter > previousCenter
+            ) {
+                val inferredBottomBoundary = lastCenter + (lastCenter - previousCenter) / 2.0
+                val roundedBottomBoundary = floor(
+                    inferredBottomBoundary.coerceIn(0.0, imageHeight.toDouble()),
+                ).toInt()
+                val lastBounds = padded[lastIndex].bounds
+                val originalLastBottom = crops[lastIndex].bounds.bottom
+                if (lastBounds.bottom > roundedBottomBoundary && originalLastBottom <= inferredBottomBoundary) {
+                    padded[lastIndex] = padded[lastIndex].copy(
+                        bounds = lastBounds.copy(bottom = roundedBottomBoundary),
+                    )
+                }
+            }
+        }
         return padded
     }
+
+    private fun PitchResolution.verticalPositionPaddingFraction(): Double =
+        if (source == MatchResultPositionPitchSource.FALLBACK_THREE_ELIMINATION_GEOMETRY) {
+            FALLBACK_THREE_POSITION_RECT_VERTICAL_PADDING_FRACTION
+        } else {
+            POSITION_RECT_VERTICAL_PADDING_FRACTION
+        }
 
     private fun withPlacementLeftPadding(
         detectedLeft: Int,
@@ -1565,6 +1620,7 @@ class MatchResultPositionCropCalculator(
         const val FALLBACK_THREE_LEFT_OFFSET_MULTIPLIER = 3.0
         const val FALLBACK_THREE_RIGHT_START_PADDING_WIDTH_FACTOR = 0.13
         const val POSITION_RECT_VERTICAL_PADDING_FRACTION = 0.15
+        const val FALLBACK_THREE_POSITION_RECT_VERTICAL_PADDING_FRACTION = 0.22
         const val FALLBACK_THREE_MAX_SAME_ROW_GAP_HEIGHT_FACTOR = 3.0
         const val FALLBACK_THREE_MIN_GAP_FAMILY_GAP_COUNT = 3
         const val FALLBACK_THREE_GAP_FAMILY_MIN_VARIATION_FRACTION = 0.05
