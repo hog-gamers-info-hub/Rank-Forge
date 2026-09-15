@@ -449,7 +449,7 @@
     <string name="match_ocr_review_finalization_warning_count">Warnings requiring confirmation: %1$d.</string>
     <string name="match_ocr_review_finalize_action">Finalize Match</string>
     <string name="match_review_finalize_result_action">Finalize Result</string>
-    <string name="match_review_finalize_blockers_title">Fix errors before finalizing</string>
+    <string name="match_review_finalize_blockers_title">Fix before finalizing</string>
     <string name="match_review_finalize_blocker_result_row">Result row %1$d: %2$s</string>
     <string name="match_review_finalize_blocker_position">Position %1$d: %2$s</string>
     <string name="match_review_finalize_missing_placement">Position is missing.</string>
