@@ -91,6 +91,7 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -121,6 +122,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -1952,6 +1954,7 @@ private fun MatchReviewContent(
             readyOcrUiState?.correctionDraft?.let { correctionDraft ->
                 MatchReviewFinalizeAction(
                     correctionDraft = correctionDraft,
+                    teamNamesBySlot = readyOcrUiState.teamNamesBySlot,
                     finalization = readyOcrUiState.finalization,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
@@ -2471,23 +2474,146 @@ private fun Modifier.pointIqMatchReviewBackground(): Modifier =
 @Composable
 private fun MatchReviewFinalizeAction(
     correctionDraft: MatchOcrReviewCorrectionDraft,
+    teamNamesBySlot: Map<Int, String>,
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
-    ReviewMatchActionButton(
-        label = stringResource(
-            if (finalization.isFinalizing) {
-                R.string.match_ocr_review_finalization_in_progress
-            } else {
-                R.string.match_review_finalize_result_action
-            },
-        ),
-        enabled = correctionDraft.blockerCount == 0 &&
-            !finalization.isFinalizing &&
-            !finalization.isFinalized,
-        onClick = onFinalizeOcrCorrection,
-        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+    val blockers = deriveMatchReviewFinalizationBlockers(
+        correctionDraft = correctionDraft,
+        teamNamesBySlot = teamNamesBySlot,
     )
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        if (blockers.hasBlockers) {
+            Text(text = stringResource(R.string.match_review_finalize_blockers_title))
+            blockers.rowBlockers.forEach { blocker ->
+                val reason = stringResource(blocker.reason.toMatchReviewFinalizeBlockerMessageRes())
+                Text(
+                    text = stringResource(
+                        if (blocker.correctedPlacement != null) {
+                            R.string.match_review_finalize_blocker_position
+                        } else {
+                            R.string.match_review_finalize_blocker_result_row
+                        },
+                        blocker.correctedPlacement ?: blocker.rowIndex + 1,
+                        reason,
+                    ),
+                )
+            }
+            if (blockers.missingTeamNameCount > 0) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.match_review_finalize_missing_team_names,
+                        blockers.missingTeamNameCount,
+                        blockers.missingTeamNameCount,
+                    ),
+                )
+            }
+        }
+        ReviewMatchActionButton(
+            label = stringResource(
+                if (finalization.isFinalizing) {
+                    R.string.match_ocr_review_finalization_in_progress
+                } else {
+                    R.string.match_review_finalize_result_action
+                },
+            ),
+            enabled = !blockers.hasBlockers &&
+                !finalization.isFinalizing &&
+                !finalization.isFinalized,
+            onClick = onFinalizeOcrCorrection,
+            modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+        )
+    }
+}
+
+private data class MatchReviewFinalizationBlockers(
+    val rowBlockers: List<MatchReviewRowBlocker>,
+    val hasCorrectionBlockers: Boolean,
+    val missingTeamNameCount: Int,
+) {
+    val hasBlockers: Boolean
+        get() = hasCorrectionBlockers || missingTeamNameCount > 0
+}
+
+private data class MatchReviewRowBlocker(
+    val rowIndex: Int,
+    val correctedPlacement: Int?,
+    val reason: MatchOcrReviewCorrectionReason,
+)
+
+private fun deriveMatchReviewFinalizationBlockers(
+    correctionDraft: MatchOcrReviewCorrectionDraft,
+    teamNamesBySlot: Map<Int, String>,
+): MatchReviewFinalizationBlockers {
+    val blockerOrder = listOf(
+        MatchOcrReviewCorrectionReason.MISSING_PLACEMENT,
+        MatchOcrReviewCorrectionReason.INVALID_PLACEMENT,
+        MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT,
+        MatchOcrReviewCorrectionReason.MISSING_KILLS,
+        MatchOcrReviewCorrectionReason.INVALID_KILLS,
+        MatchOcrReviewCorrectionReason.NEGATIVE_KILLS,
+        MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT,
+        MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT,
+        MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT,
+        MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT,
+    )
+    val rowBlockers = correctionDraft.rows
+        .sortedBy { it.rowIndex }
+        .flatMap { row ->
+            blockerOrder
+                .filter { reason -> reason in row.validation.blockers }
+                .map { reason ->
+                    MatchReviewRowBlocker(
+                        rowIndex = row.rowIndex,
+                        correctedPlacement = row.placementDraftValue
+                            .trim()
+                            .toIntOrNull()
+                            ?.takeIf { it in TeamSlot.SLOT_NUMBERS },
+                        reason = reason,
+                    )
+                }
+        }
+    val missingTeamNameCount = (
+        correctionDraft.includedRows.size -
+            teamNamesBySlot.values.count { teamName -> teamName.trim().isNotEmpty() }
+        ).coerceAtLeast(0)
+    return MatchReviewFinalizationBlockers(
+        rowBlockers = rowBlockers,
+        hasCorrectionBlockers = correctionDraft.blockerCount > 0,
+        missingTeamNameCount = missingTeamNameCount,
+    )
+}
+
+private fun MatchOcrReviewCorrectionReason.toMatchReviewFinalizeBlockerMessageRes(): Int = when (this) {
+    MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ->
+        R.string.match_review_finalize_missing_placement
+    MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ->
+        R.string.match_review_finalize_invalid_placement
+    MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
+        R.string.match_review_finalize_duplicate_placement
+    MatchOcrReviewCorrectionReason.MISSING_KILLS ->
+        R.string.match_review_finalize_missing_kills
+    MatchOcrReviewCorrectionReason.INVALID_KILLS ->
+        R.string.match_review_finalize_invalid_kills
+    MatchOcrReviewCorrectionReason.NEGATIVE_KILLS ->
+        R.string.match_review_finalize_negative_kills
+    MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ->
+        R.string.match_review_finalize_missing_team_slot
+    MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ->
+        R.string.match_review_finalize_invalid_team_slot
+    MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT ->
+        R.string.match_review_finalize_duplicate_team_slot
+    MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT ->
+        R.string.match_review_finalize_malformed_row
+    MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR,
+    MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR,
+    MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION,
+    MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW,
+    MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE,
+    -> error("Warnings are not finalization blockers")
 }
 
 @Composable
