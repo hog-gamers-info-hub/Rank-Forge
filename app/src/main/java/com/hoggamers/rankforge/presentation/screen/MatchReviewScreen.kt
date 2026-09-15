@@ -319,6 +319,7 @@ fun MatchReviewRoute(
     onOpenResultScreenshotCropWithCandidate: ((String, String, MatchResultScreenshotRole, MatchScreenshotCropCandidate?) -> Unit)? = null,
     onStartCorrection: (String, String) -> Unit,
     onCreateNextMatch: (String, String) -> Unit = { _, _ -> },
+    onOpenDownloadResult: (String, String) -> Unit = { _, _ -> },
     onOpenCustomDesignSetup: (String, String, ResultDownloadScope) -> Unit = { _, _, _ -> },
     matchLobbyScreenshotIntake: @Composable () -> Unit = {},
     lobbyScreenshotIntakeViewModel: MatchLobbyScreenshotIntakeViewModel? = null,
@@ -702,6 +703,7 @@ fun MatchReviewRoute(
         onBackToDetails = viewModel::onBackToDetails,
         onPrepareCsvExport = viewModel::prepareCsvExport,
         onRequestResultDownload = viewModel::requestResultDownload,
+        onOpenDownloadResult = { onOpenDownloadResult(tournamentId, matchId) },
         onOpenCustomDesignSetup = { scope ->
             onOpenCustomDesignSetup(tournamentId, matchId, scope)
         },
@@ -791,6 +793,7 @@ fun MatchReviewScreen(
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit = {},
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit = { _, _ -> },
+    onOpenDownloadResult: () -> Unit = {},
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit = {},
     onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
@@ -866,6 +869,7 @@ fun MatchReviewScreen(
             onBackToDetails = onBackToDetails,
             onPrepareCsvExport = onPrepareCsvExport,
             onRequestResultDownload = onRequestResultDownload,
+            onOpenDownloadResult = onOpenDownloadResult,
             onOpenCustomDesignSetup = onOpenCustomDesignSetup,
             onRequestCustomDesignResultDownload = onRequestCustomDesignResultDownload,
             onFinalize = onFinalize,
@@ -1286,6 +1290,7 @@ private fun MatchReviewContent(
     onBackToDetails: () -> Unit,
     onPrepareCsvExport: () -> Unit,
     onRequestResultDownload: (ResultDownloadScope, ResultExportFileFormat) -> Unit,
+    onOpenDownloadResult: () -> Unit,
     onOpenCustomDesignSetup: (ResultDownloadScope) -> Unit,
     onRequestCustomDesignResultDownload: (ResultDownloadScope, String) -> Unit,
     onFinalize: () -> Unit,
@@ -1339,7 +1344,8 @@ private fun MatchReviewContent(
         selectedResultScope = null
         selectedResultFormat = null
         showResultFormatDialog = false
-        showResultScopeDialog = true
+        showResultScopeDialog = false
+        onOpenDownloadResult()
         showOverflowMenu = false
     }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
