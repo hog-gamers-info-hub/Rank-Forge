@@ -506,6 +506,8 @@ class DownloadResultViewModel @Inject constructor(
 fun DownloadResultRoute(
     tournamentId: String,
     sourceMatchId: String? = null,
+    initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
+    initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
     onBack: () -> Unit,
     onOpenCustomDesignSetup: (String, ResultDownloadScope) -> Unit = { _, _ -> },
     viewModel: DownloadResultViewModel = hiltViewModel(),
@@ -543,6 +545,8 @@ fun DownloadResultRoute(
     DownloadResultScreen(
         matches = uiState.matches,
         onBack = onBack,
+        initialDesign = initialDesign,
+        initialResult = initialResult,
         previewState = previewState,
         downloadState = downloadState,
         hasSavedCustomDesign = hasSavedCustomDesign,
@@ -569,6 +573,8 @@ fun DownloadResultRoute(
 fun DownloadResultScreen(
     matches: List<DownloadResultMatchOption>,
     onBack: () -> Unit,
+    initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
+    initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
     previewState: DownloadResultPreviewState = DownloadResultPreviewState.Idle,
     downloadState: DownloadResultDownloadState = DownloadResultDownloadState.Idle,
     hasSavedCustomDesign: Boolean = false,
@@ -578,16 +584,16 @@ fun DownloadResultScreen(
     onDeleteSavedCustomDesign: () -> Unit = {},
     onDownload: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
 ) {
-    var selectedResult by remember {
-        mutableStateOf<DownloadResultSelection>(DownloadResultSelection.Overall)
+    var selectedResult by remember(initialResult) {
+        mutableStateOf(initialResult)
     }
-    var selectedDesign by remember { mutableStateOf(DownloadResultDesignType.IMAGE) }
+    var selectedDesign by remember(initialDesign) { mutableStateOf(initialDesign) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
 
-    LaunchedEffect(Unit) {
-        onResultSelected(DownloadResultSelection.Overall, DownloadResultDesignType.IMAGE)
-        onDesignSelected(DownloadResultSelection.Overall, DownloadResultDesignType.IMAGE)
+    LaunchedEffect(initialResult, initialDesign) {
+        onResultSelected(initialResult, initialDesign)
+        onDesignSelected(initialResult, initialDesign)
     }
 
     LaunchedEffect(orderedMatches) {

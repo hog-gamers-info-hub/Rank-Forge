@@ -52,7 +52,10 @@ import com.hoggamers.rankforge.presentation.screen.MatchKillViewModel
 import com.hoggamers.rankforge.presentation.screen.MatchReviewRoute
 import com.hoggamers.rankforge.presentation.screen.MatchReviewViewModel
 import com.hoggamers.rankforge.presentation.screen.DownloadResultRoute
+import com.hoggamers.rankforge.presentation.screen.DownloadResultDesignType
+import com.hoggamers.rankforge.presentation.screen.DownloadResultSelection
 import com.hoggamers.rankforge.presentation.screen.CustomDesignSetupRoute
+import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropRoute
 import com.hoggamers.rankforge.presentation.screen.MatchResultScreenshotCropViewModel
@@ -797,6 +800,14 @@ fun RankForgeNavHost(
             DownloadResultRoute(
                 tournamentId = destination.tournamentId,
                 sourceMatchId = destination.matchId,
+                initialDesign = destination.initialDesign
+                    ?.let { runCatching { DownloadResultDesignType.valueOf(it) }.getOrNull() }
+                    ?: DownloadResultDesignType.IMAGE,
+                initialResult = if (destination.initialDownloadScope == ResultDownloadScope.CURRENT_MATCH.name) {
+                    DownloadResultSelection.Match(destination.matchId)
+                } else {
+                    DownloadResultSelection.Overall
+                },
                 onBack = onBackToReview,
                 onOpenCustomDesignSetup = { matchId, scope ->
                     navController.navigate(
@@ -809,8 +820,24 @@ fun RankForgeNavHost(
                 },
             )
         }
-        composable<CustomDesignSetupDestination> {
-            CustomDesignSetupRoute(onBack = { navController.popBackStack() })
+        composable<CustomDesignSetupDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<CustomDesignSetupDestination>()
+            CustomDesignSetupRoute(
+                onBack = { navController.popBackStack() },
+                onSaveSuccessConfirmed = {
+                    val downloadDestination = DownloadResultDestination(
+                        tournamentId = destination.tournamentId,
+                        matchId = destination.matchId,
+                        initialDesign = DownloadResultDesignType.MY_DESIGN.name,
+                        initialDownloadScope = destination.downloadScope,
+                    )
+                    navController.navigate(downloadDestination) {
+                        popUpTo(DownloadResultDestination(destination.tournamentId, destination.matchId)) {
+                            inclusive = true
+                        }
+                    }
+                },
+            )
         }
         composable<MatchLobbyScreenshotCropDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<MatchLobbyScreenshotCropDestination>()

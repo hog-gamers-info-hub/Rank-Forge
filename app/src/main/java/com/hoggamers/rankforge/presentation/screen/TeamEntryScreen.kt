@@ -454,6 +454,33 @@ private fun PointIqTeamNameField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    PointIqUnderlineTextField(
+        value = value,
+        placeholder = placeholder,
+        fieldDescription = fieldDescription,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        leadingContent = {
+            Text(
+                text = slotNumber.toString().padStart(2, '0'),
+                color = it,
+                fontSize = 20.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+    )
+}
+
+@Composable
+internal fun PointIqUnderlineTextField(
+    value: String,
+    placeholder: String,
+    fieldDescription: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    leadingContent: (@Composable (Color) -> Unit)? = null,
+) {
     var isFocused by remember { mutableStateOf(false) }
     val textStyle = TextStyle(
         color = PointIqTeamsFieldText,
@@ -502,14 +529,10 @@ private fun PointIqTeamNameField(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = slotNumber.toString().padStart(2, '0'),
-                        color = lineColor,
-                        fontSize = 20.sp,
-                        lineHeight = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    leadingContent?.let { content ->
+                        content(lineColor)
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
                     Box(
                         modifier = Modifier.weight(1f),
                         contentAlignment = Alignment.CenterStart,
