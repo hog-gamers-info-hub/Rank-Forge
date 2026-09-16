@@ -110,10 +110,13 @@ import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -217,6 +220,8 @@ class DownloadResultViewModel @Inject constructor(
 
     private val _downloadState = MutableStateFlow<DownloadResultDownloadState>(DownloadResultDownloadState.Idle)
     val downloadState: StateFlow<DownloadResultDownloadState> = _downloadState.asStateFlow()
+    private val shareEventsChannel = Channel<ResultShareRequest>(Channel.BUFFERED)
+    val shareEvents: Flow<ResultShareRequest> = shareEventsChannel.receiveAsFlow()
 
     private var loadedTournamentId: String? = null
     private var selectedTournamentId: String? = null
@@ -357,8 +362,16 @@ class DownloadResultViewModel @Inject constructor(
                 )
             }
             when (outcome) {
-                is ResultDownloadExecutionResult.Saved ->
+                is ResultDownloadExecutionResult.Saved -> {
                     _downloadState.value = DownloadResultDownloadState.Success
+                    shareEventsChannel.send(
+                        ResultShareRequest(
+                            uri = outcome.uri,
+                            format = outcome.format,
+                            displayName = outcome.displayName,
+                        ),
+                    )
+                }
                 is ResultDownloadExecutionResult.UserDestinationRequired -> {
                     pendingDocument = PendingDocument(
                         format = outcome.format,
@@ -387,9 +400,20 @@ class DownloadResultViewModel @Inject constructor(
         pendingDocument = null
         viewModelScope.launch {
             _downloadState.value = DownloadResultDownloadState.Saving
-            _downloadState.value = when (resultDocumentWriter.write(uri, document.bytes)) {
-                ResultDocumentWriteResult.Success -> DownloadResultDownloadState.Success
-                is ResultDocumentWriteResult.Failure -> DownloadResultDownloadState.Failure
+            when (val writeResult = resultDocumentWriter.write(uri, document.bytes)) {
+                is ResultDocumentWriteResult.Success -> {
+                    _downloadState.value = DownloadResultDownloadState.Success
+                    shareEventsChannel.send(
+                        ResultShareRequest(
+                            uri = writeResult.uri,
+                            format = document.format,
+                            displayName = document.displayName,
+                        ),
+                    )
+                }
+                is ResultDocumentWriteResult.Failure -> {
+                    _downloadState.value = DownloadResultDownloadState.Failure
+                }
             }
         }
     }
@@ -519,6 +543,7 @@ fun DownloadResultRoute(
     val previewState by viewModel.previewState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val hasSavedCustomDesign by viewModel.hasSavedCustomDesign.collectAsStateWithLifecycle()
+    ResultShareEventEffect(shareEvents = viewModel.shareEvents)
     val lifecycleOwner = LocalLifecycleOwner.current
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("image/png"),

@@ -93,12 +93,15 @@ import java.time.Clock
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
@@ -181,6 +184,8 @@ class MatchReviewViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
+    private val shareEventsChannel = Channel<ResultShareRequest>(Channel.BUFFERED)
+    val shareEvents: Flow<ResultShareRequest> = shareEventsChannel.receiveAsFlow()
     private var loadJob: Job? = null
     private var nextMatchCreationJob: Job? = null
     private var validationJob: Job? = null
@@ -1165,6 +1170,18 @@ class MatchReviewViewModel @Inject constructor(
                     }
                 }
             }
+            if (outcome is ResultDownloadExecutionResult.Saved &&
+                _uiState.value.tournamentId == tournamentId &&
+                _uiState.value.matchId == matchId
+            ) {
+                shareEventsChannel.send(
+                    ResultShareRequest(
+                        uri = outcome.uri,
+                        format = outcome.format,
+                        displayName = outcome.displayName,
+                    ),
+                )
+            }
         }
     }
 
@@ -1278,6 +1295,18 @@ class MatchReviewViewModel @Inject constructor(
                     }
                 }
             }
+            if (outcome is ResultDownloadExecutionResult.Saved &&
+                _uiState.value.tournamentId == tournamentId &&
+                _uiState.value.matchId == matchId
+            ) {
+                shareEventsChannel.send(
+                    ResultShareRequest(
+                        uri = outcome.uri,
+                        format = outcome.format,
+                        displayName = outcome.displayName,
+                    ),
+                )
+            }
         }
     }
 
@@ -1362,7 +1391,7 @@ class MatchReviewViewModel @Inject constructor(
             }
             _uiState.update { current ->
                 when (writeResult) {
-                    ResultDocumentWriteResult.Success -> current.copy(
+                    is ResultDocumentWriteResult.Success -> current.copy(
                         resultDownloadUiState = ResultDownloadUiState.Success(
                             format = pending.format,
                             userSelectedDestination = true,
@@ -1374,6 +1403,15 @@ class MatchReviewViewModel @Inject constructor(
                         ),
                     )
                 }
+            }
+            if (writeResult is ResultDocumentWriteResult.Success) {
+                shareEventsChannel.send(
+                    ResultShareRequest(
+                        uri = writeResult.uri,
+                        format = pending.format,
+                        displayName = pending.displayName,
+                    ),
+                )
             }
         }
     }

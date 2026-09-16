@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.data.export
 
+import android.net.Uri
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchResultExportModelBuildResult
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
@@ -37,6 +38,7 @@ sealed interface ResultDownloadRequest {
 
 sealed interface ResultDownloadExecutionResult {
     data class Saved(
+        val uri: Uri,
         val format: ResultExportFileFormat,
         val displayName: String,
     ) : ResultDownloadExecutionResult
@@ -100,6 +102,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         return try {
             when (val saveResult = resultFileSaver.save(rendered.bytes, rendered.displayName, format)) {
                 is ResultFileSaveResult.Success -> ResultDownloadExecutionResult.Saved(
+                    uri = saveResult.uri,
                     format = format,
                     displayName = saveResult.displayName,
                 )

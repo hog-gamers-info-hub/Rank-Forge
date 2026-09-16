@@ -364,6 +364,7 @@ fun MatchReviewRoute(
         )
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ResultShareEventEffect(shareEvents = viewModel.shareEvents)
     val lobbyUiState by (lobbyScreenshotIntakeViewModel?.uiState
         ?: flowOf(MatchLobbyScreenshotIntakeUiState(isLoading = false)))
         .collectAsStateWithLifecycle(MatchLobbyScreenshotIntakeUiState(isLoading = false))

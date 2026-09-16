@@ -35,7 +35,8 @@ class ResultDocumentWriterTest {
             val result = runBlocking {
                 AndroidResultDocumentWriter(resolver).write(uri, bytes)
             }
-            assertEquals(ResultDocumentWriteResult.Success, result)
+            assertTrue(result is ResultDocumentWriteResult.Success)
+            assertEquals(uri, (result as ResultDocumentWriteResult.Success).uri)
             resolver.update(
                 uri,
                 ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },

@@ -78,6 +78,7 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
                 ResultExportFileFormat.PNG,
             )) {
                 is ResultFileSaveResult.Success -> ResultDownloadExecutionResult.Saved(
+                    uri = saveResult.uri,
                     format = ResultExportFileFormat.PNG,
                     displayName = saveResult.displayName,
                 )
