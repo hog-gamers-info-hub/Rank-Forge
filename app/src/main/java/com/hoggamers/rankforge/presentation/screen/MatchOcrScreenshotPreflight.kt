@@ -41,7 +41,8 @@ fun classifyOcrScreenshotPreflight(
                 hasLinkedAsset = slot.hasLinkedAsset,
                 hasConfirmedCrop = slot.hasConfirmedCrop,
                 isLocalFileMissing = slot.isLocalFileMissing,
-                isBusy = slot.isBusy,
+                isProcessing = slot.isOcrProcessing,
+                requireConfirmedCrop = true,
             )
         }
         issue?.let {
@@ -65,7 +66,8 @@ fun classifyOcrScreenshotPreflight(
                 hasLinkedAsset = slot.hasLinkedAsset,
                 hasConfirmedCrop = slot.hasConfirmedCrop,
                 isLocalFileMissing = slot.isLocalFileMissing,
-                isBusy = slot.isBusy,
+                isProcessing = slot.isOcrProcessing,
+                requireConfirmedCrop = false,
             )
         }
         issue?.let {
@@ -83,11 +85,27 @@ private fun classifyIssue(
     hasLinkedAsset: Boolean,
     hasConfirmedCrop: Boolean,
     isLocalFileMissing: Boolean,
-    isBusy: Boolean,
+    isProcessing: Boolean,
+    requireConfirmedCrop: Boolean,
 ): OcrScreenshotPreflightIssue? = when {
-    isBusy -> OcrScreenshotPreflightIssue.PROCESSING
+    isProcessing -> OcrScreenshotPreflightIssue.PROCESSING
     !hasLinkedAsset -> OcrScreenshotPreflightIssue.MISSING
     isLocalFileMissing -> OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING
-    !hasConfirmedCrop -> OcrScreenshotPreflightIssue.CROP_REQUIRED
+    requireConfirmedCrop && !hasConfirmedCrop -> OcrScreenshotPreflightIssue.CROP_REQUIRED
     else -> null
 }
+
+private val MatchLobbyScreenshotSlotUiState.isOcrProcessing: Boolean
+    get() = isPhotoPickerLaunchPending ||
+        isPhotoPickerRequestActive ||
+        isValidationInProgress ||
+        isDuplicateDetectionInProgress ||
+        isPreservationInProgress ||
+        (isPreviewPreparationInProgress && !hasConfirmedCrop)
+
+private val MatchResultScreenshotSlotUiState.isOcrProcessing: Boolean
+    get() = isPhotoPickerLaunchPending ||
+        isPhotoPickerRequestActive ||
+        isValidationInProgress ||
+        isDuplicateDetectionInProgress ||
+        isPreservationInProgress
