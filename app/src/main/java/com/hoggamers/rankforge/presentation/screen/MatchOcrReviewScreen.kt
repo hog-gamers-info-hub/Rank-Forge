@@ -700,6 +700,7 @@ internal fun MatchOcrReviewCompactRow(
     compactResetTestTag: String? = null,
     correctionDraft: MatchOcrReviewRowCorrectionDraft? = null,
     correctionEnabled: Boolean = false,
+    showPlayerRows: Boolean = true,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
 ) {
     val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
@@ -748,25 +749,97 @@ internal fun MatchOcrReviewCompactRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(previewRow.position)),
         )
-        CompactPlayerRow(
-            previewRow = previewRow,
-            row = 1,
-            leftSlot = 1,
-            rightSlot = 3,
-            correctionDraft = correctionDraft,
-            correctionEnabled = correctionEnabled,
-            onPlayerKillsChanged = onPlayerKillsChanged,
+        if (showPlayerRows) {
+            CompactPlayerRow(
+                previewRow = previewRow,
+                row = 1,
+                leftSlot = 1,
+                rightSlot = 3,
+                correctionDraft = correctionDraft,
+                correctionEnabled = correctionEnabled,
+                onPlayerKillsChanged = onPlayerKillsChanged,
+            )
+            CompactPlayerRow(
+                previewRow = previewRow,
+                row = 2,
+                leftSlot = 2,
+                rightSlot = 4,
+                correctionDraft = correctionDraft,
+                correctionEnabled = correctionEnabled,
+                onPlayerKillsChanged = onPlayerKillsChanged,
+            )
+        } else {
+            Spacer(modifier = Modifier.height(12.dp))
+            MatchOcrReviewFinalizedResultFields(
+                placement = placement,
+                kills = reviewRow?.detectedKillDisplayValue.orEmpty(),
+                slot = slotLabel,
+                placementTestTag = MatchOcrReviewTestTags.placementInput(previewRow.position - 1),
+                killsTestTag = MatchOcrReviewTestTags.killsInput(previewRow.position - 1),
+                slotTestTag = MatchOcrReviewTestTags.teamSlotInput(previewRow.position - 1),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchOcrReviewFinalizedResultFields(
+    placement: String,
+    kills: String,
+    slot: String,
+    placementTestTag: String,
+    killsTestTag: String,
+    slotTestTag: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+    ) {
+        MatchOcrReviewFinalizedResultField(
+            label = stringResource(R.string.match_ocr_review_correction_position_short_label),
+            value = placement,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(placementTestTag),
         )
-        CompactPlayerRow(
-            previewRow = previewRow,
-            row = 2,
-            leftSlot = 2,
-            rightSlot = 4,
-            correctionDraft = correctionDraft,
-            correctionEnabled = correctionEnabled,
-            onPlayerKillsChanged = onPlayerKillsChanged,
+        MatchOcrReviewFinalizedResultField(
+            label = stringResource(R.string.match_ocr_review_correction_kills_short_label),
+            value = kills,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(killsTestTag),
+        )
+        MatchOcrReviewFinalizedResultField(
+            label = stringResource(R.string.match_ocr_review_correction_slot_short_label),
+            value = slot,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(slotTestTag),
         )
     }
+}
+
+@Composable
+private fun MatchOcrReviewFinalizedResultField(
+    label: String,
+    value: String,
+    modifier: Modifier,
+) {
+    CompactOcrNumberField(
+        value = value,
+        onValueChange = {},
+        enabled = true,
+        readOnly = true,
+        label = {
+            Text(
+                text = label,
+                color = PointIqOcrReviewSubtitle,
+            )
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = false,
+        modifier = modifier,
+    )
 }
 
 private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPreviewRowUiState =
@@ -1071,6 +1144,7 @@ internal fun MatchOcrReviewRow(
     showBlockerDetails: Boolean = true,
     compactResetAction: Boolean = false,
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
+    showPlayerRows: Boolean = true,
 ) {
     val compactResetCallback: (() -> Unit)? = if (compactResetAction && correctionDraft != null) {
         { onResetRowCorrection(row.rowIndex) }
@@ -1106,6 +1180,7 @@ internal fun MatchOcrReviewRow(
                 compactResetTestTag = compactResetTestTag,
                 correctionDraft = correctionDraft,
                 correctionEnabled = correctionEnabled,
+                showPlayerRows = showPlayerRows,
                 onPlayerKillsChanged = onPlayerKillsChanged,
             )
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
@@ -1131,6 +1206,7 @@ internal fun MatchOcrReviewRow(
                 compactResetTestTag = compactResetTestTag,
                 correctionDraft = correctionDraft,
                 correctionEnabled = correctionEnabled,
+                showPlayerRows = showPlayerRows,
                 onPlayerKillsChanged = onPlayerKillsChanged,
             )
         }
@@ -1315,6 +1391,7 @@ private fun CompactOcrNumberField(
     value: String,
     onValueChange: (String) -> Unit,
     enabled: Boolean,
+    readOnly: Boolean = false,
     label: @Composable () -> Unit,
     keyboardOptions: KeyboardOptions,
     isError: Boolean,
@@ -1352,6 +1429,7 @@ private fun CompactOcrNumberField(
         onValueChange = onValueChange,
         modifier = modifier.height(50.dp),
         enabled = enabled,
+        readOnly = readOnly,
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor),
         keyboardOptions = keyboardOptions,

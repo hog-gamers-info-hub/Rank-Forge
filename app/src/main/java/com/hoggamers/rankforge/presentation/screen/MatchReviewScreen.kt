@@ -1444,7 +1444,24 @@ private fun MatchReviewContent(
         !hasResultScreenshotSelection &&
         !hasProcessedLobbyOcrData
     val resultOcrDetailsContent: @Composable () -> Unit = {
-        if (shouldShowInlineOcrDetails && !manualModeOpened) {
+        if (uiState.status == MatchStatus.FINALIZED) {
+            uiState.toFinalizedResultOcrUiState()?.let { finalizedUiState ->
+                MatchReviewResultRowsPagerContent(
+                    uiState = finalizedUiState,
+                    onPlacementChanged = onOcrPlacementChanged,
+                    onKillsChanged = onOcrKillsChanged,
+                    onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                    onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                    onExcludeOcrRow = onExcludeOcrRow,
+                    onResetRowCorrection = onOcrResetRowCorrection,
+                    onResetAllCorrections = onOcrResetAllCorrections,
+                    onFinalizeOcrCorrection = onOcrFinalize,
+                    onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                    onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                    showPlayerRows = false,
+                )
+            }
+        } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
             MatchReviewResultOcrDetailsContent(
                 uiState = ocrUiState,
                 onPlacementChanged = onOcrPlacementChanged,
@@ -3396,6 +3413,64 @@ internal fun shouldShowInlineOcrDetailsForCache(
 ): Boolean = cacheAvailability == MatchOcrCacheAvailability.READY ||
     ocrUiState.hasDisplayableResultOcrData()
 
+private fun MatchReviewUiState.toFinalizedResultOcrUiState(): MatchOcrReviewUiState.Ready? {
+    val tournamentId = tournamentId ?: return null
+    val matchId = matchId ?: return null
+    val finalizedRows = rows.asSequence()
+        .filter { row ->
+            row.teamSlotNumber in TeamSlot.SLOT_NUMBERS &&
+                row.teamSlotNumber in finalizedParticipantSlotNumbers
+        }
+        .mapNotNull { row ->
+            val placement = row.placementInput.trim().toIntOrNull()?.takeIf { it >= 1 }
+            val kills = row.killsInput.trim().toIntOrNull()?.takeIf { it >= 0 }
+            if (placement == null || kills == null) {
+                null
+            } else {
+                MatchOcrReviewRowUiState(
+                    rowIndex = placement - 1,
+                    expectedPlacementLabel = placement.toString(),
+                    detectedPlacementDisplayValue = placement.toString(),
+                    placementStatusLabel = "Finalized result",
+                    detectedKillDisplayValue = kills.toString(),
+                    killStatusLabel = "Finalized result",
+                    detectedPlayerNameEvidenceLabel = "Unavailable",
+                    playerNameStatusLabel = "Unavailable",
+                    suggestedTeamSlotDisplayValue = row.teamSlotNumber.toString(),
+                    confidenceScoreDisplayValue = "Unavailable",
+                    confidenceTierLabel = "Unavailable",
+                    assignmentSafetyStatusLabel = "Unavailable",
+                    topThreeSuggestionsSummary = emptyList(),
+                    warningLabels = emptyList(),
+                    blockerLabels = emptyList(),
+                    severity = MatchOcrReviewSeverity.INFORMATIONAL,
+                    originalParsedPlacementValue = placement,
+                    originalParsedKillValue = kills,
+                    originalSuggestedTeamSlot = row.teamSlotNumber,
+                )
+            }
+        }
+        .sortedBy { row -> row.rowIndex }
+        .toList()
+    if (finalizedRows.isEmpty()) return null
+
+    return MatchOcrReviewUiState.Ready(
+        tournamentId = tournamentId,
+        matchId = matchId,
+        rowCount = finalizedRows.size,
+        rows = finalizedRows,
+        blockerCount = 0,
+        warningCount = 0,
+        safeRowCount = finalizedRows.size,
+        manualRequiredRowCount = 0,
+        reviewRequiredRowCount = 0,
+        manualReviewRequired = false,
+        hasUnavailableEvidence = false,
+        finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+        teamNamesBySlot = rows.associate { row -> row.teamSlotNumber to row.teamName },
+    )
+}
+
 @Composable
 private fun MatchReviewResultOcrDetailsContent(
     uiState: MatchOcrReviewUiState,
@@ -3630,6 +3705,7 @@ private fun MatchReviewResultRowsPagerContent(
     onFinalizeOcrCorrection: () -> Unit,
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
+    showPlayerRows: Boolean = true,
 ) {
     val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
         ?.rows
@@ -3706,6 +3782,7 @@ private fun MatchReviewResultRowsPagerContent(
                             compactFieldRow = true,
                             showBlockerDetails = false,
                             compactResetAction = true,
+                            showPlayerRows = showPlayerRows,
                         )
                     }
                 }
