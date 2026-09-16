@@ -2048,15 +2048,6 @@ private fun MatchReviewContent(
                 )
             }
         }
-        if (!showLegacyManualReviewContent &&
-            readyOcrUiState?.finalization?.showWarningConfirmation == true
-        ) {
-            MatchOcrReviewFinalizeWarningDialog(
-                warningCount = readyOcrUiState.correctionDraft?.warningCount ?: 0,
-                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-            )
-        }
         if (uiState.isEditable &&
             (showLegacyManualReviewContent || !hasDisplayableResultOcrData)
         ) {
