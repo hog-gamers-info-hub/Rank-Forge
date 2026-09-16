@@ -691,14 +691,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             return
         }
         if (correctionDraft.warningCount > 0) {
-            _uiState.updateReady {
-                it.copy(
-                    finalization = it.finalization.copy(
-                        showWarningConfirmation = true,
-                        error = null,
-                    ),
-                )
-            }
+            finalizeCurrentCorrectionDraft(warningConfirmationAccepted = true)
             return
         }
 

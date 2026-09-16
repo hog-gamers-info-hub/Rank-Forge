@@ -25,7 +25,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -655,13 +654,6 @@ internal fun MatchOcrReviewResultContent(
                     },
                 )
             }
-    }
-    if (uiState.finalization.showWarningConfirmation) {
-        MatchOcrReviewFinalizeWarningDialog(
-            warningCount = uiState.correctionDraft?.warningCount ?: 0,
-            onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
-            onDismissFinalizeWarnings = onDismissFinalizeWarnings,
-        )
     }
 }
 
@@ -1688,43 +1680,6 @@ internal fun MatchOcrReviewFinalizeAction(
             fontWeight = FontWeight.SemiBold,
         )
     }
-}
-
-@Composable
-internal fun MatchOcrReviewFinalizeWarningDialog(
-    warningCount: Int,
-    onConfirmFinalizeWarnings: () -> Unit,
-    onDismissFinalizeWarnings: () -> Unit,
-) {
-    AlertDialog(
-        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG),
-        onDismissRequest = onDismissFinalizeWarnings,
-        title = { Text(text = stringResource(R.string.match_ocr_review_finalize_warning_title)) },
-        text = {
-            Text(
-                text = stringResource(
-                    R.string.match_ocr_review_finalize_warning_message,
-                    warningCount,
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirmFinalizeWarnings,
-                modifier = Modifier.testTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS),
-            ) {
-                Text(text = stringResource(R.string.match_ocr_review_confirm_finalize_action))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismissFinalizeWarnings,
-                modifier = Modifier.testTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS),
-            ) {
-                Text(text = stringResource(R.string.cancel_action))
-            }
-        },
-    )
 }
 
 @Composable
