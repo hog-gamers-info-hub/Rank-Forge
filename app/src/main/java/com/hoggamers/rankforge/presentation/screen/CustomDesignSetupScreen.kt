@@ -129,6 +129,9 @@ private val CustomDesignPointIqCtaDeepBlue = Color(0xFF1675F0)
 private val CustomDesignPointIqCtaBorder = Color(0xFF4AAFF7)
 private val CustomDesignPointIqFieldInactive = Color(0xFF7D9DCE)
 private val CustomDesignPointIqCyan = Color(0xFF17C9F2)
+private const val WATCH_DEMO_URL =
+    "https://youtube.com/shorts/uM3RpjI8fdA?feature=share"
+private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
 
 private data class CustomDesignSelectableTextColor(
     val hex: String,
@@ -152,6 +155,7 @@ fun CustomDesignSetupRoute(
     onSaveSuccessConfirmed: () -> Unit = {},
     viewModel: CustomDesignSetupViewModel = hiltViewModel(),
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -196,6 +200,14 @@ fun CustomDesignSetupRoute(
         onDeleteActionRequested = viewModel::deleteSavedCustomDesign,
         onManualColumnXChanged = viewModel::setManualColumnX,
         onManualRowYChanged = viewModel::setManualRowY,
+        onWatchDemo = {
+            launchWithFallback(
+                primary = buildSocialAppIntent(WATCH_DEMO_URL, YOUTUBE_PACKAGE),
+                fallback = buildBrowserIntent(WATCH_DEMO_URL),
+            ) { intent ->
+                context.startActivity(intent)
+            }
+        },
     )
 }
 
