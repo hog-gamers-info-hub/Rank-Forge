@@ -16,6 +16,11 @@ import com.hoggamers.rankforge.data.local.identityOrNull
 import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPanelPpOcrRuntime
 import com.hoggamers.rankforge.data.ocr.matchlobby.NoOpLobbyPanelPpOcrRuntime
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -50,6 +55,15 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
     private val cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = NoOpMatchLobbyScreenshotAssetCloudDataSource(),
     private val authRepository: AuthRepository,
     private val lobbyPanelPpOcrRuntime: LobbyPanelPpOcrRuntime = NoOpLobbyPanelPpOcrRuntime,
+    private val lobbyAutoCropProposer: MatchLobbyAutoCropProposer = MatchLobbyAutoCropProposer {
+        MatchLobbyAutoCropResult.NoProposal
+    },
+    private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction =
+        MatchLobbyScreenshotUploadCheckpointAction {
+            MatchLobbyScreenshotUploadCheckpointResult.Skipped
+        },
+    private val lobbyCropReconciliationScheduler: ScreenshotReconciliationScheduler =
+        ScreenshotReconciliationScheduler(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchLobbyScreenshotIntakeUiState())
     val uiState: StateFlow<MatchLobbyScreenshotIntakeUiState> = _uiState.asStateFlow()
@@ -296,6 +310,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         _uiState.update {
             it.replaceSlot(index) { current ->
                 current.copy(
+                    isPreviewPreparationInProgress = true,
+                    previewPreparationFingerprint = null,
                     isValidationInProgress = true,
                     imageValidationError = null,
                     duplicateError = null,
@@ -333,6 +349,8 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     slots = state.slots.map { slot ->
                         if (slot.index in request.targetSlotIndices.take(selectedUris.size)) {
                             slot.copy(
+                                isPreviewPreparationInProgress = true,
+                                previewPreparationFingerprint = null,
                                 isValidationInProgress = true,
                                 imageValidationError = null,
                                 duplicateError = null,
@@ -349,55 +367,33 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         activeBatchGeneration = generation
         activeBatchTargetSlots = targetSlots
         batchJob = viewModelScope.launch {
-            var earlyCropNavigationRequested = false
             try {
-                val successfulSlots = buildList {
+                val manualCropSlots = buildList {
                     assignments.forEach { (index, uri) ->
-                        if (processSelection(
-                                index = index,
-                                selectedUri = uri,
-                                generation = generation,
-                                requestCropNavigation = false,
-                                wasEmptyBeforeSelection = wasEmptyBeforeSelection[index] == true,
-                                onValidatedCandidate = { validatedIndex, candidate ->
-                                    pendingLobbyScreenshotCropCandidates[validatedIndex] = candidate
-                                    if (!earlyCropNavigationRequested) {
-                                        earlyCropNavigationRequested = true
-                                        _uiState.update {
-                                            it.copy(
-                                                pendingCropBatch = MatchLobbyScreenshotCropBatch(
-                                                    currentSlotIndex = validatedIndex,
-                                                    remainingSlotIndices = assignments
-                                                        .dropWhile { (assignedIndex, _) -> assignedIndex != validatedIndex }
-                                                        .drop(1)
-                                                        .map { (assignedIndex, _) -> assignedIndex },
-                                                ),
-                                                pendingCropNavigationSlotIndex = validatedIndex,
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        ) {
-                            add(index)
-                        }
-                    }
-                }
-                if (generation == intakeGeneration && successfulSlots.isNotEmpty()) {
-                    _uiState.update {
-                        it.copy(
-                            pendingCropBatch = MatchLobbyScreenshotCropBatch(
-                                currentSlotIndex = successfulSlots.first(),
-                                remainingSlotIndices = successfulSlots.drop(1),
-                            ),
-                            pendingCropNavigationSlotIndex = if (earlyCropNavigationRequested) {
-                                it.pendingCropNavigationSlotIndex
-                            } else {
-                                successfulSlots.first()
+                        processSelection(
+                            index = index,
+                            selectedUri = uri,
+                            generation = generation,
+                            requestCropNavigation = false,
+                            wasEmptyBeforeSelection = wasEmptyBeforeSelection[index] == true,
+                            onManualCropRequired = { manualIndex, candidate ->
+                                pendingLobbyScreenshotCropCandidates[manualIndex] = candidate
+                                add(manualIndex)
                             },
                         )
                     }
-                    pendingNewLobbyScreenshotCropSlots += successfulSlots.filter {
+                }
+                if (generation == intakeGeneration && manualCropSlots.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            pendingCropBatch = MatchLobbyScreenshotCropBatch(
+                                currentSlotIndex = manualCropSlots.first(),
+                                remainingSlotIndices = manualCropSlots.drop(1),
+                            ),
+                            pendingCropNavigationSlotIndex = manualCropSlots.first(),
+                        )
+                    }
+                    pendingNewLobbyScreenshotCropSlots += manualCropSlots.filter {
                         wasEmptyBeforeSelection[it] == true
                     }
                 }
@@ -409,6 +405,21 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
 
     fun onCropNavigationHandled() {
         _uiState.update { it.copy(pendingCropNavigationSlotIndex = null) }
+    }
+
+    fun onPreviewPreparationFinished(index: Int, fingerprint: String?) {
+        _uiState.update { state ->
+            state.replaceSlot(index) { slot ->
+                if (slot.isPreviewPreparationInProgress && slot.fingerprint == fingerprint) {
+                    slot.copy(
+                        isPreviewPreparationInProgress = false,
+                        previewPreparationFingerprint = null,
+                    )
+                } else {
+                    slot
+                }
+            }
+        }
     }
 
     fun consumePendingLobbyScreenshotCropCandidate(index: Int): MatchScreenshotCropCandidate? =
@@ -579,6 +590,14 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val matchId = current.matchId ?: return
         val fingerprint = slot.fingerprint
         val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, index)
+        if (slot.isPreviewPreparationInProgress) {
+            updateSlot(index) {
+                it.copy(
+                    isPreviewPreparationInProgress = false,
+                    previewPreparationFingerprint = null,
+                )
+            }
+        }
         viewModelScope.launch {
             val cleanup = if (slot.localRelativePath != null) {
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
@@ -625,7 +644,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         generation: Long,
         requestCropNavigation: Boolean = true,
         wasEmptyBeforeSelection: Boolean = false,
-        onValidatedCandidate: ((Int, MatchScreenshotCropCandidate) -> Unit)? = null,
+        onManualCropRequired: ((Int, MatchScreenshotCropCandidate) -> Unit)? = null,
     ): Boolean {
         if (generation != intakeGeneration) return false
         val current = _uiState.value
@@ -640,6 +659,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     isValidationInProgress = false,
                     isDuplicateDetectionInProgress = false,
                     isPreservationInProgress = false,
+                    isPreviewPreparationInProgress = false,
                     preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING,
                 )
             }
@@ -651,14 +671,26 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             throw cancellation
         } catch (_: Throwable) {
             if (generation != intakeGeneration) return false
-            updateSlot(index) { it.copy(isValidationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
+            updateSlot(index) {
+                it.copy(
+                    isValidationInProgress = false,
+                    isPreviewPreparationInProgress = false,
+                    preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED,
+                )
+            }
             return false
         }
         val validation = imageCandidateValidator.validate(selectedUri)
         if (generation != intakeGeneration) return false
         when (validation) {
             is ImageCandidateValidationResult.Invalid -> {
-                updateSlot(index) { it.copy(isValidationInProgress = false, imageValidationError = validation.error) }
+                updateSlot(index) {
+                    it.copy(
+                        isValidationInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        imageValidationError = validation.error,
+                    )
+                }
                 return false
             }
             ImageCandidateValidationResult.Valid -> Unit
@@ -668,7 +700,11 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         if (generation != intakeGeneration) return false
         if (metadata == null || metadata.mimeType.isNullOrBlank()) {
             updateSlot(index) {
-                it.copy(isValidationInProgress = false, imageValidationError = ImageValidationError.UNREADABLE_URI)
+                it.copy(
+                    isValidationInProgress = false,
+                    isPreviewPreparationInProgress = false,
+                    imageValidationError = ImageValidationError.UNREADABLE_URI,
+                )
             }
             return false
         }
@@ -678,15 +714,6 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             width = metadata.width,
             height = metadata.height,
         )
-        if (requestCropNavigation) {
-            pendingLobbyScreenshotCropCandidates[index] = candidate
-            _uiState.update { it.copy(pendingCropNavigationSlotIndex = index) }
-            if (wasEmptyBeforeSelection) {
-                pendingNewLobbyScreenshotCropSlots += index
-            }
-        } else {
-            onValidatedCandidate?.invoke(index, candidate)
-        }
         val duplicateResult = duplicateDetector.link(identity, selectedUri, existing?.fingerprint)
         if (generation != intakeGeneration) return false
         var sameIdentityRecovery = false
@@ -694,6 +721,13 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             MatchLobbyScreenshotDuplicateLinkResult.SameIdentity -> {
                 if (existing?.isLocalFileMissing != true) {
                     updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false) }
+                    requestManualLobbyCrop(
+                        identity = identity,
+                        candidate = candidate,
+                        wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+                        requestCropNavigation = requestCropNavigation,
+                        onManualCropRequired = onManualCropRequired,
+                    )
                     return true
                 }
                 sameIdentityRecovery = true
@@ -701,6 +735,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     updateSlot(index) {
                         it.copy(
                             isDuplicateDetectionInProgress = false,
+                            isPreviewPreparationInProgress = false,
                             duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT,
                         )
                     }
@@ -715,15 +750,33 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         }
         when (duplicateResult) {
             MatchLobbyScreenshotDuplicateLinkResult.FingerprintFailure -> {
-                updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT) }
+                updateSlot(index) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT,
+                    )
+                }
                 return false
             }
             MatchLobbyScreenshotDuplicateLinkResult.StateConflict -> {
-                updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT) }
+                updateSlot(index) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        duplicateError = MatchLobbyScreenshotDuplicateError.STATE_CONFLICT,
+                    )
+                }
                 return false
             }
             is MatchLobbyScreenshotDuplicateLinkResult.LinkedToOtherIdentity -> {
-                updateSlot(index) { it.copy(isDuplicateDetectionInProgress = false, duplicateError = MatchLobbyScreenshotDuplicateError.USED_BY_ANOTHER_LOBBY_SCREENSHOT) }
+                updateSlot(index) {
+                    it.copy(
+                        isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        duplicateError = MatchLobbyScreenshotDuplicateError.USED_BY_ANOTHER_LOBBY_SCREENSHOT,
+                    )
+                }
                 return false
             }
             MatchLobbyScreenshotDuplicateLinkResult.SameIdentity,
@@ -744,7 +797,13 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             is LocalImagePreservationResult.PreservedWithCleanupFailure -> preservation.file
             is LocalImagePreservationResult.Failed -> {
                 if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
-                updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.PRESERVATION_FAILED) }
+                updateSlot(index) {
+                    it.copy(
+                        isPreservationInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        preservationError = MatchLobbyScreenshotPreservationError.PRESERVATION_FAILED,
+                    )
+                }
                 return false
             }
         }
@@ -757,7 +816,13 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
             localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
             if (generation != intakeGeneration) return false
-            updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING) }
+            updateSlot(index) {
+                it.copy(
+                    isPreservationInProgress = false,
+                    isPreviewPreparationInProgress = false,
+                    preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING,
+                )
+            }
             return false
         }
         val now = clock.millis()
@@ -808,9 +873,22 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                         isLocalFileMissing = false,
                          confirmedCrop = if (sameIdentityRecovery) it.confirmedCrop else null,
                          cropProfileId = if (sameIdentityRecovery) it.cropProfileId else null,
-                        isPreservationInProgress = false,
-                        preservationError = null,
+                         isPreservationInProgress = false,
+                         isPreviewPreparationInProgress = true,
+                         previewPreparationFingerprint = fingerprint,
+                         preservationError = null,
                     )
+                }
+                when (attemptAutomaticLobbyCrop(identity, asset, generation)) {
+                    AutomaticLobbyCropOutcome.Saved -> Unit
+                    AutomaticLobbyCropOutcome.ManualCropRequired -> requestManualLobbyCrop(
+                        identity = identity,
+                        candidate = candidate,
+                        wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+                        requestCropNavigation = requestCropNavigation,
+                        onManualCropRequired = onManualCropRequired,
+                    )
+                    AutomaticLobbyCropOutcome.Stale -> return false
                 }
                 if (retainCloudState) {
                     syncRetainedCloudMetadata(identity, fingerprint, ownerId)
@@ -824,17 +902,155 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             -> {
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
-                updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
+                updateSlot(index) {
+                    it.copy(
+                        isPreservationInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED,
+                    )
+                }
                 false
             }
             is MatchLobbyScreenshotAssetSaveResult.DuplicateFingerprint -> {
                 localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
                 if (generation != intakeGeneration) return false
                 if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
-                updateSlot(index) { it.copy(isPreservationInProgress = false, preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED) }
+                updateSlot(index) {
+                    it.copy(
+                        isPreservationInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        preservationError = MatchLobbyScreenshotPreservationError.SAVE_FAILED,
+                    )
+                }
                 false
             }
         }
+    }
+
+    private suspend fun attemptAutomaticLobbyCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        asset: MatchLobbyScreenshotAssetEntity,
+        generation: Long,
+    ): AutomaticLobbyCropOutcome {
+        if (generation != intakeGeneration) return AutomaticLobbyCropOutcome.Stale
+        if (asset.hasConfirmedCrop()) return AutomaticLobbyCropOutcome.ManualCropRequired
+        val localFile = localImagePreserver.resolveRelativePath(asset.localRelativePath)
+            ?.takeIf { file -> runCatching { file.isFile && file.length() > 0L }.getOrDefault(false) }
+            ?: return AutomaticLobbyCropOutcome.ManualCropRequired
+        val proposedCrop = try {
+            (lobbyAutoCropProposer.propose(localFile) as? MatchLobbyAutoCropResult.Proposed)?.crop
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return AutomaticLobbyCropOutcome.ManualCropRequired
+        if (
+            OcrCropValidator.validate(
+                crop = proposedCrop,
+                profile = OcrCropValidationProfiles.Lobby,
+            ) !is OcrCropValidationResult.Valid
+        ) {
+            return AutomaticLobbyCropOutcome.ManualCropRequired
+        }
+        if (generation != intakeGeneration) return AutomaticLobbyCropOutcome.Stale
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
+            ?.takeIf { it.isNotBlank() }
+            ?: return AutomaticLobbyCropOutcome.ManualCropRequired
+        val match = try {
+            observeMatches(identity.tournamentId).first().firstOrNull { it.id == identity.matchId }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        if (match?.status != MatchStatus.DRAFT) return AutomaticLobbyCropOutcome.Stale
+        val latest = try {
+            assetRepository.getByIdentityAndOwner(identity, ownerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        if (latest == null || !latest.matchesAutomaticCropSource(asset) || generation != intakeGeneration) {
+            return AutomaticLobbyCropOutcome.Stale
+        }
+        val cropPersisted = try {
+            assetRepository.persistConfirmedCropIfGenerationMatchesByOwner(
+                identity = identity,
+                ownerUserId = ownerUserId,
+                sha256 = asset.sha256,
+                expectedRevision = asset.revision,
+                crop = proposedCrop,
+                updatedAt = clock.millis(),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            false
+        }
+        if (!cropPersisted) {
+            return if (generation == intakeGeneration) {
+                AutomaticLobbyCropOutcome.ManualCropRequired
+            } else {
+                AutomaticLobbyCropOutcome.Stale
+            }
+        }
+        lobbyCropReconciliationScheduler.schedule(ownerUserId, screenshotOwnerProvider) {
+            lobbyUploadCheckpoint.run(identity, ownerUserId)
+        }
+        return AutomaticLobbyCropOutcome.Saved
+    }
+
+    private fun requestManualLobbyCrop(
+        identity: MatchLobbyScreenshotIdentity,
+        candidate: MatchScreenshotCropCandidate,
+        wasEmptyBeforeSelection: Boolean,
+        requestCropNavigation: Boolean,
+        onManualCropRequired: ((Int, MatchScreenshotCropCandidate) -> Unit)?,
+    ) {
+        if (!requestCropNavigation) {
+            onManualCropRequired?.invoke(identity.lobbyScreenshotIndex, candidate)
+            return
+        }
+        pendingLobbyScreenshotCropCandidates[identity.lobbyScreenshotIndex] = candidate
+        _uiState.update { state ->
+            if (
+                state.tournamentId == identity.tournamentId &&
+                state.matchId == identity.matchId &&
+                state.slot(identity.lobbyScreenshotIndex)?.hasLinkedAsset == true
+            ) {
+                state.copy(pendingCropNavigationSlotIndex = identity.lobbyScreenshotIndex)
+            } else {
+                state
+            }
+        }
+        if (_uiState.value.pendingCropNavigationSlotIndex != identity.lobbyScreenshotIndex) {
+            pendingLobbyScreenshotCropCandidates.remove(identity.lobbyScreenshotIndex)
+        } else if (wasEmptyBeforeSelection) {
+            pendingNewLobbyScreenshotCropSlots += identity.lobbyScreenshotIndex
+        }
+    }
+
+    private fun MatchLobbyScreenshotAssetEntity.hasConfirmedCrop(): Boolean =
+        cropProfileId != null && cropLeft != null && cropTop != null && cropRight != null && cropBottom != null
+
+    private fun MatchLobbyScreenshotAssetEntity.matchesAutomaticCropSource(
+        source: MatchLobbyScreenshotAssetEntity,
+    ): Boolean =
+        tournamentId == source.tournamentId &&
+            matchId == source.matchId &&
+            lobbyScreenshotIndex == source.lobbyScreenshotIndex &&
+            sha256 == source.sha256 &&
+            localRelativePath == source.localRelativePath &&
+            originalWidth == source.originalWidth &&
+            originalHeight == source.originalHeight &&
+            byteSize == source.byteSize &&
+            !hasConfirmedCrop()
+
+    private enum class AutomaticLobbyCropOutcome {
+        Saved,
+        ManualCropRequired,
+        Stale,
     }
 
     private suspend fun syncRetainedCloudMetadata(
@@ -906,7 +1122,28 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         return state.copy(
             slots = state.slots.map { restored ->
                 val transient = current.slot(restored.index)
-                if (transient?.isBusy == true) transient else restored
+                if (transient?.isBusy == true) {
+                    if (
+                        transient.isPreviewPreparationInProgress &&
+                        transient.fingerprint != null &&
+                        restored.fingerprint == transient.fingerprint
+                    ) {
+                        transient.copy(
+                            selectedScreenshotUri = restored.selectedScreenshotUri,
+                            selectedScreenshotMimeType = restored.selectedScreenshotMimeType,
+                            selectedScreenshotWidth = restored.selectedScreenshotWidth,
+                            selectedScreenshotHeight = restored.selectedScreenshotHeight,
+                            fingerprint = restored.fingerprint,
+                            localRelativePath = restored.localRelativePath,
+                            hasLinkedAsset = restored.hasLinkedAsset,
+                            isLocalFileMissing = restored.isLocalFileMissing,
+                            confirmedCrop = restored.confirmedCrop,
+                            cropProfileId = restored.cropProfileId,
+                        )
+                    } else {
+                        transient
+                    }
+                } else restored
             },
             pendingCropNavigationSlotIndex = current.pendingCropNavigationSlotIndex,
             pendingCropBatch = current.pendingCropBatch,
@@ -925,12 +1162,17 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val generation = activeBatchGeneration ?: return
         val targetSlots = activeBatchTargetSlots
         batchJob?.cancel()
-        clearBatchTransientStateIfOwned(generation, targetSlots)
+        clearBatchTransientStateIfOwned(
+            generation = generation,
+            targetSlots = targetSlots,
+            clearPreviewPreparation = true,
+        )
     }
 
     private fun clearBatchTransientStateIfOwned(
         generation: Long,
         targetSlots: Set<Int>,
+        clearPreviewPreparation: Boolean = false,
     ) {
         if (activeBatchGeneration != generation) return
         activeBatchGeneration = null
@@ -943,6 +1185,16 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                             isValidationInProgress = false,
                             isDuplicateDetectionInProgress = false,
                             isPreservationInProgress = false,
+                            isPreviewPreparationInProgress = if (clearPreviewPreparation) {
+                                false
+                            } else {
+                                slot.isPreviewPreparationInProgress
+                            },
+                            previewPreparationFingerprint = if (clearPreviewPreparation) {
+                                null
+                            } else {
+                                slot.previewPreparationFingerprint
+                            },
                         )
                     } else {
                         slot

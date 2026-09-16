@@ -11,6 +11,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -157,6 +158,57 @@ class MatchResultScreenshotAssetDaoTest {
                 stored,
                 dao.readByMatchAndRole(stored.matchId, stored.screenshotRole),
             )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun conditionalOwnerCropPersistenceRejectsReplacementAndAdvancesMatchingGeneration() = runBlocking {
+        val database = createDatabase()
+        try {
+            insertTournamentAndMatches(database)
+            database.tournamentDao().assignOwnerIfUnassigned("tournament-1", "owner-1")
+            val repository = RoomMatchResultScreenshotAssetRepository(
+                database.matchResultScreenshotAssetDao(),
+                database,
+            )
+            val identity = identity("match-1", MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+            val first = asset(role = MatchResultScreenshotRole.MATCH_RESULT_UPPER, sha256 = "a".repeat(64))
+            assertEquals(MatchResultScreenshotAssetSaveResult.Saved, repository.saveOrReplaceByOwner(first, "owner-1"))
+            val firstGeneration = repository.getByIdentity(identity)!!
+            val replacement = asset(role = MatchResultScreenshotRole.MATCH_RESULT_UPPER, sha256 = "b".repeat(64))
+                .copy(revision = firstGeneration.revision + 1)
+            assertEquals(MatchResultScreenshotAssetSaveResult.Saved, repository.saveOrReplaceByOwner(replacement, "owner-1"))
+
+            val crop = OcrNormalizedCropRect(0.1, 0.2, 0.9, 0.8)
+            assertFalse(
+                repository.persistConfirmedCropIfGenerationMatchesByOwner(
+                    identity = identity,
+                    ownerUserId = "owner-1",
+                    sha256 = firstGeneration.sha256,
+                    expectedRevision = firstGeneration.revision,
+                    crop = crop,
+                    updatedAt = 3,
+                ),
+            )
+            val current = repository.getByIdentity(identity)!!
+            assertEquals(replacement.sha256, current.sha256)
+            assertNull(current.cropProfileId)
+
+            assertTrue(
+                repository.persistConfirmedCropIfGenerationMatchesByOwner(
+                    identity = identity,
+                    ownerUserId = "owner-1",
+                    sha256 = current.sha256,
+                    expectedRevision = current.revision,
+                    crop = crop,
+                    updatedAt = 4,
+                ),
+            )
+            val cropped = repository.getByIdentity(identity)!!
+            assertEquals(crop.left, cropped.cropLeft)
+            assertEquals(current.revision + 1, cropped.revision)
         } finally {
             database.close()
         }

@@ -173,6 +173,15 @@ interface MatchResultScreenshotAssetRepository {
         updatedAt: Long,
     ): MatchResultScreenshotCropSaveResult = MatchResultScreenshotCropSaveResult.AuthenticationRequired
 
+    suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+        identity: MatchResultScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun clearConfirmedCrop(
         identity: MatchResultScreenshotIdentity,
         updatedAt: Long,
@@ -581,6 +590,47 @@ class RoomMatchResultScreenshotAssetRepository @Inject constructor(
         if (ownerUserId.isBlank()) return MatchResultScreenshotCropSaveResult.AuthenticationRequired
         if (database == null) return MatchResultScreenshotCropSaveResult.AuthenticationRequired
         return persistConfirmedCropOwnerInternal(identity, ownerUserId, crop, updatedAt)
+    }
+
+    override suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+        identity: MatchResultScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
+        database!!.withTransaction {
+            if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                return@withTransaction false
+            }
+            if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                return@withTransaction false
+            }
+            val asset = dao.readByMatchAndRoleAndOwner(identity.matchId, identity.role.name, ownerUserId)
+                ?: return@withTransaction false
+            if (asset.identityOrNull() != identity) return@withTransaction false
+            val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
+                ?: return@withTransaction false
+            if (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.MatchResult) !is OcrCropValidationResult.Valid) {
+                return@withTransaction false
+            }
+            dao.updateConfirmedCropIfGenerationMatches(
+                tournamentId = identity.tournamentId,
+                matchId = identity.matchId,
+                screenshotRole = identity.role.name,
+                sha256 = sha256,
+                expectedRevision = expectedRevision,
+                cropProfileId = OcrCropValidationProfiles.MatchResult.id,
+                cropLeft = crop.left,
+                cropTop = crop.top,
+                cropRight = crop.right,
+                cropBottom = crop.bottom,
+                updatedAt = updatedAt,
+            ) > 0
+        }
     }
 
     private suspend fun persistConfirmedCropOwnerInternal(

@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
 import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -34,13 +36,18 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import java.io.File
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -133,6 +140,192 @@ class MatchReviewResultScreenshotViewModelTest {
             MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP,
             viewModel.uiState.value.navigation,
         )
+    }
+
+    @Test
+    fun proposedResultCropPersistsWithoutManualNavigation() = runTest {
+        val uri = "content://picker/auto-result"
+        val crop = OcrNormalizedCropRect(0.1, 0.2, 0.9, 0.8)
+        val assetRepository = FakeMatchResultScreenshotAssetRepository()
+        val viewModel = viewModel(
+            bytesByUri = mapOf(uri to byteArrayOf(1, 2, 3)),
+            assetRepository = assetRepository,
+            autoCropProposer = MatchResultAutoCropProposer {
+                MatchResultAutoCropResult.Proposed(crop)
+            },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, uri)
+        advanceUntilIdle()
+
+        val saved = assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
+        assertEquals(crop.left, saved.cropLeft!!, 0.0)
+        assertEquals(crop.bottom, saved.cropBottom!!, 0.0)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun missingResultAutoProposalKeepsOriginalAndRequestsManualCrop() = runTest {
+        val uri = "content://picker/no-result-proposal"
+        val assetRepository = FakeMatchResultScreenshotAssetRepository()
+        val viewModel = viewModel(
+            bytesByUri = mapOf(uri to byteArrayOf(4, 5, 6)),
+            assetRepository = assetRepository,
+            autoCropProposer = MatchResultAutoCropProposer { MatchResultAutoCropResult.OcrFailed },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, uri)
+        advanceUntilIdle()
+
+        val saved = assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
+        assertNull(saved.cropLeft)
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun resultCropPersistenceFailureFallsBackToManualCrop() = runTest {
+        val uri = "content://picker/result-crop-save-failure"
+        val assetRepository = FakeMatchResultScreenshotAssetRepository().apply {
+            confirmedCropResult = MatchResultScreenshotCropSaveResult.InvalidCrop
+        }
+        val viewModel = viewModel(
+            bytesByUri = mapOf(uri to byteArrayOf(7, 8, 9)),
+            assetRepository = assetRepository,
+            autoCropProposer = MatchResultAutoCropProposer {
+                MatchResultAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
+            },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, uri)
+        advanceUntilIdle()
+
+        assertNotNull(assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER)))
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun resultBatchQueuesOnlyRolesWithoutAutomaticCrops() = runTest {
+        val upperUri = "content://picker/auto-upper"
+        val lowerUri = "content://picker/manual-lower"
+        var proposals = 0
+        val viewModel = viewModel(
+            bytesByUri = mapOf(upperUri to byteArrayOf(1), lowerUri to byteArrayOf(2)),
+            assetRepository = FakeMatchResultScreenshotAssetRepository(),
+            autoCropProposer = MatchResultAutoCropProposer {
+                proposals += 1
+                if (proposals == 1) {
+                    MatchResultAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
+                } else {
+                    MatchResultAutoCropResult.OcrFailed
+                }
+            },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf(upperUri, lowerUri))
+        advanceUntilIdle()
+
+        assertEquals(
+            MatchResultScreenshotCropBatch(MatchResultScreenshotRole.MATCH_RESULT_LOWER, emptyList()),
+            viewModel.uiState.value.pendingResultScreenshotCropBatch,
+        )
+        assertEquals(MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP, viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun resultBatchWithAutomaticCropsDoesNotOpenManualCrop() = runTest {
+        val viewModel = viewModel(
+            bytesByUri = mapOf(
+                "content://picker/auto-upper" to byteArrayOf(1),
+                "content://picker/auto-lower" to byteArrayOf(2),
+            ),
+            assetRepository = FakeMatchResultScreenshotAssetRepository(),
+            autoCropProposer = MatchResultAutoCropProposer {
+                MatchResultAutoCropResult.Proposed(OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9))
+            },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestMultiPhotoPicker()
+        viewModel.onMultiPhotoPickerResult(listOf("content://picker/auto-upper", "content://picker/auto-lower"))
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingResultScreenshotCropBatch)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
+    @Test
+    fun staleAutomaticResultCropCannotPersistOrScheduleCheckpointAfterReplacement() = runTest {
+        val firstUri = "content://picker/stale-result-first"
+        val replacementUri = "content://picker/stale-result-replacement"
+        val firstPersistenceStarted = CompletableDeferred<Unit>()
+        val releaseFirstPersistence = CompletableDeferred<Unit>()
+        val assetRepository = FakeMatchResultScreenshotAssetRepository().apply {
+            conditionalPersistGate = ConditionalPersistGate(
+                sha256 = byteArrayOf(1).sha256(),
+                started = firstPersistenceStarted,
+                release = releaseFirstPersistence,
+            )
+        }
+        var proposals = 0
+        val checkpointCalls = mutableListOf<MatchResultScreenshotIdentity>()
+        val viewModel = viewModel(
+            bytesByUri = mapOf(firstUri to byteArrayOf(1), replacementUri to byteArrayOf(2)),
+            assetRepository = assetRepository,
+            autoCropProposer = MatchResultAutoCropProposer {
+                proposals += 1
+                MatchResultAutoCropResult.Proposed(
+                    if (proposals == 1) {
+                        OcrNormalizedCropRect(0.1, 0.1, 0.4, 0.4)
+                    } else {
+                        OcrNormalizedCropRect(0.2, 0.2, 0.9, 0.9)
+                    },
+                )
+            },
+            resultUploadCheckpoint = object : MatchResultScreenshotUploadCheckpointAction {
+                override suspend fun run(identity: MatchResultScreenshotIdentity) =
+                    MatchResultScreenshotUploadCheckpointResult.Completed
+
+                override suspend fun run(
+                    identity: MatchResultScreenshotIdentity,
+                    expectedOwnerUserId: String,
+                ): MatchResultScreenshotUploadCheckpointResult {
+                    checkpointCalls += identity
+                    return MatchResultScreenshotUploadCheckpointResult.Completed
+                }
+            },
+        )
+
+        viewModel.load(RESULT_TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, firstUri)
+        advanceUntilIdle()
+        assertTrue(firstPersistenceStarted.isCompleted)
+
+        viewModel.requestPhotoPicker(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        viewModel.onPhotoPickerResult(MatchResultScreenshotRole.MATCH_RESULT_UPPER, replacementUri)
+        advanceUntilIdle()
+        releaseFirstPersistence.complete(Unit)
+        advanceUntilIdle()
+
+        val current = assetRepository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
+        assertEquals(byteArrayOf(2).sha256(), current.sha256)
+        assertEquals(0.2, current.cropLeft!!, 0.0)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(1, checkpointCalls.size)
     }
 
     @Test
@@ -478,6 +671,12 @@ class MatchReviewResultScreenshotViewModelTest {
         bytesByUri: Map<String, ByteArray>,
         assetRepository: FakeMatchResultScreenshotAssetRepository,
         uploader: RecordingMatchResultScreenshotStorageUploader = RecordingMatchResultScreenshotStorageUploader(),
+        autoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
+            MatchResultAutoCropResult.OcrFailed
+        },
+        resultUploadCheckpoint: MatchResultScreenshotUploadCheckpointAction = MatchResultScreenshotUploadCheckpointAction {
+            MatchResultScreenshotUploadCheckpointResult.Skipped
+        },
     ): MatchReviewViewModel {
         val fingerprintGenerator = ImageSourceFingerprintGenerator(
             ImageSourceStreamOpener { uri -> bytesByUri.getValue(uri).inputStream() },
@@ -512,6 +711,8 @@ class MatchReviewResultScreenshotViewModelTest {
             matchResultScreenshotStorageUploader = uploader,
             matchResultScreenshotAssetRepository = assetRepository,
             matchResultScreenshotAssetCloudDataSource = RecordingMatchResultScreenshotAssetCloudDataSource(),
+            resultAutoCropProposer = autoCropProposer,
+            resultUploadCheckpoint = resultUploadCheckpoint,
             screenshotOwnerProvider = ownerProvider,
         )
     }
@@ -564,6 +765,9 @@ class MatchReviewResultScreenshotViewModelTest {
         initialAssets: List<MatchResultScreenshotAssetEntity> = emptyList(),
     ) : MatchResultScreenshotAssetRepository {
         private val assets = MutableStateFlow(initialAssets)
+        var confirmedCropResult: MatchResultScreenshotCropSaveResult =
+            MatchResultScreenshotCropSaveResult.Saved
+        var conditionalPersistGate: ConditionalPersistGate? = null
 
         override fun observeByMatchId(matchId: String): Flow<List<MatchResultScreenshotAssetEntity>> =
             assets.map { list -> list.filter { it.matchId == matchId } }
@@ -659,6 +863,7 @@ class MatchReviewResultScreenshotViewModelTest {
             crop: OcrNormalizedCropRect,
             updatedAt: Long,
         ): MatchResultScreenshotCropSaveResult {
+            if (confirmedCropResult != MatchResultScreenshotCropSaveResult.Saved) return confirmedCropResult
             val existing = getByIdentity(identity) ?: return MatchResultScreenshotCropSaveResult.MissingAsset
             assets.value = assets.value.filterNot { it.matches(identity) } + existing.copy(
                 cropProfileId = "match-result",
@@ -683,6 +888,29 @@ class MatchReviewResultScreenshotViewModelTest {
             } else {
                 persistConfirmedCrop(identity, crop, updatedAt)
             }
+
+        override suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+            identity: MatchResultScreenshotIdentity,
+            ownerUserId: String,
+            sha256: String,
+            expectedRevision: Long,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): Boolean {
+            conditionalPersistGate
+                ?.takeIf { it.sha256 == sha256 }
+                ?.let { gate ->
+                    gate.started.complete(Unit)
+                    try {
+                        gate.release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { gate.release.await() }
+                    }
+                }
+            val asset = getByIdentityAndOwner(identity, ownerUserId) ?: return false
+            if (asset.sha256 != sha256 || asset.revision != expectedRevision) return false
+            return persistConfirmedCrop(identity, crop, updatedAt) == MatchResultScreenshotCropSaveResult.Saved
+        }
 
         override suspend fun clearConfirmedCrop(
             identity: MatchResultScreenshotIdentity,
@@ -712,4 +940,14 @@ class MatchReviewResultScreenshotViewModelTest {
                 screenshotRole == identity.role.name &&
                 screenshotKind == OcrScreenshotKind.MATCH_RESULT.name
     }
+
+    private data class ConditionalPersistGate(
+        val sha256: String,
+        val started: CompletableDeferred<Unit>,
+        val release: CompletableDeferred<Unit>,
+    )
+
+    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString(separator = "") { "%02x".format(it) }
 }

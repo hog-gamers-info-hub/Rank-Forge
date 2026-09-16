@@ -131,6 +131,8 @@ data class MatchResultScreenshotSlotUiState(
     val duplicateError: ScreenshotDuplicateError? = null,
     val duplicateInfo: ScreenshotDuplicateInfo? = null,
     val isPreservationInProgress: Boolean = false,
+    val isPreviewPreparationInProgress: Boolean = false,
+    val previewPreparationFingerprint: String? = null,
     val preservationError: ScreenshotPreservationError? = null,
     val isUploadInProgress: Boolean = false,
     val uploadError: ScreenshotUploadError? = null,
@@ -145,6 +147,7 @@ data class MatchResultScreenshotSlotUiState(
             isValidationInProgress ||
             isDuplicateDetectionInProgress ||
             isPreservationInProgress ||
+            isPreviewPreparationInProgress ||
             isUploadInProgress
 }
 
