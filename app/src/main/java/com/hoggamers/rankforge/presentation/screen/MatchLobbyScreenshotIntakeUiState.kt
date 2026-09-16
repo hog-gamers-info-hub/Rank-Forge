@@ -48,6 +48,8 @@ data class MatchLobbyScreenshotSlotUiState(
     val isValidationInProgress: Boolean = false,
     val isDuplicateDetectionInProgress: Boolean = false,
     val isPreservationInProgress: Boolean = false,
+    val isPreviewPreparationInProgress: Boolean = false,
+    val previewPreparationFingerprint: String? = null,
     val photoPickerError: MatchLobbyScreenshotIntakeError? = null,
     val imageValidationError: ImageValidationError? = null,
     val duplicateError: MatchLobbyScreenshotDuplicateError? = null,
@@ -61,7 +63,8 @@ data class MatchLobbyScreenshotSlotUiState(
             isPhotoPickerRequestActive ||
             isValidationInProgress ||
             isDuplicateDetectionInProgress ||
-            isPreservationInProgress
+            isPreservationInProgress ||
+            isPreviewPreparationInProgress
 }
 
 data class MatchLobbyScreenshotCropBatch(

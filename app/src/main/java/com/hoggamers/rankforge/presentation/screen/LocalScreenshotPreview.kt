@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
@@ -114,6 +115,8 @@ fun LocalScreenshotPreview(
     sourceImageHeight: Int? = null,
     modifier: Modifier = Modifier,
     testTag: String? = null,
+    onReady: () -> Unit = {},
+    onFailed: () -> Unit = {},
 ) {
     val preview by produceState(
         initialValue = LocalScreenshotPreviewRenderState(LocalScreenshotPreviewState.Loading),
@@ -137,6 +140,13 @@ fun LocalScreenshotPreview(
                 state = localScreenshotPreviewStateAfterDecode(decoded != null),
                 decoded = decoded,
             )
+        }
+    }
+    LaunchedEffect(preview.state) {
+        when (preview.state) {
+            LocalScreenshotPreviewState.Ready -> onReady()
+            LocalScreenshotPreviewState.Failed -> onFailed()
+            LocalScreenshotPreviewState.Loading -> Unit
         }
     }
     val previewModifier = modifier

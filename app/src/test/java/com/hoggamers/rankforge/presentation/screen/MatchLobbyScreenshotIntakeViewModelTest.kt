@@ -14,6 +14,8 @@ import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetEntity
 import com.hoggamers.rankforge.data.local.TournamentLobbyTemplateAssetRepository
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchlobby.MatchLobbyAutoCropResult
 import com.hoggamers.rankforge.domain.auth.*
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -159,6 +161,106 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 2) != null)
         assertEquals(2, viewModel.uiState.value.pendingCropNavigationSlotIndex)
         assertTrue(viewModel.uiState.value.slot(2)?.hasLinkedAsset == true)
+    }
+
+    @Test
+    fun proposedLobbyCropPersistsWithoutManualNavigation() = runTest {
+        val crop = OcrNormalizedCropRect(0.1, 0.2, 0.9, 0.8)
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-auto-crop").toFile()),
+            bytesByUri = mapOf("picked" to byteArrayOf(1, 2, 3)),
+            autoCropProposer = MatchLobbyAutoCropProposer {
+                MatchLobbyAutoCropResult.Proposed(crop)
+            },
+        )
+
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        val saved = lobbyRepository.readByMatchAndIndex(matchId, 1)!!
+        assertEquals(crop.left, saved.cropLeft!!, 0.0)
+        assertEquals(crop.bottom, saved.cropBottom!!, 0.0)
+        assertNull(viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun unavailableLobbyAutoCropKeepsOriginalAndRequestsManualCrop() = runTest {
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-no-auto-crop").toFile()),
+            autoCropProposer = MatchLobbyAutoCropProposer { MatchLobbyAutoCropResult.NoProposal },
+        )
+
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult("picked")
+        advanceUntilIdle()
+
+        assertTrue(lobbyRepository.readByMatchAndIndex(matchId, 1) != null)
+        assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
+    }
+
+    @Test
+    fun staleAutomaticLobbyCropCannotPersistOrScheduleCheckpointAfterReplacement() = runTest {
+        val firstUri = "lobby-stale-first"
+        val replacementUri = "lobby-stale-replacement"
+        val firstPersistenceStarted = CompletableDeferred<Unit>()
+        val releaseFirstPersistence = CompletableDeferred<Unit>()
+        lobbyRepository.conditionalPersistGate = ConditionalPersistGate(
+            sha256 = byteArrayOf(1).sha256(),
+            started = firstPersistenceStarted,
+            release = releaseFirstPersistence,
+        )
+        var proposals = 0
+        val checkpointCalls = mutableListOf<MatchLobbyScreenshotIdentity>()
+        val viewModel = viewModel(
+            preserver(Files.createTempDirectory("lobby-stale-auto-crop").toFile()),
+            bytesByUri = mapOf(firstUri to byteArrayOf(1), replacementUri to byteArrayOf(2)),
+            autoCropProposer = MatchLobbyAutoCropProposer {
+                proposals += 1
+                MatchLobbyAutoCropResult.Proposed(
+                    if (proposals == 1) {
+                        OcrNormalizedCropRect(0.1, 0.1, 0.4, 0.4)
+                    } else {
+                        OcrNormalizedCropRect(0.2, 0.2, 0.9, 0.9)
+                    },
+                )
+            },
+            lobbyUploadCheckpoint = object : MatchLobbyScreenshotUploadCheckpointAction {
+                override suspend fun run(identity: MatchLobbyScreenshotIdentity) =
+                    MatchLobbyScreenshotUploadCheckpointResult.Completed
+
+                override suspend fun run(
+                    identity: MatchLobbyScreenshotIdentity,
+                    expectedOwnerUserId: String,
+                ): MatchLobbyScreenshotUploadCheckpointResult {
+                    checkpointCalls += identity
+                    return MatchLobbyScreenshotUploadCheckpointResult.Completed
+                }
+            },
+        )
+
+        viewModel.load(tournamentId, matchId)
+        advanceUntilIdle()
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult(firstUri)
+        advanceUntilIdle()
+        assertTrue(firstPersistenceStarted.isCompleted)
+
+        viewModel.requestPhotoPicker(1)
+        viewModel.onPhotoPickerResult(replacementUri)
+        advanceUntilIdle()
+        releaseFirstPersistence.complete(Unit)
+        advanceUntilIdle()
+
+        val current = lobbyRepository.readByMatchAndIndex(matchId, 1)!!
+        assertEquals(byteArrayOf(2).sha256(), current.sha256)
+        assertEquals(0.2, current.cropLeft!!, 0.0)
+        assertNull(viewModel.uiState.value.pendingCropNavigationSlotIndex)
+        assertEquals(1, checkpointCalls.size)
     }
 
     @Test
@@ -1174,6 +1276,12 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         cloudDataSource: MatchLobbyScreenshotAssetCloudDataSource = FakeCloudDataSource(),
         bytesByUri: Map<String, ByteArray> = mapOf("picked" to byteArrayOf(1, 2, 3)),
         ownerProvider: ScreenshotOwnerProvider? = null,
+        autoCropProposer: MatchLobbyAutoCropProposer = MatchLobbyAutoCropProposer {
+            MatchLobbyAutoCropResult.NoProposal
+        },
+        lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction {
+            MatchLobbyScreenshotUploadCheckpointResult.Skipped
+        },
     ) = MatchLobbyScreenshotIntakeViewModel(
         observeMatches = ObserveMatchesUseCase(tournamentRepository),
         imageCandidateValidator = validator,
@@ -1210,6 +1318,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         templateRepository = templateRepository,
         cloudDataSource = cloudDataSource,
         authRepository = testAuthRepository,
+        lobbyAutoCropProposer = autoCropProposer,
+        lobbyUploadCheckpoint = lobbyUploadCheckpoint,
     ).also { createdViewModels += it }
 
     private fun preserver(
@@ -1293,6 +1403,9 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     private class FakeLobbyRepository : MatchLobbyScreenshotAssetRepository {
         private val state = MutableStateFlow<List<MatchLobbyScreenshotAssetEntity>>(emptyList())
         val saveResults = mutableListOf<MatchLobbyScreenshotAssetSaveResult>()
+        var confirmedCropResult: MatchLobbyScreenshotCropSaveResult =
+            MatchLobbyScreenshotCropSaveResult.Saved
+        var conditionalPersistGate: ConditionalPersistGate? = null
         override fun observeByMatchId(matchId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
             state.asStateFlow().let { flow -> kotlinx.coroutines.flow.flow { flow.collect { emit(it.filter { asset -> asset.matchId == matchId }) } } }
         override fun observeByMatchIdAndOwner(matchId: String, ownerUserId: String): Flow<List<MatchLobbyScreenshotAssetEntity>> =
@@ -1324,15 +1437,62 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             return true
         }
         override suspend fun deleteByMatchId(matchId: String) { state.value = state.value.filterNot { it.matchId == matchId } }
-        override suspend fun persistConfirmedCrop(identity: MatchLobbyScreenshotIdentity, crop: OcrNormalizedCropRect, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
+        override suspend fun persistConfirmedCrop(
+            identity: MatchLobbyScreenshotIdentity,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): MatchLobbyScreenshotCropSaveResult {
+            if (confirmedCropResult != MatchLobbyScreenshotCropSaveResult.Saved) return confirmedCropResult
+            val existing = getByIdentity(identity) ?: return MatchLobbyScreenshotCropSaveResult.MissingAsset
+            state.value = state.value.filterNot { asset ->
+                asset.matchId == identity.matchId && asset.lobbyScreenshotIndex == identity.lobbyScreenshotIndex
+            } + existing.copy(
+                cropProfileId = "lobby",
+                cropLeft = crop.left,
+                cropTop = crop.top,
+                cropRight = crop.right,
+                cropBottom = crop.bottom,
+                updatedAt = updatedAt,
+                revision = existing.revision + 1,
+            )
+            return MatchLobbyScreenshotCropSaveResult.Saved
+        }
         override suspend fun persistConfirmedCropByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, crop: OcrNormalizedCropRect, updatedAt: Long) =
             if (getByIdentityAndOwner(identity, ownerUserId) == null) MatchLobbyScreenshotCropSaveResult.MissingAsset else persistConfirmedCrop(identity, crop, updatedAt)
+        override suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+            identity: MatchLobbyScreenshotIdentity,
+            ownerUserId: String,
+            sha256: String,
+            expectedRevision: Long,
+            crop: OcrNormalizedCropRect,
+            updatedAt: Long,
+        ): Boolean {
+            conditionalPersistGate
+                ?.takeIf { it.sha256 == sha256 }
+                ?.let { gate ->
+                    gate.started.complete(Unit)
+                    try {
+                        gate.release.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { gate.release.await() }
+                    }
+                }
+            val asset = getByIdentityAndOwner(identity, ownerUserId) ?: return false
+            if (asset.sha256 != sha256 || asset.revision != expectedRevision) return false
+            return persistConfirmedCrop(identity, crop, updatedAt) == MatchLobbyScreenshotCropSaveResult.Saved
+        }
         override suspend fun clearConfirmedCrop(identity: MatchLobbyScreenshotIdentity, updatedAt: Long) = MatchLobbyScreenshotCropSaveResult.Saved
         override suspend fun clearConfirmedCropByOwner(identity: MatchLobbyScreenshotIdentity, ownerUserId: String, updatedAt: Long) =
             if (getByIdentityAndOwner(identity, ownerUserId) == null) MatchLobbyScreenshotCropSaveResult.MissingAsset else clearConfirmedCrop(identity, updatedAt)
         fun readByMatchAndIndex(matchId: String, index: Int) = state.value.firstOrNull { it.matchId == matchId && it.lobbyScreenshotIndex == index }
         fun snapshot() = state.value
     }
+
+    private data class ConditionalPersistGate(
+        val sha256: String,
+        val started: CompletableDeferred<Unit>,
+        val release: CompletableDeferred<Unit>,
+    )
 
     private class FakeCloudDataSource : MatchLobbyScreenshotAssetCloudDataSource {
         val upserts = mutableListOf<MatchLobbyScreenshotAssetEntity>()

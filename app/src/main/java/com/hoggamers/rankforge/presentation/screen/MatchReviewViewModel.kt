@@ -78,6 +78,12 @@ import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
+import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
+import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -141,6 +147,15 @@ class MatchReviewViewModel @Inject constructor(
         NoOpScreenshotMetadataCloudDataSource(),
     private val matchResultScreenshotAssetCloudDataSource: MatchResultScreenshotAssetCloudDataSource =
         NoOpMatchResultScreenshotAssetCloudDataSource(),
+    private val resultAutoCropProposer: MatchResultAutoCropProposer = MatchResultAutoCropProposer {
+        MatchResultAutoCropResult.OcrFailed
+    },
+    private val resultUploadCheckpoint: MatchResultScreenshotUploadCheckpointAction =
+        MatchResultScreenshotUploadCheckpointAction {
+            MatchResultScreenshotUploadCheckpointResult.Skipped
+        },
+    private val resultCropReconciliationScheduler: ScreenshotReconciliationScheduler =
+        ScreenshotReconciliationScheduler(),
     private val matchResultPositionCropPreviewGenerator: MatchResultPositionCropPreviewGenerator =
         NoOpMatchResultPositionCropPreviewGenerator,
     private val resultDownloadCoordinator: ResultDownloadCoordinator =
@@ -974,6 +989,12 @@ class MatchReviewViewModel @Inject constructor(
         pendingResultScreenshotCropCandidateUris.remove(role)
         clearPendingResultCropBatch(tournamentId, matchId)
         if (wasPendingNewSelection) {
+            _uiState.updateSlot(role) {
+                it.copy(
+                    isPreviewPreparationInProgress = false,
+                    previewPreparationFingerprint = null,
+                )
+            }
             removeResultScreenshot(role)
         }
     }
@@ -1494,6 +1515,12 @@ class MatchReviewViewModel @Inject constructor(
             }
             return
         }
+        _uiState.updateSlot(role) {
+            it.copy(
+                isPreviewPreparationInProgress = true,
+                previewPreparationFingerprint = null,
+            )
+        }
         resultScreenshotJobs[role] = viewModelScope.launch {
             processResultScreenshotSelection(
                 role = role,
@@ -1522,6 +1549,8 @@ class MatchReviewViewModel @Inject constructor(
                     resultScreenshots = state.resultScreenshots.map { slot ->
                         if (slot.role in request.targetRoles.take(selectedUris.size)) {
                             slot.copy(
+                                isPreviewPreparationInProgress = true,
+                                previewPreparationFingerprint = null,
                                 isValidationInProgress = true,
                                 imageValidationError = null,
                                 duplicateError = null,
@@ -1540,60 +1569,54 @@ class MatchReviewViewModel @Inject constructor(
         activeResultBatchRoles = targetRoles
         activeResultBatchSelectedUris = assignments.toMap()
         resultScreenshotBatchJob = viewModelScope.launch {
-            var earlyCropNavigationRequested = false
             try {
-                val successfulRoles = buildList {
+                val manualCropRoles = buildList {
                     assignments.forEach { (role, uri) ->
-                        if (processResultScreenshotSelection(
-                                role = role,
-                                selectedUri = uri,
-                                generation = generation,
-                                requestCropNavigation = false,
-                                wasEmptyBeforeSelection = wasEmptyBeforeSelection[role] == true,
-                                onValidatedCandidate = { validatedRole, candidate ->
-                                    pendingResultScreenshotCropCandidateUris[validatedRole] = candidate
-                                    if (!earlyCropNavigationRequested) {
-                                        earlyCropNavigationRequested = true
-                                        _uiState.update {
-                                            it.copy(
-                                                pendingResultScreenshotCropBatch = MatchResultScreenshotCropBatch(
-                                                    currentRole = validatedRole,
-                                                    remainingRoles = assignments
-                                                        .dropWhile { (assignedRole, _) -> assignedRole != validatedRole }
-                                                        .drop(1)
-                                                        .map { (assignedRole, _) -> assignedRole },
-                                                ),
-                                                navigation = validatedRole.cropNavigation(),
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        ) {
-                            add(role)
-                        }
-                    }
-                }
-                if (generation == screenshotIntakeGeneration && successfulRoles.isNotEmpty()) {
-                    _uiState.update {
-                        it.copy(
-                            pendingResultScreenshotCropBatch = MatchResultScreenshotCropBatch(
-                                currentRole = successfulRoles.first(),
-                                remainingRoles = successfulRoles.drop(1),
-                            ),
-                            navigation = if (earlyCropNavigationRequested) {
-                                it.navigation
-                            } else {
-                                successfulRoles.first().cropNavigation()
+                        processResultScreenshotSelection(
+                            role = role,
+                            selectedUri = uri,
+                            generation = generation,
+                            requestCropNavigation = false,
+                            wasEmptyBeforeSelection = wasEmptyBeforeSelection[role] == true,
+                            onManualCropRequired = { manualRole, candidate ->
+                                pendingResultScreenshotCropCandidateUris[manualRole] = candidate
+                                add(manualRole)
                             },
                         )
                     }
-                    pendingNewResultScreenshotCropRoles += successfulRoles.filter {
+                }
+                if (generation == screenshotIntakeGeneration && manualCropRoles.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            pendingResultScreenshotCropBatch = MatchResultScreenshotCropBatch(
+                                currentRole = manualCropRoles.first(),
+                                remainingRoles = manualCropRoles.drop(1),
+                            ),
+                            navigation = manualCropRoles.first().cropNavigation(),
+                        )
+                    }
+                    pendingNewResultScreenshotCropRoles += manualCropRoles.filter {
                         wasEmptyBeforeSelection[it] == true
                     }
                 }
             } finally {
                 clearResultBatchTransientStateIfOwned(generation, targetRoles)
+            }
+        }
+    }
+
+    fun onResultPreviewPreparationFinished(
+        role: MatchResultScreenshotRole,
+        fingerprint: String?,
+    ) {
+        _uiState.updateSlot(role) {
+            if (it.isPreviewPreparationInProgress && it.fingerprint == fingerprint) {
+                it.copy(
+                    isPreviewPreparationInProgress = false,
+                    previewPreparationFingerprint = null,
+                )
+            } else {
+                it
             }
         }
     }
@@ -1604,7 +1627,7 @@ class MatchReviewViewModel @Inject constructor(
         generation: Long,
         requestCropNavigation: Boolean = true,
         wasEmptyBeforeSelection: Boolean = false,
-        onValidatedCandidate: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
+        onManualCropRequired: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
     ): Boolean {
         if (generation != screenshotIntakeGeneration) return false
         if (selectedUri.isBlank()) {
@@ -1617,13 +1640,15 @@ class MatchReviewViewModel @Inject constructor(
                     isPhotoPickerLaunchPending = false,
                     isPhotoPickerRequestActive = false,
                     isValidationInProgress = false,
-                    isSelectedScreenshotValidated = false,
+                        isSelectedScreenshotValidated = false,
                     imageValidationError = ImageValidationError.EMPTY_URI,
                     isDuplicateDetectionInProgress = false,
                     duplicateError = null,
                     duplicateInfo = null,
-                    isPreservationInProgress = false,
-                    preservationError = null,
+                        isPreservationInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        previewPreparationFingerprint = null,
+                        preservationError = null,
                 )
             }
             return false
@@ -1644,6 +1669,8 @@ class MatchReviewViewModel @Inject constructor(
                 duplicateError = null,
                 duplicateInfo = null,
                 isPreservationInProgress = false,
+                isPreviewPreparationInProgress = true,
+                previewPreparationFingerprint = null,
                 preservationError = null,
             )
         }
@@ -1677,6 +1704,8 @@ class MatchReviewViewModel @Inject constructor(
                     selectedScreenshotHeight = null,
                     imageValidationError = (validation as? ImageCandidateValidationResult.Invalid)?.error
                         ?: ImageValidationError.DECODE_FAILED,
+                    isPreviewPreparationInProgress = false,
+                    previewPreparationFingerprint = null,
                 )
             }
             return false
@@ -1698,7 +1727,7 @@ class MatchReviewViewModel @Inject constructor(
             generation = generation,
             requestCropNavigation = requestCropNavigation,
             wasEmptyBeforeSelection = wasEmptyBeforeSelection,
-            onValidatedCandidate = onValidatedCandidate,
+            onManualCropRequired = onManualCropRequired,
         )
     }
 
@@ -1709,7 +1738,7 @@ class MatchReviewViewModel @Inject constructor(
         generation: Long,
         requestCropNavigation: Boolean = true,
         wasEmptyBeforeSelection: Boolean = false,
-        onValidatedCandidate: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
+        onManualCropRequired: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)? = null,
     ): Boolean {
         if (generation != screenshotIntakeGeneration) return false
         val current = _uiState.value
@@ -1729,7 +1758,11 @@ class MatchReviewViewModel @Inject constructor(
         }
         if (setupError != null || identity == null) {
             _uiState.updateSlotIfCurrent(role, selectedUri) {
-                it.copy(preservationError = setupError)
+                it.copy(
+                    isPreviewPreparationInProgress = false,
+                    previewPreparationFingerprint = null,
+                    preservationError = setupError,
+                )
             }
             return false
         }
@@ -1747,19 +1780,6 @@ class MatchReviewViewModel @Inject constructor(
             width = metadata.width,
             height = metadata.height,
         )
-        if (requestCropNavigation) {
-            pendingResultScreenshotCropCandidateUris[role] = candidate
-            val cropNavigationRequested = requestResultScreenshotCropNavigationAfterValidation(
-                identity = identity,
-                selectedUri = selectedUri,
-            )
-            if (!cropNavigationRequested) pendingResultScreenshotCropCandidateUris.remove(role)
-            if (cropNavigationRequested && wasEmptyBeforeSelection) {
-                pendingNewResultScreenshotCropRoles += role
-            }
-        } else {
-            onValidatedCandidate?.invoke(role, candidate)
-        }
         val duplicateResult = matchResultScreenshotDuplicateDetector.link(
             identity = identity,
             selectedUri = selectedUri,
@@ -1796,6 +1816,8 @@ class MatchReviewViewModel @Inject constructor(
                     _uiState.updateSlotIfCurrent(role, selectedUri) {
                         it.copy(
                             isPreservationInProgress = false,
+                            isPreviewPreparationInProgress = false,
+                            previewPreparationFingerprint = null,
                             preservationError = (preservation as LocalImagePreservationResult.Failed).error.toUiError(),
                         )
                     }
@@ -1819,6 +1841,8 @@ class MatchReviewViewModel @Inject constructor(
                     _uiState.updateSlotIfCurrent(role, selectedUri) {
                         it.copy(
                             isPreservationInProgress = false,
+                            isPreviewPreparationInProgress = false,
+                            previewPreparationFingerprint = null,
                             preservationError = ScreenshotPreservationError.ROOM_WRITE_FAILED,
                         )
                     }
@@ -1833,6 +1857,8 @@ class MatchReviewViewModel @Inject constructor(
                         selectedScreenshotHeight = metadata.height,
                         isSelectedScreenshotValidated = true,
                         isPreservationInProgress = false,
+                        isPreviewPreparationInProgress = true,
+                        previewPreparationFingerprint = assetResult.asset.sha256,
                         preservationError = if (
                             preservation is LocalImagePreservationResult.PreservedWithCleanupFailure
                         ) {
@@ -1843,6 +1869,26 @@ class MatchReviewViewModel @Inject constructor(
                         isUploadInProgress = false,
                         uploadError = null,
                     )
+                }
+                when (
+                    attemptAutomaticResultCrop(
+                        identity = identity,
+                        asset = assetResult.asset,
+                        generation = generation,
+                    )
+                ) {
+                    AutomaticResultCropOutcome.Saved -> Unit
+                    AutomaticResultCropOutcome.ManualCropRequired -> {
+                        requestManualResultCrop(
+                            identity = identity,
+                            selectedUri = selectedUri,
+                            candidate = candidate,
+                            wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+                            requestCropNavigation = requestCropNavigation,
+                            onManualCropRequired = onManualCropRequired,
+                        )
+                    }
+                    AutomaticResultCropOutcome.Stale -> return false
                 }
                 return true
             }
@@ -1855,6 +1901,14 @@ class MatchReviewViewModel @Inject constructor(
                         duplicateError = null,
                     )
                 }
+                requestManualResultCrop(
+                    identity = identity,
+                    selectedUri = selectedUri,
+                    candidate = candidate,
+                    wasEmptyBeforeSelection = wasEmptyBeforeSelection,
+                    requestCropNavigation = requestCropNavigation,
+                    onManualCropRequired = onManualCropRequired,
+                )
                 return false
             }
 
@@ -1862,6 +1916,8 @@ class MatchReviewViewModel @Inject constructor(
                 _uiState.updateSlotIfCurrent(role, selectedUri) {
                     it.copy(
                         isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        previewPreparationFingerprint = null,
                         duplicateError = ScreenshotDuplicateError.LINKED_TO_OTHER_MATCH,
                         duplicateInfo = null,
                     )
@@ -1873,6 +1929,8 @@ class MatchReviewViewModel @Inject constructor(
                 _uiState.updateSlotIfCurrent(role, selectedUri) {
                     it.copy(
                         isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        previewPreparationFingerprint = null,
                         duplicateError = ScreenshotDuplicateError.FINGERPRINT_FAILED,
                         duplicateInfo = null,
                     )
@@ -1884,6 +1942,8 @@ class MatchReviewViewModel @Inject constructor(
                 _uiState.updateSlotIfCurrent(role, selectedUri) {
                     it.copy(
                         isDuplicateDetectionInProgress = false,
+                        isPreviewPreparationInProgress = false,
+                        previewPreparationFingerprint = null,
                         duplicateError = ScreenshotDuplicateError.STATE_CONFLICT,
                         duplicateInfo = null,
                     )
@@ -1964,19 +2024,141 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    private suspend fun attemptAutomaticResultCrop(
+        identity: MatchResultScreenshotIdentity,
+        asset: MatchResultScreenshotAssetEntity,
+        generation: Long,
+    ): AutomaticResultCropOutcome {
+        if (generation != screenshotIntakeGeneration) return AutomaticResultCropOutcome.Stale
+        if (asset.hasConfirmedCrop()) return AutomaticResultCropOutcome.ManualCropRequired
+        val localFile = localImagePreserver.resolveRelativePath(asset.localRelativePath)
+            ?.takeIf { file -> runCatching { file.isFile && file.length() > 0L }.getOrDefault(false) }
+            ?: return AutomaticResultCropOutcome.ManualCropRequired
+        val proposedCrop = try {
+            (resultAutoCropProposer.propose(localFile) as? MatchResultAutoCropResult.Proposed)?.crop
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return AutomaticResultCropOutcome.ManualCropRequired
+        val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
+        if (
+            OcrCropValidator.validate(
+                crop = proposedCrop,
+                dimensions = dimensions,
+                profile = OcrCropValidationProfiles.MatchResult,
+            ) !is OcrCropValidationResult.Valid
+        ) {
+            return AutomaticResultCropOutcome.ManualCropRequired
+        }
+        if (generation != screenshotIntakeGeneration) return AutomaticResultCropOutcome.Stale
+        val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
+            ?.takeIf { it.isNotBlank() }
+            ?: return AutomaticResultCropOutcome.ManualCropRequired
+        val match = try {
+            observeMatches(identity.tournamentId).first().firstOrNull { it.id == identity.matchId }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        if (match?.status != MatchStatus.DRAFT) return AutomaticResultCropOutcome.Stale
+        val latest = try {
+            matchResultScreenshotAssetRepository.getByIdentityAndOwner(identity, ownerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        }
+        if (latest == null || !latest.matchesAutomaticCropSource(asset) || generation != screenshotIntakeGeneration) {
+            return AutomaticResultCropOutcome.Stale
+        }
+        val cropPersisted = try {
+            matchResultScreenshotAssetRepository.persistConfirmedCropIfGenerationMatchesByOwner(
+                identity = identity,
+                ownerUserId = ownerUserId,
+                sha256 = asset.sha256,
+                expectedRevision = asset.revision,
+                crop = proposedCrop,
+                updatedAt = clock.millis(),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            false
+        }
+        if (!cropPersisted) {
+            return if (generation == screenshotIntakeGeneration) {
+                AutomaticResultCropOutcome.ManualCropRequired
+            } else {
+                AutomaticResultCropOutcome.Stale
+            }
+        }
+        resultCropReconciliationScheduler.schedule(ownerUserId, screenshotOwnerProvider) {
+            resultUploadCheckpoint.run(identity, ownerUserId)
+        }
+        return AutomaticResultCropOutcome.Saved
+    }
+
+    private fun requestManualResultCrop(
+        identity: MatchResultScreenshotIdentity,
+        selectedUri: String,
+        candidate: MatchScreenshotCropCandidate,
+        wasEmptyBeforeSelection: Boolean,
+        requestCropNavigation: Boolean,
+        onManualCropRequired: ((MatchResultScreenshotRole, MatchScreenshotCropCandidate) -> Unit)?,
+    ) {
+        if (!requestCropNavigation) {
+            onManualCropRequired?.invoke(identity.role, candidate)
+            return
+        }
+        pendingResultScreenshotCropCandidateUris[identity.role] = candidate
+        val cropNavigationRequested = requestResultScreenshotCropNavigationAfterValidation(
+            identity = identity,
+            selectedUri = selectedUri,
+        )
+        if (!cropNavigationRequested) {
+            pendingResultScreenshotCropCandidateUris.remove(identity.role)
+        } else if (wasEmptyBeforeSelection) {
+            pendingNewResultScreenshotCropRoles += identity.role
+        }
+    }
+
+    private fun MatchResultScreenshotAssetEntity.hasConfirmedCrop(): Boolean =
+        cropProfileId != null && cropLeft != null && cropTop != null && cropRight != null && cropBottom != null
+
+    private fun MatchResultScreenshotAssetEntity.matchesAutomaticCropSource(
+        source: MatchResultScreenshotAssetEntity,
+    ): Boolean =
+        tournamentId == source.tournamentId &&
+            matchId == source.matchId &&
+            screenshotRole == source.screenshotRole &&
+            sha256 == source.sha256 &&
+            localRelativePath == source.localRelativePath &&
+            originalWidth == source.originalWidth &&
+            originalHeight == source.originalHeight &&
+            byteSize == source.byteSize &&
+            !hasConfirmedCrop()
+
     private fun cancelActiveResultBatchAndClearTransientState() {
         pendingNewResultScreenshotCropRoles.clear()
         val generation = activeResultBatchGeneration ?: return
         val targetRoles = activeResultBatchRoles
         val selectedUris = activeResultBatchSelectedUris
         resultScreenshotBatchJob?.cancel()
-        clearResultBatchTransientStateIfOwned(generation, targetRoles, selectedUris)
+        clearResultBatchTransientStateIfOwned(
+            generation = generation,
+            targetRoles = targetRoles,
+            selectedUris = selectedUris,
+            clearPreviewPreparation = true,
+        )
     }
 
     private fun clearResultBatchTransientStateIfOwned(
         generation: Long,
         targetRoles: Set<MatchResultScreenshotRole>,
         selectedUris: Map<MatchResultScreenshotRole, String> = activeResultBatchSelectedUris,
+        clearPreviewPreparation: Boolean = false,
     ) {
         if (activeResultBatchGeneration != generation) return
         activeResultBatchGeneration = null
@@ -1998,12 +2180,24 @@ class MatchReviewViewModel @Inject constructor(
                                 isSelectedScreenshotValidated = false,
                                 isDuplicateDetectionInProgress = false,
                                 isPreservationInProgress = false,
+                                isPreviewPreparationInProgress = false,
+                                previewPreparationFingerprint = null,
                             )
                         } else {
                             slot.copy(
                                 isValidationInProgress = false,
                                 isDuplicateDetectionInProgress = false,
                                 isPreservationInProgress = false,
+                                isPreviewPreparationInProgress = if (clearPreviewPreparation) {
+                                    false
+                                } else {
+                                    slot.isPreviewPreparationInProgress
+                                },
+                                previewPreparationFingerprint = if (clearPreviewPreparation) {
+                                    null
+                                } else {
+                                    slot.previewPreparationFingerprint
+                                },
                             )
                         }
                     } else {
@@ -2017,6 +2211,12 @@ class MatchReviewViewModel @Inject constructor(
     private fun MatchResultScreenshotRole.cropNavigation(): MatchReviewNavigation = when (this) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER -> MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP
         MatchResultScreenshotRole.MATCH_RESULT_LOWER -> MatchReviewNavigation.RESULT_SCREENSHOT_2_CROP
+    }
+
+    private enum class AutomaticResultCropOutcome {
+        Saved,
+        ManualCropRequired,
+        Stale,
     }
 
     private fun requestResultScreenshotCropNavigationAfterValidation(
@@ -3603,6 +3803,8 @@ private fun mergeResultScreenshotSlots(
             duplicateError = currentSlot.duplicateError,
             duplicateInfo = currentSlot.duplicateInfo,
             isPreservationInProgress = currentSlot.isPreservationInProgress,
+            isPreviewPreparationInProgress = currentSlot.isPreviewPreparationInProgress,
+            previewPreparationFingerprint = currentSlot.previewPreparationFingerprint,
             preservationError = currentSlot.preservationError ?: restoredSlot.preservationError,
         )
     } else {

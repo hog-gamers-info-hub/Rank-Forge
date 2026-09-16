@@ -173,6 +173,15 @@ interface MatchLobbyScreenshotAssetRepository {
         updatedAt: Long,
     ): MatchLobbyScreenshotCropSaveResult = MatchLobbyScreenshotCropSaveResult.AuthenticationRequired
 
+    suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): Boolean = false
+
     suspend fun clearConfirmedCrop(
         identity: MatchLobbyScreenshotIdentity,
         updatedAt: Long,
@@ -645,6 +654,47 @@ class RoomMatchLobbyScreenshotAssetRepository @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    override suspend fun persistConfirmedCropIfGenerationMatchesByOwner(
+        identity: MatchLobbyScreenshotIdentity,
+        ownerUserId: String,
+        sha256: String,
+        expectedRevision: Long,
+        crop: OcrNormalizedCropRect,
+        updatedAt: Long,
+    ): Boolean = if (ownerUserId.isBlank() || database == null) false else ScreenshotAssetMutationCoordinator.withLock(
+        ScreenshotAssetMutationCoordinator.key(identity),
+    ) {
+        database!!.withTransaction {
+            if (!database!!.matchDao().existsByIdAndTournamentAndOwner(identity.matchId, identity.tournamentId, ownerUserId)) {
+                return@withTransaction false
+            }
+            if (database!!.deletionIntentDao().isLocalMutationBlocked(identity.tournamentId, identity.matchId, ownerUserId)) {
+                return@withTransaction false
+            }
+            val asset = dao.readByMatchAndIndexAndOwner(identity.matchId, identity.lobbyScreenshotIndex, ownerUserId)
+                ?: return@withTransaction false
+            if (asset.identityOrNull() != identity) return@withTransaction false
+            val dimensions = OcrImageDimensions.from(asset.originalWidth, asset.originalHeight)
+                ?: return@withTransaction false
+            if (OcrCropValidator.validate(crop, dimensions, OcrCropValidationProfiles.Lobby) !is OcrCropValidationResult.Valid) {
+                return@withTransaction false
+            }
+            dao.updateConfirmedCropIfGenerationMatches(
+                tournamentId = identity.tournamentId,
+                matchId = identity.matchId,
+                lobbyScreenshotIndex = identity.lobbyScreenshotIndex,
+                sha256 = sha256,
+                expectedRevision = expectedRevision,
+                cropProfileId = OcrCropValidationProfiles.Lobby.id,
+                cropLeft = crop.left,
+                cropTop = crop.top,
+                cropRight = crop.right,
+                cropBottom = crop.bottom,
+                updatedAt = updatedAt,
+            ) > 0
         }
     }
 

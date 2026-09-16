@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -79,6 +81,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -154,6 +157,7 @@ private val PointIqMatchReviewCtaBorder = Color(0xFF4AAFF7)
 private val PointIqMatchReviewBlockerIcon = Color(0xFFFF6B6B)
 private val PointIqMatchReviewBlockerMessage = Color(0xFFF4D7DB)
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
+private const val RESULT_SCREENSHOT_PREVIEW_HEIGHT_RATIO = 384f / 936f
 
 private enum class MatchReviewScreenshotActionStyle {
     REPLACE,
@@ -741,6 +745,7 @@ fun MatchReviewRoute(
         onRetryScreenshotUpload = viewModel::retryScreenshotUpload,
         onRetryResultScreenshotUpload = viewModel::retryResultScreenshotUpload,
         onRemoveResultScreenshot = viewModel::removeResultScreenshot,
+        onResultPreviewPreparationFinished = viewModel::onResultPreviewPreparationFinished,
         onResultPositionCropPreviewsDisposed = viewModel::releaseResultPositionCropPreviewsIfStale,
         matchLobbyScreenshotIntake = matchLobbyScreenshotIntake,
         onSelectLobbyScreenshot = lobbyScreenshotIntakeViewModel?.let { intakeViewModel ->
@@ -824,6 +829,7 @@ fun MatchReviewScreen(
     onRetryScreenshotUpload: () -> Unit = {},
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit = {},
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit = {},
+    onResultPreviewPreparationFinished: (MatchResultScreenshotRole, String?) -> Unit = { _, _ -> },
     onResultPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit = {},
@@ -900,6 +906,7 @@ fun MatchReviewScreen(
             onRetryScreenshotUpload = onRetryScreenshotUpload,
             onRetryResultScreenshotUpload = onRetryResultScreenshotUpload,
             onRemoveResultScreenshot = onRemoveResultScreenshot,
+            onResultPreviewPreparationFinished = onResultPreviewPreparationFinished,
             onResultPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
             onSelectLobbyScreenshot = onSelectLobbyScreenshot,
             onOpenLobbyScreenshotCrop = onOpenLobbyScreenshotCrop,
@@ -1321,6 +1328,7 @@ private fun MatchReviewContent(
     onRetryScreenshotUpload: () -> Unit,
     onRetryResultScreenshotUpload: (MatchResultScreenshotRole) -> Unit,
     onRemoveResultScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onResultPreviewPreparationFinished: (MatchResultScreenshotRole, String?) -> Unit,
     onResultPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit,
@@ -1789,6 +1797,7 @@ private fun MatchReviewContent(
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    onPreviewPreparationFinished = onResultPreviewPreparationFinished,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                         !hasDisplayableResultOcrData,
@@ -1873,6 +1882,7 @@ private fun MatchReviewContent(
                     onSelectBatch = onSelectResultScreenshotBatch,
                     onOpenCrop = onOpenResultScreenshotCrop,
                     onRemoveScreenshot = onRemoveResultScreenshot,
+                    onPreviewPreparationFinished = onResultPreviewPreparationFinished,
                     onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                     showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                         !hasDisplayableResultOcrData,
@@ -1898,6 +1908,7 @@ private fun MatchReviewContent(
                 onSelectBatch = onSelectResultScreenshotBatch,
                 onOpenCrop = onOpenResultScreenshotCrop,
                 onRemoveScreenshot = onRemoveResultScreenshot,
+                onPreviewPreparationFinished = onResultPreviewPreparationFinished,
                 onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                 screenshotActionExpansion = screenshotActionExpansion,
             )
@@ -3676,6 +3687,7 @@ private fun ResultScreenshotSelector(
     onSelectBatch: (() -> Unit)?,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onPreviewPreparationFinished: (MatchResultScreenshotRole, String?) -> Unit,
     onPositionCropPreviewsDisposed: (
         Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     ) -> Unit,
@@ -3767,8 +3779,13 @@ private fun ResultScreenshotSelector(
         if (selectedPages.isNotEmpty()) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val maxResultScreenshotHeight = maxWidth * (
-                    selectedPages
-                        .mapNotNull { (_, slot) -> slot.resultScreenshotHeightRatio() }
+                    (selectedPages
+                        .mapNotNull { (_, slot) -> slot.resultScreenshotHeightRatio() } +
+                        if (selectedPages.any { (_, slot) -> slot.isPreviewPreparationInProgress }) {
+                            RESULT_SCREENSHOT_PREVIEW_HEIGHT_RATIO
+                        } else {
+                            0f
+                        })
                         .maxOrNull()
                         ?: 1f
                 )
@@ -3797,6 +3814,7 @@ private fun ResultScreenshotSelector(
                             onSelectScreenshot = onSelectScreenshot,
                             onOpenCrop = onOpenCrop,
                             onRemoveScreenshot = onRemoveScreenshot,
+                            onPreviewPreparationFinished = onPreviewPreparationFinished,
                             screenshotActionExpansion = screenshotActionExpansion,
                         )
                     }
@@ -3827,7 +3845,9 @@ private fun ResultScreenshotSelector(
 }
 
 private fun MatchResultScreenshotSlotUiState.hasSelection(): Boolean =
-    hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
+    hasLinkedAsset ||
+        !selectedScreenshotUri.isNullOrBlank() ||
+        isPreviewPreparationInProgress
 
 private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Float? {
     val dimensions = OcrImageDimensions.from(
@@ -3837,6 +3857,117 @@ private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Floa
     val crop = confirmedCrop ?: return null
     val pixelCrop = crop.toPixelRectOrNull(dimensions) ?: return null
     return pixelCrop.height.toFloat() / pixelCrop.width.toFloat()
+}
+
+@Composable
+private fun ResultScreenshotPreviewSkeleton(
+    modifier: Modifier = Modifier,
+) {
+    val baseColor = Color(0xFF211F2C)
+    val rowColor = Color(0xFF2E2B36)
+    val laneColor = Color(0xFF1B1721)
+    val dividerColor = Color(0xFF15131A)
+    val stripColor = Color(0xFFD0CDD2).copy(alpha = 0.68f)
+    Box(
+        modifier = modifier
+            .background(baseColor, MaterialTheme.shapes.medium)
+            .border(1.dp, Color(0xFF1D4F8B), MaterialTheme.shapes.medium)
+            .padding(4.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            ResultScreenshotSkeletonHalf(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                rowColor = rowColor,
+                laneColor = laneColor,
+                dividerColor = dividerColor,
+                stripColor = stripColor,
+            )
+            Box(Modifier.fillMaxHeight().width(1.dp).background(dividerColor))
+            ResultScreenshotSkeletonHalf(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                rowColor = rowColor,
+                laneColor = laneColor,
+                dividerColor = dividerColor,
+                stripColor = stripColor,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultScreenshotSkeletonHalf(
+    modifier: Modifier,
+    rowColor: Color,
+    laneColor: Color,
+    dividerColor: Color,
+    stripColor: Color,
+) {
+    Column(modifier = modifier) {
+        repeat(5) { rowIndex ->
+            ResultScreenshotSkeletonRow(
+                modifier = Modifier.weight(1f),
+                rowIndex = rowIndex,
+                rowColor = rowColor,
+                laneColor = laneColor,
+                stripColor = stripColor,
+            )
+            if (rowIndex < 4) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultScreenshotSkeletonRow(
+    modifier: Modifier,
+    rowIndex: Int,
+    rowColor: Color,
+    laneColor: Color,
+    stripColor: Color,
+) {
+    val playerWidthFractions = listOf(0.42f, 0.35f, 0.47f, 0.39f, 0.44f)
+    val eliminationWidthFractions = listOf(0.24f, 0.19f, 0.27f, 0.22f, 0.2f)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(rowColor)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight(0.72f)
+                .width(13.dp)
+                .background(laneColor),
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(playerWidthFractions[rowIndex])
+                    .height(4.dp)
+                    .background(stripColor, RoundedCornerShape(2.dp)),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(0.45f)
+                .fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(eliminationWidthFractions[rowIndex])
+                    .height(4.dp)
+                    .background(stripColor, RoundedCornerShape(2.dp)),
+            )
+        }
+    }
 }
 
 @Composable
@@ -3854,6 +3985,7 @@ private fun ResultScreenshotPage(
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
+    onPreviewPreparationFinished: (MatchResultScreenshotRole, String?) -> Unit,
     screenshotActionExpansion: MatchReviewScreenshotActionExpansion,
 ) {
     val role = if (screenshotNumber == 1) {
@@ -3862,6 +3994,9 @@ private fun ResultScreenshotPage(
         MatchResultScreenshotRole.MATCH_RESULT_LOWER
     }
     val previewImageUri = if (
+        (!slot.isPreviewPreparationInProgress ||
+            (slot.previewPreparationFingerprint != null &&
+                slot.previewPreparationFingerprint == slot.fingerprint)) &&
         slot.hasLinkedAsset && !slot.isLocalFileMissing && slot.hasConfirmedCrop
     ) {
         slot.localPreviewUri?.takeIf { it.isNotBlank() }
@@ -3870,7 +4005,10 @@ private fun ResultScreenshotPage(
     }
     val hasPositionCropPreviews = showPositionCropPreviews && positionCropPreviews.isNotEmpty()
     val screenshotActionKey = "result-${role.name}"
-    val supportsExpandableActions = showSourceScreenshot && isEditable && previewImageUri != null
+    val supportsExpandableActions = showSourceScreenshot &&
+        isEditable &&
+        previewImageUri != null &&
+        !slot.isPreviewPreparationInProgress
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3884,7 +4022,31 @@ private fun ResultScreenshotPage(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         if (showSourceScreenshot) {
-            previewImageUri?.let { imageUri ->
+            if (previewImageUri != null || slot.isPreviewPreparationInProgress) {
+                val previewKey = listOf(
+                    role,
+                    slot.fingerprint,
+                    previewImageUri,
+                    slot.confirmedCrop?.left,
+                    slot.confirmedCrop?.top,
+                    slot.confirmedCrop?.right,
+                    slot.confirmedCrop?.bottom,
+                )
+                var previewReady by remember(previewKey) {
+                    mutableStateOf(!slot.isPreviewPreparationInProgress)
+                }
+                var previewFailed by remember(previewKey) { mutableStateOf(false) }
+                var previewTransitionFinished by remember(previewKey) {
+                    mutableStateOf(!slot.isPreviewPreparationInProgress)
+                }
+                val previewAlpha by animateFloatAsState(
+                    targetValue = if (previewReady || previewFailed) 1f else 0f,
+                    animationSpec = tween(durationMillis = 160),
+                    finishedListener = { value ->
+                        if (value == 1f) previewTransitionFinished = true
+                    },
+                    label = "resultScreenshotPreviewAlpha",
+                )
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
@@ -3910,24 +4072,42 @@ private fun ResultScreenshotPage(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        LocalScreenshotPreview(
-                            imageUri = imageUri,
-                            crop = slot.confirmedCrop,
-                            contentDescription = stringResource(
-                                R.string.match_review_result_screenshot_preview_description,
-                                screenshotNumber,
-                            ),
-                            sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
-                            sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
-                            modifier = Modifier.fillMaxWidth(),
-                            testTag = if (screenshotNumber == 1) {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
-                            } else {
-                                MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
-                            },
+                        ResultScreenshotPreviewSkeleton(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(1f - previewAlpha),
                         )
+                        previewImageUri?.let { imageUri ->
+                            LocalScreenshotPreview(
+                                imageUri = imageUri,
+                                crop = slot.confirmedCrop,
+                                contentDescription = stringResource(
+                                    R.string.match_review_result_screenshot_preview_description,
+                                    screenshotNumber,
+                                ),
+                                sourceImageWidth = slot.originalWidth ?: slot.selectedScreenshotWidth,
+                                sourceImageHeight = slot.originalHeight ?: slot.selectedScreenshotHeight,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(previewAlpha),
+                                testTag = if (screenshotNumber == 1) {
+                                    MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+                                } else {
+                                    MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+                                },
+                                onReady = {
+                                    previewReady = true
+                                    previewFailed = false
+                                    onPreviewPreparationFinished(role, slot.fingerprint)
+                                },
+                                onFailed = {
+                                    previewFailed = true
+                                    onPreviewPreparationFinished(role, slot.fingerprint)
+                                },
+                            )
+                        }
                     }
-                    if (supportsExpandableActions) {
+                    if (supportsExpandableActions && previewTransitionFinished && previewReady) {
                         MatchReviewExpandableScreenshotActions(
                             expanded = screenshotActionExpansion.expandedScreenshotKey == screenshotActionKey,
                         ) {
@@ -3967,7 +4147,7 @@ private fun ResultScreenshotPage(
                 ocrPositionContent = ocrPositionContent,
             )
         }
-        if (slot.isValidationInProgress) {
+        if (!slot.isPreviewPreparationInProgress && slot.isValidationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_validating))
         }
         if (SHOW_EXTRA_INFORMATION_STATUS_TEXT && slot.isSelectedScreenshotValidated) {
@@ -3978,7 +4158,7 @@ private fun ResultScreenshotPage(
                 lineHeight = 16.sp,
             )
         }
-        if (slot.hasLinkedAsset && !slot.hasConfirmedCrop) {
+        if (!slot.isPreviewPreparationInProgress && slot.hasLinkedAsset && !slot.hasConfirmedCrop) {
             Text(text = stringResource(R.string.match_review_result_screenshot_crop_required))
         }
         slot.photoPickerError?.let { error ->
@@ -3993,7 +4173,7 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (slot.isDuplicateDetectionInProgress) {
+        if (!slot.isPreviewPreparationInProgress && slot.isDuplicateDetectionInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_duplicate_checking))
         }
         slot.duplicateInfo?.let { info ->
@@ -4008,7 +4188,7 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (slot.isPreservationInProgress) {
+        if (!slot.isPreviewPreparationInProgress && slot.isPreservationInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_preservation_checking))
         }
         slot.preservationError?.let { error ->
@@ -4017,7 +4197,7 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (slot.isUploadInProgress) {
+        if (!slot.isPreviewPreparationInProgress && slot.isUploadInProgress) {
             Text(text = stringResource(R.string.match_review_screenshot_uploading))
         }
         slot.uploadError?.let { error ->
@@ -4026,7 +4206,7 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (showSourceScreenshot && isEditable && previewImageUri == null) {
+        if (showSourceScreenshot && isEditable && previewImageUri == null && !slot.isPreviewPreparationInProgress) {
             ResultScreenshotActionRow(
                 role = role,
                 slot = slot,

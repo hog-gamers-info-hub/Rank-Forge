@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,9 +25,11 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
@@ -45,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -82,6 +88,7 @@ private val PointIqMatchReviewBadgeFill = PointIqMatchReviewNavy
 private val PointIqMatchReviewBadgeBorder = Color(0xFF17C9F2).copy(alpha = 0.4f)
 private val PointIqMatchReviewSaveLobbyEnabledTrack = Color(0xFF0B386F)
 private val PointIqMatchReviewInnerOcrSurface = Color(0xFF0B386F).copy(alpha = 0.38f)
+private const val LOBBY_SCREENSHOT_PREVIEW_HEIGHT_RATIO = 384f / 936f
 
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SCREEN_TEST_TAG = "match_lobby_screenshot_intake_screen"
 const val MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX = "match_lobby_screenshot_select_"
@@ -188,6 +195,7 @@ fun MatchLobbyScreenshotIntakeRoute(
         onSelectBatch = viewModel::requestMultiPhotoPicker,
         onCrop = viewModel::requestCropEditor,
         onRemove = viewModel::removeScreenshot,
+        onPreviewPreparationFinished = viewModel::onPreviewPreparationFinished,
         onSaveLobbyForNextMatches = viewModel::saveLobbyForNextMatches,
         onUnsaveLobbyForNextMatches = viewModel::unsaveLobbyForNextMatches,
         showTitle = showTitle,
@@ -203,6 +211,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     onSelectBatch: (() -> Unit)? = null,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onPreviewPreparationFinished: (Int, String?) -> Unit = { _, _ -> },
     onSaveLobbyForNextMatches: () -> Unit = {},
     onUnsaveLobbyForNextMatches: () -> Unit = {},
     showTitle: Boolean = true,
@@ -379,9 +388,15 @@ fun MatchLobbyScreenshotIntakeScreen(
 
             if (sourceSectionVisible && selectedSlots.isNotEmpty()) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val knownHeightRatios = selectedSlots
+                        .mapNotNull(MatchLobbyScreenshotSlotUiState::lobbyScreenshotHeightRatio)
                     val maxLobbyScreenshotHeight = maxWidth * (
-                        selectedSlots
-                            .mapNotNull(MatchLobbyScreenshotSlotUiState::lobbyScreenshotHeightRatio)
+                        (knownHeightRatios +
+                            if (selectedSlots.any { it.isPreviewPreparationInProgress }) {
+                                LOBBY_SCREENSHOT_PREVIEW_HEIGHT_RATIO
+                            } else {
+                                0f
+                            })
                             .maxOrNull()
                             ?: 1f
                     )
@@ -404,6 +419,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 onSelectBatch = onSelectBatch,
                                 onCrop = onCrop,
                                 onRemove = onRemove,
+                                onPreviewPreparationFinished = onPreviewPreparationFinished,
                                 screenshotActionExpansion = screenshotActionExpansion,
                             )
                         }
@@ -532,7 +548,9 @@ private fun LobbyTemplateToggle(
 }
 
 private fun MatchLobbyScreenshotSlotUiState.hasScreenshotSelection(): Boolean =
-    hasLinkedAsset || !selectedScreenshotUri.isNullOrBlank()
+    hasLinkedAsset ||
+        !selectedScreenshotUri.isNullOrBlank() ||
+        isPreviewPreparationInProgress
 
 @Composable
 private fun RowScope.LobbyScreenshotSelectorButton(
@@ -601,6 +619,100 @@ private fun RowScope.LobbyScreenshotSelectorButton(
 }
 
 @Composable
+private fun LobbyScreenshotPreviewSkeleton(
+    modifier: Modifier = Modifier,
+) {
+    val baseColor = Color(0xFF211F2C)
+    val panelColor = Color(0xFF2E2B36)
+    val laneColor = Color(0xFF1B1721)
+    val outlineColor = Color(0xFF15131A)
+    val placeholderColor = Color(0xFFD0CDD2).copy(alpha = 0.7f)
+    Box(
+        modifier = modifier
+            .background(baseColor, MaterialTheme.shapes.medium)
+            .border(1.dp, Color(0xFF1D4F8B), MaterialTheme.shapes.medium)
+            .padding(4.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier.weight(1f)) {
+                LobbyScreenshotSkeletonTeamBlock(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    panelColor = panelColor,
+                    laneColor = laneColor,
+                    outlineColor = outlineColor,
+                    placeholderColor = placeholderColor,
+                )
+                Box(Modifier.fillMaxHeight().width(1.dp).background(outlineColor))
+                LobbyScreenshotSkeletonTeamBlock(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    panelColor = panelColor,
+                    laneColor = laneColor,
+                    outlineColor = outlineColor,
+                    placeholderColor = placeholderColor,
+                )
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(outlineColor))
+            Row(modifier = Modifier.weight(1f)) {
+                LobbyScreenshotSkeletonTeamBlock(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    panelColor = panelColor,
+                    laneColor = laneColor,
+                    outlineColor = outlineColor,
+                    placeholderColor = placeholderColor,
+                )
+                Box(Modifier.fillMaxHeight().width(1.dp).background(outlineColor))
+                LobbyScreenshotSkeletonTeamBlock(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    panelColor = panelColor,
+                    laneColor = laneColor,
+                    outlineColor = outlineColor,
+                    placeholderColor = placeholderColor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LobbyScreenshotSkeletonTeamBlock(
+    modifier: Modifier,
+    panelColor: Color,
+    laneColor: Color,
+    outlineColor: Color,
+    placeholderColor: Color,
+) {
+    Row(
+        modifier = modifier
+            .background(panelColor)
+            .border(1.dp, outlineColor),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(14.dp)
+                .background(laneColor),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(horizontal = 5.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            listOf(0.53f, 0.44f, 0.58f, 0.48f).forEach { widthFraction ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(widthFraction)
+                        .height(4.dp)
+                        .background(placeholderColor, RoundedCornerShape(2.dp)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LobbyScreenshotDetail(
     slot: MatchLobbyScreenshotSlotUiState,
     imageAreaHeight: Dp,
@@ -611,9 +723,13 @@ private fun LobbyScreenshotDetail(
     onSelectBatch: (() -> Unit)?,
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onPreviewPreparationFinished: (Int, String?) -> Unit,
     screenshotActionExpansion: MatchReviewScreenshotActionExpansion?,
 ) {
     val previewImageUri = if (
+        (!slot.isPreviewPreparationInProgress ||
+            (slot.previewPreparationFingerprint != null &&
+                slot.previewPreparationFingerprint == slot.fingerprint)) &&
         slot.hasLinkedAsset && !slot.isLocalFileMissing && slot.hasConfirmedCrop
     ) {
         slot.selectedScreenshotUri?.takeIf { it.isNotBlank() }
@@ -632,9 +748,33 @@ private fun LobbyScreenshotDetail(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        previewImageUri?.let { imageUri ->
+        if (previewImageUri != null || slot.isPreviewPreparationInProgress) {
             val screenshotActionKey = "lobby-${slot.index}"
             val supportsExpandableActions = compactActions && !isFinalized && screenshotActionExpansion != null
+            val previewKey = listOf(
+                slot.index,
+                slot.fingerprint,
+                previewImageUri,
+                slot.confirmedCrop?.left,
+                slot.confirmedCrop?.top,
+                slot.confirmedCrop?.right,
+                slot.confirmedCrop?.bottom,
+            )
+            var previewReady by remember(previewKey) {
+                mutableStateOf(!slot.isPreviewPreparationInProgress)
+            }
+            var previewFailed by remember(previewKey) { mutableStateOf(false) }
+            var previewTransitionFinished by remember(previewKey) {
+                mutableStateOf(!slot.isPreviewPreparationInProgress)
+            }
+            val previewAlpha by animateFloatAsState(
+                targetValue = if (previewReady || previewFailed) 1f else 0f,
+                animationSpec = tween(durationMillis = 160),
+                finishedListener = { value ->
+                    if (value == 1f) previewTransitionFinished = true
+                },
+                label = "lobbyScreenshotPreviewAlpha",
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -667,21 +807,38 @@ private fun LobbyScreenshotDetail(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    LocalScreenshotPreview(
-                        imageUri = imageUri,
-                        crop = slot.confirmedCrop,
-                        contentDescription = stringResource(
-                            R.string.match_lobby_screenshot_preview_description,
-                            slot.index,
-                        ),
-                        sourceImageWidth = slot.selectedScreenshotWidth,
-                        sourceImageHeight = slot.selectedScreenshotHeight,
+                    LobbyScreenshotPreviewSkeleton(
                         modifier = Modifier
-                            .fillMaxWidth(),
-                        testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
+                            .fillMaxSize()
+                            .alpha(1f - previewAlpha),
                     )
+                    previewImageUri?.let { imageUri ->
+                        LocalScreenshotPreview(
+                            imageUri = imageUri,
+                            crop = slot.confirmedCrop,
+                            contentDescription = stringResource(
+                                R.string.match_lobby_screenshot_preview_description,
+                                slot.index,
+                            ),
+                            sourceImageWidth = slot.selectedScreenshotWidth,
+                            sourceImageHeight = slot.selectedScreenshotHeight,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .alpha(previewAlpha),
+                            testTag = MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + slot.index,
+                            onReady = {
+                                previewReady = true
+                                previewFailed = false
+                                onPreviewPreparationFinished(slot.index, slot.fingerprint)
+                            },
+                            onFailed = {
+                                previewFailed = true
+                                onPreviewPreparationFinished(slot.index, slot.fingerprint)
+                            },
+                        )
+                    }
                 }
-                if (supportsExpandableActions) {
+                if (supportsExpandableActions && previewTransitionFinished && previewReady) {
                     MatchReviewExpandableScreenshotActions(
                         expanded = screenshotActionExpansion.expandedScreenshotKey == screenshotActionKey,
                     ) {
@@ -721,7 +878,7 @@ private fun LobbyScreenshotDetail(
         slot.preservationError?.let { error ->
             Text(text = stringResource(error.toStringRes()), color = MaterialTheme.colorScheme.error)
         }
-        if (compactActions && previewImageUri == null) {
+        if (compactActions && previewImageUri == null && !slot.isPreviewPreparationInProgress) {
             LobbyScreenshotActions(
                 slot = slot,
                 isFinalized = isFinalized,
@@ -886,6 +1043,7 @@ private fun LobbyScreenshotActions(
     onRemove: (Int) -> Unit,
     compactActions: Boolean,
 ) {
+    if (slot.isPreviewPreparationInProgress) return
     if (!isFinalized && slot.hasLinkedAsset) {
         Row(
             modifier = Modifier.fillMaxWidth(),

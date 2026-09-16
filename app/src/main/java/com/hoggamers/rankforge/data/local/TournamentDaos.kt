@@ -838,6 +838,37 @@ interface MatchResultScreenshotAssetDao {
     @Query(
         """
         UPDATE match_result_screenshot_assets
+        SET crop_profile_id = :cropProfileId,
+            crop_left = :cropLeft,
+            crop_top = :cropTop,
+            crop_right = :cropRight,
+            crop_bottom = :cropBottom,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE tournament_id = :tournamentId
+            AND match_id = :matchId
+            AND screenshot_role = :screenshotRole
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateConfirmedCropIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        screenshotRole: String,
+        sha256: String,
+        expectedRevision: Long,
+        cropProfileId: String,
+        cropLeft: Double,
+        cropTop: Double,
+        cropRight: Double,
+        cropBottom: Double,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE match_result_screenshot_assets
         SET crop_profile_id = NULL,
             crop_left = NULL,
             crop_top = NULL,
@@ -1224,6 +1255,37 @@ interface MatchLobbyScreenshotAssetDao {
         cropBottom: Double,
         updatedAt: Long,
     )
+
+    @Query(
+        """
+        UPDATE match_lobby_screenshot_assets
+        SET crop_profile_id = :cropProfileId,
+            crop_left = :cropLeft,
+            crop_top = :cropTop,
+            crop_right = :cropRight,
+            crop_bottom = :cropBottom,
+            updated_at = :updatedAt,
+            revision = revision + 1
+        WHERE tournament_id = :tournamentId
+            AND match_id = :matchId
+            AND lobby_screenshot_index = :lobbyScreenshotIndex
+            AND sha256 = :sha256
+            AND revision = :expectedRevision
+        """,
+    )
+    suspend fun updateConfirmedCropIfGenerationMatches(
+        tournamentId: String,
+        matchId: String,
+        lobbyScreenshotIndex: Int,
+        sha256: String,
+        expectedRevision: Long,
+        cropProfileId: String,
+        cropLeft: Double,
+        cropTop: Double,
+        cropRight: Double,
+        cropBottom: Double,
+        updatedAt: Long,
+    ): Int
 
     @Query(
         """
