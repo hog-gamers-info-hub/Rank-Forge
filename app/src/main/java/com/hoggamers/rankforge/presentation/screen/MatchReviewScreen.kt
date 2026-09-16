@@ -3951,7 +3951,7 @@ private fun ResultScreenshotSelector(
             MatchReviewScreenshotUploadButton(
                 label = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
-                enabled = isEditable && !slot.isBusy,
+                enabled = isEditable && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
             )
         }
@@ -4238,9 +4238,9 @@ private fun ResultScreenshotPage(
                                 removeContentDescription = stringResource(
                                     R.string.match_review_screenshot_remove_content_description,
                                 ),
-                                replaceEnabled = !slot.isBusy,
-                                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
-                                removeEnabled = slot.hasLinkedAsset && !slot.isBusy,
+                                replaceEnabled = !slot.isMutationBusy,
+                                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isMutationBusy,
+                                removeEnabled = slot.hasLinkedAsset && !slot.isMutationBusy,
                                 replaceTestTag = role.replaceActionTestTag(),
                                 editTestTag = role.cropActionTestTag(),
                                 removeTestTag = role.removeActionTestTag(),
@@ -4666,7 +4666,7 @@ private fun ResultScreenshotActionRow(
     ) {
         TextButton(
             onClick = { onSelectScreenshot(role) },
-            enabled = !slot.isBusy,
+            enabled = !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,
@@ -4686,7 +4686,7 @@ private fun ResultScreenshotActionRow(
         }
         TextButton(
             onClick = { onOpenCrop(role) },
-            enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isBusy,
+            enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,
@@ -4708,7 +4708,7 @@ private fun ResultScreenshotActionRow(
         }
         TextButton(
             onClick = { onRemoveScreenshot(role) },
-            enabled = slot.hasLinkedAsset && !slot.isBusy,
+            enabled = slot.hasLinkedAsset && !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,

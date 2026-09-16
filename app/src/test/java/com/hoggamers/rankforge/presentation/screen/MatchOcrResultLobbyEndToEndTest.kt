@@ -128,14 +128,8 @@ class MatchOcrResultLobbyEndToEndTest {
         }
         viewModel.onFinalizeOcrCorrection()
         advanceUntilIdle()
-        val warningState = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(warningState.finalization.showWarningConfirmation)
-        assertFalse(warningState.finalization.isFinalized)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
-
-        viewModel.onConfirmFinalizeWarnings()
-        advanceUntilIdle()
         val finalizedState = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertFalse(finalizedState.finalization.showWarningConfirmation)
         assertTrue(finalizedState.finalization.isFinalized)
 
         val finalizedMatch = repository.observeMatchById(MATCH_ID).first()!!

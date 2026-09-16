@@ -368,7 +368,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             slot = slot,
                             hasSelection = hasSelection,
                             isActive = hasSelection && activeSlotIndex == slot.index,
-                            enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isBusy),
+                            enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isMutationBusy),
                             compactSelectors = compactSelectors,
                             onClick = onClick,
                         )
@@ -437,7 +437,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             onClick = { (onSelectBatch ?: { onSelect(nextEmptySlot.index) })() },
                             enabled = uiState.isAvailable &&
                                 !uiState.isFinalized &&
-                                !nextEmptySlot.isBusy,
+                                !nextEmptySlot.isMutationBusy,
                             modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
                         )
                     }
@@ -855,9 +855,9 @@ private fun LobbyScreenshotDetail(
                         removeContentDescription = stringResource(
                             R.string.match_review_screenshot_remove_content_description,
                         ),
-                        replaceEnabled = isAvailable && !isFinalized && !slot.isBusy,
-                        editEnabled = !isFinalized && !slot.isBusy,
-                        removeEnabled = !isFinalized && !slot.isBusy,
+                        replaceEnabled = isAvailable && !isFinalized && !slot.isMutationBusy,
+                        editEnabled = !isFinalized && !slot.isMutationBusy,
+                        removeEnabled = !isFinalized && !slot.isMutationBusy,
                         replaceTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index,
                         editTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index,
                         removeTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index,
@@ -1052,21 +1052,21 @@ private fun LobbyScreenshotActions(
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onSelect(slot.index) },
-                enabled = isAvailable && !isFinalized && !slot.isBusy,
+                enabled = isAvailable && !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_replace_action),
             )
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onCrop(slot.index) },
-                enabled = !isFinalized && !slot.isBusy,
+                enabled = !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_crop_action),
             )
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onRemove(slot.index) },
-                enabled = !isFinalized && !slot.isBusy,
+                enabled = !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_remove_action),
             )
@@ -1074,7 +1074,7 @@ private fun LobbyScreenshotActions(
     } else if (!isFinalized) {
         Button(
             onClick = { (onSelectBatch ?: { onSelect(slot.index) })() },
-            enabled = isAvailable && !isFinalized && !slot.isBusy,
+            enabled = isAvailable && !isFinalized && !slot.isMutationBusy,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),

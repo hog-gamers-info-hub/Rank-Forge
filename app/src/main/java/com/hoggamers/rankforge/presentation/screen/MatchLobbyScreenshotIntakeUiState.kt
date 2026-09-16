@@ -65,6 +65,13 @@ data class MatchLobbyScreenshotSlotUiState(
             isDuplicateDetectionInProgress ||
             isPreservationInProgress ||
             isPreviewPreparationInProgress
+
+    val isMutationBusy: Boolean
+        get() = isPhotoPickerLaunchPending ||
+            isPhotoPickerRequestActive ||
+            isValidationInProgress ||
+            isDuplicateDetectionInProgress ||
+            isPreservationInProgress
 }
 
 data class MatchLobbyScreenshotCropBatch(
@@ -115,7 +122,7 @@ data class MatchLobbyScreenshotIntakeUiState(
                 !isLobbySavedForNextMatches &&
                 slots.size == 3 &&
                 slots.all { it.index in 1..3 } &&
-                slots.none { it.isBusy } &&
+                slots.none { it.isMutationBusy } &&
                 selectedSlots.isNotEmpty() &&
                 selectedSlots.all { slot ->
                     slot.hasLinkedAsset &&
