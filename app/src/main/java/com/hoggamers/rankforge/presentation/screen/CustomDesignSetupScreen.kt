@@ -88,6 +88,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextCol
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridInitializer
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.PointIqHomeSystemBars
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.pointIqHomeBackground
@@ -458,19 +459,14 @@ fun CustomDesignSetupScreen(
     if (uiState.saveStatus == CustomDesignSaveStatus.SAVED &&
         uiState.restoreStatus != CustomDesignRestoreStatus.RESTORED
     ) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             modifier = Modifier.testTag(CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG),
             onDismissRequest = onSaveSuccessAcknowledged,
-            title = { Text(stringResource(R.string.custom_design_save_success_title)) },
-            text = { Text(stringResource(R.string.custom_design_save_success_message)) },
-            confirmButton = {
-                Button(
-                    onClick = onSaveSuccessConfirmed,
-                    modifier = Modifier.testTag(CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.custom_design_save_success_ok))
-                }
-            },
+            title = stringResource(R.string.custom_design_save_success_title),
+            message = stringResource(R.string.custom_design_save_success_message),
+            confirmLabel = stringResource(R.string.custom_design_save_success_ok),
+            onConfirm = onSaveSuccessConfirmed,
+            confirmModifier = Modifier.testTag(CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG),
         )
     }
 

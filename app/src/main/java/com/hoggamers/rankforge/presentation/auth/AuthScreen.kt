@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +61,7 @@ import androidx.core.view.WindowCompat
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AccountDeletionFailureCategory
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -762,40 +762,26 @@ private fun SignedInAuthContent(
     }
 
     if (showDeleteAccountConfirmation) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             onDismissRequest = {
                 if (!deletionInProgress) showDeleteAccountConfirmation = false
             },
             modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRMATION_TEST_TAG),
-            title = {
-                Text(text = stringResource(R.string.auth_delete_account_confirmation_title))
+            title = stringResource(R.string.auth_delete_account_confirmation_title),
+            message = stringResource(R.string.auth_delete_account_confirmation_message),
+            onDismiss = {
+                if (!deletionInProgress) showDeleteAccountConfirmation = false
             },
-            text = {
-                Text(text = stringResource(R.string.auth_delete_account_confirmation_message))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteAccountConfirmation = false
-                        onDeleteAccountConfirmed()
-                    },
-                    enabled = !deletionInProgress,
-                    modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = PointIqAccountDanger,
-                    ),
-                ) {
-                    Text(text = stringResource(R.string.auth_delete_account_action))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteAccountConfirmation = false },
-                    enabled = !deletionInProgress,
-                    modifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG),
-                ) {
-                    Text(text = stringResource(R.string.auth_delete_account_cancel_action))
-                }
+            dismissLabel = stringResource(R.string.auth_delete_account_cancel_action),
+            confirmLabel = stringResource(R.string.auth_delete_account_action),
+            confirmEnabled = !deletionInProgress,
+            dismissEnabled = !deletionInProgress,
+            destructive = true,
+            dismissModifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CANCEL_TEST_TAG),
+            confirmModifier = Modifier.testTag(AUTH_DELETE_ACCOUNT_CONFIRM_TEST_TAG),
+            onConfirm = {
+                showDeleteAccountConfirmation = false
+                onDeleteAccountConfirmed()
             },
         )
     }

@@ -34,7 +34,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -103,6 +102,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.presentation.component.PointIqHomeSystemBars
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.pointIqHomeBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -785,24 +785,17 @@ fun DownloadResultScreen(
     if (showDeleteConfirmation && selectedDesign == DownloadResultDesignType.MY_DESIGN &&
         hasSavedCustomDesign
     ) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(text = "Delete custom design?") },
-            text = { Text(text = "This will remove your saved custom design.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmation = false
-                        onDeleteSavedCustomDesign()
-                    },
-                ) {
-                    Text(text = "Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text(text = "Cancel")
-                }
+            title = "Delete custom design?",
+            message = "This will remove your saved custom design.",
+            onDismiss = { showDeleteConfirmation = false },
+            dismissLabel = "Cancel",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = {
+                showDeleteConfirmation = false
+                onDeleteSavedCustomDesign()
             },
         )
     }
