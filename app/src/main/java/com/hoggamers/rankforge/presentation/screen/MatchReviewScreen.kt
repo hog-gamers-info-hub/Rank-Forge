@@ -127,6 +127,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -2337,26 +2338,18 @@ private fun MatchReviewContent(
     }
 
     if (showFinalizeConfirmation) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             onDismissRequest = { showFinalizeConfirmation = false },
-            title = { Text(stringResource(R.string.match_review_finalize_title)) },
-            text = { Text(stringResource(R.string.match_review_finalize_message)) },
-            dismissButton = {
-                TextButton(onClick = { showFinalizeConfirmation = false }) {
-                    Text(stringResource(R.string.cancel_action))
-                }
+            title = stringResource(R.string.match_review_finalize_title),
+            message = stringResource(R.string.match_review_finalize_message),
+            onDismiss = { showFinalizeConfirmation = false },
+            dismissLabel = stringResource(R.string.cancel_action),
+            confirmLabel = stringResource(R.string.confirm_finalize_match_action),
+            onConfirm = {
+                showFinalizeConfirmation = false
+                onFinalize()
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showFinalizeConfirmation = false
-                        onFinalize()
-                    },
-                    modifier = Modifier.testTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.confirm_finalize_match_action))
-                }
-            },
+            confirmModifier = Modifier.testTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG),
         )
     }
     if (showCorrectionConfirmation) {
