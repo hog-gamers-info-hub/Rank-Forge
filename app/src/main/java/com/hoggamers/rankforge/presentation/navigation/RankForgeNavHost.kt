@@ -268,6 +268,16 @@ fun RankForgeNavHost(
             val onOpenStandings: (String) -> Unit = { tournamentId ->
                 navController.navigate(TournamentStandingsDestination(tournamentId))
             }
+            val onOpenDownloadResult: (String, String) -> Unit = { tournamentId, matchId ->
+                navController.navigate(
+                    DownloadResultDestination(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        initialDownloadScope = ResultDownloadScope.WHOLE_TOURNAMENT.name,
+                        returnToTournamentDetails = true,
+                    ),
+                )
+            }
             val onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = { conflict ->
                 conflict.currentCloudRevision?.let { revision ->
                     navController.navigate(
@@ -308,6 +318,7 @@ fun RankForgeNavHost(
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
+                    onOpenDownloadResult = onOpenDownloadResult,
                     onResolveDraftConflict = onResolveDraftConflict,
                     uploadViewModel = cloudUploadViewModel,
                     draftMatchSyncViewModel = draftMatchSyncViewModel,
@@ -323,6 +334,7 @@ fun RankForgeNavHost(
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
+                    onOpenDownloadResult = onOpenDownloadResult,
                     onResolveDraftConflict = onResolveDraftConflict,
                     viewModel = detailsViewModel,
                     uploadViewModel = cloudUploadViewModel,
@@ -788,11 +800,27 @@ fun RankForgeNavHost(
         composable<DownloadResultDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<DownloadResultDestination>()
             val reviewDestination = MatchReviewDestination(destination.tournamentId, destination.matchId)
-            val onBackToReview: () -> Unit = {
-                if (!navController.popBackStack(reviewDestination, inclusive = false)) {
-                    navController.navigate(reviewDestination) {
-                        popUpTo(DownloadResultDestination(destination.tournamentId, destination.matchId)) {
-                            inclusive = true
+            val onBack: () -> Unit = if (destination.returnToTournamentDetails) {
+                {
+                    if (!navController.popBackStack(
+                            TournamentDetailsDestination(destination.tournamentId),
+                            inclusive = false,
+                        )
+                    ) {
+                        navController.navigate(TournamentDetailsDestination(destination.tournamentId)) {
+                            popUpTo(DownloadResultDestination(destination.tournamentId, destination.matchId)) {
+                                inclusive = true
+                            }
+                        }
+                    }
+                }
+            } else {
+                {
+                    if (!navController.popBackStack(reviewDestination, inclusive = false)) {
+                        navController.navigate(reviewDestination) {
+                            popUpTo(DownloadResultDestination(destination.tournamentId, destination.matchId)) {
+                                inclusive = true
+                            }
                         }
                     }
                 }
@@ -808,7 +836,7 @@ fun RankForgeNavHost(
                 } else {
                     DownloadResultSelection.Overall
                 },
-                onBack = onBackToReview,
+                onBack = onBack,
                 onOpenCustomDesignSetup = { matchId, scope ->
                     navController.navigate(
                         CustomDesignSetupDestination(
