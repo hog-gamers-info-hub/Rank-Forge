@@ -1,5 +1,7 @@
 ﻿package com.hoggamers.rankforge.presentation.screen
 
+import android.net.Uri
+import android.net.TestUri
 import com.hoggamers.rankforge.data.export.AndroidExportBlockedReason
 import com.hoggamers.rankforge.data.export.AndroidExportResult
 import com.hoggamers.rankforge.data.export.AndroidExportType
@@ -100,6 +102,8 @@ import org.junit.Before
 import org.junit.Test
 
 private const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
+
+private fun testUri(value: String): Uri = TestUri(value)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MatchReviewViewModelTest {
@@ -2908,7 +2912,7 @@ class MatchReviewViewModelTest {
             },
         )
         val coordinator = RecordingResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PDF, "result.pdf"),
+            result = ResultDownloadExecutionResult.Saved(testUri("content://test/result.pdf"), ResultExportFileFormat.PDF, "result.pdf"),
         )
         val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -2962,7 +2966,7 @@ class MatchReviewViewModelTest {
     fun currentMatchPdfUsesExactLocalContextAndSucceeds() = runTest {
         saveValidFinalizedMatch()
         val coordinator = RecordingResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PDF, "result.pdf"),
+            result = ResultDownloadExecutionResult.Saved(testUri("content://test/result.pdf"), ResultExportFileFormat.PDF, "result.pdf"),
         )
         val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -2987,7 +2991,7 @@ class MatchReviewViewModelTest {
     fun currentMatchPngUsesPngPathAndSucceeds() = runTest {
         saveValidFinalizedMatch()
         val coordinator = RecordingResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+            result = ResultDownloadExecutionResult.Saved(testUri("content://test/result.png"), ResultExportFileFormat.PNG, "result.png"),
         )
         val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -3006,8 +3010,9 @@ class MatchReviewViewModelTest {
     @Test
     fun customDesignCurrentMatchUsesExactIdAndExistingRequestContext() = runTest {
         saveValidFinalizedMatch()
+        val customResultUri = testUri("content://test/custom-result.png")
         val coordinator = RecordingCustomDesignResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+            result = ResultDownloadExecutionResult.Saved(customResultUri, ResultExportFileFormat.PNG, "result.png"),
         )
         val viewModel = reviewViewModel(customDesignResultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -3024,6 +3029,50 @@ class MatchReviewViewModelTest {
         assertEquals(
             ResultDownloadUiState.Success(ResultExportFileFormat.PNG, false),
             viewModel.uiState.value.resultDownloadUiState,
+        )
+        assertEquals(
+            ResultShareRequest(
+                uri = customResultUri,
+                format = ResultExportFileFormat.PNG,
+                displayName = "result.png",
+            ),
+            viewModel.shareEvents.first(),
+        )
+    }
+
+    @Test
+    fun successfulDownloadsEmitOneShareRequestPerSavedResult() = runTest {
+        saveValidFinalizedMatch()
+        val firstUri = testUri("content://test/first-result.pdf")
+        val secondUri = testUri("content://test/second-result.pdf")
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.Saved(
+                uri = firstUri,
+                format = ResultExportFileFormat.PDF,
+                displayName = "first-result.pdf",
+            ),
+        )
+        val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultShareRequest(firstUri, ResultExportFileFormat.PDF, "first-result.pdf"),
+            viewModel.shareEvents.first(),
+        )
+
+        coordinator.result = ResultDownloadExecutionResult.Saved(
+            uri = secondUri,
+            format = ResultExportFileFormat.PDF,
+            displayName = "second-result.pdf",
+        )
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(
+            ResultShareRequest(secondUri, ResultExportFileFormat.PDF, "second-result.pdf"),
+            viewModel.shareEvents.first(),
         )
     }
 
@@ -3071,7 +3120,7 @@ class MatchReviewViewModelTest {
             ),
         )
         val coordinator = RecordingResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"),
+            result = ResultDownloadExecutionResult.Saved(testUri("content://test/result.png"), ResultExportFileFormat.PNG, "result.png"),
         )
         val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -3285,7 +3334,7 @@ class MatchReviewViewModelTest {
             ),
         )
         val coordinator = RecordingResultDownloadCoordinator(
-            result = ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PDF, "result.pdf"),
+            result = ResultDownloadExecutionResult.Saved(testUri("content://test/result.pdf"), ResultExportFileFormat.PDF, "result.pdf"),
         )
         val viewModel = reviewViewModel(resultDownloadCoordinator = coordinator)
         viewModel.load(TOURNAMENT_ID, matchId)
@@ -3335,6 +3384,40 @@ class MatchReviewViewModelTest {
             ResultDownloadUiState.Success(ResultExportFileFormat.PNG, true),
             viewModel.uiState.value.resultDownloadUiState,
         )
+    }
+
+    @Test
+    fun safDestinationSuccessEmitsTheChosenDestinationUri() = runTest {
+        saveValidFinalizedMatch()
+        val destinationUri = testUri("content://test/chosen-destination.pdf")
+        val writer = RecordingResultDocumentWriter(
+            ResultDocumentWriteResult.Success(destinationUri),
+        )
+        val coordinator = RecordingResultDownloadCoordinator(
+            result = ResultDownloadExecutionResult.UserDestinationRequired(
+                format = ResultExportFileFormat.PDF,
+                displayName = "result.pdf",
+                bytes = byteArrayOf(4, 5, 6),
+            ),
+        )
+        val viewModel = reviewViewModel(
+            resultDownloadCoordinator = coordinator,
+            resultDocumentWriter = writer,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestResultDownload(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF)
+        advanceUntilIdle()
+        viewModel.onDestinationLaunchHandled()
+        viewModel.onDestinationResult(destinationUri)
+        advanceUntilIdle()
+
+        assertEquals(
+            ResultShareRequest(destinationUri, ResultExportFileFormat.PDF, "result.pdf"),
+            viewModel.shareEvents.first(),
+        )
+        assertEquals(listOf(destinationUri), writer.uris)
     }
 
     @Test
@@ -3556,6 +3639,7 @@ class MatchReviewViewModelTest {
 
     private class RecordingResultDownloadCoordinator(
         var result: ResultDownloadExecutionResult = ResultDownloadExecutionResult.Saved(
+            uri = testUri("content://test/result"),
             format = ResultExportFileFormat.PDF,
             displayName = "result.pdf",
         ),
@@ -3599,14 +3683,18 @@ class MatchReviewViewModelTest {
     }
 
     private class RecordingResultDocumentWriter(
-        private val result: ResultDocumentWriteResult = ResultDocumentWriteResult.Success,
+        private val result: ResultDocumentWriteResult = ResultDocumentWriteResult.Success(
+            testUri("content://test/destination"),
+        ),
     ) : ResultDocumentWriter {
         val bytesWritten = mutableListOf<List<Byte>>()
+        val uris = mutableListOf<Uri?>()
 
         override suspend fun write(
             uri: android.net.Uri?,
             bytes: ByteArray,
         ): ResultDocumentWriteResult {
+            uris += uri
             bytesWritten += bytes.toList()
             return result
         }

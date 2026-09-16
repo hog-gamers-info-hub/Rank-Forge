@@ -72,7 +72,7 @@ class CustomDesignResultDownloadCoordinatorTest {
             coordinator.execute(customDesignId, currentMatchRequest())
         }
 
-        assertEquals(ResultDownloadExecutionResult.Saved(ResultExportFileFormat.PNG, "result.png"), result)
+        assertEquals(ResultDownloadExecutionResult.Saved(Uri.EMPTY, ResultExportFileFormat.PNG, "result.png"), result)
         assertEquals(customDesignId, restoredId)
         assertEquals("file:///restored/custom-design.png", composedReference)
         assertEquals(rows, composedRows)

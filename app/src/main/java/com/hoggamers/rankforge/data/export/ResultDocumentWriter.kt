@@ -13,7 +13,7 @@ enum class ResultDocumentWriteFailure {
 }
 
 sealed interface ResultDocumentWriteResult {
-    data object Success : ResultDocumentWriteResult
+    data class Success(val uri: Uri) : ResultDocumentWriteResult
 
     data class Failure(
         val reason: ResultDocumentWriteFailure,
@@ -62,7 +62,7 @@ class AndroidResultDocumentWriter(
                 stream.write(bytes)
                 stream.flush()
             }
-            ResultDocumentWriteResult.Success
+            ResultDocumentWriteResult.Success(uri)
         } catch (_: IOException) {
             ResultDocumentWriteResult.Failure(ResultDocumentWriteFailure.WRITE_FAILED)
         } catch (_: RuntimeException) {
