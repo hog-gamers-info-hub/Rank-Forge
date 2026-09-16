@@ -1344,7 +1344,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun warningsRequireConfirmationBeforeFinalization() = runTest(dispatcher) {
+    fun warningsFinalizeImmediatelyWithoutConfirmation() = runTest(dispatcher) {
         val repository = createRepository()
         val warningDraft = correctionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
@@ -1355,9 +1355,9 @@ class MatchOcrReviewViewModelTest {
         advanceUntilIdle()
 
         val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertTrue(ready.finalization.showWarningConfirmation)
-        assertFalse(ready.finalization.isFinalized)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
+        assertFalse(ready.finalization.showWarningConfirmation)
+        assertTrue(ready.finalization.isFinalized)
+        assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
     }
 
     @Test
@@ -1619,24 +1619,6 @@ class MatchOcrReviewViewModelTest {
         assertEquals(null, ready.finalization.error)
         assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
         assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
-    }
-
-    @Test
-    fun dismissFinalizeWarningsHidesConfirmationWithoutFinalizing() = runTest(dispatcher) {
-        val repository = createRepository()
-        val warningDraft = correctionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
-        }
-        val viewModel = viewModelWith(repository, readyState(correctionDraft = warningDraft))
-
-        viewModel.onFinalizeOcrCorrection()
-        viewModel.onDismissFinalizeWarnings()
-        advanceUntilIdle()
-
-        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertFalse(ready.finalization.showWarningConfirmation)
-        assertFalse(ready.finalization.isFinalized)
-        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
     }
 
     @Test

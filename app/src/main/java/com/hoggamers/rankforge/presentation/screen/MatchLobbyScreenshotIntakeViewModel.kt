@@ -224,7 +224,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             _uiState.update { it.copy(intakeError = MatchLobbyScreenshotIntakeError.FINALIZED_MATCH) }
             return
         }
-        if (current.multiPhotoPickerRequest != null || current.slots.any { it.isBusy }) return
+        if (current.multiPhotoPickerRequest != null || current.slots.any { it.isMutationBusy }) return
         val targetSlots = current.slots
             .filter { it.hasLinkedAsset.not() && it.selectedScreenshotUri.isNullOrBlank() }
             .map { it.index }
@@ -566,7 +566,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         pendingNewLobbyScreenshotCropSlots.remove(index)
         pendingLobbyScreenshotCropCandidates.remove(index)
         if (!current.isAvailable || current.isFinalized) return
-        if (slot.isBusy || !slot.hasLinkedAsset || slot.isLocalFileMissing) return
+        if (slot.isMutationBusy || !slot.hasLinkedAsset || slot.isLocalFileMissing) return
         _uiState.update {
             it.copy(
                 pendingCropNavigationSlotIndex = index,

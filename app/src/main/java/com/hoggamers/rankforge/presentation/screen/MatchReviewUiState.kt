@@ -149,6 +149,14 @@ data class MatchResultScreenshotSlotUiState(
             isPreservationInProgress ||
             isPreviewPreparationInProgress ||
             isUploadInProgress
+
+    val isMutationBusy: Boolean
+        get() = isPhotoPickerLaunchPending ||
+            isPhotoPickerRequestActive ||
+            isValidationInProgress ||
+            isDuplicateDetectionInProgress ||
+            isPreservationInProgress ||
+            isUploadInProgress
 }
 
 data class MatchResultScreenshotCropBatch(

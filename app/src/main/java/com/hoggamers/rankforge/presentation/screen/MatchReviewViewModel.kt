@@ -1432,7 +1432,7 @@ class MatchReviewViewModel @Inject constructor(
         }
         val isBusyOwnedByActiveBatch = activeResultBatchGeneration != null &&
             role in activeResultBatchRoles
-        if (slot.isBusy && !isBusyOwnedByActiveBatch) return
+        if (slot.isMutationBusy && !isBusyOwnedByActiveBatch) return
         cancelActiveResultBatchAndClearTransientState()
         screenshotIntakeGeneration++
         _uiState.updateSlot(role) {
@@ -1455,7 +1455,7 @@ class MatchReviewViewModel @Inject constructor(
         val current = _uiState.value
         if (!current.isAvailable || !current.isEditable) return
         if (current.resultScreenshotMultiPhotoPickerRequest != null ||
-            current.resultScreenshots.any { it.isBusy }
+            current.resultScreenshots.any { it.isMutationBusy }
         ) return
         val targetRoles = listOf(
             MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -2442,7 +2442,7 @@ class MatchReviewViewModel @Inject constructor(
         val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
         val slot = current.resultScreenshots.slot(role)
 
-        if (!current.isEditable || !slot.hasLinkedAsset || slot.isBusy) return
+        if (!current.isEditable || !slot.hasLinkedAsset || slot.isMutationBusy) return
 
         val identity = MatchResultScreenshotIdentity(
             tournamentId = tournamentId,
