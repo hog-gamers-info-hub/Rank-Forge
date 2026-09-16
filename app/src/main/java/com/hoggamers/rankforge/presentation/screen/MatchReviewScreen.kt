@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -15,6 +16,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -132,6 +134,7 @@ import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val PointIqMatchReviewNavy = Color(0xFF071B3E)
@@ -1367,6 +1370,7 @@ private fun MatchReviewContent(
     var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
     var expandedScreenshotKey by remember { mutableStateOf<String?>(null) }
+    var manualPanelExitRequested by remember { mutableStateOf(false) }
     val screenshotActionExpansion = MatchReviewScreenshotActionExpansion(
         expandedScreenshotKey = expandedScreenshotKey,
         onToggle = { key ->
@@ -1473,6 +1477,24 @@ private fun MatchReviewContent(
         !hasResultScreenshotSelection &&
         ocrUiState is MatchOcrReviewUiState.Ready &&
         hasDisplayableResultOcrData
+    val manualPanelAnimationVisible = showManualPanel && !manualPanelExitRequested
+    LaunchedEffect(manualModeOpened) {
+        if (manualModeOpened) {
+            manualPanelExitRequested = false
+        }
+    }
+    LaunchedEffect(manualPanelExitRequested) {
+        if (manualPanelExitRequested) {
+            delay(280)
+            manualPanelExitRequested = false
+            onManualBack()
+        }
+    }
+    val requestManualBack = {
+        if (!manualPanelExitRequested) {
+            manualPanelExitRequested = true
+        }
+    }
     val manualOcrPanel: @Composable (Modifier) -> Unit = { modifier ->
         Surface(
             modifier = modifier
@@ -1516,7 +1538,7 @@ private fun MatchReviewContent(
                     onFinalizeOcrCorrection = onOcrFinalize,
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-                    onManualBack = onManualBack,
+                    onManualBack = requestManualBack,
                 )
             }
         }
@@ -1751,12 +1773,27 @@ private fun MatchReviewContent(
             }
             Spacer(modifier = Modifier.height(14.dp))
             if (manualModeOpened) {
-                if (showManualPanel) {
-                    manualOcrPanel(
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
+                AnimatedVisibility(
+                    visible = manualPanelAnimationVisible,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    enter = slideInVertically(
+                        animationSpec = tween(
+                            durationMillis = 280,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        initialOffsetY = { height -> height },
+                    ),
+                    exit = slideOutVertically(
+                        animationSpec = tween(
+                            durationMillis = 280,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        targetOffsetY = { height -> height },
+                    ),
+                ) {
+                    manualOcrPanel(Modifier.fillMaxSize())
                 }
             } else {
             PointIqEmptyMatchReviewSection(
@@ -1832,12 +1869,27 @@ private fun MatchReviewContent(
             }
             Spacer(modifier = Modifier.height(14.dp))
             if (manualModeOpened) {
-                if (showManualPanel) {
-                    manualOcrPanel(
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
+                AnimatedVisibility(
+                    visible = manualPanelAnimationVisible,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    enter = slideInVertically(
+                        animationSpec = tween(
+                            durationMillis = 280,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        initialOffsetY = { height -> height },
+                    ),
+                    exit = slideOutVertically(
+                        animationSpec = tween(
+                            durationMillis = 280,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        targetOffsetY = { height -> height },
+                    ),
+                ) {
+                    manualOcrPanel(Modifier.fillMaxSize())
                 }
             } else {
             PointIqEmptyMatchReviewSection(
