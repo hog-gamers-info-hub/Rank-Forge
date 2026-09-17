@@ -31,6 +31,7 @@ import com.hoggamers.rankforge.presentation.screen.RosterScreenshotIntakeViewMod
 import com.hoggamers.rankforge.presentation.screen.TournamentCreationRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsRoute
 import com.hoggamers.rankforge.presentation.screen.TournamentDetailsViewModel
+import com.hoggamers.rankforge.presentation.screen.ScoringRulesScreen
 import com.hoggamers.rankforge.presentation.screen.TournamentCloudUploadViewModel
 import com.hoggamers.rankforge.presentation.screen.TournamentCloudRestorationViewModel
 import com.hoggamers.rankforge.presentation.screen.DraftMatchCloudSyncViewModel
@@ -278,6 +279,9 @@ fun RankForgeNavHost(
                     ),
                 )
             }
+            val onOpenScoringRules: (String) -> Unit = { tournamentId ->
+                navController.navigate(ScoringRulesDestination(tournamentId))
+            }
             val onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = { conflict ->
                 conflict.currentCloudRevision?.let { revision ->
                     navController.navigate(
@@ -319,6 +323,7 @@ fun RankForgeNavHost(
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
                     onOpenDownloadResult = onOpenDownloadResult,
+                    onOpenScoringRules = onOpenScoringRules,
                     onResolveDraftConflict = onResolveDraftConflict,
                     uploadViewModel = cloudUploadViewModel,
                     draftMatchSyncViewModel = draftMatchSyncViewModel,
@@ -335,6 +340,7 @@ fun RankForgeNavHost(
                     onReviewMatch = onReviewMatch,
                     onOpenStandings = onOpenStandings,
                     onOpenDownloadResult = onOpenDownloadResult,
+                    onOpenScoringRules = onOpenScoringRules,
                     onResolveDraftConflict = onResolveDraftConflict,
                     viewModel = detailsViewModel,
                     uploadViewModel = cloudUploadViewModel,
@@ -343,6 +349,21 @@ fun RankForgeNavHost(
                     matchCloudRestorationViewModel = matchCloudRestorationViewModel,
                 )
             }
+        }
+        composable<ScoringRulesDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<ScoringRulesDestination>()
+            val detailsDestination = TournamentDetailsDestination(destination.tournamentId)
+            ScoringRulesScreen(
+                onBack = {
+                    if (!navController.popBackStack(detailsDestination, inclusive = false)) {
+                        navController.navigate(detailsDestination) {
+                            popUpTo(ScoringRulesDestination(destination.tournamentId)) {
+                                inclusive = true
+                            }
+                        }
+                    }
+                },
+            )
         }
         composable<DraftConflictResolutionDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<DraftConflictResolutionDestination>()

@@ -119,6 +119,33 @@
     <string name="download_action">Download</string>
     <string name="tournament_details_title">Tournament Details</string>
     <string name="tournament_details_loading">Loading tournament</string>
+    <string name="tournament_details_scoring_rules_action">Scoring Rules</string>
+    <string name="scoring_rules_title">Scoring Rules</string>
+    <string name="scoring_rules_placement_points_title">Placement Points</string>
+    <string name="scoring_rules_kill_points_title">Kill Points</string>
+    <string name="scoring_rules_kill_points_description">1 Kill = 1 Point</string>
+    <string name="scoring_rules_total_points_title">Total Points</string>
+    <string name="scoring_rules_total_points_description">Total Points = Placement Points + Kill Points</string>
+    <string name="scoring_rules_tie_break_title">Tie-break Rules</string>
+    <string name="scoring_rules_tie_break_first">More 1st-place finishes</string>
+    <string name="scoring_rules_tie_break_kills">More Total Kills</string>
+    <string name="scoring_rules_tie_break_latest_placement">Better placement in the latest match</string>
+    <string name="scoring_rules_tie_break_item">%1$d. %2$s</string>
+    <string name="scoring_rules_complete_tie">Complete tie if all criteria are equal.</string>
+    <string-array name="scoring_rules_placement_labels">
+        <item>1st</item>
+        <item>2nd</item>
+        <item>3rd</item>
+        <item>4th</item>
+        <item>5th</item>
+        <item>6th</item>
+        <item>7th</item>
+        <item>8th</item>
+        <item>9th</item>
+        <item>10th</item>
+        <item>11th</item>
+        <item>12th</item>
+    </string-array>
     <string name="tournament_not_found_title">Tournament not found</string>
     <string name="tournament_not_found_message">This tournament is no longer available in the current app session.</string>
     <string name="back_to_tournament_list_action">Back to tournament list</string>
