@@ -34,6 +34,48 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun eliminationParserPreservesExistingMarkersAndAcceptsStrongPrefixTruncation() {
+        listOf(
+            "3Eliminations" to 3,
+            "3Elimination" to 3,
+            "3Eliminatio" to 3,
+            "3Eliminati" to 3,
+            "O Eliminati" to 0,
+            "3Eliminat" to 3,
+            "3 Eliminat" to 3,
+            "0Eliminat" to 0,
+            "0 Eliminat" to 0,
+            "OEliminat" to 0,
+            "O Eliminat" to 0,
+            "10Eliminat" to 10,
+            "12 Eliminat" to 12,
+        ).forEach { (text, expectedKill) ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertEquals(expectedKill, parsed.kill)
+            assertTrue(parsed.markerMatched)
+            assertEquals(null, parsed.playerSuffix)
+        }
+        assertEquals(
+            MatchResultEliminationPrefixType.EXPLICIT_NUMERIC,
+            MatchResultPositionSemanticTextParser.parse("3Eliminat").prefixType,
+        )
+        assertEquals(
+            MatchResultEliminationPrefixType.O_NORMALIZED,
+            MatchResultPositionSemanticTextParser.parse("O Eliminat").prefixType,
+        )
+        assertEquals("ELIMINAT", MatchResultPositionSemanticTextParser.parse("3Eliminat").markerType)
+    }
+
+    @Test
+    fun truncatedEliminationParserRequiresStrongPrefix() {
+        listOf("Eliminat", "Eliminator", "EliminatPLAYER", "ABCEliminat", "PLAYER").forEach { text ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue(!parsed.markerMatched)
+            assertEquals(null, parsed.kill)
+        }
+    }
+
+    @Test
     fun arbitraryTextWithoutMarkerIsUnresolved() {
         val parsed = MatchResultPositionSemanticTextParser.parse("PLAYER7")
         assertTrue(!parsed.markerMatched)
@@ -129,6 +171,17 @@ class MatchResultPositionOcrFieldMapperTest {
         assertEquals("8", result.fields.single { it.id == "KILL_7_4" }.resolvedText)
         assertEquals("B", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
         assertEquals("D", result.fields.single { it.id == "PLAYER_7_4" }.resolvedText)
+    }
+
+    @Test
+    fun truncatedRightKillMarkersMapToNumericKillFields() {
+        val numeric = mapper.map(rightInput(position = 7, middle = "PlayerB", right = "3Eliminat"))
+        val normalized = mapper.map(rightInput(position = 7, middle = "PlayerB", right = "O Eliminat"))
+
+        assertEquals("3", numeric.fields.single { it.id == "KILL_7_3" }.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.DIRECT_NUMERIC, numeric.fields.single { it.id == "KILL_7_3" }.status)
+        assertEquals("0", normalized.fields.single { it.id == "KILL_7_3" }.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.O_NORMALIZED_TO_0, normalized.fields.single { it.id == "KILL_7_3" }.status)
     }
 
     @Test
