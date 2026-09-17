@@ -185,6 +185,66 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun verifiedKillFallbackFillsOnlyEmptyPpKill() {
+        val result = mapper.map(
+            rightInput(position = 7, middle = "PlayerB", left = "", right = "").copy(
+                killVerifications = mapOf(3 to verified(4)),
+            ),
+        )
+
+        val kill = result.fields.single { it.id == "KILL_7_3" }
+        assertEquals("4", kill.resolvedText)
+        assertEquals("4", kill.ocrText)
+        assertEquals(MatchResultOcrFieldStatus.MLKIT_FALLBACK, kill.status)
+        assertTrue(result.isAutoAcceptable)
+    }
+
+    @Test
+    fun unresolvedKillFallbackLeavesTheKillEmpty() {
+        val result = mapper.map(
+            rightInput(position = 7, middle = "PlayerB", left = "", right = "").copy(
+                killVerifications = mapOf(
+                    3 to MatchResultNumericVerification.Unresolved(
+                        listOf(
+                            MatchResultNumericCandidate(
+                                variant = MatchResultNumericCropVariant.ORIGINAL,
+                                rawText = "2 3Eminaions",
+                                value = 2,
+                                confidence = null,
+                            ),
+                            MatchResultNumericCandidate(
+                                variant = MatchResultNumericCropVariant.ORIGINAL,
+                                rawText = "3Eminaions",
+                                value = 3,
+                                confidence = null,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val kill = result.fields.single { it.id == "KILL_7_3" }
+        assertEquals("", kill.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.EMPTY, kill.status)
+        assertTrue(!result.isAutoAcceptable)
+    }
+
+    @Test
+    fun resolvedPpKillAlwaysWinsOverDifferentFallbackValue() {
+        val result = mapper.map(
+            rightInput(position = 7, middle = "PlayerB", left = "", right = "3Eliminations").copy(
+                killVerifications = mapOf(3 to verified(5)),
+            ),
+        )
+
+        val kill = result.fields.single { it.id == "KILL_7_3" }
+        assertEquals("3", kill.resolvedText)
+        assertEquals("3Eliminations", kill.ocrText)
+        assertEquals(MatchResultOcrFieldStatus.DIRECT_NUMERIC, kill.status)
+    }
+
+    @Test
     fun rightLayoutMergedMiddleSuffixesAreParsedConservatively() {
         assertEquals("ABBA LIVE", MatchResultPositionSemanticTextParser.suffixAfterElimination("3EliminationABBA LIVE"))
         assertEquals("EB-ALPHA.18", MatchResultPositionSemanticTextParser.suffixAfterElimination("1EliminationEB-ALPHA.18"))
@@ -227,7 +287,7 @@ class MatchResultPositionOcrFieldMapperTest {
         assertEquals(MatchResultOcrFieldStatus.DIRECT_NUMERIC, fields.fields.single { it.id == "KILL_7_1" }.status)
         assertEquals("A", fields.row.playerSlots.first { it.slot == 1 }.player.resolvedText)
         assertEquals("D", fields.row.playerSlots.first { it.slot == 4 }.player.resolvedText)
-        assertTrue(!fields.isAutoAcceptable)
+        assertTrue(fields.isAutoAcceptable)
     }
 
     @Test

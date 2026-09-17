@@ -124,7 +124,17 @@ class MatchResultPositionOcrFieldMapper {
                     status = if (playerText.isBlank()) MatchResultOcrFieldStatus.EMPTY else MatchResultOcrFieldStatus.DIRECT_TEXT,
                 ))
 
-                add(killField(input, visualRow, slot, rowIndex, isFirstPlayer, semantics.elimination))
+                add(
+                    killField(
+                        input = input,
+                        visualRow = visualRow,
+                        slot = slot,
+                        rowIndex = rowIndex,
+                        first = isFirstPlayer,
+                        parsed = semantics.elimination,
+                        verification = input.killVerifications[slot],
+                    ),
+                )
             }
         }
 
@@ -200,7 +210,7 @@ class MatchResultPositionOcrFieldMapper {
                     !it.text.parseElimination().markerMatched
             }
             val elimination = rowLines.firstOrNull {
-                it.centerX() in killRange(input.cropWidth, first) &&
+                it.centerX() in MatchResultKillFieldLayout.horizontalRange(input.position, input.cropWidth, first) &&
                     it.text.parseElimination().markerMatched
             }?.text?.let(MatchResultPositionSemanticTextParser::parse)
             return SlotSemantic(
@@ -282,21 +292,42 @@ class MatchResultPositionOcrFieldMapper {
         rowIndex: Int,
         first: Boolean,
         parsed: ParsedEliminationText?,
-    ) = field(
-        id = "KILL_${input.position}_$slot",
-        type = MatchResultOcrFieldType.KILL,
-        position = input.position,
-        visualRow = visualRow,
-        slot = slot,
-        rect = killRect(input, rowIndex, first),
-        ocrText = parsed?.rawText.orEmpty(),
-        resolvedText = if (parsed?.markerMatched == true) (parsed.kill ?: 0).toString() else "",
-        status = when {
-            parsed?.markerMatched != true -> MatchResultOcrFieldStatus.EMPTY
-            parsed.prefixType == MatchResultEliminationPrefixType.O_NORMALIZED -> MatchResultOcrFieldStatus.O_NORMALIZED_TO_0
-            else -> MatchResultOcrFieldStatus.DIRECT_NUMERIC
-        },
-    )
+        verification: MatchResultNumericVerification?,
+    ): MatchResultOcrField {
+        val ppResolved = parsed?.markerMatched == true
+        val ppRawText = parsed?.rawText.orEmpty()
+        val ppKill = parsed?.kill ?: 0
+        val ppPrefixType = parsed?.prefixType
+        val fallback = verification as? MatchResultNumericVerification.Verified
+        return field(
+            id = "KILL_${input.position}_$slot",
+            type = MatchResultOcrFieldType.KILL,
+            position = input.position,
+            visualRow = visualRow,
+            slot = slot,
+            rect = killRect(input, rowIndex, first),
+            ocrText = when {
+                ppResolved -> ppRawText
+                fallback != null -> fallback.candidates
+                    .firstOrNull { it.value == fallback.value }
+                    ?.rawText
+                    .orEmpty()
+                else -> ""
+            },
+            resolvedText = when {
+                ppResolved -> ppKill.toString()
+                fallback != null -> fallback.value.toString()
+                else -> ""
+            },
+            status = when {
+                ppResolved && ppPrefixType == MatchResultEliminationPrefixType.O_NORMALIZED ->
+                    MatchResultOcrFieldStatus.O_NORMALIZED_TO_0
+                ppResolved -> MatchResultOcrFieldStatus.DIRECT_NUMERIC
+                fallback != null -> MatchResultOcrFieldStatus.MLKIT_FALLBACK
+                else -> MatchResultOcrFieldStatus.EMPTY
+            },
+        )
+    }
 
     private data class SlotSemantic(
         val playerText: String,
@@ -395,13 +426,13 @@ class MatchResultPositionOcrFieldMapper {
     }
 
     private fun killRect(input: MatchResultPositionOcrInput, rowIndex: Int, first: Boolean): MatchResultOcrRect {
-        val range = if (input.position <= 5) killRange(input.cropWidth, first) else if (first) {
-            RIGHT_MERGED_RANGE
-        } else {
-            RIGHT_KILL_RANGE
-        }
         val row = input.rowCrops.firstOrNull { it.rowIndex == rowIndex }?.bounds
-        return localRect(input.cropWidth, range.start, range.endInclusive, row)
+        return MatchResultKillFieldLayout.bounds(
+            position = input.position,
+            cropWidth = input.cropWidth,
+            rowBounds = row,
+            firstPlayerColumn = first,
+        )
     }
 
     private fun localRect(width: Int, left: Double, right: Double, row: OcrPixelCropRect?): MatchResultOcrRect {
@@ -417,12 +448,6 @@ class MatchResultPositionOcrFieldMapper {
         width * 0.08..width * 0.36
     } else {
         width * 0.58..width * 0.82
-    }
-
-    private fun killRange(width: Int, first: Boolean): ClosedRange<Double> = if (first) {
-        width * 0.34..width * 0.56
-    } else {
-        width * 0.80..width.toDouble()
     }
 
     private companion object {
