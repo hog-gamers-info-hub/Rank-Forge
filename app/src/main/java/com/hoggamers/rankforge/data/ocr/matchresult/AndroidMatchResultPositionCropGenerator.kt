@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
-import android.util.Log
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -24,8 +23,6 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-
-private const val RESULT_OCR_DIAG_TAG = "RESULT_OCR_DIAG"
 
 data class MatchResultPositionBitmapCrop(
     val geometry: MatchResultPositionCrop,
@@ -109,21 +106,6 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
         }
 
         val observations = recognizedText.toPositionCropObservations(dimensions)
-        Log.d(
-            RESULT_OCR_DIAG_TAG,
-            "MLKIT_SOURCE width=${dimensions.width} height=${dimensions.height}",
-        )
-        observations.forEach { observation ->
-            val bounds = observation.boundingBox ?: return@forEach
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "MLKIT text=${observation.text.toResultOcrDiagText()} " +
-                    "left=${bounds.left} top=${bounds.top} right=${bounds.right} bottom=${bounds.bottom} " +
-                    "width=${bounds.right - bounds.left} height=${bounds.bottom - bounds.top} " +
-                    "centerX=${(bounds.left + bounds.right) / 2.0} centerY=${(bounds.top + bounds.bottom) / 2.0}",
-            )
-        }
-
         MatchResultPositionCropObservationResult.Observed(
             evidence = MatchResultAutoCropEvidence(
                 observations = observations,
@@ -249,11 +231,6 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
     private fun Bitmap.isUsable(): Boolean = !isRecycled && width > 0 && height > 0
 
 }
-
-private fun String.toResultOcrDiagText(): String =
-    replace("\\", "\\\\")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
 
 /**
  * ML Kit can report an element just beyond the decoded bitmap edge. Position-crop geometry uses
