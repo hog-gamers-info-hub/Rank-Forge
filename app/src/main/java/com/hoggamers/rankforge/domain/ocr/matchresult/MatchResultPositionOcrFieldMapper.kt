@@ -446,15 +446,43 @@ object MatchResultPositionSemanticTextParser {
         "^\\s*(?:(\\d+|[Oo])\\s*)?(Eliminations?|Eliminatio|Eliminati)(.*)$",
         RegexOption.IGNORE_CASE,
     )
+    private val truncatedStrongPrefixPattern = Regex(
+        "^(\\d+|[Oo])\\s*Eliminat$",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun parse(text: String): ParsedEliminationText {
         val raw = text.trim()
-        val match = markerPattern.matchEntire(raw) ?: return ParsedEliminationText(
-            kill = null,
-            playerSuffix = null,
-            markerMatched = false,
-            rawText = raw,
-        )
+        val match = markerPattern.matchEntire(raw)
+        if (match == null) {
+            val truncatedMatch = truncatedStrongPrefixPattern.matchEntire(raw)
+            if (truncatedMatch != null) {
+                val prefix = truncatedMatch.groupValues[1]
+                val prefixType = if (prefix.equals("O", ignoreCase = true)) {
+                    MatchResultEliminationPrefixType.O_NORMALIZED
+                } else {
+                    MatchResultEliminationPrefixType.EXPLICIT_NUMERIC
+                }
+                return ParsedEliminationText(
+                    kill = if (prefixType == MatchResultEliminationPrefixType.O_NORMALIZED) {
+                        0
+                    } else {
+                        prefix.toIntOrNull()
+                    },
+                    playerSuffix = null,
+                    markerMatched = true,
+                    prefixType = prefixType,
+                    rawText = raw,
+                    markerType = "ELIMINAT",
+                )
+            }
+            return ParsedEliminationText(
+                kill = null,
+                playerSuffix = null,
+                markerMatched = false,
+                rawText = raw,
+            )
+        }
         val prefix = match.groupValues[1]
         val prefixType = when {
             prefix.equals("O", ignoreCase = true) -> MatchResultEliminationPrefixType.O_NORMALIZED
