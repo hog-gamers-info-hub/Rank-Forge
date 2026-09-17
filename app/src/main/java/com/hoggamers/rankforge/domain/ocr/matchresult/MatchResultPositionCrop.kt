@@ -31,6 +31,8 @@ data class MatchResultPositionCrop(
     val bounds: OcrPixelCropRect,
     /** Structural row center in the original source image, before clipping the crop bounds. */
     val structuralCenterYInSource: Double? = null,
+    val topClipped: Boolean = false,
+    val bottomClipped: Boolean = false,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -1198,8 +1200,7 @@ class MatchResultPositionCropCalculator(
         if (
             !visibleHeight.isFinite() ||
             visibleHeight <= 0.0 ||
-            expectedHeight <= 0.0 ||
-            visibleHeight / expectedHeight < MIN_REQUIRED_VISIBLE_ROW_FRACTION
+            expectedHeight <= 0.0
         ) {
             return null
         }
@@ -1216,6 +1217,8 @@ class MatchResultPositionCropCalculator(
                 bottom = bottom,
             ),
             structuralCenterYInSource = group.centerY,
+            topClipped = rawTop < 0.0,
+            bottomClipped = rawBottom > imageHeight.toDouble(),
         )
     }
 
@@ -1354,8 +1357,7 @@ class MatchResultPositionCropCalculator(
             val visibleBottom = minOf(imageHeight.toDouble(), rawBottom)
             val visibleHeight = visibleBottom - visibleTop
             if (
-                !visibleHeight.isFinite() || visibleHeight <= 0.0 ||
-                visibleHeight / rowPitch < MIN_REQUIRED_VISIBLE_ROW_FRACTION
+                !visibleHeight.isFinite() || visibleHeight <= 0.0
             ) {
                 continue
             }
@@ -1372,6 +1374,8 @@ class MatchResultPositionCropCalculator(
                     bottom = pixelBottom,
                 ),
                 structuralCenterYInSource = centerY,
+                topClipped = rawTop < 0.0,
+                bottomClipped = rawBottom > imageHeight.toDouble(),
             )
         }
         return output.takeIf { it.isNotEmpty() }
@@ -1615,7 +1619,6 @@ class MatchResultPositionCropCalculator(
         const val POSITION_LEFT_PADDING_WIDTH_FRACTION = 0.01
         const val MIN_ROW_PITCH_HEIGHT_FRACTION = 0.03
         const val MAX_ROW_PITCH_HEIGHT_FRACTION = 0.30
-        const val MIN_REQUIRED_VISIBLE_ROW_FRACTION = 0.60
         const val MAX_RIGHT_ANCHOR_RESIDUAL_PITCH_FRACTION = 0.35
         const val FALLBACK_THREE_LEFT_OFFSET_MULTIPLIER = 3.0
         const val FALLBACK_THREE_RIGHT_START_PADDING_WIDTH_FACTOR = 0.13
