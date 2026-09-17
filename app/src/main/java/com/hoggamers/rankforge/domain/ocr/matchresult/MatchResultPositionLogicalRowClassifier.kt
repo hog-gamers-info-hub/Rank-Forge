@@ -165,8 +165,10 @@ class MatchResultPositionLogicalRowClassifier {
             },
         )
 
-        val clusters = deriveTwoRowClusters(lines.map { it.candidate }, slotCenterYLocal, tolerance)
-        if (clusters == null) {
+        val clusterResolution = deriveTwoRowClusters(lines.map { it.candidate }, slotCenterYLocal, tolerance)
+            ?.let { clusters -> TwoRowClusterResolution(clusters = clusters, ignoredCandidate = null) }
+            ?: deriveIsolatedOutlierResolution(lines.map { it.candidate }, slotCenterYLocal, tolerance)
+        if (clusterResolution == null) {
             val centeredSingleRow = if (!allowSingleRowFallback) {
                 deriveCenteredSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
             } else {
@@ -240,37 +242,41 @@ class MatchResultPositionLogicalRowClassifier {
             )
         }
 
-        val assignedLines = classifiedLines.map { line ->
-            if (line.band == MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED ||
-                line.band == MatchResultPositionLogicalRowBand.SPANNING_IGNORED
-            ) return@map line
-            val upperDistance = abs(line.candidate.centerY - clusters.upperCenter)
-            val lowerDistance = abs(line.candidate.centerY - clusters.lowerCenter)
-            if (upperDistance == lowerDistance) {
-                return unavailable(
-                    position, cropHeight, slotCenterYLocal, totalMappedLines,
-                    medianHeight = medianHeight, tolerance = tolerance,
-                    placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
-                    usableLines = lines.size,
-                    reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
+        val clusters = clusterResolution.clusters
+        val ignoredLineCount = if (clusterResolution.ignoredCandidate == null) 0 else 1
+        val assignedLines = classifiedLines
+            .filterNot { line -> line.candidate === clusterResolution.ignoredCandidate }
+            .map { line ->
+                if (line.band == MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED ||
+                    line.band == MatchResultPositionLogicalRowBand.SPANNING_IGNORED
+                ) return@map line
+                val upperDistance = abs(line.candidate.centerY - clusters.upperCenter)
+                val lowerDistance = abs(line.candidate.centerY - clusters.lowerCenter)
+                if (upperDistance == lowerDistance) {
+                    return unavailable(
+                        position, cropHeight, slotCenterYLocal, totalMappedLines,
+                        medianHeight = medianHeight, tolerance = tolerance,
+                        placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+                        usableLines = lines.size - ignoredLineCount,
+                        reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
+                    )
+                }
+                ClassifiedLine(
+                    line.candidate,
+                    if (upperDistance < lowerDistance) {
+                        MatchResultPositionLogicalRowBand.UPPER
+                    } else {
+                        MatchResultPositionLogicalRowBand.LOWER
+                    },
                 )
             }
-            ClassifiedLine(
-                line.candidate,
-                if (upperDistance < lowerDistance) {
-                    MatchResultPositionLogicalRowBand.UPPER
-                } else {
-                    MatchResultPositionLogicalRowBand.LOWER
-                },
-            )
-        }
         val upper = assignedLines.filter { it.band == MatchResultPositionLogicalRowBand.UPPER }
         val lower = assignedLines.filter { it.band == MatchResultPositionLogicalRowBand.LOWER }
         if (upper.isEmpty() || lower.isEmpty()) return unavailable(
             position, cropHeight, slotCenterYLocal, totalMappedLines,
             medianHeight = medianHeight, tolerance = tolerance,
             placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
-            usableLines = lines.size, upper = upper.size, lower = lower.size,
+            usableLines = lines.size - ignoredLineCount, upper = upper.size, lower = lower.size,
             reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
         )
 
@@ -279,7 +285,7 @@ class MatchResultPositionLogicalRowClassifier {
             position, cropHeight, slotCenterYLocal, totalMappedLines,
             medianHeight = medianHeight, tolerance = tolerance,
             placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
-            usableLines = lines.size, upper = upper.size, lower = lower.size,
+            usableLines = lines.size - ignoredLineCount, upper = upper.size, lower = lower.size,
             reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
         )
         val diagnostics = MatchResultPositionLogicalRowDiagnostics(
@@ -287,7 +293,7 @@ class MatchResultPositionLogicalRowClassifier {
             medianTextHeight = medianHeight, derivedTolerance = tolerance,
             totalMappedLines = totalMappedLines, placementLinesRemoved = placementRemoved,
             spanningIgnored = spanningIgnored,
-            usableLines = lines.size, upperCount = upper.size, centerCount = 0,
+            usableLines = lines.size - ignoredLineCount, upperCount = upper.size, centerCount = 0,
             lowerCount = lower.size,
             classification = MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2,
         )
@@ -391,6 +397,34 @@ class MatchResultPositionLogicalRowClassifier {
         return RowClusters(upper, lower, upperCenter, lowerCenter)
     }
 
+    private fun deriveIsolatedOutlierResolution(
+        candidates: List<Candidate>,
+        slotCenterYLocal: Double,
+        tolerance: Double,
+    ): TwoRowClusterResolution? {
+        val recoveries = candidates.mapNotNull { ignoredCandidate ->
+            val clusters = deriveTwoRowClusters(
+                candidates = candidates.filterNot { it === ignoredCandidate },
+                slotCenterYLocal = slotCenterYLocal,
+                tolerance = tolerance,
+            ) ?: return@mapNotNull null
+            if (clusters.upper.size < MIN_RECOVERED_ROW_CANDIDATES ||
+                clusters.lower.size < MIN_RECOVERED_ROW_CANDIDATES
+            ) return@mapNotNull null
+            val isExterior = ignoredCandidate.centerY < clusters.upperCenter ||
+                ignoredCandidate.centerY > clusters.lowerCenter
+            val nearestRowDistance = minOf(
+                abs(ignoredCandidate.centerY - clusters.upperCenter),
+                abs(ignoredCandidate.centerY - clusters.lowerCenter),
+            )
+            if (!isExterior || nearestRowDistance <= tolerance * ISOLATED_OUTLIER_SEPARATION_FACTOR) {
+                return@mapNotNull null
+            }
+            TwoRowClusterResolution(clusters = clusters, ignoredCandidate = ignoredCandidate)
+        }
+        return recoveries.singleOrNull()
+    }
+
     private fun deriveSingleRow(
         candidates: List<Candidate>,
         slotCenterYLocal: Double,
@@ -449,6 +483,11 @@ class MatchResultPositionLogicalRowClassifier {
         val lowerCenter: Double,
     )
 
+    private data class TwoRowClusterResolution(
+        val clusters: RowClusters,
+        val ignoredCandidate: Candidate?,
+    )
+
     private data class SingleRow(val centerY: Double)
 
     private fun MatchResultPositionLogicalRowBand.toLogicalRow(): MatchResultPositionLogicalRow = when (this) {
@@ -474,5 +513,7 @@ class MatchResultPositionLogicalRowClassifier {
         const val SPANNING_HEIGHT_FACTOR = 2.0
         const val MAX_PLACEMENT_TOKEN_LENGTH = 3
         const val NUMERIC_LIKE_PLACEMENT_CHARACTERS = "0123456789IiLlOo|"
+        const val MIN_RECOVERED_ROW_CANDIDATES = 2
+        const val ISOLATED_OUTLIER_SEPARATION_FACTOR = 2.0
     }
 }

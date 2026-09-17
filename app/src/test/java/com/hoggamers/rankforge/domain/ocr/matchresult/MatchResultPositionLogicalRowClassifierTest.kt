@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrGeometry
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -216,6 +217,114 @@ class MatchResultPositionLogicalRowClassifierTest {
             box("B1", 64.0, 21), box("B2", 65.0, 21), box("B3", 66.0, 21), box("B4", 67.0, 21),
         ))
         assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+    }
+
+    @Test
+    fun oneIsolatedExteriorOutlierDoesNotVetoTwoStrongRows() {
+        val result = classifyCustom(
+            position = 4,
+            cropWidth = 607,
+            cropHeight = 126,
+            center = 63.0,
+            lines = listOf(
+                line("XP_SHANU_JOD", 82, 32, 200, 53),
+                line("XP-NAYAN-JOD", 373, 32, 485, 53),
+                line("2 Eliminations", 216, 32, 323, 58),
+                line("3 Eliminations", 507, 32, 607, 58),
+                line("4", 5, 47, 31, 79),
+                line("XP_OGGY_", 89, 69, 171, 93),
+                line("XP_SHUBHAM_", 369, 69, 491, 93),
+                line("6 Eliminations", 218, 70, 323, 96),
+                line("0 Eliminations", 507, 70, 607, 96),
+                line("σ¢¢", 469, 104, 493, 115),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+        assertEquals(4, result.diagnostics.upperCount)
+        assertEquals(4, result.diagnostics.lowerCount)
+        assertEquals(8, result.diagnostics.usableLines)
+        assertEquals(1, result.diagnostics.placementLinesRemoved)
+        assertEquals(0, result.diagnostics.spanningIgnored)
+        assertEquals(96, result.rowCrops[1].bounds.bottom)
+        assertFalse(result.blocks.flatMap { it.lines }.any { it.text == "σ¢¢" })
+        assertFalse(result.blocks.flatMap { it.lines }.any { it.text == "4" })
+    }
+
+    @Test
+    fun multipleExteriorOutliersRemainConflicting() {
+        val result = classifyCustom(
+            position = 4,
+            cropWidth = 300,
+            cropHeight = 150,
+            center = 70.0,
+            lines = listOf(
+                box("upper-1", 30.0, 10), box("upper-2", 31.0, 10),
+                box("upper-3", 30.0, 10), box("upper-4", 31.0, 10),
+                box("lower-1", 100.0, 10), box("lower-2", 101.0, 10),
+                box("lower-3", 100.0, 10), box("lower-4", 101.0, 10),
+                box("junk-1", 125.0, 10), box("junk-2", 135.0, 10),
+            ),
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    }
+
+    @Test
+    fun competingThirdClusterRemainsConflicting() {
+        val result = classifyCustom(
+            position = 4,
+            cropWidth = 300,
+            cropHeight = 150,
+            center = 70.0,
+            lines = listOf(
+                box("upper-1", 30.0, 10), box("upper-2", 31.0, 10),
+                box("upper-3", 30.0, 10), box("upper-4", 31.0, 10),
+                box("lower-1", 100.0, 10), box("lower-2", 101.0, 10),
+                box("lower-3", 100.0, 10), box("lower-4", 101.0, 10),
+                box("third-1", 125.0, 10), box("third-2", 126.0, 10),
+            ),
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    }
+
+    @Test
+    fun betweenRowCandidateIsNotDiscardedAsExteriorOutlier() {
+        val result = classifyCustom(
+            position = 4,
+            cropWidth = 300,
+            cropHeight = 150,
+            center = 70.0,
+            lines = listOf(
+                box("upper-1", 30.0, 10), box("upper-2", 31.0, 10),
+                box("lower-1", 100.0, 10), box("lower-2", 101.0, 10),
+                box("between", 65.0, 10),
+            ),
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+    }
+
+    @Test
+    fun weakRowsDoNotUseIsolatedOutlierRecovery() {
+        val result = classifyCustom(
+            position = 4,
+            cropWidth = 300,
+            cropHeight = 150,
+            center = 70.0,
+            lines = listOf(
+                box("upper", 30.0, 10),
+                box("lower", 100.0, 10),
+                box("junk", 130.0, 10),
+            ),
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
     }
 
     @Test
