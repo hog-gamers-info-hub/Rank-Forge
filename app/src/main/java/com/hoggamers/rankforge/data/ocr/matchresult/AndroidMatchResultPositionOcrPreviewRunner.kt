@@ -2,7 +2,6 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
@@ -14,7 +13,6 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
-import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultMlKitKillFallbackResolver
@@ -36,8 +34,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-
-private const val RESULT_OCR_DIAG_TAG = "RESULT_OCR_DIAG"
 
 /** Production panel/ROI PP route. */
 class AndroidMatchResultPositionOcrPreviewRunner(
@@ -198,25 +194,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             } ?: run {
                 return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(assignedRole)
             }
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "GEOMETRY role=${assignedRole.toResultOcrDiagName()} " +
-                    "leftPitch=${processingGeometry.leftRowPitch} " +
-                    "rightPitch=${processingGeometry.rightRowPitch} " +
-                    "leftPitchSource=${processingGeometry.leftPitchSource} " +
-                    "rightPitchSource=${processingGeometry.rightPitchSource}",
-            )
-            processingGeometry.crops.forEach { crop ->
-                val bounds = crop.bounds
-                Log.d(
-                    RESULT_OCR_DIAG_TAG,
-                    "POSITION role=${assignedRole.toResultOcrDiagName()} position=${crop.position} " +
-                        "column=${crop.column} left=${bounds.left} top=${bounds.top} " +
-                        "right=${bounds.right} bottom=${bounds.bottom} width=${bounds.width} " +
-                        "height=${bounds.height} structuralCenterY=${crop.structuralCenterYInSource} " +
-                        "topClipped=${crop.topClipped} bottomClipped=${crop.bottomClipped}",
-                )
-            }
             val allowUpperFallback = assignedRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
                 !hasConfirmedLowerAsset(prepared.identity, prepared.owner)
             val generated = when (val result = positionCropGenerator.generate(source, processingGeometry)) {
@@ -308,22 +285,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         mlKitEvidence: MatchResultAutoCropEvidence,
         sourceCrops: List<MatchResultPositionCrop>,
     ): List<MatchResultPositionSemanticResult> {
-        Log.d(
-            RESULT_OCR_DIAG_TAG,
-            "PP_INPUT role=${role.toResultOcrDiagName()} mode=${inputPlan.mode} " +
-                "width=${inputBitmap.width} height=${inputBitmap.height}",
-        )
-        inputPlan.crops.forEach { crop ->
-            val bounds = crop.bounds
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "PP_CROP_PLAN position=${crop.position} column=${crop.column} " +
-                    "left=${bounds.left} top=${bounds.top} right=${bounds.right} bottom=${bounds.bottom} " +
-                    "width=${bounds.width} height=${bounds.height} " +
-                    "structuralCenterY=${crop.structuralCenterYInSource} " +
-                    "topClipped=${crop.topClipped} bottomClipped=${crop.bottomClipped}",
-            )
-        }
         val engine = paddleEngineProvider.getOrCreate()
         val runResult = engine.recognize(inputBitmap)
         val panelBlocks = PaddleRawOcrGeometryMapper.map(
@@ -331,50 +292,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             cropWidth = inputBitmap.width,
             cropHeight = inputBitmap.height,
         )
-        panelBlocks.forEachIndexed { blockIndex, block ->
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "PP_RAW_BLOCK block=$blockIndex text=${block.text.toResultOcrDiagText()} " +
-                    "confidence=${block.confidence.toResultOcrDiagValue()} lineCount=${block.lines.size}",
-            )
-            block.lines.forEachIndexed { lineIndex, line ->
-                val bounds = line.geometry?.boundingBox
-                Log.d(
-                    RESULT_OCR_DIAG_TAG,
-                    "PP_RAW block=$blockIndex line=$lineIndex text=${line.text.toResultOcrDiagText()} " +
-                        "confidence=${line.confidence.toResultOcrDiagValue()} " +
-                        "left=${bounds?.left} top=${bounds?.top} right=${bounds?.right} bottom=${bounds?.bottom} " +
-                        "centerX=${bounds?.let { (it.left + it.right) / 2.0 }} " +
-                        "centerY=${bounds?.let { (it.top + it.bottom) / 2.0 }}",
-                )
-            }
-        }
 
         val mapped = MatchResultPanelPpMapper.map(panelBlocks, inputPlan.crops)
-        mapped.forEach { evidence ->
-            val bounds = evidence.crop.bounds
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "POSITION_PP_BEGIN position=${evidence.crop.position} " +
-                    "bounds=[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]",
-            )
-            evidence.blocks.forEachIndexed { blockIndex, block ->
-                block.lines.forEachIndexed { lineIndex, line ->
-                    val localBounds = line.geometry?.boundingBox
-                    Log.d(
-                        RESULT_OCR_DIAG_TAG,
-                        "POSITION_PP position=${evidence.crop.position} block=$blockIndex line=$lineIndex " +
-                            "text=${line.text.toResultOcrDiagText()} " +
-                            "localLeft=${localBounds?.left} localTop=${localBounds?.top} " +
-                            "localRight=${localBounds?.right} localBottom=${localBounds?.bottom}",
-                    )
-                }
-            }
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "POSITION_PP_END position=${evidence.crop.position}",
-            )
-        }
         val semanticResults = mapped.map { evidence ->
             val sourceCrop = sourceCrops.firstOrNull { crop ->
                 crop.position == evidence.crop.position && crop.column == evidence.crop.column
@@ -414,44 +333,6 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             blocks = evidence.blocks,
             allowSingleRowFallback = allowSingleRowFallback,
         )
-        val diagnostics = classification.diagnostics
-        Log.d(
-            RESULT_OCR_DIAG_TAG,
-            "CLASSIFICATION position=${crop.position} cropWidth=${crop.bounds.width} " +
-                "cropHeight=${crop.bounds.height} slotCenterYLocal=${diagnostics.slotCenterYLocal} " +
-                "result=${classification::class.simpleName} classification=${diagnostics.classification} " +
-                "reason=${diagnostics.reason ?: diagnostics.reasonText} totalMappedLines=${diagnostics.totalMappedLines} " +
-                "usableLines=${diagnostics.usableLines} upperCount=${diagnostics.upperCount} " +
-                "centerCount=${diagnostics.centerCount} lowerCount=${diagnostics.lowerCount}",
-        )
-        if (classification is MatchResultPositionLogicalRowClassification.Available) {
-            classification.rowCrops.forEach { rowCrop ->
-                val rowBounds = rowCrop.bounds
-                Log.d(
-                    RESULT_OCR_DIAG_TAG,
-                    "CLASSIFICATION_ROW position=${crop.position} row=${rowCrop.rowIndex} " +
-                        "left=${rowBounds.left} top=${rowBounds.top} right=${rowBounds.right} bottom=${rowBounds.bottom}",
-                )
-                classification.blocks.forEachIndexed { blockIndex, block ->
-                    block.lines.forEachIndexed { lineIndex, line ->
-                        val lineBounds = line.geometry?.boundingBox ?: return@forEachIndexed
-                        val centerX = (lineBounds.left + lineBounds.right) / 2.0
-                        val centerY = (lineBounds.top + lineBounds.bottom) / 2.0
-                        if (centerX in rowBounds.left.toDouble()..rowBounds.right.toDouble() &&
-                            centerY in rowBounds.top.toDouble()..rowBounds.bottom.toDouble()
-                        ) {
-                            Log.d(
-                                RESULT_OCR_DIAG_TAG,
-                                "CLASSIFICATION_ROW_BLOCK position=${crop.position} row=${rowCrop.rowIndex} " +
-                                    "block=$blockIndex line=$lineIndex text=${line.text.toResultOcrDiagText()} " +
-                                    "left=${lineBounds.left} top=${lineBounds.top} right=${lineBounds.right} bottom=${lineBounds.bottom}",
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        var mappingFailure: Throwable? = null
         val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
             try {
                 val input = MatchResultPositionOcrInput(
@@ -482,64 +363,22 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (failure: Throwable) {
-                mappingFailure = failure
+            } catch (_: Throwable) {
                 null
             }
         } else {
             null
         }
-        semantic?.let { logResultSemantic(it) }
         val localLines = evidence.blocks.sumOf { it.lines.size }
         val productionReady = isPpPositionProductionStructurallyReady(
             localLines = localLines,
             classification = classification,
             semantic = semantic,
         )
-        resultOcrSemanticRejectionReason(
-            localLines = localLines,
-            classification = classification,
-            semantic = semantic,
-            mappingFailure = mappingFailure,
-        )?.let { reason ->
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "SEMANTIC_REJECTED position=${crop.position} reason=$reason",
-            )
-        }
         return PanelPositionSemantic(
             semantic = semantic,
             productionReady = productionReady,
         )
-    }
-
-    private fun logResultSemantic(semantic: MatchResultPositionSemanticResult) {
-        val row = semantic.row
-        val placement = row?.placement
-        val playerSlots = row?.playerSlots.orEmpty()
-        val playerValues = (1..4).joinToString(" ") { slot ->
-            val playerSlot = playerSlots.firstOrNull { it.slot == slot }
-            "player${slot}Name=${playerSlot?.player?.resolvedText} " +
-                "player${slot}Kill=${playerSlot?.kill?.resolvedText}"
-        }
-        Log.d(
-            RESULT_OCR_DIAG_TAG,
-            "SEMANTIC position=${semantic.position} role=${semantic.role.toResultOcrDiagName()} " +
-                "structuralIdentityValid=${semantic.structuralIdentityValid} " +
-                "isAutoAcceptable=${semantic.isAutoAcceptable} " +
-                "placementOcrText=${placement?.ocrText?.toResultOcrDiagText()} " +
-                "placementResolvedText=${placement?.resolvedText?.toResultOcrDiagText()} " +
-                "placementStatus=${placement?.status} $playerValues",
-        )
-        semantic.fields.forEach { field ->
-            Log.d(
-                RESULT_OCR_DIAG_TAG,
-                "SEMANTIC_FIELD position=${semantic.position} id=${field.id} type=${field.type} " +
-                    "visualRow=${field.visualRow} slot=${field.slot} " +
-                    "ocrText=${field.ocrText.toResultOcrDiagText()} " +
-                    "resolvedText=${field.resolvedText.toResultOcrDiagText()} status=${field.status}",
-            )
-        }
     }
 
     private data class PanelPositionSemantic(
@@ -711,43 +550,6 @@ class MatchResultPpOnlyPairReconciliationRunner(
 
     private data class RunKey(val tournamentId: String, val matchId: String)
 }
-
-private fun resultOcrSemanticRejectionReason(
-    localLines: Int,
-    classification: MatchResultPositionLogicalRowClassification,
-    semantic: MatchResultPositionSemanticResult?,
-    mappingFailure: Throwable?,
-): String? = when {
-    localLines <= 0 -> "localLines=$localLines"
-    classification is MatchResultPositionLogicalRowClassification.Unavailable ->
-        "classification_unavailable reason=${classification.diagnostics.reason ?: classification.diagnostics.reasonText}"
-    semantic == null && mappingFailure != null ->
-        "field_mapper_exception=${mappingFailure::class.simpleName ?: "unknown"}"
-    semantic == null -> "field_mapper_returned_null"
-    semantic.fields.isEmpty() -> "semantic_fields_empty"
-    semantic.row?.playerSlots.orEmpty().isEmpty() -> "semantic_player_slots_empty"
-    !semantic.structuralIdentityValid -> "semantic_structural_identity_invalid"
-    semantic.placementVerification is MatchResultNumericVerification.Conflict ->
-        "placement_verification_conflict"
-    semantic.killVerifications.values.any { it is MatchResultNumericVerification.Conflict } ->
-        "kill_verification_conflict"
-    else -> null
-}
-
-private fun MatchResultScreenshotRole.toResultOcrDiagName(): String = when (this) {
-    MatchResultScreenshotRole.MATCH_RESULT_UPPER -> "UPPER"
-    MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "LOWER"
-}
-
-private fun RawOcrConfidence.toResultOcrDiagValue(): String = when (this) {
-    is RawOcrConfidence.Available -> value.toString()
-    RawOcrConfidence.Unavailable -> "unavailable"
-}
-
-private fun String.toResultOcrDiagText(): String =
-    replace("\\", "\\\\")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
 
 internal fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
     role: MatchResultScreenshotRole,
