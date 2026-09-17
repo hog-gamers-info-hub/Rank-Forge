@@ -17,10 +17,12 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrConfidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultMlKitKillFallbackResolver
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrFieldMapper
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrInput
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassifier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassification
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
@@ -49,6 +51,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
     private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
     private val pairSemanticRoleResolver = MatchResultPairSemanticRoleResolver()
+    private val mlKitKillFallbackResolver = MatchResultMlKitKillFallbackResolver()
 
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -246,6 +249,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         role = assignedRole,
                         inputPlan = inputPlan,
                         allowUpperPositionElevenFallback = allowUpperFallback,
+                        mlKitEvidence = prepared.evidence,
+                        sourceCrops = processingGeometry.crops,
                     )
                     val extraction = semantics.toAcceptedExtraction(assignedRole, allowUpperFallback)
                         ?: run {
@@ -300,6 +305,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         role: MatchResultScreenshotRole,
         inputPlan: MatchResultPpInputPlan,
         allowUpperPositionElevenFallback: Boolean,
+        mlKitEvidence: MatchResultAutoCropEvidence,
+        sourceCrops: List<MatchResultPositionCrop>,
     ): List<MatchResultPositionSemanticResult> {
         Log.d(
             RESULT_OCR_DIAG_TAG,
@@ -369,12 +376,17 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             )
         }
         val semanticResults = mapped.map { evidence ->
+            val sourceCrop = sourceCrops.firstOrNull { crop ->
+                crop.position == evidence.crop.position && crop.column == evidence.crop.column
+            }
             mapPanelPosition(
                 role = role,
                 evidence = evidence,
                 allowSingleRowFallback = evidence.crop.topClipped ||
                     evidence.crop.bottomClipped ||
                     allowUpperPositionElevenFallback && evidence.crop.position == 11,
+                mlKitEvidence = mlKitEvidence,
+                sourceCrop = sourceCrop,
             )
         }
         val usableSemantics = semanticResults
@@ -390,6 +402,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         role: MatchResultScreenshotRole,
         evidence: MatchResultPanelPpPositionEvidence,
         allowSingleRowFallback: Boolean = false,
+        mlKitEvidence: MatchResultAutoCropEvidence? = null,
+        sourceCrop: MatchResultPositionCrop? = null,
     ): PanelPositionSemantic {
         val crop = evidence.crop
         val classification = MatchResultPositionLogicalRowClassifier().classify(
@@ -440,18 +454,32 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         var mappingFailure: Throwable? = null
         val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
             try {
-                fieldMapper.map(
-                    MatchResultPositionOcrInput(
-                        role = role,
-                        position = crop.position,
-                        cropWidth = crop.bounds.width,
-                        cropHeight = crop.bounds.height,
-                        blocks = classification.blocks,
-                        rowCrops = classification.rowCrops,
-                        placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
-                        killVerifications = emptyMap(),
-                    ),
+                val input = MatchResultPositionOcrInput(
+                    role = role,
+                    position = crop.position,
+                    cropWidth = crop.bounds.width,
+                    cropHeight = crop.bounds.height,
+                    blocks = classification.blocks,
+                    rowCrops = classification.rowCrops,
+                    placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
+                    killVerifications = emptyMap(),
                 )
+                val ppSemantic = fieldMapper.map(input)
+                val fallbackVerifications = if (mlKitEvidence != null && sourceCrop != null) {
+                    mlKitKillFallbackResolver.resolve(
+                        positionCrop = sourceCrop,
+                        rowCrops = classification.rowCrops,
+                        currentPpSemantic = ppSemantic,
+                        evidence = mlKitEvidence,
+                    )
+                } else {
+                    emptyMap()
+                }
+                if (fallbackVerifications.isEmpty()) {
+                    ppSemantic
+                } else {
+                    fieldMapper.map(input.copy(killVerifications = fallbackVerifications))
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
