@@ -845,7 +845,7 @@ private fun DownloadResultBitmapPreview(
             }
         }
     if (showDeleteControl) {
-        BoxWithConstraints(
+        Box(
             modifier = modifier,
             contentAlignment = Alignment.Center,
         ) {
