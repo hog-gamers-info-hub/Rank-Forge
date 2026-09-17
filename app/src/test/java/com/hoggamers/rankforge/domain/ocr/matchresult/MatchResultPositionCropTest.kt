@@ -105,7 +105,7 @@ class MatchResultPositionCropTest {
     }
 
     @Test
-    fun clippedUpperPositionElevenDoesNotInvalidateCoreUpperPositions() {
+    fun clippedUpperPositionElevenRemainsAvailableWhenItsCenterIsVisible() {
         val result = availableUpperFallback(
             observation("4", 50, 320, 75, 350),
             observation("5", 50, 420, 75, 450),
@@ -114,7 +114,8 @@ class MatchResultPositionCropTest {
             observation("11", 650, 480, 680, 500),
         )
 
-        assertEquals((1..10).toList(), result.crops.map { it.position })
+        assertEquals((1..11).toList(), result.crops.map { it.position })
+        assertTrue(result.crops.first { it.position == 11 }.bottomClipped)
     }
 
     @Test

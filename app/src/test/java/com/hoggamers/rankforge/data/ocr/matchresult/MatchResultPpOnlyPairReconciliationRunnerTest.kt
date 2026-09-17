@@ -190,7 +190,7 @@ class MatchResultPpOnlyPairReconciliationRunnerTest {
     }
 
     @Test
-    fun partialUpperExtractionRetainsOnlyExpectedUniquePositions() {
+    fun partialUpperExtractionRetainsOnlyUniquePositions() {
         val positions = listOf(1, 3, 10).map {
             semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, it)
         }
@@ -205,7 +205,7 @@ class MatchResultPpOnlyPairReconciliationRunnerTest {
     }
 
     @Test
-    fun upperFallbackAcceptsOptionalPositionElevenButNeverPositionTwelve() {
+    fun upperAcceptancePreservesValidPositionTwelve() {
         val upperPositions = listOf(1, 11).map {
             semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, it)
         }
@@ -218,18 +218,78 @@ class MatchResultPpOnlyPairReconciliationRunnerTest {
             )?.rows?.map { it.position },
         )
         assertEquals(
-            null,
-            listOf(semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, 11)).toAcceptedExtraction(
-                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                allowUpperFallback = false,
-            ),
-        )
-        assertEquals(
-            null,
+            listOf(12),
             listOf(semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, 12)).toAcceptedExtraction(
                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                 allowUpperFallback = true,
+            )?.rows?.map { it.position },
+        )
+    }
+
+    @Test
+    fun upperAcceptancePreservesStandardAndFallbackPositionSets() {
+        val standardPositions = (1..10).toList()
+        val fallbackPositions = (1..11).toList()
+
+        assertEquals(
+            standardPositions,
+            standardPositions.map {
+                semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, it)
+            }.toAcceptedExtraction(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                allowUpperFallback = false,
+            )?.rows?.map { it.position },
+        )
+        assertEquals(
+            fallbackPositions,
+            fallbackPositions.map {
+                semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, it)
+            }.toAcceptedExtraction(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                allowUpperFallback = true,
+            )?.rows?.map { it.position },
+        )
+    }
+
+    @Test
+    fun upperAcceptancePreservesAllValidPositionsIncludingUnexpectedPositionTwelve() {
+        val positions = listOf(1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12)
+
+        assertEquals(
+            positions,
+            positions.map {
+                semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, it)
+            }.toAcceptedExtraction(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                allowUpperFallback = false,
+            )?.rows?.map { it.position },
+        )
+    }
+
+    @Test
+    fun failedPositionReadinessDoesNotDiscardOtherUsablePositions() {
+        val failedPosition = semantic(MatchResultScreenshotRole.MATCH_RESULT_UPPER, 6)
+        assertTrue(
+            !isPpPositionProductionStructurallyReady(
+                localLines = 1,
+                classification = availableClassification(),
+                semantic = failedPosition,
             ),
+        )
+
+        val usablePositions = listOf(1, 2).map {
+            semantic(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = it,
+                playerSlots = listOf(blankPlayerSlot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
+            )
+        }
+        assertEquals(
+            listOf(1, 2),
+            usablePositions.toAcceptedExtraction(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                allowUpperFallback = false,
+            )?.rows?.map { it.position },
         )
     }
 
