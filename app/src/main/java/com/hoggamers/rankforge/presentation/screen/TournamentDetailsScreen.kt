@@ -122,6 +122,7 @@ const val TOURNAMENT_DELETE_PROGRESS_TEST_TAG = "tournament_delete_progress"
 const val TOURNAMENT_DELETE_ERROR_TEST_TAG = "tournament_delete_error"
 const val TOURNAMENT_OVERFLOW_ACTION_TEST_TAG = "tournament_details_overflow_action"
 const val TOURNAMENT_DOWNLOAD_RESULT_ACTION_TEST_TAG = "tournament_details_download_result_action"
+const val TOURNAMENT_SCORING_RULES_ACTION_TEST_TAG = "tournament_details_scoring_rules_action"
 const val EDIT_TEAMS_ACTION_TEST_TAG = "edit_teams_action"
 const val MATCH_PROCESSING_SECTION_TEST_TAG = "match_processing_section"
 const val MATCH_STATUS_TEST_TAG_PREFIX = "match_status_"
@@ -138,6 +139,7 @@ fun TournamentDetailsRoute(
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
     onOpenDownloadResult: (String, String) -> Unit = { _, _ -> },
+    onOpenScoringRules: (String) -> Unit = {},
     onResolveDraftConflict: (com.hoggamers.rankforge.domain.tournament.ConflictResolutionContext) -> Unit = {},
     viewModel: TournamentDetailsViewModel = hiltViewModel(),
     uploadViewModel: TournamentCloudUploadViewModel? = null,
@@ -201,6 +203,7 @@ fun TournamentDetailsRoute(
         onReviewMatch = onReviewMatch,
         onOpenStandings = onOpenStandings,
         onOpenDownloadResult = onOpenDownloadResult,
+        onOpenScoringRules = onOpenScoringRules,
         onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
         onDeleteTournament = { viewModel.deleteTournament() },
         isDeleting = uiState.isDeleting,
@@ -235,6 +238,7 @@ fun TournamentDetailsScreen(
     onReviewMatch: (String, String) -> Unit = { _, _ -> },
     onOpenStandings: (String) -> Unit = {},
     onOpenDownloadResult: (String, String) -> Unit = { _, _ -> },
+    onOpenScoringRules: (String) -> Unit = {},
     onPrepareStandingsCsvExport: (String) -> Unit = {},
     uploadUiState: TournamentCloudUploadUiState = TournamentCloudUploadUiState.Idle,
     onUpload: (String) -> Unit = {},
@@ -274,6 +278,7 @@ fun TournamentDetailsScreen(
             onReviewMatch = onReviewMatch,
             onOpenStandings = onOpenStandings,
             onOpenDownloadResult = onOpenDownloadResult,
+            onOpenScoringRules = onOpenScoringRules,
             onPrepareStandingsCsvExport = onPrepareStandingsCsvExport,
             csvExportResult = uiState.csvExportResult,
             uploadUiState = uploadUiState,
@@ -351,6 +356,7 @@ private fun PointIqTournamentHero(
     onBack: () -> Unit,
     onEditTeams: () -> Unit,
     onOpenDownloadResult: (String) -> Unit,
+    onOpenScoringRules: () -> Unit,
     onDeleteTournament: () -> Unit,
     isDeleting: Boolean,
 ) {
@@ -436,6 +442,20 @@ private fun PointIqTournamentHero(
                         },
                         enabled = tournament.matches.isNotEmpty() && !isDeleting,
                         modifier = Modifier.testTag(TOURNAMENT_DOWNLOAD_RESULT_ACTION_TEST_TAG),
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.tournament_details_scoring_rules_action),
+                                color = PointIqDetailsHeader,
+                            )
+                        },
+                        onClick = {
+                            onOverflowMenuChange(false)
+                            onOpenScoringRules()
+                        },
+                        enabled = !isDeleting,
+                        modifier = Modifier.testTag(TOURNAMENT_SCORING_RULES_ACTION_TEST_TAG),
                     )
                     DropdownMenuItem(
                         text = {
@@ -732,6 +752,7 @@ private fun TournamentDetailsContent(
     onReviewMatch: (String, String) -> Unit,
     onOpenStandings: (String) -> Unit,
     onOpenDownloadResult: (String, String) -> Unit,
+    onOpenScoringRules: (String) -> Unit,
     onPrepareStandingsCsvExport: (String) -> Unit,
     csvExportResult: AndroidExportResult?,
     uploadUiState: TournamentCloudUploadUiState,
@@ -781,6 +802,7 @@ private fun TournamentDetailsContent(
             onBack = onBackToList,
             onEditTeams = { onEnterTeams(tournament.id) },
             onOpenDownloadResult = { matchId -> onOpenDownloadResult(tournament.id, matchId) },
+            onOpenScoringRules = { onOpenScoringRules(tournament.id) },
             onDeleteTournament = { showDeleteConfirmation = true },
             isDeleting = isDeleting,
         )

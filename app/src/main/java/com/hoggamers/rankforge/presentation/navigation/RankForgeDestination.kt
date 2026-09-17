@@ -23,6 +23,11 @@ data class TournamentDetailsDestination(
 )
 
 @Serializable
+data class ScoringRulesDestination(
+    val tournamentId: String,
+)
+
+@Serializable
 data class DraftConflictResolutionDestination(
     val tournamentId: String,
     val currentCloudRevision: Int,
