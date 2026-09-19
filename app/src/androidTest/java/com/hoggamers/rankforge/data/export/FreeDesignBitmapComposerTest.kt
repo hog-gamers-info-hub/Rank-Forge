@@ -17,6 +17,9 @@ import org.junit.runner.RunWith
 class FreeDesignBitmapComposerTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     private val template = FreeDesignTemplateRegistry.default()
+    private val template2 = requireNotNull(
+        FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID),
+    )
     private val composer = FreeDesignBitmapComposer(context.assets)
 
     @Test
@@ -43,6 +46,42 @@ class FreeDesignBitmapComposerTest {
             assertEquals(source.getPixel(1253, 1253), composed.getPixel(1253, 1253))
             assertTrue(changedPixelCount(source, composed, 80, 80, 1174, 270) > 0)
             assertTrue(changedPixelCount(source, composed, 80, 350, 1174, 430) > 0)
+        } finally {
+            source.recycle()
+            composed.recycle()
+        }
+    }
+
+    @Test
+    fun template2TournamentAndMatchComposeAtExactSourceDimensions() {
+        val tournamentResult = composer.compose(tournamentModel(), template2)
+        val tournamentBitmap = (tournamentResult as FreeDesignBitmapComposeResult.Success).bitmap
+        val matchResult = composer.compose(matchModel(), template2)
+        val matchBitmap = (matchResult as FreeDesignBitmapComposeResult.Success).bitmap
+        try {
+            assertEquals(1254, tournamentBitmap.width)
+            assertEquals(1254, tournamentBitmap.height)
+            assertEquals(1254, matchBitmap.width)
+            assertEquals(1254, matchBitmap.height)
+        } finally {
+            tournamentBitmap.recycle()
+            matchBitmap.recycle()
+        }
+    }
+
+    @Test
+    fun template2SourcePixelsRemainUnchangedWhileHeaderAndTableAreComposed() {
+        val source = decodeSource(template2)
+        val result = composer.compose(tournamentModel(), template2)
+        val composed = (result as FreeDesignBitmapComposeResult.Success).bitmap
+        try {
+            assertNotSame(source, composed)
+            assertEquals(source.width, 1254)
+            assertEquals(source.height, 1254)
+            assertEquals(source.getPixel(0, 0), composed.getPixel(0, 0))
+            assertEquals(source.getPixel(1253, 1253), composed.getPixel(1253, 1253))
+            assertTrue(changedPixelCount(source, composed, 40, 40, 1214, 290) > 0)
+            assertTrue(changedPixelCount(source, composed, 40, 350, 1214, 1120) > 0)
         } finally {
             source.recycle()
             composed.recycle()
@@ -94,13 +133,24 @@ class FreeDesignBitmapComposerTest {
         )
     }
 
-    private fun decodeSource(): Bitmap = context.assets.open(template.assetPath).use { input ->
+    private fun decodeSource(selectedTemplate: FreeDesignTemplate = template): Bitmap =
+        context.assets.open(selectedTemplate.assetPath).use { input ->
         BitmapFactory.decodeStream(
             input,
             null,
             BitmapFactory.Options().apply { inScaled = false },
         )!!
-    }
+        }
+
+    private fun matchModel() = com.hoggamers.rankforge.domain.export.MatchResultExportModel(
+        tournamentName = "Champions Cup 2026",
+        organizerName = "HOG Gamers",
+        tournamentDate = LocalDate.of(2026, 9, 3),
+        matchNumber = 4,
+        matchDate = LocalDate.of(2026, 8, 31),
+        mapName = "Bermuda",
+        rows = rows(1),
+    )
 
     private fun tournamentModel(
         rows: List<ResultExportRow> = rows(1),

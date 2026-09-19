@@ -39,12 +39,19 @@ data class FreeDesignHeaderAnchor(
     val style: FreeDesignHeaderTextStyle,
 )
 
+data class FreeDesignResultTextStyle(
+    val textSizeMultiplier: Float,
+    val teamNameStartPaddingPx: Float,
+)
+
 data class FreeDesignTemplate(
     val id: String,
+    val displayName: String,
     val assetPath: String,
     val sourceWidth: Int,
     val sourceHeight: Int,
     val tableGeometry: CustomDesignEffectiveGridGeometry,
     val resultColumnTextColors: CustomDesignColumnTextColors,
+    val resultTextStyle: FreeDesignResultTextStyle,
     val headerAnchors: Map<FreeDesignHeaderField, FreeDesignHeaderAnchor>,
 )

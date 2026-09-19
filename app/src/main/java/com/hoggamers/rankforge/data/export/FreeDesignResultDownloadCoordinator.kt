@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 interface FreeDesignResultDownloadCoordinator {
     suspend fun execute(
         request: ResultDownloadRequest,
+        templateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
         onSaving: suspend () -> Unit = {},
     ): ResultDownloadExecutionResult
 }
@@ -22,6 +23,7 @@ interface FreeDesignResultDownloadCoordinator {
 object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordinator {
     override suspend fun execute(
         request: ResultDownloadRequest,
+        templateId: String,
         onSaving: suspend () -> Unit,
     ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Failure(
         ResultDownloadFailure.GENERATION_FAILED,
@@ -32,7 +34,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
     private val modelBuilder: ResultExportModelBuilder,
     private val composeMatch: (MatchResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult,
     private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult,
-    private val templateProvider: () -> FreeDesignTemplate?,
+    private val templateProvider: (String) -> FreeDesignTemplate?,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
 ) : FreeDesignResultDownloadCoordinator {
     @Inject
@@ -43,19 +45,20 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         modelBuilder = ResultExportModelBuilder(),
         composeMatch = bitmapComposer::compose,
         composeTournament = bitmapComposer::compose,
-        templateProvider = {
-            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID)
+        templateProvider = { templateId ->
+            FreeDesignTemplateRegistry.findById(templateId)
         },
         saveFile = resultFileSaver::save,
     )
 
     override suspend fun execute(
         request: ResultDownloadRequest,
+        templateId: String,
         onSaving: suspend () -> Unit,
     ): ResultDownloadExecutionResult {
         val generated = try {
             withContext(Dispatchers.Default) {
-                generate(request)
+                generate(request, templateId)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -91,8 +94,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         }
     }
 
-    private fun generate(request: ResultDownloadRequest): GeneratedFreeDesignResult? {
-        val template = templateProvider() ?: return null
+    private fun generate(
+        request: ResultDownloadRequest,
+        templateId: String,
+    ): GeneratedFreeDesignResult? {
+        val template = templateProvider(templateId) ?: return null
         return when (request) {
             is ResultDownloadRequest.CurrentMatch ->
                 when (val buildResult = modelBuilder.buildMatch(request.input)) {

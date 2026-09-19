@@ -18,6 +18,7 @@ enum class FreeDesignCanvasRenderFailure {
     INVALID_TEMPLATE_GEOMETRY,
     INVALID_HEADER_ANCHOR,
     INVALID_HEADER_STYLE,
+    INVALID_RESULT_TEXT_STYLE,
     INVALID_ROW_COUNT,
     RESULT_ROWS_RENDER_FAILED,
     RENDERING_FAILED,
@@ -38,19 +39,20 @@ fun interface FreeDesignResultRowsRenderer {
         rows: List<ResultExportRow>,
         geometry: CustomDesignEffectiveGridGeometry,
         textColors: CustomDesignColumnTextColors,
+        resultTextStyle: FreeDesignResultTextStyle,
     ): CustomDesignCanvasRenderResult
 }
 
 class FreeDesignCanvasRenderer(
     private val resultRowsRenderer: FreeDesignResultRowsRenderer =
-        FreeDesignResultRowsRenderer { canvas, rows, geometry, textColors ->
+        FreeDesignResultRowsRenderer { canvas, rows, geometry, textColors, resultTextStyle ->
             CustomDesignCanvasRenderer().render(
                 canvas = canvas,
                 rows = rows,
                 geometry = geometry,
                 textColors = textColors,
-                resultTextSizeMultiplier = FREE_DESIGN_RESULT_TEXT_SIZE_MULTIPLIER,
-                teamNameStartPaddingPx = FREE_DESIGN_TEAM_NAME_START_PADDING_PX,
+                resultTextSizeMultiplier = resultTextStyle.textSizeMultiplier,
+                teamNameStartPaddingPx = resultTextStyle.teamNameStartPaddingPx,
             )
         },
 ) {
@@ -104,6 +106,7 @@ class FreeDesignCanvasRenderer(
                 rows = rows,
                 geometry = template.tableGeometry,
                 textColors = template.resultColumnTextColors,
+                resultTextStyle = template.resultTextStyle,
             )
             when (rowRenderResult) {
                 CustomDesignCanvasRenderResult.Success -> {
@@ -232,6 +235,17 @@ class FreeDesignCanvasRenderer(
             return FreeDesignCanvasRenderFailure.INVALID_TEMPLATE_GEOMETRY
         }
 
+        val resultTextStyle = template.resultTextStyle
+        if (
+            !resultTextStyle.textSizeMultiplier.isFinite() ||
+                resultTextStyle.textSizeMultiplier <= 0f ||
+                !resultTextStyle.teamNameStartPaddingPx.isFinite() ||
+                resultTextStyle.teamNameStartPaddingPx < 0f ||
+                resultTextStyle.teamNameStartPaddingPx >= width
+        ) {
+            return FreeDesignCanvasRenderFailure.INVALID_RESULT_TEXT_STYLE
+        }
+
         if (template.headerAnchors.keys != FreeDesignHeaderField.entries.toSet()) {
             return FreeDesignCanvasRenderFailure.INVALID_HEADER_ANCHOR
         }
@@ -265,8 +279,6 @@ class FreeDesignCanvasRenderer(
 
     private companion object {
         const val FREE_DESIGN_ROW_COUNT = 12
-        const val FREE_DESIGN_RESULT_TEXT_SIZE_MULTIPLIER = 1.1f
-        const val FREE_DESIGN_TEAM_NAME_START_PADDING_PX = 16f
         const val HEADER_TEXT_SIZE_STEP = 0.5f
         const val HEADER_ELLIPSIS = "…"
         val DATE_FORMATTER: DateTimeFormatter =

@@ -7,13 +7,17 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGrid
 object FreeDesignTemplateRegistry {
     const val DEFAULT_TEMPLATE_ID = "free_design_v1"
     const val DEFAULT_ASSET_PATH = "result_templates/free_design_v1.webp"
+    const val BLUE_TEMPLATE_ID = "free_design_v2_blue"
+    const val BLUE_ASSET_PATH = "result_templates/free_design_v2_blue.webp"
 
     private const val SOURCE_WIDTH = 1254
     private const val SOURCE_HEIGHT = 1254
     private const val HEADER_COLOR = "#F3E7C2"
+    private const val BLUE_HEADER_COLOR = "#F4F7FF"
 
     private val defaultTemplate = FreeDesignTemplate(
         id = DEFAULT_TEMPLATE_ID,
+        displayName = "Gold",
         assetPath = DEFAULT_ASSET_PATH,
         sourceWidth = SOURCE_WIDTH,
         sourceHeight = SOURCE_HEIGHT,
@@ -45,6 +49,10 @@ object FreeDesignTemplateRegistry {
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
             CustomDesignAnchorField.entries.associateWith { HEADER_COLOR },
         ) ?: error("Free Design v1 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.1f,
+            teamNameStartPaddingPx = 16f,
+        ),
         headerAnchors = mapOf(
             FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
                 centerY = 120f,
@@ -55,7 +63,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
                 centerY = 185f,
-                textSize = 50.4f,
+                textSize = 46f,
                 maxWidthPx = 1000f,
                 minimumTextSizePx = 14f,
                 typographyRole = FreeDesignTypographyRole.SECONDARY,
@@ -77,10 +85,87 @@ object FreeDesignTemplateRegistry {
         ),
     )
 
-    private val templatesById: Map<String, FreeDesignTemplate> =
-        mapOf(defaultTemplate.id to defaultTemplate)
+    private val blueNeonTemplate = FreeDesignTemplate(
+        id = BLUE_TEMPLATE_ID,
+        displayName = "Blue Neon",
+        assetPath = BLUE_ASSET_PATH,
+        sourceWidth = SOURCE_WIDTH,
+        sourceHeight = SOURCE_HEIGHT,
+        tableGeometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = SOURCE_WIDTH,
+            sourceHeight = SOURCE_HEIGHT,
+            columnX = mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 199f,
+                CustomDesignAnchorField.WIN to 676f,
+                CustomDesignAnchorField.POSITION_POINTS to 820f,
+                CustomDesignAnchorField.TOTAL_KILLS to 966f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1118f,
+            ),
+            rowY = mapOf(
+                1 to 375f,
+                2 to 437f,
+                3 to 499f,
+                4 to 560f,
+                5 to 622f,
+                6 to 684f,
+                7 to 746f,
+                8 to 808f,
+                9 to 870f,
+                10 to 933f,
+                11 to 995f,
+                12 to 1058f,
+            ),
+        ),
+        resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { BLUE_HEADER_COLOR },
+        ) ?: error("Free Design v2 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.30f,
+            teamNameStartPaddingPx = 16f,
+        ),
+        headerAnchors = mapOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
+                centerY = 100f,
+                textSize = 76f,
+                maxWidthPx = 1050f,
+                minimumTextSizePx = 36f,
+                typographyRole = FreeDesignTypographyRole.TITLE,
+                color = BLUE_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+                centerY = 165f,
+                textSize = 47f,
+                maxWidthPx = 1000f,
+                minimumTextSizePx = 26f,
+                typographyRole = FreeDesignTypographyRole.SECONDARY,
+                color = BLUE_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
+                centerY = 225f,
+                textSize = 24f,
+                maxWidthPx = 1000f,
+                minimumTextSizePx = 16f,
+                typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
+                color = BLUE_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.DATE to headerAnchor(
+                centerY = 225f,
+                textSize = 20f,
+                maxWidthPx = 800f,
+                minimumTextSizePx = 14f,
+                typographyRole = FreeDesignTypographyRole.DATE,
+                color = BLUE_HEADER_COLOR,
+            ),
+        ),
+    )
 
-    val all: List<FreeDesignTemplate> = templatesById.values.toList()
+    private val builtInTemplates: List<FreeDesignTemplate> =
+        listOf(defaultTemplate, blueNeonTemplate)
+
+    private val templatesById: Map<String, FreeDesignTemplate> =
+        builtInTemplates.associateBy { it.id }
+
+    val all: List<FreeDesignTemplate> = builtInTemplates
 
     fun default(): FreeDesignTemplate = defaultTemplate
 
@@ -92,12 +177,13 @@ object FreeDesignTemplateRegistry {
         maxWidthPx: Float,
         minimumTextSizePx: Float,
         typographyRole: FreeDesignTypographyRole,
+        color: String = HEADER_COLOR,
     ): FreeDesignHeaderAnchor = FreeDesignHeaderAnchor(
         centerX = SOURCE_WIDTH / 2f,
         centerY = centerY,
         style = FreeDesignHeaderTextStyle(
             textSize = textSize,
-            color = HEADER_COLOR,
+            color = color,
             alignment = FreeDesignTextAlignment.CENTER,
             typographyRole = typographyRole,
             maxWidthPx = maxWidthPx,
