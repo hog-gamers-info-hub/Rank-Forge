@@ -83,6 +83,10 @@ import com.hoggamers.rankforge.data.export.CustomDesignBitmapComposer
 import com.hoggamers.rankforge.data.export.CustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.CustomDesignResultRowsResolver
 import com.hoggamers.rankforge.data.export.CustomDesignResultRowsResult
+import com.hoggamers.rankforge.data.export.FreeDesignBitmapComposer
+import com.hoggamers.rankforge.data.export.FreeDesignBitmapComposeResult
+import com.hoggamers.rankforge.data.export.FreeDesignResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
 import com.hoggamers.rankforge.data.export.ResultDocumentWriter
 import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
@@ -205,7 +209,9 @@ class DownloadResultViewModel @Inject constructor(
     private val customDesignDelete: CustomDesignDeleteAction,
     private val customDesignRowsResolver: CustomDesignResultRowsResolver,
     private val customDesignBitmapComposer: CustomDesignBitmapComposer,
+    private val freeDesignBitmapComposer: FreeDesignBitmapComposer,
     private val resultDownloadCoordinator: ResultDownloadCoordinator,
+    private val freeDesignResultDownloadCoordinator: FreeDesignResultDownloadCoordinator,
     private val customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator,
     private val resultDocumentWriter: ResultDocumentWriter,
 ) : ViewModel() {
@@ -263,10 +269,6 @@ class DownloadResultViewModel @Inject constructor(
         previewJob?.cancel()
         customDesignId = null
         _hasSavedCustomDesign.value = false
-        if (design == DownloadResultDesignType.FREE_DESIGN) {
-            _previewState.value = DownloadResultPreviewState.Idle
-            return
-        }
         _previewState.value = DownloadResultPreviewState.Loading
         previewJob = viewModelScope.launch {
             try {
@@ -277,8 +279,8 @@ class DownloadResultViewModel @Inject constructor(
                 }
                 val bytes = when (design) {
                     DownloadResultDesignType.IMAGE -> renderImagePreview(request)
+                    DownloadResultDesignType.FREE_DESIGN -> renderFreeDesignPreview(request)
                     DownloadResultDesignType.MY_DESIGN -> renderCustomDesignPreview(request)
-                    DownloadResultDesignType.FREE_DESIGN -> null
                 }
                 if (bytes == null) {
                     if (design == DownloadResultDesignType.MY_DESIGN && customDesignId == null) {
@@ -328,31 +330,41 @@ class DownloadResultViewModel @Inject constructor(
         result: DownloadResultSelection,
         design: DownloadResultDesignType,
     ) {
-        if (design == DownloadResultDesignType.FREE_DESIGN || downloadState.value.isBusy) return
+        if (downloadState.value.isBusy) return
         downloadJob?.cancel()
         pendingDocument = null
         _downloadState.value = DownloadResultDownloadState.Generating
         downloadJob = viewModelScope.launch {
             val outcome = try {
                 val request = buildRequest(tournamentId, result)
-                when {
-                    request == null -> ResultDownloadExecutionResult.Failure(
+                if (request == null) {
+                    ResultDownloadExecutionResult.Failure(
                         com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
                     )
-                    design == DownloadResultDesignType.IMAGE -> resultDownloadCoordinator.execute(
-                        request = request,
-                        format = ResultExportFileFormat.PNG,
-                        onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
-                    )
-                    else -> customDesignId?.let { id ->
-                        customDesignResultDownloadCoordinator.execute(
-                            customDesignId = id,
-                            request = request,
-                            onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
-                        )
-                    } ?: ResultDownloadExecutionResult.Failure(
-                        com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
-                    )
+                } else {
+                    when (design) {
+                        DownloadResultDesignType.IMAGE ->
+                            resultDownloadCoordinator.execute(
+                                request = request,
+                                format = ResultExportFileFormat.PNG,
+                                onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
+                            )
+                        DownloadResultDesignType.FREE_DESIGN ->
+                            freeDesignResultDownloadCoordinator.execute(
+                                request = request,
+                                onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
+                            )
+                        DownloadResultDesignType.MY_DESIGN ->
+                            customDesignId?.let { id ->
+                                customDesignResultDownloadCoordinator.execute(
+                                    customDesignId = id,
+                                    request = request,
+                                    onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
+                                )
+                            } ?: ResultDownloadExecutionResult.Failure(
+                                com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
+                            )
+                    }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -466,6 +478,38 @@ class DownloadResultViewModel @Inject constructor(
                             (renderer.render(result.model) as? ResultPngRenderResult.Success)?.pngBytes
                         is TournamentResultExportModelBuildResult.Failure -> null
                     }
+            }
+        }
+
+    private suspend fun renderFreeDesignPreview(request: ResultDownloadRequest): ByteArray? =
+        withContext(Dispatchers.Default) {
+            val template = FreeDesignTemplateRegistry.findById(
+                FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+            ) ?: return@withContext null
+            val builder = ResultExportModelBuilder()
+            val bitmap = when (request) {
+                is ResultDownloadRequest.CurrentMatch ->
+                    when (val result = builder.buildMatch(request.input)) {
+                        is MatchResultExportModelBuildResult.Success ->
+                            (freeDesignBitmapComposer.compose(result.model, template) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                        is MatchResultExportModelBuildResult.Failure -> null
+                    }
+                is ResultDownloadRequest.WholeTournament ->
+                    when (val result = builder.buildTournament(request.input)) {
+                        is TournamentResultExportModelBuildResult.Success ->
+                            (freeDesignBitmapComposer.compose(result.model, template) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                        is TournamentResultExportModelBuildResult.Failure -> null
+                    }
+            } ?: return@withContext null
+            try {
+                val output = ByteArrayOutputStream()
+                if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    output.toByteArray().takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+            } finally {
+                bitmap.recycle()
             }
         }
 
@@ -740,6 +784,7 @@ fun DownloadResultScreen(
         ) {
             when (selectedDesign) {
                 DownloadResultDesignType.IMAGE,
+                DownloadResultDesignType.FREE_DESIGN,
                 DownloadResultDesignType.MY_DESIGN,
                 -> when (previewState) {
                     is DownloadResultPreviewState.ResultImage ->
@@ -781,18 +826,12 @@ fun DownloadResultScreen(
                     DownloadResultPreviewState.Unavailable,
                     -> Unit
                     DownloadResultPreviewState.Loading -> if (
-                        selectedDesign == DownloadResultDesignType.MY_DESIGN
+                        selectedDesign == DownloadResultDesignType.MY_DESIGN ||
+                            selectedDesign == DownloadResultDesignType.FREE_DESIGN
                     ) {
                         DownloadResultStandingsShimmerPreview(modifier = Modifier.fillMaxSize())
                     }
                 }
-                DownloadResultDesignType.FREE_DESIGN ->
-                    Text(
-                        text = "Coming soon...",
-                        color = DownloadResultUnselectedChipText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
             }
 
         }
@@ -800,8 +839,7 @@ fun DownloadResultScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         DownloadResultPrimaryButton(
-            enabled = selectedDesign != DownloadResultDesignType.FREE_DESIGN &&
-                previewState is DownloadResultPreviewState.ResultImage &&
+            enabled = previewState is DownloadResultPreviewState.ResultImage &&
                 !downloadState.isBusy,
             onClick = { onDownload(selectedResult, selectedDesign) },
         )

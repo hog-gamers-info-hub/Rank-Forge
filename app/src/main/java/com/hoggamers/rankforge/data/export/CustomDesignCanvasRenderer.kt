@@ -34,11 +34,16 @@ class CustomDesignCanvasRenderer {
         geometry: CustomDesignEffectiveGridGeometry,
         textColors: CustomDesignColumnTextColors = CustomDesignColumnTextColors.allBlack(),
         averageRankingBoundingBoxHeightPx: Float? = null,
+        resultTextSizeMultiplier: Float = 1f,
+        teamNameStartPaddingPx: Float = 0f,
     ): CustomDesignCanvasRenderResult {
         validate(geometry, rows)?.let { return CustomDesignCanvasRenderResult.Failure(it) }
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = resolveResultTextSizePx(averageRankingBoundingBoxHeightPx)
+            textSize = resolveResultTextSizePx(
+                averageRankingBoundingBoxHeightPx = averageRankingBoundingBoxHeightPx,
+                resultTextSizeMultiplier = resultTextSizeMultiplier,
+            )
             typeface = mediumTypeface()
         }
 
@@ -48,7 +53,8 @@ class CustomDesignCanvasRenderer {
                 drawLeftAlignedText(
                     canvas = canvas,
                     text = row.teamName,
-                    startX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME),
+                    startX = geometry.columnX.getValue(CustomDesignAnchorField.TEAM_NAME) +
+                        teamNameStartPaddingPx,
                     centerY = sourceY,
                     color = textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
                     paint = paint,
@@ -154,12 +160,18 @@ class CustomDesignCanvasRenderer {
         const val RESULT_TEXT_SIZE_MULTIPLIER = 1.3f
         const val RESULT_TEXT_WEIGHT = 500
 
-        fun resolveResultTextSizePx(averageRankingBoundingBoxHeightPx: Float?): Float {
+        fun resolveResultTextSizePx(
+            averageRankingBoundingBoxHeightPx: Float?,
+            resultTextSizeMultiplier: Float,
+        ): Float {
             val scaled = averageRankingBoundingBoxHeightPx
                 ?.takeIf { it.isFinite() && it > 0f }
                 ?.times(RESULT_TEXT_SIZE_MULTIPLIER)
-            return scaled?.takeIf { it.isFinite() && it > 0f }
+            val baseTextSize = scaled?.takeIf { it.isFinite() && it > 0f }
                 ?: LEGACY_RESULT_TEXT_SIZE_PX
+            return (baseTextSize * resultTextSizeMultiplier)
+                .takeIf { it.isFinite() && it > 0f }
+                ?: baseTextSize
         }
 
         fun mediumTypeface(): Typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
