@@ -130,6 +130,8 @@ const val DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX = "download_result_match_
 const val DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG = "download_result_design_image"
 const val DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG = "download_result_design_free"
 const val DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG = "download_result_design_my"
+const val DOWNLOAD_RESULT_FREE_TEMPLATE_OPTION_TEST_TAG_PREFIX =
+    "download_result_free_template_"
 
 private val DownloadResultSelectedChipBackground = Color(0xFF0B2B55)
 private val DownloadResultUnselectedChipBackground = Color(0xFF071B3E)
@@ -147,8 +149,20 @@ data class DownloadResultMatchOption(
     val matchNumber: Int,
 )
 
+data class DownloadResultFreeDesignOption(
+    val id: String,
+    val displayName: String,
+)
+
 data class DownloadResultUiState(
     val matches: List<DownloadResultMatchOption> = emptyList(),
+    val freeDesignOptions: List<DownloadResultFreeDesignOption> =
+        FreeDesignTemplateRegistry.all.map { template ->
+            DownloadResultFreeDesignOption(
+                id = template.id,
+                displayName = template.displayName,
+            )
+        },
 )
 
 sealed interface DownloadResultSelection {
@@ -217,6 +231,12 @@ class DownloadResultViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadResultUiState())
     val uiState: StateFlow<DownloadResultUiState> = _uiState.asStateFlow()
+
+    private val _selectedFreeDesignTemplateId = MutableStateFlow(
+        FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+    )
+    val selectedFreeDesignTemplateId: StateFlow<String> =
+        _selectedFreeDesignTemplateId.asStateFlow()
 
     private val _previewState = MutableStateFlow<DownloadResultPreviewState>(DownloadResultPreviewState.Idle)
     val previewState: StateFlow<DownloadResultPreviewState> = _previewState.asStateFlow()
@@ -299,6 +319,23 @@ class DownloadResultViewModel @Inject constructor(
         }
     }
 
+    fun selectFreeDesignTemplate(
+        tournamentId: String,
+        templateId: String,
+    ) {
+        if (FreeDesignTemplateRegistry.findById(templateId) == null) return
+        if (_selectedFreeDesignTemplateId.value == templateId) return
+
+        _selectedFreeDesignTemplateId.value = templateId
+        if (selectedDesign == DownloadResultDesignType.FREE_DESIGN) {
+            select(
+                tournamentId = tournamentId,
+                result = selectedResult,
+                design = DownloadResultDesignType.FREE_DESIGN,
+            )
+        }
+    }
+
     fun refreshSelection() {
         val tournamentId = selectedTournamentId ?: return
         select(tournamentId, selectedResult, selectedDesign)
@@ -352,6 +389,7 @@ class DownloadResultViewModel @Inject constructor(
                         DownloadResultDesignType.FREE_DESIGN ->
                             freeDesignResultDownloadCoordinator.execute(
                                 request = request,
+                                templateId = selectedFreeDesignTemplateId.value,
                                 onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
                             )
                         DownloadResultDesignType.MY_DESIGN ->
@@ -484,7 +522,7 @@ class DownloadResultViewModel @Inject constructor(
     private suspend fun renderFreeDesignPreview(request: ResultDownloadRequest): ByteArray? =
         withContext(Dispatchers.Default) {
             val template = FreeDesignTemplateRegistry.findById(
-                FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+                selectedFreeDesignTemplateId.value,
             ) ?: return@withContext null
             val builder = ResultExportModelBuilder()
             val bitmap = when (request) {
@@ -587,6 +625,7 @@ fun DownloadResultRoute(
     val previewState by viewModel.previewState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val hasSavedCustomDesign by viewModel.hasSavedCustomDesign.collectAsStateWithLifecycle()
+    val selectedFreeDesignTemplateId by viewModel.selectedFreeDesignTemplateId.collectAsStateWithLifecycle()
     ResultShareEventEffect(shareEvents = viewModel.shareEvents)
     val lifecycleOwner = LocalLifecycleOwner.current
     val documentLauncher = rememberLauncherForActivityResult(
@@ -613,9 +652,11 @@ fun DownloadResultRoute(
 
     DownloadResultScreen(
         matches = uiState.matches,
+        freeDesignOptions = uiState.freeDesignOptions,
         onBack = onBack,
         initialDesign = initialDesign,
         initialResult = initialResult,
+        selectedFreeDesignTemplateId = selectedFreeDesignTemplateId,
         previewState = previewState,
         downloadState = downloadState,
         hasSavedCustomDesign = hasSavedCustomDesign,
@@ -624,6 +665,9 @@ fun DownloadResultRoute(
         },
         onDesignSelected = { selection, design ->
             viewModel.select(tournamentId, selection, design)
+        },
+        onFreeDesignTemplateSelected = { templateId ->
+            viewModel.selectFreeDesignTemplate(tournamentId, templateId)
         },
         onImportYourDesign = { selection ->
             val matchId = (selection as? DownloadResultSelection.Match)?.matchId ?: sourceMatchId
@@ -642,13 +686,22 @@ fun DownloadResultRoute(
 fun DownloadResultScreen(
     matches: List<DownloadResultMatchOption>,
     onBack: () -> Unit,
+    freeDesignOptions: List<DownloadResultFreeDesignOption> =
+        FreeDesignTemplateRegistry.all.map { template ->
+            DownloadResultFreeDesignOption(
+                id = template.id,
+                displayName = template.displayName,
+            )
+        },
     initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
     initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
+    selectedFreeDesignTemplateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
     previewState: DownloadResultPreviewState = DownloadResultPreviewState.Idle,
     downloadState: DownloadResultDownloadState = DownloadResultDownloadState.Idle,
     hasSavedCustomDesign: Boolean = false,
     onResultSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onDesignSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
+    onFreeDesignTemplateSelected: (String) -> Unit = {},
     onImportYourDesign: (DownloadResultSelection) -> Unit = {},
     onDeleteSavedCustomDesign: () -> Unit = {},
     onDownload: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
@@ -657,6 +710,9 @@ fun DownloadResultScreen(
         mutableStateOf(initialResult)
     }
     var selectedDesign by remember(initialDesign) { mutableStateOf(initialDesign) }
+    var selectedTemplateId by remember(selectedFreeDesignTemplateId) {
+        mutableStateOf(selectedFreeDesignTemplateId)
+    }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
 
@@ -771,6 +827,33 @@ fun DownloadResultScreen(
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG,
                 )
+            }
+        }
+
+        if (selectedDesign == DownloadResultDesignType.FREE_DESIGN && freeDesignOptions.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            DownloadResultSectionTitle(text = "Template")
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                freeDesignOptions.forEach { option ->
+                    PointIqSelectionChip(
+                        label = option.displayName,
+                        selected = selectedTemplateId == option.id,
+                        onClick = {
+                            selectedTemplateId = option.id
+                            onFreeDesignTemplateSelected(option.id)
+                        },
+                        testTag = DOWNLOAD_RESULT_FREE_TEMPLATE_OPTION_TEST_TAG_PREFIX + option.id,
+                    )
+                }
             }
         }
 
