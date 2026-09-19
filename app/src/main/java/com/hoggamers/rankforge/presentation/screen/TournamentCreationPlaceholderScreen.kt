@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,11 +31,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -82,6 +83,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -102,6 +104,8 @@ private val PointIqCreateCtaTopBlue = Color(0xFF159CF8)
 private val PointIqCreateCtaMiddleBlue = Color(0xFF1688F7)
 private val PointIqCreateCtaDeepBlue = Color(0xFF1675F0)
 private val PointIqCreateCtaBorder = Color(0xFF4AAFF7)
+private val PointIqCreateDatePickerSurface = Color(0xFF071B3E)
+private val PointIqCreateDatePickerBorder = Color(0xFF176AF7)
 private val PointIqCreateFieldHorizontalInset = 24.dp
 
 const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
@@ -413,6 +417,33 @@ fun TournamentCreationScreen(
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = (uiState.tournamentDate ?: LocalDate.now()).toUtcMillis(),
         )
+        val datePickerColors = DatePickerDefaults.colors(
+            containerColor = PointIqCreateDatePickerSurface,
+            titleContentColor = PointIqCreateHeader,
+            headlineContentColor = PointIqCreateHeader,
+            weekdayContentColor = PointIqCreateSubtitle,
+            subheadContentColor = PointIqCreateSubtitle,
+            navigationContentColor = PointIqCreateSubtitle,
+            yearContentColor = PointIqCreateHeader,
+            disabledYearContentColor = PointIqCreateFieldInactive,
+            currentYearContentColor = PointIqCreateCyan,
+            selectedYearContentColor = PointIqCreateHeader,
+            disabledSelectedYearContentColor = PointIqCreateFieldInactive,
+            selectedYearContainerColor = PointIqCreateDatePickerBorder,
+            disabledSelectedYearContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.4f),
+            dayContentColor = PointIqCreateHeader,
+            disabledDayContentColor = PointIqCreateFieldInactive,
+            selectedDayContentColor = PointIqCreateHeader,
+            disabledSelectedDayContentColor = PointIqCreateFieldInactive,
+            selectedDayContainerColor = PointIqCreateDatePickerBorder,
+            disabledSelectedDayContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.4f),
+            todayContentColor = PointIqCreateCyan,
+            todayDateBorderColor = PointIqCreateCyan,
+            dayInSelectionRangeContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.2f),
+            dayInSelectionRangeContentColor = PointIqCreateHeader,
+            dividerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.35f),
+        )
+        val datePickerShape = RoundedCornerShape(12.dp)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -425,29 +456,38 @@ fun TournamentCreationScreen(
                     },
                     modifier = Modifier.testTag(TOURNAMENT_DATE_CONFIRM_ACTION_TEST_TAG),
                 ) {
-                    Text(text = stringResource(R.string.select_date_action))
+                    Text(
+                        text = stringResource(R.string.select_date_action),
+                        color = PointIqCreateCyan,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             },
+            modifier = Modifier.border(
+                BorderStroke(1.dp, PointIqCreateDatePickerBorder),
+                datePickerShape,
+            ),
+            shape = datePickerShape,
+            tonalElevation = 0.dp,
+            colors = datePickerColors,
         ) {
-            DatePicker(state = datePickerState)
+            DatePicker(
+                state = datePickerState,
+                colors = datePickerColors,
+            )
         }
     }
 
     if (uiState.showDiscardDialog) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             onDismissRequest = onKeepEditing,
-            title = { Text(text = stringResource(R.string.discard_tournament_changes_title)) },
-            text = { Text(text = stringResource(R.string.discard_tournament_changes_message)) },
-            confirmButton = {
-                TextButton(onClick = onDiscardChanges) {
-                    Text(text = stringResource(R.string.discard_changes_action))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onKeepEditing) {
-                    Text(text = stringResource(R.string.keep_editing_action))
-                }
-            },
+            title = stringResource(R.string.discard_tournament_changes_title),
+            message = stringResource(R.string.discard_tournament_changes_message),
+            onConfirm = onDiscardChanges,
+            confirmLabel = stringResource(R.string.discard_changes_action),
+            onDismiss = onKeepEditing,
+            dismissLabel = stringResource(R.string.keep_editing_action),
+            destructive = true,
         )
     }
 }
