@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.app.Activity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,6 +83,9 @@ private val PointIqTeamsBlue = Color(0xFF176AF7)
 private val PointIqTeamsFieldText = Color(0xFFF6F8FF)
 private val PointIqTeamsFieldInactive = Color(0xFF7D9DCE)
 private val PointIqTeamsFieldCyan = Color(0xFF17C9F2)
+private val PointIqTeamsDialogSurface = Color(0xFF071B3E)
+private val PointIqTeamsDialogBorder = Color(0xFF176AF7)
+private val PointIqTeamsDialogError = Color(0xFFFF6B6B)
 private val PointIqTeamsDarkSurface = PointIqTeamsAmbientBlue.copy(alpha = 0.42f)
 private val PointIqTeamsCtaDeepBlue = Color(0xFF0D4DBA)
 private val PointIqTeamsCtaShadowLightBlue = Color(0xFF8EE7FF)
@@ -637,15 +642,47 @@ private fun PasteTeamListDialog(
 ) {
     var pastedText by remember { mutableStateOf("") }
     var hasOverflow by remember { mutableStateOf(false) }
+    val dialogShape = RoundedCornerShape(12.dp)
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = PointIqTeamsFieldText,
+        unfocusedTextColor = PointIqTeamsFieldText,
+        focusedContainerColor = PointIqTeamsBackground,
+        unfocusedContainerColor = PointIqTeamsBackground,
+        focusedBorderColor = PointIqTeamsFieldCyan,
+        unfocusedBorderColor = PointIqTeamsFieldInactive,
+        focusedLabelColor = PointIqTeamsFieldCyan,
+        unfocusedLabelColor = PointIqTeamsFieldInactive,
+        cursorColor = PointIqTeamsFieldCyan,
+    )
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        modifier = Modifier.border(
+            BorderStroke(1.dp, PointIqTeamsDialogBorder),
+            dialogShape,
+        ),
+        shape = dialogShape,
+        containerColor = PointIqTeamsDialogSurface,
+        titleContentColor = PointIqTeamsNavy,
+        textContentColor = PointIqTeamsBody,
+        tonalElevation = 0.dp,
         title = {
-            Text(text = stringResource(R.string.team_entry_paste_list_title))
+            Text(
+                text = stringResource(R.string.team_entry_paste_list_title),
+                color = PointIqTeamsNavy,
+                fontSize = 20.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         },
         text = {
             Column {
-                Text(text = stringResource(R.string.team_entry_paste_list_description))
+                Text(
+                    text = stringResource(R.string.team_entry_paste_list_description),
+                    color = PointIqTeamsBody,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = pastedText,
@@ -659,19 +696,27 @@ private fun PasteTeamListDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = false,
                     minLines = 6,
+                    colors = fieldColors,
                 )
                 if (hasOverflow) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.team_entry_paste_list_overflow),
-                        color = MaterialTheme.colorScheme.error,
+                        color = PointIqTeamsDialogError,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
                     )
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
-                Text(text = stringResource(R.string.cancel_action))
+                Text(
+                    text = stringResource(R.string.cancel_action),
+                    color = PointIqTeamsBody,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
         confirmButton = {
@@ -685,7 +730,12 @@ private fun PasteTeamListDialog(
                     }
                 },
             ) {
-                Text(text = stringResource(R.string.team_entry_paste_list_apply_action))
+                Text(
+                    text = stringResource(R.string.team_entry_paste_list_apply_action),
+                    color = PointIqTeamsFieldCyan,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
     )

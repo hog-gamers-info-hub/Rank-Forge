@@ -148,6 +148,7 @@ private val PointIqMatchReviewBackground = Color(0xFF031225)
 private val PointIqMatchReviewAmbientBlue = Color(0xFF0B386F)
 private val PointIqMatchReviewHeader = Color(0xFFF6F8FF)
 private val PointIqMatchReviewSubtitle = Color(0xFF91AFE0)
+private val PointIqMatchReviewInactive = Color(0xFF7D9DCE)
 private val PointIqMatchReviewDanger = Color(0xFFD92D3A)
 private val PointIqMatchReviewBadgeFill = PointIqMatchReviewNavy
 private val PointIqMatchReviewBadgeBorder = Color(0xFF17C9F2).copy(alpha = 0.4f)
@@ -3051,16 +3052,40 @@ private fun MatchOcrScreenshotPreflightDialog(
     onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit,
 ) {
     val hasProcessing = items.any { it.issue == OcrScreenshotPreflightIssue.PROCESSING }
+    val dialogShape = RoundedCornerShape(12.dp)
     AlertDialog(
-        modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG),
         onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.match_ocr_preflight_title)) },
+        modifier = Modifier
+            .border(
+                BorderStroke(1.dp, PointIqMatchReviewBlue),
+                dialogShape,
+            )
+            .testTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG),
+        shape = dialogShape,
+        containerColor = PointIqMatchReviewNavy,
+        titleContentColor = PointIqMatchReviewHeader,
+        textContentColor = PointIqMatchReviewSubtitle,
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = stringResource(R.string.match_ocr_preflight_title),
+                color = PointIqMatchReviewHeader,
+                fontSize = 20.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
             ) {
-                Text(stringResource(R.string.match_ocr_preflight_intro))
+                Text(
+                    text = stringResource(R.string.match_ocr_preflight_intro),
+                    color = PointIqMatchReviewSubtitle,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                )
                 items.forEach { item ->
                     Column(
                         modifier = Modifier
@@ -3068,7 +3093,12 @@ private fun MatchOcrScreenshotPreflightDialog(
                             .testTag(matchReviewOcrPreflightItemTestTag(item.identity)),
                         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
                     ) {
-                        Text(item.issue.message(item.identity))
+                        Text(
+                            text = item.issue.message(item.identity),
+                            color = PointIqMatchReviewHeader,
+                            fontSize = 15.sp,
+                            lineHeight = 21.sp,
+                        )
                         item.actionLabel()?.let { action ->
                             OutlinedButton(
                                 onClick = {
@@ -3094,8 +3124,20 @@ private fun MatchOcrScreenshotPreflightDialog(
                                 modifier = Modifier.testTag(
                                     matchReviewOcrPreflightActionTestTag(item.identity, item.issue),
                                 ),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, PointIqMatchReviewBlue),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = PointIqMatchReviewCtaTopBlue,
+                                    disabledContainerColor = Color.Transparent,
+                                    disabledContentColor = PointIqMatchReviewInactive,
+                                ),
                             ) {
-                                Text(action)
+                                Text(
+                                    text = action,
+                                    color = PointIqMatchReviewCtaTopBlue,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                             }
                         }
                     }
@@ -3103,10 +3145,17 @@ private fun MatchOcrScreenshotPreflightDialog(
                 if (hasProcessing) {
                     Text(
                         text = stringResource(R.string.match_ocr_preflight_processing_message),
-                        color = MaterialTheme.colorScheme.error,
+                        color = PointIqMatchReviewBlockerIcon,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
                     )
                 } else {
-                    Text(stringResource(R.string.match_ocr_preflight_incomplete_message))
+                    Text(
+                        text = stringResource(R.string.match_ocr_preflight_incomplete_message),
+                        color = PointIqMatchReviewSubtitle,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
                 }
             }
         },
@@ -3115,7 +3164,12 @@ private fun MatchOcrScreenshotPreflightDialog(
                 onClick = onCancel,
                 modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG),
             ) {
-                Text(stringResource(R.string.cancel_action))
+                Text(
+                    text = stringResource(R.string.cancel_action),
+                    color = PointIqMatchReviewSubtitle,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
         confirmButton = {
@@ -3123,8 +3177,20 @@ private fun MatchOcrScreenshotPreflightDialog(
                 onClick = onCalculatePoints,
                 enabled = !hasProcessing,
                 modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PointIqMatchReviewBlue,
+                    contentColor = PointIqMatchReviewHeader,
+                    disabledContainerColor = PointIqMatchReviewNavy,
+                    disabledContentColor = PointIqMatchReviewInactive,
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
             ) {
-                Text(stringResource(R.string.calculate_points_action))
+                Text(
+                    text = stringResource(R.string.calculate_points_action),
+                    color = PointIqMatchReviewHeader,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
     )
