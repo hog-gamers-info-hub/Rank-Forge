@@ -35,7 +35,7 @@ class CustomDesignAnchorDetectorTest {
     }
 
     @Test
-    fun contiguousElementsOnOneLineCanFormAHeader() {
+    fun contiguousElementsOnOneLineUseTheTeamNameLeftEdge() {
         val anchors = detector.detect(
             1080,
             1350,
@@ -48,7 +48,7 @@ class CustomDesignAnchorDetectorTest {
             ),
         )
 
-        assertEquals(185f, anchors.columnX[CustomDesignAnchorField.TEAM_NAME])
+        assertEquals(100f, anchors.columnX[CustomDesignAnchorField.TEAM_NAME])
     }
 
     @Test
@@ -110,7 +110,7 @@ class CustomDesignAnchorDetectorTest {
     }
 
     @Test
-    fun cornerGeometryUsesAveragePointCenter() {
+    fun cornerGeometryUsesTheTeamNameLeftmostPoint() {
         val anchors = detector.detect(
             1080,
             1350,
@@ -124,17 +124,17 @@ class CustomDesignAnchorDetectorTest {
                         right = 200,
                         bottom = 240,
                         corners = listOf(
-                            RawOcrPoint(100, 200),
+                            RawOcrPoint(120, 200),
                             RawOcrPoint(200, 200),
                             RawOcrPoint(200, 240),
-                            RawOcrPoint(100, 240),
+                            RawOcrPoint(120, 240),
                         ),
                     ),
                 ),
             ),
         )
 
-        assertEquals(150f, anchors.columnX[CustomDesignAnchorField.TEAM_NAME])
+        assertEquals(120f, anchors.columnX[CustomDesignAnchorField.TEAM_NAME])
     }
 
     @Test

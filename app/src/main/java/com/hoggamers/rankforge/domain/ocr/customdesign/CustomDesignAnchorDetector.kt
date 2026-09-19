@@ -49,8 +49,13 @@ class CustomDesignAnchorDetector @Inject constructor() {
                 matches.isEmpty() -> missingFields += field
                 matches.size > 1 -> ambiguousFields += field
                 else -> {
-                    val center = matches.single().geometry.center(width, height)
-                    columnX[field] = center.x
+                    val geometry = matches.single().geometry
+                    val center = geometry.center(width, height)
+                    columnX[field] = if (field == CustomDesignAnchorField.TEAM_NAME) {
+                        geometry.leftX(width)
+                    } else {
+                        center.x
+                    }
                     headerY[field] = center.y
                 }
             }
@@ -160,6 +165,12 @@ private data class CandidateGeometry(
     val boundingBox: RawOcrBoundingBox,
     val cornerPoints: List<RawOcrPoint>?,
 ) {
+    fun leftX(sourceWidth: Int): Float = (cornerPoints
+        ?.minOfOrNull { it.x }
+        ?: boundingBox.left)
+        .toFloat()
+        .coerceIn(0f, sourceWidth.toFloat())
+
     fun center(sourceWidth: Int, sourceHeight: Int): PointF = if (!cornerPoints.isNullOrEmpty()) {
         PointF(
             cornerPoints.map { it.x }.average().toFloat().coerceIn(0f, sourceWidth.toFloat()),
