@@ -15,6 +15,8 @@ object FreeDesignTemplateRegistry {
     const val V4_ASSET_PATH = "result_templates/free_design_v4.webp"
     const val V5_TEMPLATE_ID = "free_design_v5"
     const val V5_ASSET_PATH = "result_templates/free_design_v5.webp"
+    const val V6_TEMPLATE_ID = "free_design_v6"
+    const val V6_ASSET_PATH = "result_templates/free_design_v6.webp"
 
     private const val SOURCE_WIDTH = 1254
     private const val SOURCE_HEIGHT = 1254
@@ -26,6 +28,10 @@ object FreeDesignTemplateRegistry {
     private const val V4_RESULT_COLOR = "#111111"
     private const val V5_RESULT_COLOR = "#F2F0FF"
     private const val V5_HEADER_COLOR = "#F2F0FF"
+    private const val V6_SOURCE_WIDTH = 1536
+    private const val V6_SOURCE_HEIGHT = 1024
+    private const val V6_RESULT_COLOR = "#111111"
+    private const val V6_HEADER_COLOR = "#F4F4F4"
 
     private val defaultTemplate = FreeDesignTemplate(
         id = DEFAULT_TEMPLATE_ID,
@@ -397,8 +403,93 @@ object FreeDesignTemplateRegistry {
         ),
     )
 
+    private val crimsonEdgeTemplate = FreeDesignTemplate(
+        id = V6_TEMPLATE_ID,
+        displayName = "Crimson Edge",
+        assetPath = V6_ASSET_PATH,
+        sourceWidth = V6_SOURCE_WIDTH,
+        sourceHeight = V6_SOURCE_HEIGHT,
+        tableGeometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = V6_SOURCE_WIDTH,
+            sourceHeight = V6_SOURCE_HEIGHT,
+            columnX = mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 236f,
+                CustomDesignAnchorField.WIN to 924f,
+                CustomDesignAnchorField.POSITION_POINTS to 1071.5f,
+                CustomDesignAnchorField.TOTAL_KILLS to 1219f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1373f,
+            ),
+            rowY = mapOf(
+                1 to 358f,
+                2 to 410.5f,
+                3 to 462f,
+                4 to 514f,
+                5 to 566f,
+                6 to 619f,
+                7 to 671f,
+                8 to 723.5f,
+                9 to 774.5f,
+                10 to 826.5f,
+                11 to 877f,
+                12 to 927.5f,
+            ),
+        ),
+        resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { V6_RESULT_COLOR },
+        ) ?: error("Free Design v6 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.20f,
+            teamNameStartPaddingPx = 20f,
+        ),
+        headerAnchors = mapOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
+                centerX = V6_SOURCE_WIDTH / 2f,
+                centerY = 95f,
+                textSize = 72f,
+                maxWidthPx = 1300f,
+                minimumTextSizePx = 32f,
+                typographyRole = FreeDesignTypographyRole.TITLE,
+                color = V6_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+                centerX = V6_SOURCE_WIDTH / 2f,
+                centerY = 160f,
+                textSize = 42f,
+                maxWidthPx = 1200f,
+                minimumTextSizePx = 22f,
+                typographyRole = FreeDesignTypographyRole.SECONDARY,
+                color = V6_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
+                centerX = V6_SOURCE_WIDTH / 2f,
+                centerY = 220f,
+                textSize = 22f,
+                maxWidthPx = 1200f,
+                minimumTextSizePx = 16f,
+                typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
+                color = V6_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.DATE to headerAnchor(
+                centerX = V6_SOURCE_WIDTH / 2f,
+                centerY = 220f,
+                textSize = 18f,
+                maxWidthPx = 700f,
+                minimumTextSizePx = 12f,
+                typographyRole = FreeDesignTypographyRole.DATE,
+                color = V6_HEADER_COLOR,
+            ),
+        ),
+    )
+
     private val builtInTemplates: List<FreeDesignTemplate> =
-        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate, orangeBlazeTemplate, purpleLuxeTemplate)
+        listOf(
+            defaultTemplate,
+            blueNeonTemplate,
+            blackGoldTemplate,
+            orangeBlazeTemplate,
+            purpleLuxeTemplate,
+            crimsonEdgeTemplate,
+        )
 
     private val templatesById: Map<String, FreeDesignTemplate> =
         builtInTemplates.associateBy { it.id }
