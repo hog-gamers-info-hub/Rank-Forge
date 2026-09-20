@@ -9,11 +9,16 @@ object FreeDesignTemplateRegistry {
     const val DEFAULT_ASSET_PATH = "result_templates/free_design_v1.webp"
     const val BLUE_TEMPLATE_ID = "free_design_v2_blue"
     const val BLUE_ASSET_PATH = "result_templates/free_design_v2_blue.webp"
+    const val V3_TEMPLATE_ID = "free_design_v3"
+    const val V3_ASSET_PATH = "result_templates/free_design_v3.webp"
 
     private const val SOURCE_WIDTH = 1254
     private const val SOURCE_HEIGHT = 1254
+    private const val V3_SOURCE_WIDTH = 1072
+    private const val V3_SOURCE_HEIGHT = 1467
     private const val HEADER_COLOR = "#F3E7C2"
     private const val BLUE_HEADER_COLOR = "#F4F7FF"
+    private const val V3_RESULT_COLOR = "#F4F4F4"
 
     private val defaultTemplate = FreeDesignTemplate(
         id = DEFAULT_TEMPLATE_ID,
@@ -159,8 +164,82 @@ object FreeDesignTemplateRegistry {
         ),
     )
 
+    private val blackGoldTemplate = FreeDesignTemplate(
+        id = V3_TEMPLATE_ID,
+        displayName = "Black Gold",
+        assetPath = V3_ASSET_PATH,
+        sourceWidth = V3_SOURCE_WIDTH,
+        sourceHeight = V3_SOURCE_HEIGHT,
+        tableGeometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = V3_SOURCE_WIDTH,
+            sourceHeight = V3_SOURCE_HEIGHT,
+            columnX = mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 118f,
+                CustomDesignAnchorField.WIN to 581f,
+                CustomDesignAnchorField.POSITION_POINTS to 708f,
+                CustomDesignAnchorField.TOTAL_KILLS to 836f,
+                CustomDesignAnchorField.TOTAL_POINTS to 971f,
+            ),
+            rowY = mapOf(
+                1 to 471.5f,
+                2 to 536.5f,
+                3 to 601f,
+                4 to 665.5f,
+                5 to 729.5f,
+                6 to 794.5f,
+                7 to 860.5f,
+                8 to 926.5f,
+                9 to 991.5f,
+                10 to 1055.5f,
+                11 to 1120.5f,
+                12 to 1185f,
+            ),
+        ),
+        resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { V3_RESULT_COLOR },
+        ) ?: error("Free Design v3 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.30f,
+            teamNameStartPaddingPx = 16f,
+        ),
+        headerAnchors = mapOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
+                centerX = V3_SOURCE_WIDTH / 2f,
+                centerY = 130f,
+                textSize = 68f,
+                maxWidthPx = 900f,
+                minimumTextSizePx = 32f,
+                typographyRole = FreeDesignTypographyRole.TITLE,
+            ),
+            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+                centerX = V3_SOURCE_WIDTH / 2f,
+                centerY = 205f,
+                textSize = 40f,
+                maxWidthPx = 850f,
+                minimumTextSizePx = 22f,
+                typographyRole = FreeDesignTypographyRole.SECONDARY,
+            ),
+            FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
+                centerX = V3_SOURCE_WIDTH / 2f,
+                centerY = 270f,
+                textSize = 22f,
+                maxWidthPx = 820f,
+                minimumTextSizePx = 16f,
+                typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
+            ),
+            FreeDesignHeaderField.DATE to headerAnchor(
+                centerX = V3_SOURCE_WIDTH / 2f,
+                centerY = 270f,
+                textSize = 18f,
+                maxWidthPx = 700f,
+                minimumTextSizePx = 12f,
+                typographyRole = FreeDesignTypographyRole.DATE,
+            ),
+        ),
+    )
+
     private val builtInTemplates: List<FreeDesignTemplate> =
-        listOf(defaultTemplate, blueNeonTemplate)
+        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate)
 
     private val templatesById: Map<String, FreeDesignTemplate> =
         builtInTemplates.associateBy { it.id }
@@ -172,6 +251,7 @@ object FreeDesignTemplateRegistry {
     fun findById(id: String): FreeDesignTemplate? = templatesById[id]
 
     private fun headerAnchor(
+        centerX: Float = SOURCE_WIDTH / 2f,
         centerY: Float,
         textSize: Float,
         maxWidthPx: Float,
@@ -179,7 +259,7 @@ object FreeDesignTemplateRegistry {
         typographyRole: FreeDesignTypographyRole,
         color: String = HEADER_COLOR,
     ): FreeDesignHeaderAnchor = FreeDesignHeaderAnchor(
-        centerX = SOURCE_WIDTH / 2f,
+        centerX = centerX,
         centerY = centerY,
         style = FreeDesignHeaderTextStyle(
             textSize = textSize,
