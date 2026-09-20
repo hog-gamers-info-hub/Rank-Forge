@@ -13,6 +13,8 @@ object FreeDesignTemplateRegistry {
     const val V3_ASSET_PATH = "result_templates/free_design_v3.webp"
     const val V4_TEMPLATE_ID = "free_design_v4"
     const val V4_ASSET_PATH = "result_templates/free_design_v4.webp"
+    const val V5_TEMPLATE_ID = "free_design_v5"
+    const val V5_ASSET_PATH = "result_templates/free_design_v5.webp"
 
     private const val SOURCE_WIDTH = 1254
     private const val SOURCE_HEIGHT = 1254
@@ -22,6 +24,8 @@ object FreeDesignTemplateRegistry {
     private const val BLUE_HEADER_COLOR = "#F4F7FF"
     private const val V3_RESULT_COLOR = "#F4F4F4"
     private const val V4_RESULT_COLOR = "#111111"
+    private const val V5_RESULT_COLOR = "#F2F0FF"
+    private const val V5_HEADER_COLOR = "#F2F0FF"
 
     private val defaultTemplate = FreeDesignTemplate(
         id = DEFAULT_TEMPLATE_ID,
@@ -315,8 +319,86 @@ object FreeDesignTemplateRegistry {
         ),
     )
 
+    private val purpleLuxeTemplate = FreeDesignTemplate(
+        id = V5_TEMPLATE_ID,
+        displayName = "Purple Luxe",
+        assetPath = V5_ASSET_PATH,
+        sourceWidth = SOURCE_WIDTH,
+        sourceHeight = SOURCE_HEIGHT,
+        tableGeometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = SOURCE_WIDTH,
+            sourceHeight = SOURCE_HEIGHT,
+            columnX = mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 164f,
+                CustomDesignAnchorField.WIN to 719f,
+                CustomDesignAnchorField.POSITION_POINTS to 860f,
+                CustomDesignAnchorField.TOTAL_KILLS to 1002f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1144f,
+            ),
+            rowY = mapOf(
+                1 to 366f,
+                2 to 430.5f,
+                3 to 494.5f,
+                4 to 558.5f,
+                5 to 622.5f,
+                6 to 686.5f,
+                7 to 749.5f,
+                8 to 812.5f,
+                9 to 876.5f,
+                10 to 939f,
+                11 to 1002.5f,
+                12 to 1067f,
+            ),
+        ),
+        resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { V5_RESULT_COLOR },
+        ) ?: error("Free Design v5 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.20f,
+            teamNameStartPaddingPx = 20f,
+        ),
+        headerAnchors = mapOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 95f,
+                textSize = 72f,
+                maxWidthPx = 1050f,
+                minimumTextSizePx = 32f,
+                typographyRole = FreeDesignTypographyRole.TITLE,
+                color = V5_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 160f,
+                textSize = 42f,
+                maxWidthPx = 980f,
+                minimumTextSizePx = 22f,
+                typographyRole = FreeDesignTypographyRole.SECONDARY,
+                color = V5_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 218f,
+                textSize = 22f,
+                maxWidthPx = 980f,
+                minimumTextSizePx = 16f,
+                typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
+                color = V5_HEADER_COLOR,
+            ),
+            FreeDesignHeaderField.DATE to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 218f,
+                textSize = 18f,
+                maxWidthPx = 700f,
+                minimumTextSizePx = 12f,
+                typographyRole = FreeDesignTypographyRole.DATE,
+                color = V5_HEADER_COLOR,
+            ),
+        ),
+    )
+
     private val builtInTemplates: List<FreeDesignTemplate> =
-        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate, orangeBlazeTemplate)
+        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate, orangeBlazeTemplate, purpleLuxeTemplate)
 
     private val templatesById: Map<String, FreeDesignTemplate> =
         builtInTemplates.associateBy { it.id }
