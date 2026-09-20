@@ -139,10 +139,10 @@ class FreeDesignBitmapComposerTest {
         val matchResult = composer.compose(matchModel(), template6)
         val matchBitmap = (matchResult as FreeDesignBitmapComposeResult.Success).bitmap
         try {
-            assertEquals(1536, tournamentBitmap.width)
-            assertEquals(1024, tournamentBitmap.height)
-            assertEquals(1536, matchBitmap.width)
-            assertEquals(1024, matchBitmap.height)
+            assertEquals(1374, tournamentBitmap.width)
+            assertEquals(1145, tournamentBitmap.height)
+            assertEquals(1374, matchBitmap.width)
+            assertEquals(1145, matchBitmap.height)
         } finally {
             tournamentBitmap.recycle()
             matchBitmap.recycle()

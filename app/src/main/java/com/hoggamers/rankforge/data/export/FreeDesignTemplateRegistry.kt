@@ -28,8 +28,8 @@ object FreeDesignTemplateRegistry {
     private const val V4_RESULT_COLOR = "#111111"
     private const val V5_RESULT_COLOR = "#F2F0FF"
     private const val V5_HEADER_COLOR = "#F2F0FF"
-    private const val V6_SOURCE_WIDTH = 1536
-    private const val V6_SOURCE_HEIGHT = 1024
+    private const val V6_SOURCE_WIDTH = 1374
+    private const val V6_SOURCE_HEIGHT = 1145
     private const val V6_RESULT_COLOR = "#111111"
     private const val V6_HEADER_COLOR = "#F4F4F4"
 
@@ -413,25 +413,25 @@ object FreeDesignTemplateRegistry {
             sourceWidth = V6_SOURCE_WIDTH,
             sourceHeight = V6_SOURCE_HEIGHT,
             columnX = mapOf(
-                CustomDesignAnchorField.TEAM_NAME to 236f,
-                CustomDesignAnchorField.WIN to 924f,
-                CustomDesignAnchorField.POSITION_POINTS to 1071.5f,
-                CustomDesignAnchorField.TOTAL_KILLS to 1219f,
-                CustomDesignAnchorField.TOTAL_POINTS to 1373f,
+                CustomDesignAnchorField.TEAM_NAME to 214f,
+                CustomDesignAnchorField.WIN to 667f,
+                CustomDesignAnchorField.POSITION_POINTS to 850.5f,
+                CustomDesignAnchorField.TOTAL_KILLS to 1036.5f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1235.5f,
             ),
             rowY = mapOf(
-                1 to 358f,
-                2 to 410.5f,
-                3 to 462f,
-                4 to 514f,
-                5 to 566f,
-                6 to 619f,
-                7 to 671f,
-                8 to 723.5f,
-                9 to 774.5f,
-                10 to 826.5f,
-                11 to 877f,
-                12 to 927.5f,
+                1 to 395f,
+                2 to 453.5f,
+                3 to 512f,
+                4 to 570.5f,
+                5 to 628f,
+                6 to 685.5f,
+                7 to 743.5f,
+                8 to 802f,
+                9 to 859f,
+                10 to 916f,
+                11 to 973f,
+                12 to 1030.5f,
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
@@ -444,34 +444,34 @@ object FreeDesignTemplateRegistry {
         headerAnchors = mapOf(
             FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
                 centerX = V6_SOURCE_WIDTH / 2f,
-                centerY = 95f,
+                centerY = 90f,
                 textSize = 72f,
-                maxWidthPx = 1300f,
+                maxWidthPx = 1150f,
                 minimumTextSizePx = 32f,
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = V6_HEADER_COLOR,
             ),
             FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
                 centerX = V6_SOURCE_WIDTH / 2f,
-                centerY = 160f,
+                centerY = 155f,
                 textSize = 42f,
-                maxWidthPx = 1200f,
+                maxWidthPx = 1100f,
                 minimumTextSizePx = 22f,
                 typographyRole = FreeDesignTypographyRole.SECONDARY,
                 color = V6_HEADER_COLOR,
             ),
             FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
                 centerX = V6_SOURCE_WIDTH / 2f,
-                centerY = 220f,
+                centerY = 215f,
                 textSize = 22f,
-                maxWidthPx = 1200f,
+                maxWidthPx = 1050f,
                 minimumTextSizePx = 16f,
                 typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
                 color = V6_HEADER_COLOR,
             ),
             FreeDesignHeaderField.DATE to headerAnchor(
                 centerX = V6_SOURCE_WIDTH / 2f,
-                centerY = 220f,
+                centerY = 215f,
                 textSize = 18f,
                 maxWidthPx = 700f,
                 minimumTextSizePx = 12f,
