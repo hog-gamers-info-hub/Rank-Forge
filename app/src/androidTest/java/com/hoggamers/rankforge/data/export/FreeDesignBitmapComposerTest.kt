@@ -23,6 +23,9 @@ class FreeDesignBitmapComposerTest {
     private val template3 = requireNotNull(
         FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V3_TEMPLATE_ID),
     )
+    private val template4 = requireNotNull(
+        FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V4_TEMPLATE_ID),
+    )
     private val composer = FreeDesignBitmapComposer(context.assets)
 
     @Test
@@ -83,6 +86,23 @@ class FreeDesignBitmapComposerTest {
             assertEquals(1467, tournamentBitmap.height)
             assertEquals(1072, matchBitmap.width)
             assertEquals(1467, matchBitmap.height)
+        } finally {
+            tournamentBitmap.recycle()
+            matchBitmap.recycle()
+        }
+    }
+
+    @Test
+    fun template4TournamentAndMatchComposeAtExactSourceDimensions() {
+        val tournamentResult = composer.compose(tournamentModel(), template4)
+        val tournamentBitmap = (tournamentResult as FreeDesignBitmapComposeResult.Success).bitmap
+        val matchResult = composer.compose(matchModel(), template4)
+        val matchBitmap = (matchResult as FreeDesignBitmapComposeResult.Success).bitmap
+        try {
+            assertEquals(1254, tournamentBitmap.width)
+            assertEquals(1254, tournamentBitmap.height)
+            assertEquals(1254, matchBitmap.width)
+            assertEquals(1254, matchBitmap.height)
         } finally {
             tournamentBitmap.recycle()
             matchBitmap.recycle()
