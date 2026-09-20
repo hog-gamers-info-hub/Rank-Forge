@@ -11,6 +11,8 @@ object FreeDesignTemplateRegistry {
     const val BLUE_ASSET_PATH = "result_templates/free_design_v2_blue.webp"
     const val V3_TEMPLATE_ID = "free_design_v3"
     const val V3_ASSET_PATH = "result_templates/free_design_v3.webp"
+    const val V4_TEMPLATE_ID = "free_design_v4"
+    const val V4_ASSET_PATH = "result_templates/free_design_v4.webp"
 
     private const val SOURCE_WIDTH = 1254
     private const val SOURCE_HEIGHT = 1254
@@ -19,6 +21,7 @@ object FreeDesignTemplateRegistry {
     private const val HEADER_COLOR = "#F3E7C2"
     private const val BLUE_HEADER_COLOR = "#F4F7FF"
     private const val V3_RESULT_COLOR = "#F4F4F4"
+    private const val V4_RESULT_COLOR = "#111111"
 
     private val defaultTemplate = FreeDesignTemplate(
         id = DEFAULT_TEMPLATE_ID,
@@ -238,8 +241,82 @@ object FreeDesignTemplateRegistry {
         ),
     )
 
+    private val orangeBlazeTemplate = FreeDesignTemplate(
+        id = V4_TEMPLATE_ID,
+        displayName = "Orange Blaze",
+        assetPath = V4_ASSET_PATH,
+        sourceWidth = SOURCE_WIDTH,
+        sourceHeight = SOURCE_HEIGHT,
+        tableGeometry = CustomDesignEffectiveGridGeometry(
+            sourceWidth = SOURCE_WIDTH,
+            sourceHeight = SOURCE_HEIGHT,
+            columnX = mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 164f,
+                CustomDesignAnchorField.WIN to 699f,
+                CustomDesignAnchorField.POSITION_POINTS to 844f,
+                CustomDesignAnchorField.TOTAL_KILLS to 984f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1131f,
+            ),
+            rowY = mapOf(
+                1 to 362f,
+                2 to 424f,
+                3 to 486f,
+                4 to 547.5f,
+                5 to 609f,
+                6 to 671.5f,
+                7 to 734f,
+                8 to 796.5f,
+                9 to 859f,
+                10 to 922f,
+                11 to 985f,
+                12 to 1047.5f,
+            ),
+        ),
+        resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { V4_RESULT_COLOR },
+        ) ?: error("Free Design v4 must define all result-column colors"),
+        resultTextStyle = FreeDesignResultTextStyle(
+            textSizeMultiplier = 1.20f,
+            teamNameStartPaddingPx = 24f,
+        ),
+        headerAnchors = mapOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 108f,
+                textSize = 72f,
+                maxWidthPx = 1050f,
+                minimumTextSizePx = 32f,
+                typographyRole = FreeDesignTypographyRole.TITLE,
+            ),
+            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 165f,
+                textSize = 42f,
+                maxWidthPx = 980f,
+                minimumTextSizePx = 22f,
+                typographyRole = FreeDesignTypographyRole.SECONDARY,
+            ),
+            FreeDesignHeaderField.RESULT_HEADING to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 218f,
+                textSize = 22f,
+                maxWidthPx = 980f,
+                minimumTextSizePx = 16f,
+                typographyRole = FreeDesignTypographyRole.RESULT_HEADING,
+            ),
+            FreeDesignHeaderField.DATE to headerAnchor(
+                centerX = SOURCE_WIDTH / 2f,
+                centerY = 218f,
+                textSize = 18f,
+                maxWidthPx = 700f,
+                minimumTextSizePx = 12f,
+                typographyRole = FreeDesignTypographyRole.DATE,
+            ),
+        ),
+    )
+
     private val builtInTemplates: List<FreeDesignTemplate> =
-        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate)
+        listOf(defaultTemplate, blueNeonTemplate, blackGoldTemplate, orangeBlazeTemplate)
 
     private val templatesById: Map<String, FreeDesignTemplate> =
         builtInTemplates.associateBy { it.id }
