@@ -97,7 +97,7 @@
     <string name="tournament_mode_duo">Duo</string>
     <string name="tournament_mode_squad">Squad</string>
     <string name="tournament_date_label">Tournament Date</string>
-    <string name="organizer_name_label">Organizer (Optional)</string>
+    <string name="organizer_name_label">Organisation Name</string>
     <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>
     <string name="select_date_action">Select date</string>
     <string name="create_tournament_action">Create tournament</string>
