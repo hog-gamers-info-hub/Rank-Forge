@@ -56,14 +56,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -836,6 +830,33 @@ fun DownloadResultScreen(
             }
         }
 
+        if (selectedDesign == DownloadResultDesignType.FREE_DESIGN && freeDesignOptions.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            DownloadResultSectionTitle(text = "Template")
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                freeDesignOptions.forEach { option ->
+                    PointIqSelectionChip(
+                        label = option.displayName,
+                        selected = selectedTemplateId == option.id,
+                        onClick = {
+                            selectedTemplateId = option.id
+                            onFreeDesignTemplateSelected(option.id)
+                        },
+                        testTag = DOWNLOAD_RESULT_FREE_TEMPLATE_OPTION_TEST_TAG_PREFIX + option.id,
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         Box(
@@ -896,36 +917,6 @@ fun DownloadResultScreen(
                 }
             }
 
-        }
-
-        if (selectedDesign == DownloadResultDesignType.FREE_DESIGN && freeDesignOptions.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
-
-            DownloadResultSectionTitle(text = "Template")
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                freeDesignOptions.forEach { option ->
-                    FreeDesignTemplateRegistry.findById(option.id)?.let { template ->
-                        FreeDesignTemplateThumbnail(
-                            label = option.displayName,
-                            assetPath = template.assetPath,
-                            selected = selectedTemplateId == option.id,
-                            onClick = {
-                                selectedTemplateId = option.id
-                                onFreeDesignTemplateSelected(option.id)
-                            },
-                            testTag = DOWNLOAD_RESULT_FREE_TEMPLATE_OPTION_TEST_TAG_PREFIX + option.id,
-                        )
-                    }
-                }
-            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1197,75 +1188,6 @@ private fun DownloadResultSectionTitle(
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Start,
     )
-}
-
-@Composable
-private fun FreeDesignTemplateThumbnail(
-    label: String,
-    assetPath: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    testTag: String,
-) {
-    val context = LocalContext.current
-    val thumbnailBitmap by produceState<Bitmap?>(initialValue = null, assetPath) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                context.assets.open(assetPath).use { input ->
-                    BitmapFactory.decodeStream(
-                        input,
-                        null,
-                        BitmapFactory.Options().apply { inSampleSize = 4 },
-                    )
-                }
-            }.getOrNull()
-        }
-    }
-    val aspectRatio = thumbnailBitmap?.let { bitmap ->
-        bitmap.width.toFloat() / bitmap.height.toFloat()
-    } ?: 1f
-    val shape = RoundedCornerShape(10.dp)
-
-    Box(
-        modifier = Modifier
-            .height(86.dp)
-            .aspectRatio(aspectRatio)
-            .clip(shape)
-            .background(
-                color = if (selected) {
-                    DownloadResultSelectedChipBackground
-                } else {
-                    DownloadResultUnselectedChipBackground
-                },
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) {
-                    DownloadResultSelectedChipBorder
-                } else {
-                    DownloadResultUnselectedChipBorder
-                },
-                shape = shape,
-            )
-            .clickable(onClick = onClick)
-            .semantics {
-                contentDescription = label
-                role = Role.Button
-                this.selected = selected
-            }
-            .testTag(testTag)
-            .padding(4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        thumbnailBitmap?.let { bitmap ->
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
 }
 
 @Composable
