@@ -294,32 +294,32 @@ class FreeDesignTemplateRegistryTest {
         assertEquals("Crimson Edge", template6.displayName)
         assertEquals(FreeDesignTemplateRegistry.V6_TEMPLATE_ID, template6.id)
         assertEquals(FreeDesignTemplateRegistry.V6_ASSET_PATH, template6.assetPath)
-        assertEquals(1536, template6.sourceWidth)
-        assertEquals(1024, template6.sourceHeight)
+        assertEquals(1374, template6.sourceWidth)
+        assertEquals(1145, template6.sourceHeight)
         assertEquals(
             mapOf(
-                CustomDesignAnchorField.TEAM_NAME to 236f,
-                CustomDesignAnchorField.WIN to 924f,
-                CustomDesignAnchorField.POSITION_POINTS to 1071.5f,
-                CustomDesignAnchorField.TOTAL_KILLS to 1219f,
-                CustomDesignAnchorField.TOTAL_POINTS to 1373f,
+                CustomDesignAnchorField.TEAM_NAME to 214f,
+                CustomDesignAnchorField.WIN to 667f,
+                CustomDesignAnchorField.POSITION_POINTS to 850.5f,
+                CustomDesignAnchorField.TOTAL_KILLS to 1036.5f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1235.5f,
             ),
             template6.tableGeometry.columnX,
         )
         assertEquals(
             mapOf(
-                1 to 358f,
-                2 to 410.5f,
-                3 to 462f,
-                4 to 514f,
-                5 to 566f,
-                6 to 619f,
-                7 to 671f,
-                8 to 723.5f,
-                9 to 774.5f,
-                10 to 826.5f,
-                11 to 877f,
-                12 to 927.5f,
+                1 to 395f,
+                2 to 453.5f,
+                3 to 512f,
+                4 to 570.5f,
+                5 to 628f,
+                6 to 685.5f,
+                7 to 743.5f,
+                8 to 802f,
+                9 to 859f,
+                10 to 916f,
+                11 to 973f,
+                12 to 1030.5f,
             ),
             template6.tableGeometry.rowY,
         )
@@ -330,22 +330,22 @@ class FreeDesignTemplateRegistryTest {
             template6.resultColumnTextColors.asMap(),
         )
         FreeDesignHeaderField.entries.forEach { field ->
-            assertEquals(768f, template6.headerAnchors.getValue(field).centerX, 0f)
+            assertEquals(687f, template6.headerAnchors.getValue(field).centerX, 0f)
             assertEquals("#F4F4F4", template6.headerAnchors.getValue(field).style.color)
         }
-        assertEquals(95f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(90f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(72f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
-        assertEquals(1300f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
+        assertEquals(1150f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
         assertEquals(32f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(160f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).centerY, 0f)
+        assertEquals(155f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).centerY, 0f)
         assertEquals(42f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.textSize, 0f)
-        assertEquals(1200f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.maxWidthPx, 0f)
+        assertEquals(1100f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.maxWidthPx, 0f)
         assertEquals(22f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(220f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(215f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
-        assertEquals(1200f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
+        assertEquals(1050f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
         assertEquals(16f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
-        assertEquals(220f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
+        assertEquals(215f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
         assertEquals(18f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
