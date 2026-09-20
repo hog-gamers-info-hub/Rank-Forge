@@ -27,10 +27,13 @@ class FreeDesignTemplateRegistryTest {
     private val template7 = requireNotNull(
         FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V7_TEMPLATE_ID),
     )
+    private val template8 = requireNotNull(
+        FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V8_TEMPLATE_ID),
+    )
 
     @Test
-    fun registryContainsExactlySevenTemplatesInDeterministicOrder() {
-        assertEquals(7, FreeDesignTemplateRegistry.all.size)
+    fun registryContainsExactlyEightTemplatesInDeterministicOrder() {
+        assertEquals(8, FreeDesignTemplateRegistry.all.size)
         assertEquals(
             listOf(
                 FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
@@ -40,15 +43,16 @@ class FreeDesignTemplateRegistryTest {
                 FreeDesignTemplateRegistry.V5_TEMPLATE_ID,
                 FreeDesignTemplateRegistry.V6_TEMPLATE_ID,
                 FreeDesignTemplateRegistry.V7_TEMPLATE_ID,
+                FreeDesignTemplateRegistry.V8_TEMPLATE_ID,
             ),
             FreeDesignTemplateRegistry.all.map { it.id },
         )
         assertEquals(
-            7,
+            8,
             FreeDesignTemplateRegistry.all.map { it.id }.toSet().size,
         )
         assertEquals(
-            7,
+            8,
             FreeDesignTemplateRegistry.all.map { it.assetPath }.toSet().size,
         )
     }
@@ -64,6 +68,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(template5, FreeDesignTemplateRegistry.findById(template5.id))
         assertEquals(template6, FreeDesignTemplateRegistry.findById(template6.id))
         assertEquals(template7, FreeDesignTemplateRegistry.findById(template7.id))
+        assertEquals(template8, FreeDesignTemplateRegistry.findById(template8.id))
         assertNull(FreeDesignTemplateRegistry.findById("unknown_template"))
     }
 
@@ -416,6 +421,68 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(18f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
+    }
+
+    @Test
+    fun template8ContractMatchesRedlineShadowSpecification() {
+        assertEquals("Redline Shadow", template8.displayName)
+        assertEquals(FreeDesignTemplateRegistry.V8_TEMPLATE_ID, template8.id)
+        assertEquals(FreeDesignTemplateRegistry.V8_ASSET_PATH, template8.assetPath)
+        assertEquals(1254, template8.sourceWidth)
+        assertEquals(1254, template8.sourceHeight)
+        assertEquals(
+            mapOf(
+                CustomDesignAnchorField.TEAM_NAME to 146f,
+                CustomDesignAnchorField.WIN to 680f,
+                CustomDesignAnchorField.POSITION_POINTS to 828.5f,
+                CustomDesignAnchorField.TOTAL_KILLS to 979.5f,
+                CustomDesignAnchorField.TOTAL_POINTS to 1131f,
+            ),
+            template8.tableGeometry.columnX,
+        )
+        assertEquals(
+            mapOf(
+                1 to 416f,
+                2 to 476.5f,
+                3 to 536.5f,
+                4 to 597.5f,
+                5 to 658f,
+                6 to 719.5f,
+                7 to 781f,
+                8 to 843f,
+                9 to 904f,
+                10 to 966f,
+                11 to 1026.5f,
+                12 to 1088f,
+            ),
+            template8.tableGeometry.rowY,
+        )
+        assertEquals(1.20f, template8.resultTextStyle.textSizeMultiplier, 0f)
+        assertEquals(20f, template8.resultTextStyle.teamNameStartPaddingPx, 0f)
+        assertEquals(
+            CustomDesignAnchorField.entries.associateWith { "#F3F3F3" },
+            template8.resultColumnTextColors.asMap(),
+        )
+        FreeDesignHeaderField.entries.forEach { field ->
+            assertEquals(627f, template8.headerAnchors.getValue(field).centerX, 0f)
+            assertEquals("#F3F3F3", template8.headerAnchors.getValue(field).style.color)
+        }
+        assertEquals(115f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(70f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
+        assertEquals(1040f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
+        assertEquals(32f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
+        assertEquals(180f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).centerY, 0f)
+        assertEquals(40f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.textSize, 0f)
+        assertEquals(980f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.maxWidthPx, 0f)
+        assertEquals(22f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).style.minimumTextSizePx, 0f)
+        assertEquals(238f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(22f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
+        assertEquals(960f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
+        assertEquals(16f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
+        assertEquals(238f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
+        assertEquals(18f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
+        assertEquals(700f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
+        assertEquals(12f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
     }
 
     @Test
