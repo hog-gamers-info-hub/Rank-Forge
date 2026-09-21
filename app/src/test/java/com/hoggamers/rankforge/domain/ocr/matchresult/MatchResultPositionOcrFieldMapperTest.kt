@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,6 +73,25 @@ class MatchResultPositionOcrFieldMapperTest {
             val parsed = MatchResultPositionSemanticTextParser.parse(text)
             assertTrue(!parsed.markerMatched)
             assertEquals(null, parsed.kill)
+        }
+    }
+
+    @Test
+    fun eliminationAnchorRequiresLeadingStemAndKeepsMissingPrefixUnresolved() {
+        val numeric = requireNotNull(MatchResultEliminationAnchorText.find("3 Eliminat6hs PLAYER"))
+        assertEquals(3, numeric.kill)
+        assertEquals(MatchResultEliminationPrefixType.EXPLICIT_NUMERIC, numeric.prefixType)
+
+        val normalized = requireNotNull(MatchResultEliminationAnchorText.find("O Eliminatohs PLAYER"))
+        assertEquals(0, normalized.kill)
+        assertEquals(MatchResultEliminationPrefixType.O_NORMALIZED, normalized.prefixType)
+
+        val markerOnly = requireNotNull(MatchResultEliminationAnchorText.find("EliminatYs SASUKE 7?"))
+        assertNull(markerOnly.kill)
+        assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, markerOnly.prefixType)
+
+        listOf("PLAYEREliminationsX", "TERMINATOR", "PLAYER7").forEach { text ->
+            assertNull(MatchResultEliminationAnchorText.find(text))
         }
     }
 
@@ -455,12 +475,74 @@ class MatchResultPositionOcrFieldMapperTest {
     fun weakMiddleMarkerIsRemovedFromMergedPlayerTextWhileExistingKillFallbackIsPreserved() {
         val result = mapper.map(rightInput(position = 7, middle = "EliminationsPLAYER"))
 
-        assertEquals("0", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
         assertEquals("PLAYER", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
         val boundary = requireNotNull(result.playerBoundaryEvidence[3])
         assertTrue(!boundary.boundaryAccepted)
         assertEquals(MatchResultPlayerBoundaryReason.WEAK_NO_PREFIX, boundary.reason)
         assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, boundary.anchorPrefixType)
+    }
+
+    @Test
+    fun sharedMiddleKillUsesOnlyALeadingExplicitEliminationPrefix() {
+        val cases = listOf(
+            "3EliminationsPLAYER" to ("3" to MatchResultOcrFieldStatus.DIRECT_NUMERIC),
+            "0 EliminatiPLAYER" to ("0" to MatchResultOcrFieldStatus.DIRECT_NUMERIC),
+            "O EliminatioPLAYER" to ("0" to MatchResultOcrFieldStatus.O_NORMALIZED_TO_0),
+            "0 EliminatTYs SASUKE 7?" to ("0" to MatchResultOcrFieldStatus.DIRECT_NUMERIC),
+            "3 Eliminat6hs PLAYER" to ("3" to MatchResultOcrFieldStatus.DIRECT_NUMERIC),
+            "O Eliminatohs PLAYER" to ("0" to MatchResultOcrFieldStatus.O_NORMALIZED_TO_0),
+        )
+
+        cases.forEach { (middle, expected) ->
+            val kill = mapper.map(rightInput(position = 7, middle = middle))
+                .fields.single { it.id == "KILL_7_1" }
+            assertEquals(expected.first, kill.resolvedText)
+            assertEquals(expected.second, kill.status)
+        }
+    }
+
+    @Test
+    fun sharedMiddleMarkerWithoutPrefixDoesNotAcceptLaterNumber() {
+        listOf(
+            "EliminatYs SASUKE 7?",
+            "EliminationsPLAYER",
+        ).forEach { middle ->
+            val result = mapper.map(rightInput(position = 7, middle = middle))
+            val kill = result.fields.single { it.id == "KILL_7_1" }
+            assertEquals("", kill.resolvedText)
+            assertEquals(MatchResultOcrFieldStatus.EMPTY, kill.status)
+        }
+    }
+
+    @Test
+    fun sharedMiddleMissingPrefixDoesNotBecomeZeroAcrossPositionsSixThroughTwelve() {
+        (6..12).forEach { position ->
+            val role = if (position <= 10) {
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER
+            } else {
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER
+            }
+            val result = mapper.map(
+                rightInput(
+                    position = position,
+                    middle = "EliminationsPLAYER",
+                    role = role,
+                ),
+            )
+            assertEquals(
+                "",
+                result.fields.single { it.id == "KILL_${position}_1" }.resolvedText,
+            )
+        }
+    }
+
+    @Test
+    fun ordinaryPlayerTextDoesNotBecomeASharedMiddleKillAnchor() {
+        listOf("PLAYEREliminationsX", "EliminationKing", "TERMINATOR", "PLAYER7").forEach { middle ->
+            val result = mapper.map(rightInput(position = 7, middle = middle))
+            assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        }
     }
 
     @Test
@@ -503,6 +585,195 @@ class MatchResultPositionOcrFieldMapperTest {
             rightInputForSlot(position = 11, slot = 4, middle = "BEliminatioPLAYER"),
         )
         assertEquals("PLAYER", playerFour.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun degradedMergedPlayerCleanupReconstructsPlayerThreeAndPreservesKillEvidence() {
+        val result = mapper.map(
+            rightInputWithMiddleLines(
+                position = 7,
+                middle = listOf("EliminatYs SASUKE", "7?"),
+                killVerifications = mapOf(1 to verified(0)),
+            ),
+        )
+
+        assertEquals("SASUKE 7?", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+        assertEquals("0", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        assertEquals(
+            MatchResultOcrFieldStatus.MLKIT_FALLBACK,
+            result.fields.single { it.id == "KILL_7_1" }.status,
+        )
+    }
+
+    @Test
+    fun degradedMergedPlayerCleanupSupportsNumericAndONormalizedPrefixes() {
+        val cases = listOf(
+            "0 EliminatTYs SASUKE 7?" to ("SASUKE 7?" to "0"),
+            "O Eliminat6hs PLAYER99" to ("PLAYER99" to "0"),
+            "3 Eliminatohs PLAYER" to ("PLAYER" to "3"),
+        )
+
+        cases.forEach { (middle, expected) ->
+            val result = mapper.map(rightInput(position = 7, middle = middle))
+            assertEquals(expected.first, result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+            assertEquals(expected.second, result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        }
+    }
+
+    @Test
+    fun degradedMergedPlayerCleanupCoversAllAffectedPositionsAndPlayerFour() {
+        (6..12).forEach { position ->
+            val role = if (position <= 10) {
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER
+            } else {
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER
+            }
+            val result = mapper.map(
+                rightInput(position = position, middle = "EliminatYs PLAYER", role = role),
+            )
+            assertEquals(
+                "PLAYER",
+                result.fields.single { it.id == "PLAYER_${position}_3" }.resolvedText,
+            )
+        }
+
+        val playerFour = mapper.map(
+            rightInputForSlot(position = 11, slot = 4, middle = "Eliminatohs PLAYER"),
+        )
+        assertEquals("PLAYER", playerFour.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun degradedMergedPlayerCleanupRequiresLeadingAnchorAndWhitespaceSeparator() {
+        listOf(
+            "EliminatYsSASUKE",
+            "0 EliminatTYsSASUKE",
+            "PLAYER EliminatYs SASUKE",
+            "PLAYEREliminationsX",
+        ).forEach { middle ->
+            val result = mapper.map(rightInput(position = 7, middle = middle))
+            assertEquals(middle, result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+        }
+    }
+
+    @Test
+    fun degradedMergedPlayerCleanupDoesNotApplyToEarlyPositions() {
+        val result = mapper.map(
+            MatchResultPositionOcrInput(
+                role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = 5,
+                cropWidth = 491,
+                cropHeight = 82,
+                blocks = block(line("EliminatYs PLAYER", 320, 10, 400, 30)),
+                rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
+                placementVerification = unresolved(),
+                killVerifications = emptyMap(),
+            ),
+        )
+
+        assertEquals(
+            "EliminatYs PLAYER",
+            result.fields.single { it.id == "PLAYER_5_3" }.resolvedText,
+        )
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupUsesXOrderAndExcludesLeftAndRightRegions() {
+        val result = mapper.map(
+            geometryInput(
+                position = 7,
+                lines = listOf(
+                    line("10", 624, 69, 645, 91),
+                    line("Svt vC3", 738, 69, 804, 91),
+                    line(" Eliminatox", 655, 71, 737, 90),
+                    line("1Eliminati", 815, 73, 871, 89),
+                ),
+                killVerifications = mapOf(1 to verified(0)),
+            ),
+        )
+
+        assertEquals("Svt vC3", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+        assertEquals("0", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        assertEquals(
+            MatchResultOcrFieldStatus.MLKIT_FALLBACK,
+            result.fields.single { it.id == "KILL_7_1" }.status,
+        )
+        assertEquals("1", result.fields.single { it.id == "KILL_7_3" }.resolvedText)
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupSortsMultipleFragmentsByX() {
+        val result = mapper.map(
+            geometryInput(
+                position = 7,
+                lines = listOf(
+                    line("vC3", 770, 74, 804, 91),
+                    line("Eliminatox", 655, 71, 737, 90),
+                    line("Svt", 738, 69, 765, 91),
+                ),
+            ),
+        )
+
+        assertEquals("Svt vC3", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupPreservesTextWhenNoRightFragmentExists() {
+        val result = mapper.map(
+            geometryInput(
+                position = 7,
+                lines = listOf(line("Eliminatox", 655, 71, 737, 90)),
+            ),
+        )
+
+        assertEquals("Eliminatox", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupCoversPlayerFourInTheLowerRow() {
+        val result = mapper.map(
+            geometryInput(
+                position = 11,
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                lines = listOf(
+                    line("vC3", 770, 153, 804, 170),
+                    line("Eliminatohs", 655, 155, 737, 172),
+                ),
+            ),
+        )
+
+        assertEquals("vC3", result.fields.single { it.id == "PLAYER_11_4" }.resolvedText)
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupDoesNotApplyToFalseLeadingAnchors() {
+        listOf("ABCEliminatXYZ", "PLAYER EliminatYs SASUKE").forEach { middle ->
+            val result = mapper.map(
+                geometryInput(
+                    position = 7,
+                    lines = listOf(line(middle, 655, 71, 737, 90)),
+                ),
+            )
+            assertEquals(middle, result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
+        }
+    }
+
+    @Test
+    fun splitDegradedPlayerCleanupDoesNotApplyToPositionFive() {
+        val result = mapper.map(
+            geometryInput(
+                position = 5,
+                lines = listOf(
+                    line("Svt vC3", 738, 69, 804, 91),
+                    line("Eliminatox", 655, 71, 737, 90),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Svt vC3 Eliminatox",
+            result.fields.single { it.id == "PLAYER_5_3" }.resolvedText,
+        )
     }
 
     @Test
@@ -643,6 +914,52 @@ class MatchResultPositionOcrFieldMapperTest {
         rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
         placementVerification = unresolved(),
         killVerifications = emptyMap(),
+    )
+
+    private fun rightInputWithMiddleLines(
+        position: Int,
+        middle: List<String>,
+        role: MatchResultScreenshotRole = if (position <= 10) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        } else {
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER
+        },
+        killVerifications: Map<Int, MatchResultNumericVerification> = emptyMap(),
+    ) = MatchResultPositionOcrInput(
+        role = role,
+        position = position,
+        cropWidth = 491,
+        cropHeight = 82,
+        blocks = block(
+            line("PlayerA", 70, 10, 160, 30),
+            *middle.mapIndexed { index, text ->
+                line(text, 205, 10 + index * 2, 350, 30 + index * 2)
+            }.toTypedArray(),
+            line("1Eliminations", 410, 10, 480, 30),
+        ),
+        rowCrops = listOf(row(1, 0, 41), row(2, 41, 82)),
+        placementVerification = unresolved(),
+        killVerifications = killVerifications,
+    )
+
+    private fun geometryInput(
+        position: Int,
+        lines: List<RawOcrLine>,
+        role: MatchResultScreenshotRole = if (position <= 10) {
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        } else {
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER
+        },
+        killVerifications: Map<Int, MatchResultNumericVerification> = emptyMap(),
+    ) = MatchResultPositionOcrInput(
+        role = role,
+        position = position,
+        cropWidth = 1000,
+        cropHeight = 200,
+        blocks = block(*lines.toTypedArray()),
+        rowCrops = listOf(row(1, 0, 100), row(2, 100, 200)),
+        placementVerification = unresolved(),
+        killVerifications = killVerifications,
     )
 
     private fun singleRowInput(rowIndex: Int) = MatchResultPositionOcrInput(

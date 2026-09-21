@@ -55,6 +55,84 @@ class MatchResultMlKitKillFallbackResolverTest {
     }
 
     @Test
+    fun sharedMiddleAnchorUsesOnlyPrecedingNumericEvidence() {
+        val result = resolve(
+            evidence = evidence(
+                observation("O", left = 315, top = 60, right = 330, bottom = 80),
+                observation("Eliminatohs", left = 340, top = 60, right = 390, bottom = 80),
+                observation("SASUKE", left = 395, top = 60, right = 440, bottom = 80),
+                observation("7?", left = 450, top = 60, right = 480, bottom = 80),
+            ),
+        )
+
+        assertEquals(0, (result.getValue(1) as MatchResultNumericVerification.Verified).value)
+    }
+
+    @Test
+    fun sharedMiddleAnchorUsesExplicitPrefixAndIgnoresPlayerSuffixNumbers() {
+        val result = resolve(
+            evidence = evidence(
+                observation("3 Eliminat6hs PLAYER99", left = 315, top = 60, right = 480, bottom = 80),
+            ),
+        )
+
+        assertEquals(3, (result.getValue(1) as MatchResultNumericVerification.Verified).value)
+    }
+
+    @Test
+    fun sharedMiddleAnchorWithoutPrefixDoesNotAcceptLaterNumber() {
+        val result = resolve(
+            evidence = evidence(
+                observation("EliminatYs", left = 340, top = 60, right = 390, bottom = 80),
+                observation("SASUKE", left = 395, top = 60, right = 440, bottom = 80),
+                observation("7?", left = 450, top = 60, right = 480, bottom = 80),
+            ),
+        )
+
+        assertFalse(result.containsKey(1))
+    }
+
+    @Test
+    fun sharedMiddleMarkerOnlyDoesNotInferZero() {
+        val result = resolve(
+            evidence = evidence(
+                observation("Eliminatohs", left = 340, top = 60, right = 390, bottom = 80),
+            ),
+        )
+
+        assertFalse(result.containsKey(1))
+    }
+
+    @Test
+    fun sharedMiddleCombinedNumericAndNormalizedPrefixesResolve() {
+        val numeric = resolve(
+            evidence = evidence(
+                observation("0EliminatTYsSASUKE", left = 315, top = 60, right = 480, bottom = 80),
+            ),
+        )
+        val normalized = resolve(
+            evidence = evidence(
+                observation("O Eliminatohs PLAYER", left = 315, top = 60, right = 480, bottom = 80),
+            ),
+        )
+
+        assertEquals(0, (numeric.getValue(1) as MatchResultNumericVerification.Verified).value)
+        assertEquals(0, (normalized.getValue(1) as MatchResultNumericVerification.Verified).value)
+    }
+
+    @Test
+    fun noAnchorStandaloneNumericFallbackRemainsForEarlyPositions() {
+        val result = resolve(
+            position = 5,
+            evidence = evidence(
+                observation("2", left = 300, top = 60, right = 320, bottom = 80),
+            ),
+        )
+
+        assertEquals(2, (result.getValue(1) as MatchResultNumericVerification.Verified).value)
+    }
+
+    @Test
     fun wrongGeometryDoesNotRecoverTheTargetKill() {
         val result = resolve(
             evidence = evidence(
