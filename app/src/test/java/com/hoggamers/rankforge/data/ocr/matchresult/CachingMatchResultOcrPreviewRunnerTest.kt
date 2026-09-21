@@ -112,7 +112,7 @@ class CachingMatchResultOcrPreviewRunnerTest {
 
     @Test
     fun changedPipelineVersionInvalidatesCache() = runTest {
-        assertEquals(12, MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION)
+        assertEquals(15, MATCH_RESULT_OCR_CACHE_PIPELINE_VERSION)
         val identity = identity()
         val assetRepository = FakeAssetRepository(asset(identity))
         val cache = FakeCacheRepository()

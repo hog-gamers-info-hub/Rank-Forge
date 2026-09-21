@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
@@ -13,6 +15,8 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropObservation
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultMlKitKillFallbackResolver
@@ -34,6 +38,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+
+private const val RESULT_PP_RAW_TAG = "RESULT_PP_RAW"
+private const val RESULT_MLKIT_RAW_TAG = "RESULT_MLKIT_RAW"
 
 /** Production panel/ROI PP route. */
 class AndroidMatchResultPositionOcrPreviewRunner(
@@ -194,6 +201,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             } ?: run {
                 return@withContext MatchResultOcrPreviewProcessingResult.SemanticRoleProcessingFailed(assignedRole)
             }
+            logResultMlKitRaw(
+                role = assignedRole,
+                crops = processingGeometry.crops,
+                observations = prepared.evidence.observations,
+            )
             val allowUpperFallback = assignedRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
                 !hasConfirmedLowerAsset(prepared.identity, prepared.owner)
             val generated = when (val result = positionCropGenerator.generate(source, processingGeometry)) {
@@ -294,6 +306,11 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         )
 
         val mapped = MatchResultPanelPpMapper.map(panelBlocks, inputPlan.crops)
+        logResultPpRaw(
+            role = role,
+            inputPlan = inputPlan,
+            positionEvidence = mapped,
+        )
         val semanticResults = mapped.map { evidence ->
             val sourceCrop = sourceCrops.firstOrNull { crop ->
                 crop.position == evidence.crop.position && crop.column == evidence.crop.column
@@ -550,6 +567,90 @@ class MatchResultPpOnlyPairReconciliationRunner(
 
     private data class RunKey(val tournamentId: String, val matchId: String)
 }
+
+private fun logResultMlKitRaw(
+    role: MatchResultScreenshotRole,
+    crops: List<MatchResultPositionCrop>,
+    observations: List<MatchResultAutoCropObservation>,
+) {
+    if (!BuildConfig.DEBUG) return
+    crops.sortedWith(compareBy<MatchResultPositionCrop> { it.position }.thenBy { it.column })
+        .forEach { crop ->
+            observations.forEach { observation ->
+                val bounds = observation.boundingBox ?: return@forEach
+                if (!bounds.isAssignedToResultPosition(crop.bounds)) return@forEach
+                resultOcrDebugLog(
+                    RESULT_MLKIT_RAW_TAG,
+                    "role=${role.toResultOcrRoleName()} position=${crop.position} " +
+                        "text=\"${observation.text.toResultRawLogText()}\" " +
+                        "box=[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}] " +
+                        "center=[${bounds.centerX()},${bounds.centerY()}]",
+                )
+            }
+        }
+}
+
+private fun logResultPpRaw(
+    role: MatchResultScreenshotRole,
+    inputPlan: MatchResultPpInputPlan,
+    positionEvidence: List<MatchResultPanelPpPositionEvidence>,
+) {
+    if (!BuildConfig.DEBUG) return
+    positionEvidence.forEach { evidence ->
+        evidence.blocks.asSequence()
+            .flatMap { block -> block.lines.asSequence() }
+            .forEach { line ->
+                val localBounds = line.geometry?.boundingBox ?: return@forEach
+                val bounds = RawOcrBoundingBox(
+                    left = localBounds.left + evidence.crop.bounds.left + inputPlan.bounds.left,
+                    top = localBounds.top + evidence.crop.bounds.top + inputPlan.bounds.top,
+                    right = localBounds.right + evidence.crop.bounds.left + inputPlan.bounds.left,
+                    bottom = localBounds.bottom + evidence.crop.bounds.top + inputPlan.bounds.top,
+                )
+                resultOcrDebugLog(
+                    RESULT_PP_RAW_TAG,
+                    "role=${role.toResultOcrRoleName()} position=${evidence.crop.position} " +
+                        "text=\"${line.text.toResultRawLogText()}\" " +
+                        "box=[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}] " +
+                        "center=[${bounds.centerX()},${bounds.centerY()}]",
+                )
+            }
+    }
+}
+
+private fun resultOcrDebugLog(
+    tag: String,
+    message: String,
+) {
+    if (!BuildConfig.DEBUG) return
+    try {
+        Log.d(tag, message)
+    } catch (_: RuntimeException) {
+        // Android's Log is unavailable in JVM unit tests; diagnostics must never affect OCR.
+    }
+}
+
+private fun MatchResultScreenshotRole.toResultOcrRoleName(): String = when (this) {
+    MatchResultScreenshotRole.MATCH_RESULT_UPPER -> "UPPER"
+    MatchResultScreenshotRole.MATCH_RESULT_LOWER -> "LOWER"
+}
+
+private fun RawOcrBoundingBox.isAssignedToResultPosition(crop: OcrPixelCropRect): Boolean {
+    val centerX = centerX()
+    val centerY = centerY()
+    return centerX >= crop.left && centerX < crop.right &&
+        centerY >= crop.top && centerY < crop.bottom
+}
+
+private fun RawOcrBoundingBox.centerX(): Double = (left + right) / 2.0
+
+private fun RawOcrBoundingBox.centerY(): Double = (top + bottom) / 2.0
+
+private fun String.toResultRawLogText(): String =
+    replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
 
 internal fun List<MatchResultPositionSemanticResult>.toAcceptedExtraction(
     role: MatchResultScreenshotRole,

@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.ocr.matchresult
 
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrLine
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -223,9 +224,9 @@ class MatchResultPositionOcrFieldMapper {
         val middleLines = rowLines.filter {
             it.centerX() in scaledRange(input.cropWidth, RIGHT_MERGED_RANGE)
         }
-        val middleElimination = middleLines.firstOrNull {
-            it.text.parseElimination().markerMatched
-        }?.text?.let(MatchResultPositionSemanticTextParser::parse)
+        val middleElimination = middleLines
+            .mapNotNull(::parseSharedMiddleElimination)
+            .firstOrNull()
         if (first) {
             val playerLines = rowLines.filter {
                 it.centerX() in scaledRange(input.cropWidth, RIGHT_LEFT_PLAYER_RANGE) &&
@@ -247,12 +248,26 @@ class MatchResultPositionOcrFieldMapper {
                     .forEach(::add)
             }.joinToString(" ").trim()
         } ?: middleLines.joinToString(" ") { it.text.trim() }.trim()
-        val playerText = if (
+        val exactPlayerText = if (
             input.position in 6..12 && !playerBoundary.decision.boundaryAccepted
         ) {
             stripLeadingMergedEliminationPrefix(rawPlayerText)
         } else {
             rawPlayerText
+        }
+        val playerText = if (
+            input.position in 6..12 &&
+            !playerBoundary.decision.boundaryAccepted &&
+            exactPlayerText == rawPlayerText
+        ) {
+            val sameLinePlayerText = degradedMergedPlayerTextOrNull(middleLines) ?: exactPlayerText
+            if (sameLinePlayerText != exactPlayerText) {
+                sameLinePlayerText
+            } else {
+                recoverSplitDegradedRightPlayerOrNull(middleLines) ?: sameLinePlayerText
+            }
+        } else {
+            exactPlayerText
         }
         val rightElimination = rowLines
             .filter { it.centerX() in scaledRange(input.cropWidth, RIGHT_KILL_RANGE) }
@@ -283,6 +298,88 @@ class MatchResultPositionOcrFieldMapper {
             }
         }
         return text
+    }
+
+    private fun parseSharedMiddleElimination(line: RawOcrLine): ParsedEliminationText? {
+        val parsed = line.text.parseElimination()
+        if (
+            parsed.markerMatched &&
+            (
+                parsed.prefixType == MatchResultEliminationPrefixType.O_NORMALIZED && parsed.kill == 0 ||
+                    parsed.prefixType == MatchResultEliminationPrefixType.EXPLICIT_NUMERIC && parsed.kill != null
+                )
+        ) {
+            return parsed
+        }
+
+        val anchor = MatchResultEliminationAnchorText.find(line.text) ?: return null
+        if (anchor.prefixType == MatchResultEliminationPrefixType.EMPTY_PREFIX || anchor.kill == null) {
+            return null
+        }
+        return ParsedEliminationText(
+            kill = anchor.kill,
+            playerSuffix = null,
+            markerMatched = true,
+            prefixType = anchor.prefixType,
+            rawText = anchor.rawText,
+            markerType = "ELIMINAT",
+        )
+    }
+
+    private fun degradedMergedPlayerTextOrNull(middleLines: List<RawOcrLine>): String? {
+        val degradedBoundary = middleLines.firstNotNullOfOrNull { line ->
+            if (line.text.parseElimination().markerMatched) {
+                return@firstNotNullOfOrNull null
+            }
+            val playerSuffix = MatchResultEliminationAnchorText
+                .playerSuffixAfterDegradedLeadingAnchorOrNull(line.text)
+                ?: return@firstNotNullOfOrNull null
+            line to playerSuffix
+        } ?: return null
+
+        return buildList {
+            add(degradedBoundary.second)
+            middleLines
+                .filterNot { it === degradedBoundary.first }
+                .map { it.text.trim() }
+                .filter { it.isNotEmpty() }
+                .forEach(::add)
+        }.joinToString(" ").trim().takeIf { it.isNotEmpty() }
+    }
+
+    private fun recoverSplitDegradedRightPlayerOrNull(middleLines: List<RawOcrLine>): String? {
+        val anchor = middleLines.firstNotNullOfOrNull { line ->
+            val bounds = line.geometry?.boundingBox ?: return@firstNotNullOfOrNull null
+            if (line.text.parseElimination().markerMatched) {
+                return@firstNotNullOfOrNull null
+            }
+            if (MatchResultEliminationAnchorText.find(line.text) == null) {
+                return@firstNotNullOfOrNull null
+            }
+            if (MatchResultEliminationAnchorText
+                    .playerSuffixAfterDegradedLeadingAnchorOrNull(line.text) != null
+            ) {
+                return@firstNotNullOfOrNull null
+            }
+            line to bounds
+        } ?: return null
+
+        val (anchorLine, anchorBounds) = anchor
+        val playerFragments = middleLines
+            .asSequence()
+            .filterNot { it === anchorLine }
+            .mapNotNull { line ->
+                line.geometry?.boundingBox?.let { bounds -> line to bounds }
+            }
+            .filter { (_, bounds) -> bounds.left >= anchorBounds.right }
+            .filter { (line, _) -> !line.text.parseElimination().markerMatched }
+            .sortedWith(compareBy<Pair<RawOcrLine, RawOcrBoundingBox>> { it.second.left }
+                .thenBy { it.second.top })
+            .map { (line, _) -> line.text.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+
+        return playerFragments.joinToString(" ").trim().takeIf { it.isNotEmpty() }
     }
 
     private fun killField(
