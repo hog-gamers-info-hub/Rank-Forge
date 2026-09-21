@@ -389,6 +389,17 @@ fun MatchReviewRoute(
     LaunchedEffect(tournamentId, matchId, uiState.resultPositionCropPreviews, ocrUiState) {
         viewModel.saveCalculatedEvidenceIfReady(ocrUiState)
     }
+    LaunchedEffect(tournamentId, matchId, ocrUiState) {
+        val ready = ocrUiState as? MatchOcrReviewUiState.Ready ?: return@LaunchedEffect
+        if (ready.evidenceSource == MatchOcrReviewEvidenceSource.LIVE) {
+            viewModel.updateResultPositionCropPreviews(
+                authoritativePositionCropsByRole =
+                    (ready.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+                        ?.authoritativePositionCropsByRole
+                        .orEmpty(),
+            )
+        }
+    }
     LaunchedEffect(
         tournamentId,
         matchId,

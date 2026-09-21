@@ -3,14 +3,13 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
+import com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewOutcome
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.LobbyPlayerRowCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.createAndroidMatchLobbyTeamCropPreviewImage
 import com.hoggamers.rankforge.data.ocr.matchlobby.toRosterOcrScreenshotSource
-import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropGenerationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
@@ -20,6 +19,8 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCrop
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyTeamCropBounds
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparer
 import com.hoggamers.rankforge.domain.ocr.review.RosterOcrPanelPreparationResult
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
@@ -50,7 +51,6 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
     private val resultScreenshotAssetRepository: MatchResultScreenshotAssetRepository,
     private val localImagePreserver: LocalImagePreserver,
     private val rosterOcrPanelPreparer: RosterOcrPanelPreparer,
-    private val resultPositionCropGenerator: AndroidMatchResultPositionCropGenerator,
 ) : MatchCalculatedEvidencePreviewRestorer {
     override suspend fun restore(
         tournamentId: String,
@@ -221,41 +221,15 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
             ?: return null
         val source = decodeConfirmedCrop(localFile, confirmedCrop) ?: return null
         try {
-            val crops = positions.mapNotNull { position ->
-                val left = position.cropLeft ?: return@mapNotNull null
-                val top = position.cropTop ?: return@mapNotNull null
-                val right = position.cropRight ?: return@mapNotNull null
-                val bottom = position.cropBottom ?: return@mapNotNull null
-                val bounds = OcrPixelCropRect(left, top, right, bottom)
-                com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop(
-                    position = position.position,
-                    column = if (position.position <= 5) {
-                        com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn.LEFT
-                    } else {
-                        com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn.RIGHT
-                    },
-                    bounds = bounds,
-                )
-            }.takeIf { crops ->
-                crops.isNotEmpty() && crops.map { it.position }.distinct().size == crops.size
-            } ?: return null
-            val generated = resultPositionCropGenerator.generate(source, crops)
-            val generatedCrops = (generated as? MatchResultPositionCropGenerationResult.Generated)
-                ?.crops
-                ?.associateBy { it.geometry.position }
-                ?: return null
-            val previews = positions.sortedBy { it.position }.mapNotNull { saved ->
-                val crop = generatedCrops[saved.position] ?: return@mapNotNull null
-                MatchResultPositionCropPreview(
-                    position = saved.position,
-                    image = AndroidMatchResultPositionCropPreviewImage(crop.bitmap),
-                    geometry = crop.geometry,
-                    sourceScreenshotRole = role,
-                )
-            }
-            return previews.takeIf { it.isNotEmpty() }?.let {
-                MatchResultPositionCropPreviewState.Available(it)
-            }
+            val crops = positions.mapNotNull(ResultPositionCalculatedEvidence::toAuthoritativePositionCropOrNull)
+                .takeIf { crops ->
+                    crops.isNotEmpty() && crops.map { it.position }.distinct().size == crops.size
+                } ?: return null
+            return rasterizeResultPositionCropPreviews(
+                source = source,
+                sourceScreenshotRole = role,
+                authoritativeCrops = crops,
+            )
         } finally {
             if (!source.isRecycled) source.recycle()
         }
@@ -265,6 +239,20 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
         localFile: java.io.File,
         confirmedCrop: com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect,
     ): android.graphics.Bitmap? = decodeConfirmedCropForRestoration(localFile, confirmedCrop)
+}
+
+internal fun ResultPositionCalculatedEvidence.toAuthoritativePositionCropOrNull(): MatchResultPositionCrop? {
+    sourceScreenshotRole ?: return null
+    val left = cropLeft ?: return null
+    val top = cropTop ?: return null
+    val right = cropRight ?: return null
+    val bottom = cropBottom ?: return null
+    if (right <= left || bottom <= top) return null
+    return MatchResultPositionCrop(
+        position = position,
+        column = if (position <= 5) MatchResultPositionColumn.LEFT else MatchResultPositionColumn.RIGHT,
+        bounds = OcrPixelCropRect(left, top, right, bottom),
+    )
 }
 
 internal object NoOpMatchCalculatedEvidencePreviewRestorer : MatchCalculatedEvidencePreviewRestorer {

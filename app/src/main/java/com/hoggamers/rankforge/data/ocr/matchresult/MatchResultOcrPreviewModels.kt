@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.io.File
@@ -12,6 +13,8 @@ sealed interface MatchResultOcrPreviewProcessingResult {
         val pixelCrop: OcrPixelCropRect,
         val cropWidth: Int,
         val cropHeight: Int,
+        /** The authoritative physical-screenshot geometry used by production PP processing. */
+        val positionCrops: List<MatchResultPositionCrop> = emptyList(),
         val source: MatchResultOcrPreviewSource = MatchResultOcrPreviewSource.NEW_PP_POSITION,
     ) : MatchResultOcrPreviewProcessingResult
 
