@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.ocr.review.OcrReviewStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 
 data class MatchOcrReviewLobbyPlayerUiState(
@@ -40,6 +41,10 @@ sealed interface MatchResultOcrPreviewUiState {
         val rows: List<MatchResultOcrPreviewRowUiState>,
         val ignoredLowerRows: List<MatchResultOcrPreviewIgnoredRowUiState>,
         val manualReviewRows: List<MatchResultOcrPreviewManualRowUiState>,
+        val authoritativePositionCropsByRole: Map<
+            MatchResultScreenshotRole,
+            List<MatchResultPositionCrop>,
+        > = emptyMap(),
     ) : MatchResultOcrPreviewUiState
 }
 
@@ -135,6 +140,12 @@ object MatchResultOcrPreviewUiStateMapper {
                 result.role to it.extraction
             }
         }
+        val authoritativePositionCropsByRole = processedResults.mapNotNull { result ->
+            (result.result as? MatchResultOcrPreviewProcessingResult.Processed)
+                ?.positionCrops
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { result.role to it }
+        }.toMap()
         val rows = processed.flatMap { (role, extraction) ->
             extraction.rows.map { row -> row.toUiState(role) }
         }.sortedBy { it.position }
@@ -166,6 +177,7 @@ object MatchResultOcrPreviewUiStateMapper {
                 rows = rows,
                 ignoredLowerRows = ignoredRows,
                 manualReviewRows = manualRows,
+                authoritativePositionCropsByRole = authoritativePositionCropsByRole,
             )
         }
     }

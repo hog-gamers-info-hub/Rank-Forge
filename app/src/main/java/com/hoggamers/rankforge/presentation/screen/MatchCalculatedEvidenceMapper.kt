@@ -189,22 +189,18 @@ internal object MatchCalculatedEvidenceMapper {
         val reviewRowsByPosition = rows.associateBy { it.rowIndex + 1 }
         val resultTeamNamesBySlot = this.teamNamesBySlot
         val correctionDraft = this.correctionDraft
-        val cropsByPosition = reviewState.resultPositionCropPreviews
+        val cropsByPosition = preview?.authoritativePositionCropsByRole
+            .orEmpty()
             .flatMap { (storedRole, state) ->
-                state.sortedCrops().map { storedRole to it }
+                state.map { storedRole to it }
             }
             .groupBy { (_, crop) -> crop.position }
         val rowsByPosition = preview?.rows.orEmpty().groupBy { it.position }
         return LOGICAL_RESULT_POSITIONS.map { position ->
             val cropAndRole = cropsByPosition[position]
-                ?.firstOrNull { (storedRole, crop) ->
-                    crop.geometry?.bounds != null &&
-                        (crop.sourceScreenshotRole ?: storedRole) in MatchResultScreenshotRole.entries
-                }
-            val sourceRole = cropAndRole?.let { (storedRole, crop) ->
-                crop.sourceScreenshotRole ?: storedRole
-            }
-            val bounds = cropAndRole?.second?.geometry?.bounds
+                ?.firstOrNull()
+            val sourceRole = cropAndRole?.first
+            val bounds = cropAndRole?.second?.bounds
             val previewRow = rowsByPosition[position]
                 ?.firstOrNull { row -> sourceRole == null || row.role == sourceRole }
                 ?: rowsByPosition[position]?.firstOrNull()

@@ -84,6 +84,7 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropProposer
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -195,11 +196,13 @@ class MatchReviewViewModel @Inject constructor(
     private val resultScreenshotJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
     private val resultPositionCropJobs = mutableMapOf<MatchResultScreenshotRole, Job>()
     private val resultPositionCropInputs = mutableMapOf<MatchResultScreenshotRole, String>()
+    private val resultPositionCropSourceInputs = mutableMapOf<MatchResultScreenshotRole, String>()
     private var exportJob: Job? = null
     private var resultDownloadJob: Job? = null
     private var pendingResultDocument: PendingResultDocument? = null
     private var calculatedEvidenceSaveEnabled = false
     private var calculatedEvidenceSaved = false
+    private var resultPositionCropPreviewsRequested = false
     private var calculatedEvidenceSnapshot: MatchCalculatedEvidence? = null
     private var resumeReadyCalculatedEvidenceSnapshot: ResumeReadyCalculatedEvidenceSnapshot? = null
     private var calculatedEvidenceSaveGeneration = 0L
@@ -266,6 +269,7 @@ class MatchReviewViewModel @Inject constructor(
         resultDownloadJob?.cancel()
         calculatedEvidenceSaveEnabled = false
         calculatedEvidenceSaved = false
+        resultPositionCropPreviewsRequested = false
         calculatedEvidenceSnapshot = null
         resumeReadyCalculatedEvidenceSnapshot = null
         _hasCalculatedEvidenceRecord.value = false
@@ -665,7 +669,7 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
-    /** Runs the preview-only Result position crop pipeline from the explicit Calculate Points action. */
+    /** Enables calculated evidence saving and waits for production OCR geometry to arrive. */
     fun calculateResultPositionCrops() {
         val state = _uiState.value
         if (!state.isAvailable ||
@@ -673,6 +677,8 @@ class MatchReviewViewModel @Inject constructor(
         ) return
         calculatedEvidenceSaveEnabled = true
         calculatedEvidenceSaved = false
+        resultPositionCropPreviewsRequested = true
+        clearAllResultPositionCropPreviews()
         calculatedEvidenceSnapshot = null
         resumeReadyCalculatedEvidenceSnapshot = null
         calculatedEvidenceSaveGeneration++
@@ -697,14 +703,17 @@ class MatchReviewViewModel @Inject constructor(
                 isCurrentGeneration = { generation -> generation == calculatedEvidenceSaveGeneration },
             )
         }
-        val lowerAvailable = state.resultScreenshots
-            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            .resultPositionCropPreviewInputKey(activeTeamCount = state.activeTeamCount) != null
+    }
+
+    /** Supplies the physical geometry returned by production Result OCR to the preview path. */
+    fun updateResultPositionCropPreviews(
+        authoritativePositionCropsByRole: Map<MatchResultScreenshotRole, List<MatchResultPositionCrop>>,
+    ) {
+        if (!resultPositionCropPreviewsRequested) return
         MatchResultScreenshotRole.entries.forEach { storedRole ->
             generateResultPositionCropPreviews(
                 storedRole = storedRole,
-                allowUpperPositionElevenFallback = !lowerAvailable,
-                activeTeamCount = state.activeTeamCount,
+                authoritativeCrops = authoritativePositionCropsByRole[storedRole].orEmpty(),
             )
         }
     }
@@ -840,6 +849,7 @@ class MatchReviewViewModel @Inject constructor(
 
         calculatedEvidenceSaveEnabled = false
         calculatedEvidenceSaved = false
+        resultPositionCropPreviewsRequested = false
         resumeReadyCalculatedEvidenceSnapshot = null
         calculatedEvidenceRestoreGeneration++
         calculatedEvidenceRestoreJob?.cancel()
@@ -3445,6 +3455,7 @@ class MatchReviewViewModel @Inject constructor(
                 )
             ) {
                 is FinalizeMatchResult.Finalized -> {
+                    resultPositionCropPreviewsRequested = false
                     clearAllResultPositionCropPreviews()
                     _uiState.update {
                         it.copy(isFinalizing = false, finalizationError = null)
@@ -3484,16 +3495,9 @@ class MatchReviewViewModel @Inject constructor(
         if (_uiState.value.calculatedEvidenceRestoreStatus == CalculatedEvidenceRestoreStatus.RESTORED &&
             resultPositionCropJobs.isEmpty()
         ) return
-        val activeTeamCount = _uiState.value.activeTeamCount
-        val lowerAvailable = _uiState.value.resultScreenshots
-            .slot(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
-            .resultPositionCropPreviewInputKey(activeTeamCount = activeTeamCount) != null
         MatchResultScreenshotRole.entries.forEach { role ->
-            val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewInputKey(
-                allowUpperPositionElevenFallback = !lowerAvailable,
-                activeTeamCount = activeTeamCount,
-            )
-            if (resultPositionCropInputs[role] != inputKey) {
+            val inputKey = _uiState.value.resultScreenshots.slot(role).resultPositionCropPreviewSourceInputKey()
+            if (resultPositionCropSourceInputs[role] != inputKey) {
                 clearResultPositionCropPreviews(role)
             }
         }
@@ -3501,21 +3505,40 @@ class MatchReviewViewModel @Inject constructor(
 
     private fun generateResultPositionCropPreviews(
         storedRole: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean,
-        activeTeamCount: Int?,
+        authoritativeCrops: List<MatchResultPositionCrop>,
     ) {
-        val inputKey = _uiState.value.resultScreenshots.slot(storedRole).resultPositionCropPreviewInputKey(
-            allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
-            activeTeamCount = activeTeamCount,
-        )
+        val slot = _uiState.value.resultScreenshots.slot(storedRole)
+        val sourceInputKey = slot.resultPositionCropPreviewSourceInputKey()
+        val inputKey = sourceInputKey?.let { source ->
+            source + ":" + authoritativeCrops
+                .sortedBy { it.position }
+                .joinToString(";") { crop ->
+                    "${crop.position},${crop.column},${crop.bounds.left},${crop.bounds.top}," +
+                        "${crop.bounds.right},${crop.bounds.bottom}"
+                }
+        }
             ?: run {
                 clearResultPositionCropPreviews(storedRole)
                 return
             }
+        if (authoritativeCrops.isEmpty()) {
+            clearResultPositionCropPreviews(storedRole)
+            _uiState.update { state ->
+                state.copy(
+                    resultPositionCropPreviews = state.resultPositionCropPreviews.replace(storedRole) {
+                        MatchResultPositionCropPreviewState.Unavailable(
+                            MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
+                        )
+                    },
+                )
+            }
+            return
+        }
         if (resultPositionCropJobs[storedRole]?.isActive == true && resultPositionCropInputs[storedRole] == inputKey) return
 
         resultPositionCropJobs.remove(storedRole)?.cancel()
         resultPositionCropInputs[storedRole] = inputKey
+        resultPositionCropSourceInputs[storedRole] = sourceInputKey
         _uiState.update { state ->
             state.copy(
                 resultPositionCropPreviews = state.resultPositionCropPreviews.replace(storedRole) {
@@ -3538,8 +3561,7 @@ class MatchReviewViewModel @Inject constructor(
                         localFile = localFile,
                         confirmedCrop = crop,
                         storedRole = storedRole,
-                        allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
-                        activeTeamCount = activeTeamCount,
+                        authoritativeCrops = authoritativeCrops,
                     )
                 }
             } catch (cancellation: CancellationException) {
@@ -3565,6 +3587,7 @@ class MatchReviewViewModel @Inject constructor(
         resultPositionCropJobs.values.forEach { it.cancel() }
         resultPositionCropJobs.clear()
         resultPositionCropInputs.clear()
+        resultPositionCropSourceInputs.clear()
         _uiState.update { state ->
             state.copy(
                 resultPositionCropPreviews = defaultMatchResultPositionCropPreviewStates(),
@@ -3574,6 +3597,7 @@ class MatchReviewViewModel @Inject constructor(
 
     private fun clearResultPositionCropPreviews(role: MatchResultScreenshotRole) {
         val hadInput = resultPositionCropInputs.remove(role) != null
+        resultPositionCropSourceInputs.remove(role)
         val activeJob = resultPositionCropJobs.remove(role)
         if (!hadInput && activeJob == null) return
         activeJob?.cancel()
@@ -3655,10 +3679,7 @@ private fun MutableStateFlow<MatchReviewUiState>.updateSlot(
     }
 }
 
-private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewInputKey(
-    allowUpperPositionElevenFallback: Boolean = false,
-    activeTeamCount: Int? = null,
-): String? {
+private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewSourceInputKey(): String? {
     val crop = confirmedCrop
     val path = localRelativePath
     val hash = fingerprint
@@ -3673,8 +3694,6 @@ private fun MatchResultScreenshotSlotUiState.resultPositionCropPreviewInputKey(
         crop.top,
         crop.right,
         crop.bottom,
-        allowUpperPositionElevenFallback,
-        activeTeamCount,
     ).joinToString(":")
 }
 

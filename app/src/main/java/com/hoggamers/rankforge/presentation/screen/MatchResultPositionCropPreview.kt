@@ -2,13 +2,8 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultLowerProcessingFallback
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropGenerationResult
-import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionCropObservationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
-import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.io.File
@@ -96,66 +91,28 @@ fun interface MatchResultPositionCropPreviewGenerator {
         localFile: File,
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean,
-        activeTeamCount: Int?,
+        authoritativeCrops: List<MatchResultPositionCrop>,
     ): MatchResultPositionCropPreviewState
 }
 
 @Singleton
-class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
-    private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
-) : MatchResultPositionCropPreviewGenerator {
-    private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
-
+class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor() :
+    MatchResultPositionCropPreviewGenerator {
     override suspend fun generate(
         localFile: File,
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean,
-        activeTeamCount: Int?,
+        authoritativeCrops: List<MatchResultPositionCrop>,
     ): MatchResultPositionCropPreviewState = withContext(Dispatchers.IO) {
         val source = decodeConfirmedCrop(localFile, confirmedCrop)
             ?: return@withContext MatchResultPositionCropPreviewState.Unavailable(
                 MatchResultPositionCropPreviewUnavailableReason.SOURCE_UNAVAILABLE,
             )
         try {
-            // The stored role identifies the physical preview slot only. It must not
-            // influence semantic geometry or expected positions.
-            val observation = when (val result = positionCropGenerator.observe(source)) {
-                is MatchResultPositionCropObservationResult.Observed -> result
-                MatchResultPositionCropObservationResult.InvalidSource,
-                MatchResultPositionCropObservationResult.OcrFailed,
-                -> return@withContext MatchResultPositionCropPreviewState.Unavailable(
-                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
-                )
-            }
-            // The stored slot is the canonical role for this preview path. Role selection for a
-            // complete pair happens in the production pair runner before PP-OCR.
-            val assignedRole = storedRole
-            val allowAssignedUpperFallback = assignedRole == MatchResultScreenshotRole.MATCH_RESULT_UPPER &&
-                allowUpperPositionElevenFallback
-            val resolvedGeometry = when (assignedRole) {
-                MatchResultScreenshotRole.MATCH_RESULT_UPPER -> positionCropGenerator.calculate(
-                    evidence = observation.evidence,
-                    role = assignedRole,
-                    allowUpperPositionElevenFallback = allowAssignedUpperFallback,
-                )
-
-                MatchResultScreenshotRole.MATCH_RESULT_LOWER -> lowerProcessingFallback.recover(observation.evidence)
-            }
-            val generated = when (resolvedGeometry) {
-                is MatchResultPositionCropCalculationResult.Unavailable ->
-                    return@withContext MatchResultPositionCropPreviewState.Unavailable(
-                        MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
-                    )
-                is MatchResultPositionCropCalculationResult.Available ->
-                    positionCropGenerator.generate(source, resolvedGeometry)
-                null -> return@withContext MatchResultPositionCropPreviewState.Unavailable(
-                    MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
-                )
-            }
-            generated.toPreviewState(
-                semanticRole = assignedRole,
+            rasterizeResultPositionCropPreviews(
+                source = source,
+                sourceScreenshotRole = storedRole,
+                authoritativeCrops = authoritativeCrops,
             )
         } finally {
             if (!source.isRecycled) source.recycle()
@@ -166,32 +123,52 @@ class AndroidMatchResultPositionCropPreviewGenerator @Inject constructor(
         localFile: File,
         crop: OcrNormalizedCropRect,
     ): Bitmap? = decodeConfirmedCropForRestoration(localFile, crop)
+}
 
-    private fun MatchResultPositionCropGenerationResult.toPreviewState(
-        semanticRole: MatchResultScreenshotRole,
-    ): MatchResultPositionCropPreviewState = when (this) {
-        is MatchResultPositionCropGenerationResult.Generated -> {
-            val previews = crops
-                .sortedBy { it.geometry.position }
-                .map { crop ->
-                    MatchResultPositionCropPreview(
-                        position = crop.geometry.position,
-                        image = AndroidMatchResultPositionCropPreviewImage(crop.bitmap),
-                        geometry = crop.geometry,
-                        sourceScreenshotRole = semanticRole,
-                    )
-                }
-            if (previews.isNotEmpty()) {
-                MatchResultPositionCropPreviewState.Available(previews)
-            } else {
-                previews.forEach(MatchResultPositionCropPreview::release)
-                MatchResultPositionCropPreviewState.Unavailable(
-                    MatchResultPositionCropPreviewUnavailableReason.INCOMPLETE_CROPS,
+internal fun rasterizeResultPositionCropPreviews(
+    source: Bitmap,
+    sourceScreenshotRole: MatchResultScreenshotRole,
+    authoritativeCrops: List<MatchResultPositionCrop>,
+): MatchResultPositionCropPreviewState {
+    if (authoritativeCrops.isEmpty()) {
+        return MatchResultPositionCropPreviewState.Unavailable(
+            MatchResultPositionCropPreviewUnavailableReason.INCOMPLETE_CROPS,
+        )
+    }
+    val previews = mutableListOf<MatchResultPositionCropPreview>()
+    return try {
+        authoritativeCrops
+            .sortedBy { it.position }
+            .forEach { crop ->
+                val extracted = Bitmap.createBitmap(
+                    source,
+                    crop.bounds.left,
+                    crop.bounds.top,
+                    crop.bounds.width,
+                    crop.bounds.height,
+                )
+                val previewBitmap = try {
+                    extracted.copy(Bitmap.Config.ARGB_8888, false)
+                } finally {
+                    if (extracted !== source && !extracted.isRecycled) extracted.recycle()
+                } ?: throw IllegalStateException("Unable to copy result position preview bitmap.")
+                previews += MatchResultPositionCropPreview(
+                    position = crop.position,
+                    image = AndroidMatchResultPositionCropPreviewImage(previewBitmap),
+                    geometry = crop,
+                    sourceScreenshotRole = sourceScreenshotRole,
                 )
             }
+        if (previews.isEmpty()) {
+            MatchResultPositionCropPreviewState.Unavailable(
+                MatchResultPositionCropPreviewUnavailableReason.INCOMPLETE_CROPS,
+            )
+        } else {
+            MatchResultPositionCropPreviewState.Available(previews)
         }
-
-        else -> MatchResultPositionCropPreviewState.Unavailable(
+    } catch (_: Throwable) {
+        previews.forEach(MatchResultPositionCropPreview::release)
+        MatchResultPositionCropPreviewState.Unavailable(
             MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
         )
     }
@@ -233,8 +210,7 @@ object NoOpMatchResultPositionCropPreviewGenerator : MatchResultPositionCropPrev
         localFile: File,
         confirmedCrop: OcrNormalizedCropRect,
         storedRole: MatchResultScreenshotRole,
-        allowUpperPositionElevenFallback: Boolean,
-        activeTeamCount: Int?,
+        authoritativeCrops: List<MatchResultPositionCrop>,
     ): MatchResultPositionCropPreviewState = MatchResultPositionCropPreviewState.Unavailable(
         MatchResultPositionCropPreviewUnavailableReason.NOT_READY,
     )

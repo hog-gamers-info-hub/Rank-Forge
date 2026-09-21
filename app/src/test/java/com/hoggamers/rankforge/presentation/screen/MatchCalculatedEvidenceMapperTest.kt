@@ -320,6 +320,13 @@ class MatchCalculatedEvidenceMapperTest {
         val preview = restored.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
         assertEquals(listOf(4), preview.rows.map { it.position })
         assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, preview.rows.single().role)
+        assertEquals(
+            OcrPixelCropRect(10, 20, 30, 40),
+            preview.authoritativePositionCropsByRole
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .single()
+                .bounds,
+        )
     }
 
     private fun MatchOcrReviewUiState.Ready.withCorrection(
@@ -375,6 +382,15 @@ class MatchCalculatedEvidenceMapperTest {
             ),
             ignoredLowerRows = emptyList(),
             manualReviewRows = emptyList(),
+            authoritativePositionCropsByRole = mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to listOf(
+                    MatchResultPositionCrop(
+                        position = 12,
+                        column = MatchResultPositionColumn.RIGHT,
+                        bounds = OcrPixelCropRect(11, 12, 31, 42),
+                    ),
+                ),
+            ),
         )
         val ocrState = MatchOcrReviewUiState.Ready(
             tournamentId = "tournament-1",

@@ -250,6 +250,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         pixelCrop = prepared.pixelCrop,
                         cropWidth = source.width,
                         cropHeight = source.height,
+                        positionCrops = processingGeometry.crops,
                         source = MatchResultOcrPreviewSource.NEW_PP_POSITION,
                     )
                 } finally {

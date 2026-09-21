@@ -64,6 +64,9 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.ocr.screenshot.OcrScreenshotKind
@@ -1539,6 +1542,11 @@ class MatchReviewViewModelTest {
         scenario.viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..11),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(
@@ -1625,16 +1633,25 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to authoritativePositionCrops(11..12),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(
             listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER, MatchResultScreenshotRole.MATCH_RESULT_LOWER),
             generator.requests.map(RecordingMatchResultPositionCropPreviewGenerator.Request::role),
         )
-        assertTrue(generator.requests.none(RecordingMatchResultPositionCropPreviewGenerator.Request::allowUpperPositionElevenFallback))
         assertEquals(
-            listOf(12, 12),
-            generator.requests.map(RecordingMatchResultPositionCropPreviewGenerator.Request::activeTeamCount),
+            listOf((1..10).toList(), (11..12).toList()),
+            generator.requests.map { request -> request.authoritativeCrops.map(MatchResultPositionCrop::position) },
+        )
+        assertEquals(
+            authoritativePositionCrops(1..10),
+            generator.requests.first().authoritativeCrops,
         )
         assertEquals(
             (1..10).toList(),
@@ -1673,6 +1690,12 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(11..12),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to authoritativePositionCrops(1..10),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(
@@ -1706,10 +1729,15 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..11),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), generator.requests.map { it.role })
-        assertTrue(generator.requests.single().allowUpperPositionElevenFallback)
+        assertEquals((1..11).toList(), generator.requests.single().authoritativeCrops.map(MatchResultPositionCrop::position))
         assertEquals(
             (1..11).toList(),
             scenario.viewModel.uiState.value.resultPositionCropPreviews
@@ -1750,10 +1778,15 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..11),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), generator.requests.map { it.role })
-        assertTrue(generator.requests.single().allowUpperPositionElevenFallback)
+        assertEquals((1..11).toList(), generator.requests.single().authoritativeCrops.map(MatchResultPositionCrop::position))
     }
 
     @Test
@@ -1780,6 +1813,11 @@ class MatchReviewViewModelTest {
         )
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(1, generator.requests.size)
@@ -1809,6 +1847,12 @@ class MatchReviewViewModelTest {
         scenario.viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to authoritativePositionCrops(11..12),
+            ),
+        )
         advanceUntilIdle()
 
         scenario.assets.assets.value = scenario.assets.assets.value.map { asset ->
@@ -1836,6 +1880,12 @@ class MatchReviewViewModelTest {
         )
 
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+                MatchResultScreenshotRole.MATCH_RESULT_LOWER to authoritativePositionCrops(11..12),
+            ),
+        )
         advanceUntilIdle()
 
         assertEquals(4, generator.requests.size)
@@ -1875,6 +1925,11 @@ class MatchReviewViewModelTest {
         scenario.viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         scenario.viewModel.calculateResultPositionCrops()
+        scenario.viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+            ),
+        )
         advanceUntilIdle()
 
         scenario.assets.assets.value = emptyList()
@@ -2545,6 +2600,11 @@ class MatchReviewViewModelTest {
         viewModel.load(TOURNAMENT_ID, matchId)
         advanceUntilIdle()
         viewModel.calculateResultPositionCrops()
+        viewModel.updateResultPositionCropPreviews(
+            mapOf(
+                MatchResultScreenshotRole.MATCH_RESULT_UPPER to authoritativePositionCrops(1..10),
+            ),
+        )
         advanceUntilIdle()
 
         assertTrue(
@@ -3787,6 +3847,21 @@ class MatchReviewViewModelTest {
         },
     )
 
+    private fun authoritativePositionCrops(
+        positions: IntRange,
+    ): List<MatchResultPositionCrop> = positions.map { position ->
+        MatchResultPositionCrop(
+            position = position,
+            column = if (position <= 5) MatchResultPositionColumn.LEFT else MatchResultPositionColumn.RIGHT,
+            bounds = OcrPixelCropRect(
+                left = 0,
+                top = position * 10,
+                right = 100,
+                bottom = position * 10 + 8,
+            ),
+        )
+    }
+
     private data object FakeMatchResultPositionCropPreviewImage : MatchResultPositionCropPreviewImage
 
     private class RecordingMatchResultPositionCropPreviewGenerator(
@@ -3799,8 +3874,7 @@ class MatchReviewViewModelTest {
             val localFile: File,
             val confirmedCrop: OcrNormalizedCropRect,
             val role: MatchResultScreenshotRole,
-            val allowUpperPositionElevenFallback: Boolean,
-            val activeTeamCount: Int?,
+            val authoritativeCrops: List<MatchResultPositionCrop>,
         )
 
         val requests = mutableListOf<Request>()
@@ -3809,10 +3883,9 @@ class MatchReviewViewModelTest {
             localFile: File,
             confirmedCrop: OcrNormalizedCropRect,
             storedRole: MatchResultScreenshotRole,
-            allowUpperPositionElevenFallback: Boolean,
-            activeTeamCount: Int?,
+            authoritativeCrops: List<MatchResultPositionCrop>,
         ): MatchResultPositionCropPreviewState {
-            requests += Request(localFile, confirmedCrop, storedRole, allowUpperPositionElevenFallback, activeTeamCount)
+            requests += Request(localFile, confirmedCrop, storedRole, authoritativeCrops)
             return statesByRole[storedRole] ?: MatchResultPositionCropPreviewState.Unavailable(
                 MatchResultPositionCropPreviewUnavailableReason.GENERATION_FAILED,
             )

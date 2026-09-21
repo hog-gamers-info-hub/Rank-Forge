@@ -49,6 +49,13 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         rows = previewRows,
         ignoredLowerRows = emptyList(),
         manualReviewRows = emptyList(),
+        authoritativePositionCropsByRole = positions
+            .mapNotNull { position ->
+                position.sourceScreenshotRole
+                    ?.let { role -> role to position.toAuthoritativePositionCropOrNull() }
+            }
+            .mapNotNull { (role, crop) -> crop?.let { role to it } }
+            .groupBy({ it.first }, { it.second }),
     )
     return MatchOcrReviewUiState.Ready(
         tournamentId = tournamentId,
