@@ -75,6 +75,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
@@ -965,32 +966,21 @@ private fun TournamentDetailsContent(
         }
 
         if (showDeleteConfirmation && !isDeleting) {
-            AlertDialog(
+            PointIqConfirmationDialog(
                 modifier = Modifier.testTag(TOURNAMENT_DELETE_DIALOG_TEST_TAG),
                 onDismissRequest = { showDeleteConfirmation = false },
-                title = { Text(stringResource(R.string.tournament_delete_title)) },
-                text = {
-                    Text(stringResource(R.string.tournament_delete_message, tournament.name))
+                title = stringResource(R.string.tournament_delete_title),
+                message = stringResource(R.string.tournament_delete_message, tournament.name),
+                onDismiss = { showDeleteConfirmation = false },
+                dismissLabel = stringResource(R.string.cancel_action),
+                onConfirm = {
+                    showDeleteConfirmation = false
+                    onDeleteTournament(tournament.id)
                 },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showDeleteConfirmation = false },
-                        modifier = Modifier.testTag(TOURNAMENT_DELETE_CANCEL_ACTION_TEST_TAG),
-                    ) {
-                        Text(stringResource(R.string.cancel_action))
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showDeleteConfirmation = false
-                            onDeleteTournament(tournament.id)
-                        },
-                        modifier = Modifier.testTag(TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG),
-                    ) {
-                        Text(stringResource(R.string.tournament_delete_confirm_action))
-                    }
-                },
+                confirmLabel = stringResource(R.string.tournament_delete_confirm_action),
+                destructive = true,
+                dismissModifier = Modifier.testTag(TOURNAMENT_DELETE_CANCEL_ACTION_TEST_TAG),
+                confirmModifier = Modifier.testTag(TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG),
             )
         }
         if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
