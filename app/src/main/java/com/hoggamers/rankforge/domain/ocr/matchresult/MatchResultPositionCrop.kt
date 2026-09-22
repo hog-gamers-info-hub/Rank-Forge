@@ -115,12 +115,29 @@ private data class FallbackThreeSideGeometry(
     val groups: List<FallbackThreeVerticalGroup>,
     val averageCropHeight: Double,
     val positionCenterPitch: Double?,
+    val usesLeftDerivedRightReference: Boolean = false,
+)
+
+private data class LeftDerivedRightFallbackReference(
+    val leftSamePositionGap: Double,
+    val leftPositionHeight: Double,
+    val expectedRightSamePositionGap: Double,
+    val expectedRightPositionHeight: Double,
 )
 
 private data class FallbackThreeResolvedGroup(
     val position: Int,
     val group: FallbackThreeVerticalGroup,
+    val resolvedBounds: FallbackThreeResolvedBounds? = null,
 )
+
+private data class FallbackThreeResolvedBounds(
+    val top: Double,
+    val bottom: Double,
+) {
+    val centerY: Double
+        get() = (top + bottom) / 2.0
+}
 
 private data class FallbackThreeColumnGroup(
     val columnIndex: Int,
@@ -160,10 +177,10 @@ class MatchResultPositionCropCalculator(
             expectedLowerPositions = expectedLowerPositions,
             minimumRightPlacementAnchorCount = minimumRightPlacementAnchorCount,
         )
-        if (
-            role != MatchResultScreenshotRole.MATCH_RESULT_UPPER ||
-            existing is MatchResultPositionCropCalculationResult.Available
-        ) {
+        if (role != MatchResultScreenshotRole.MATCH_RESULT_UPPER) {
+            return existing
+        }
+        if (existing is MatchResultPositionCropCalculationResult.Available) {
             return existing
         }
         val existingUpperSides = resolveExistingUpperSides(
@@ -171,11 +188,15 @@ class MatchResultPositionCropCalculator(
             allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
             minimumRightPlacementAnchorCount = minimumRightPlacementAnchorCount,
         )
-        return tryCalculateFallbackThree(
+        val fallbackThree = tryCalculateFallbackThree(
             evidence = evidence,
             existingUpperSides = existingUpperSides,
             allowUpperPositionElevenFallback = allowUpperPositionElevenFallback,
-        ) ?: existing
+        )
+        if (fallbackThree != null) {
+            return fallbackThree
+        }
+        return existing
     }
 
     private fun calculateExisting(
@@ -550,6 +571,11 @@ class MatchResultPositionCropCalculator(
             ) ?: return null
         }
 
+        val rightReference = deriveLeftDerivedRightFallbackReference(
+            eliminationClusters = eliminationClusters,
+            left = left,
+            imageHeight = dimensions.height,
+        )
         var right = existingUpperSides.right
         if (right == null) {
             val rightPositions = if (allowUpperPositionElevenFallback) 6..11 else 6..10
@@ -572,18 +598,21 @@ class MatchResultPositionCropCalculator(
                 ),
                 imageWidth = dimensions.width,
                 imageHeight = dimensions.height,
+                leftDerivedRightReference = rightReference,
             ) ?: return null
         }
 
-        val paddedCrops = applyVerticalPositionPadding(
+        val paddedLeftCrops = applyVerticalPositionPadding(
             crops = left.crops,
             imageHeight = dimensions.height,
             paddingFraction = left.pitch.verticalPositionPaddingFraction(),
-        ) + applyVerticalPositionPadding(
+        )
+        val paddedRightCrops = applyVerticalPositionPadding(
             crops = right.crops,
             imageHeight = dimensions.height,
             paddingFraction = right.pitch.verticalPositionPaddingFraction(),
         )
+        val paddedCrops = paddedLeftCrops + paddedRightCrops
         return MatchResultPositionCropCalculationResult.Available(
             crops = paddedCrops,
             leftRowPitch = left.pitch.pitch,
@@ -598,6 +627,130 @@ class MatchResultPositionCropCalculator(
     ): List<EliminationColumnCluster>? = clusters
         .take(2)
         .takeIf { it.size == 2 && it.all { column -> column.boxes.isNotEmpty() } }
+
+    private fun deriveLeftDerivedRightFallbackReference(
+        eliminationClusters: List<EliminationColumnCluster>,
+        left: ExistingUpperSideGeometry,
+        imageHeight: Int,
+    ): LeftDerivedRightFallbackReference? {
+        if (eliminationClusters.size < 4) return null
+        val c1 = eliminationClusters.first()
+        val representativeHeight = median(c1.boxes.map { it.height().toDouble() })
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: return null
+        val reliablePairs = pairFallbackThreeColumnBoxes(
+            boxes = c1.boxes,
+            representativeTextHeight = representativeHeight,
+        ).filter { it.kind == FallbackThreeGroupKind.NORMAL_PAIR }
+        val leftSamePositionGap = median(
+            reliablePairs.mapNotNull { pair ->
+                val upper = pair.boxes.firstOrNull() ?: return@mapNotNull null
+                val lower = pair.boxes.getOrNull(1) ?: return@mapNotNull null
+                (lower.centerY() - upper.centerY()).takeIf { it.isFinite() && it > 0.0 }
+            },
+        ) ?: return null
+        val leftPositionHeight = left.pitch.pitch.takeIf {
+            isUsablePitch(it, imageHeight)
+        } ?: return null
+        val expectedRightSamePositionGap = leftSamePositionGap / LEFT_TO_RIGHT_ROW_PITCH_RATIO
+        val expectedRightPositionHeight = leftPositionHeight / LEFT_TO_RIGHT_ROW_PITCH_RATIO
+        if (
+            !expectedRightSamePositionGap.isFinite() || expectedRightSamePositionGap <= 0.0 ||
+            !expectedRightPositionHeight.isFinite() || expectedRightPositionHeight <= 0.0
+        ) {
+            return null
+        }
+        return LeftDerivedRightFallbackReference(
+            leftSamePositionGap = leftSamePositionGap,
+            leftPositionHeight = leftPositionHeight,
+            expectedRightSamePositionGap = expectedRightSamePositionGap,
+            expectedRightPositionHeight = expectedRightPositionHeight,
+        )
+    }
+
+    private fun buildFallbackThreeRightSideGeometryFromLeftReference(
+        columns: List<EliminationColumnCluster>,
+        reference: LeftDerivedRightFallbackReference,
+    ): FallbackThreeSideGeometry? {
+        val boxes = columns.flatMap { it.boxes }.sortedWith(
+            compareBy<RawOcrBoundingBox> { it.centerY() }
+                .thenBy { it.top }
+                .thenBy { it.left }
+                .thenBy { it.right }
+                .thenBy { it.bottom },
+        )
+        if (boxes.size < 2) return null
+
+        val groups = mutableListOf<FallbackThreeVerticalGroup>()
+        var hasPositiveClassification = false
+        var index = 0
+        while (index < boxes.size) {
+            val first = boxes[index]
+            val second = boxes.getOrNull(index + 1)
+            if (second == null) {
+                groups += FallbackThreeVerticalGroup(
+                    kind = FallbackThreeGroupKind.SINGLETON,
+                    boxes = listOf(first),
+                    centerY = first.centerY(),
+                    top = null,
+                    bottom = null,
+                )
+                index++
+                continue
+            }
+
+            val observedGap = second.centerY() - first.centerY()
+            val pairGapDelta = abs(observedGap - reference.expectedRightSamePositionGap)
+            val positionHeightDelta = abs(observedGap - reference.expectedRightPositionHeight)
+            val pairMatch = observedGap.isFinite() &&
+                pairGapDelta <= reference.expectedRightSamePositionGap *
+                FALLBACK_THREE_RIGHT_PAIR_GAP_MATCH_TOLERANCE_FRACTION
+            val positionHeightMatch = observedGap.isFinite() &&
+                positionHeightDelta <= reference.expectedRightPositionHeight *
+                FALLBACK_THREE_RIGHT_POSITION_HEIGHT_MATCH_TOLERANCE_FRACTION
+            val classification = when {
+                pairMatch && !positionHeightMatch -> {
+                    hasPositiveClassification = true
+                    "SAME_POSITION_PAIR"
+                }
+
+                positionHeightMatch && !pairMatch -> {
+                    hasPositiveClassification = true
+                    "ADJACENT_SINGLETONS"
+                }
+
+                else -> "UNRESOLVED"
+            }
+            if (classification == "SAME_POSITION_PAIR") {
+                groups += FallbackThreeVerticalGroup(
+                    kind = FallbackThreeGroupKind.NORMAL_PAIR,
+                    boxes = listOf(first, second),
+                    centerY = (first.top + second.bottom) / 2.0,
+                    top = first.top,
+                    bottom = second.bottom,
+                )
+                index += 2
+            } else {
+                groups += FallbackThreeVerticalGroup(
+                    kind = FallbackThreeGroupKind.SINGLETON,
+                    boxes = listOf(first),
+                    centerY = first.centerY(),
+                    top = null,
+                    bottom = null,
+                )
+                index++
+            }
+        }
+
+        if (boxes.size > 1 && !hasPositiveClassification) return null
+
+        return FallbackThreeSideGeometry(
+            groups = groups,
+            averageCropHeight = reference.expectedRightPositionHeight,
+            positionCenterPitch = reference.expectedRightPositionHeight,
+            usesLeftDerivedRightReference = true,
+        )
+    }
 
     private fun selectFallbackThreeRightEliminationColumns(
         clusters: List<EliminationColumnCluster>,
@@ -626,14 +779,26 @@ class MatchResultPositionCropCalculator(
         horizontalBounds: Pair<Int, Int>?,
         imageWidth: Int,
         imageHeight: Int,
+        leftDerivedRightReference: LeftDerivedRightFallbackReference? = null,
     ): ExistingUpperSideGeometry? {
         val rightSide = column == MatchResultPositionColumn.RIGHT
-        val geometry = buildFallbackThreeSideGeometry(
-            columns = columns,
-            imageHeight = imageHeight,
-            rightSide = rightSide,
-        ) ?: return null
-        val groups = if (topToBottomIdentity) {
+        val geometry = if (rightSide && leftDerivedRightReference != null) {
+            buildFallbackThreeRightSideGeometryFromLeftReference(
+                columns = columns,
+                reference = leftDerivedRightReference,
+            ) ?: buildFallbackThreeSideGeometry(
+                columns = columns,
+                imageHeight = imageHeight,
+                rightSide = rightSide,
+            )
+        } else {
+            buildFallbackThreeSideGeometry(
+                columns = columns,
+                imageHeight = imageHeight,
+                rightSide = rightSide,
+            )
+        } ?: return null
+        val resolvedGroups = if (topToBottomIdentity) {
             resolveFallbackThreeRightGroups(
                 groups = geometry.groups,
                 positions = positions,
@@ -651,6 +816,19 @@ class MatchResultPositionCropCalculator(
                 requireAnchorSeed = requireAnchorSeed,
             )
         } ?: return null
+        val groups = when {
+            !rightSide -> resolveFallbackThreeLeftSingletons(
+                groups = resolvedGroups,
+                positionCenterPitch = geometry.positionCenterPitch,
+            ) ?: return null
+
+            geometry.usesLeftDerivedRightReference -> resolveFallbackThreeRightSingletons(
+                groups = resolvedGroups,
+                positionHeight = geometry.positionCenterPitch ?: return null,
+            ) ?: return null
+
+            else -> resolvedGroups
+        }
         val (left, right) = horizontalBounds ?: return null
         val crops = groups.mapNotNull { resolved ->
             buildFallbackThreeCrop(
@@ -675,6 +853,174 @@ class MatchResultPositionCropCalculator(
             ),
         )
     }
+
+    private fun resolveFallbackThreeLeftSingletons(
+        groups: List<FallbackThreeResolvedGroup>,
+        positionCenterPitch: Double?,
+    ): List<FallbackThreeResolvedGroup>? {
+        val completeGroups = groups
+            .filter { resolved ->
+                resolved.group.kind == FallbackThreeGroupKind.NORMAL_PAIR &&
+                    resolved.group.top != null &&
+                    resolved.group.bottom != null
+            }
+            .sortedBy { it.position }
+        if (completeGroups.isEmpty()) return null
+
+        val resolved = mutableListOf<FallbackThreeResolvedGroup>()
+        groups.sortedBy { it.position }.forEach { current ->
+            if (current.group.kind != FallbackThreeGroupKind.SINGLETON) {
+                resolved += current
+                return@forEach
+            }
+
+            val positionHeight = positionCenterPitch?.takeIf { it.isFinite() && it > 0.0 }
+            if (positionHeight == null) {
+                resolved += current
+                return@forEach
+            }
+            val provisional = FallbackThreeResolvedBounds(
+                top = current.group.centerY - positionHeight / 2.0,
+                bottom = current.group.centerY + positionHeight / 2.0,
+            )
+            if (!provisional.top.isFinite() || !provisional.bottom.isFinite()) return null
+
+            val previous = completeGroups.lastOrNull { it.position < current.position }
+            val next = completeGroups.firstOrNull { it.position > current.position }
+            val previousBounds = previous?.fullPositionBounds(positionHeight)
+            val nextBounds = next?.fullPositionBounds(positionHeight)
+            val overlapsPrevious = previousBounds?.let { provisional.materiallyOverlaps(it) } == true
+            val overlapsNext = nextBounds?.let { provisional.materiallyOverlaps(it) } == true
+
+            when {
+                overlapsPrevious && overlapsNext -> return null
+                overlapsPrevious -> {
+                    val previousBottom = previousBounds.bottom
+                    val reconstructedBounds = FallbackThreeResolvedBounds(
+                        top = previousBottom,
+                        bottom = previousBottom + positionHeight,
+                    )
+                    resolved += current.copy(resolvedBounds = reconstructedBounds)
+                }
+
+                overlapsNext -> {
+                    val nextTop = nextBounds.top
+                    val reconstructedBounds = FallbackThreeResolvedBounds(
+                        top = nextTop - positionHeight,
+                        bottom = nextTop,
+                    )
+                    resolved += current.copy(resolvedBounds = reconstructedBounds)
+                }
+
+                else -> {
+                    resolved += current
+                }
+            }
+        }
+        return resolved
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun resolveFallbackThreeLeftSingletons(
+        groups: List<FallbackThreeResolvedGroup>,
+        averageCropHeight: Double,
+        positionCenterPitch: Double?,
+    ): List<FallbackThreeResolvedGroup>? = resolveFallbackThreeLeftSingletons(
+        groups = groups,
+        positionCenterPitch = positionCenterPitch,
+    )
+
+    private fun resolveFallbackThreeRightSingletons(
+        groups: List<FallbackThreeResolvedGroup>,
+        positionHeight: Double,
+    ): List<FallbackThreeResolvedGroup>? {
+        if (!positionHeight.isFinite() || positionHeight <= 0.0) return null
+        val completeGroups = groups
+            .filter { resolved ->
+                resolved.group.kind == FallbackThreeGroupKind.NORMAL_PAIR &&
+                    resolved.group.top != null &&
+                    resolved.group.bottom != null
+            }
+            .sortedBy { it.position }
+        val resolved = mutableListOf<FallbackThreeResolvedGroup>()
+        val reconstructedSingletons = mutableListOf<Pair<FallbackThreeResolvedGroup, FallbackThreeResolvedBounds>>()
+        groups.sortedBy { it.position }.forEach { current ->
+            if (current.group.kind != FallbackThreeGroupKind.SINGLETON) {
+                resolved += current
+                return@forEach
+            }
+
+            val provisional = FallbackThreeResolvedBounds(
+                top = current.group.centerY - positionHeight / 2.0,
+                bottom = current.group.centerY + positionHeight / 2.0,
+            )
+            if (!provisional.top.isFinite() || !provisional.bottom.isFinite()) return null
+
+            val previous = completeGroups.lastOrNull { it.position < current.position }
+            val next = completeGroups.firstOrNull { it.position > current.position }
+            val previousBounds = previous?.fullPositionBounds(positionHeight)
+            val nextBounds = next?.fullPositionBounds(positionHeight)
+            val overlapsPrevious = previousBounds?.let { provisional.materiallyOverlapsRight(it) } == true
+            val overlapsNext = nextBounds?.let { provisional.materiallyOverlapsRight(it) } == true
+
+            val resolvedBounds = when {
+                overlapsPrevious && overlapsNext -> return null
+                overlapsPrevious -> {
+                    FallbackThreeResolvedBounds(
+                        top = previousBounds.bottom,
+                        bottom = previousBounds.bottom + positionHeight,
+                    )
+                }
+
+                overlapsNext -> {
+                    FallbackThreeResolvedBounds(
+                        top = nextBounds.top - positionHeight,
+                        bottom = nextBounds.top,
+                    )
+                }
+
+                else -> provisional
+            }
+            val isReconstruction = overlapsPrevious || overlapsNext
+            if (isReconstruction) {
+                val conflict = reconstructedSingletons.firstOrNull { (_, previousBounds) ->
+                    resolvedBounds.overlapPx(previousBounds) / positionHeight >
+                        FALLBACK_THREE_RIGHT_RECONSTRUCTION_CONFLICT_OVERLAP_FRACTION
+                }
+                if (conflict != null) {
+                    return null
+                }
+                reconstructedSingletons += current.copy(resolvedBounds = resolvedBounds) to resolvedBounds
+            }
+            resolved += current.copy(resolvedBounds = resolvedBounds)
+        }
+        return resolved
+    }
+
+    private fun FallbackThreeResolvedGroup.fullPositionBounds(
+        positionHeight: Double,
+    ): FallbackThreeResolvedBounds? {
+        val centerY = group.centerY
+        if (!centerY.isFinite()) return null
+        return FallbackThreeResolvedBounds(
+            top = centerY - positionHeight / 2.0,
+            bottom = centerY + positionHeight / 2.0,
+        )
+    }
+
+    private fun FallbackThreeResolvedBounds.materiallyOverlaps(
+        other: FallbackThreeResolvedBounds,
+    ): Boolean = minOf(bottom, other.bottom) - maxOf(top, other.top) >
+        FALLBACK_THREE_LEFT_SINGLETON_OVERLAP_TOLERANCE_PX
+
+    private fun FallbackThreeResolvedBounds.overlapPx(
+        other: FallbackThreeResolvedBounds,
+    ): Double = (minOf(bottom, other.bottom) - maxOf(top, other.top)).coerceAtLeast(0.0)
+
+    private fun FallbackThreeResolvedBounds.materiallyOverlapsRight(
+        other: FallbackThreeResolvedBounds,
+    ): Boolean = minOf(bottom, other.bottom) - maxOf(top, other.top) >
+        FALLBACK_THREE_RIGHT_SINGLETON_OVERLAP_TOLERANCE_PX
 
     private fun resolveFallbackThreeRightGroups(
         groups: List<FallbackThreeVerticalGroup>,
@@ -1177,19 +1523,25 @@ class MatchResultPositionCropCalculator(
     ): MatchResultPositionCrop? {
         if (left < 0 || right > imageWidth || left >= right) return null
         val group = resolved.group
+        val resolvedBounds = resolved.resolvedBounds
         val rawTop: Double
         val rawBottom: Double
-        when (group.kind) {
-            FallbackThreeGroupKind.NORMAL_PAIR -> {
-                rawTop = group.top?.toDouble() ?: return null
-                rawBottom = group.bottom?.toDouble() ?: return null
-            }
+        if (resolvedBounds != null) {
+            rawTop = resolvedBounds.top
+            rawBottom = resolvedBounds.bottom
+        } else {
+            when (group.kind) {
+                FallbackThreeGroupKind.NORMAL_PAIR -> {
+                    rawTop = group.top?.toDouble() ?: return null
+                    rawBottom = group.bottom?.toDouble() ?: return null
+                }
 
-            FallbackThreeGroupKind.CENTERED_TWO_PLAYER,
-            FallbackThreeGroupKind.SINGLETON,
-            -> {
-                rawTop = group.centerY - averageCropHeight / 2.0
-                rawBottom = group.centerY + averageCropHeight / 2.0
+                FallbackThreeGroupKind.CENTERED_TWO_PLAYER,
+                FallbackThreeGroupKind.SINGLETON,
+                -> {
+                    rawTop = group.centerY - averageCropHeight / 2.0
+                    rawBottom = group.centerY + averageCropHeight / 2.0
+                }
             }
         }
         if (!rawTop.isFinite() || !rawBottom.isFinite() || rawBottom <= rawTop) return null
@@ -1216,7 +1568,7 @@ class MatchResultPositionCropCalculator(
                 right = right,
                 bottom = bottom,
             ),
-            structuralCenterYInSource = group.centerY,
+            structuralCenterYInSource = resolvedBounds?.centerY ?: group.centerY,
             topClipped = rawTop < 0.0,
             bottomClipped = rawBottom > imageHeight.toDouble(),
         )
@@ -1633,6 +1985,11 @@ class MatchResultPositionCropCalculator(
         const val FALLBACK_THREE_ANCHOR_ASSIGNMENT_PITCH_FRACTION = 0.35
         const val FALLBACK_THREE_ANCHOR_ASSIGNMENT_HEIGHT_FACTOR = 1.5
         const val FALLBACK_THREE_ASSIGNMENT_TIE_EPSILON = 0.000001
+        const val FALLBACK_THREE_LEFT_SINGLETON_OVERLAP_TOLERANCE_PX = 5.0
+        const val FALLBACK_THREE_RIGHT_SINGLETON_OVERLAP_TOLERANCE_PX = 5.0
+        const val FALLBACK_THREE_RIGHT_PAIR_GAP_MATCH_TOLERANCE_FRACTION = 0.10
+        const val FALLBACK_THREE_RIGHT_POSITION_HEIGHT_MATCH_TOLERANCE_FRACTION = 0.05
+        const val FALLBACK_THREE_RIGHT_RECONSTRUCTION_CONFLICT_OVERLAP_FRACTION = 0.50
         const val SPARSE_C3_SAME_POSITION_MAX_NORMALIZED_GAP = 0.90
         const val ELIMINATION_TEXT_STEM = "eliminat"
         const val ELIMINATION_TEXT_PREFIX = "eliminations"
