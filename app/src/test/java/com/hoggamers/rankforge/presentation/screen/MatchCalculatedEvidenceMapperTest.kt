@@ -222,7 +222,7 @@ class MatchCalculatedEvidenceMapperTest {
     }
 
     @Test
-    fun restoredCalculatedEvidenceCreatesIndividualKillEvidenceOnlyForDetectedPlayers() {
+    fun restoredCalculatedEvidenceCreatesLogicalKillEvidenceWithDetectionFlags() {
         val evidence = MatchCalculatedEvidence(
             result = ResultCalculatedEvidence(
                 positions = listOf(
@@ -230,8 +230,8 @@ class MatchCalculatedEvidenceMapperTest {
                         position = 1,
                         playerNames = listOf("P1", "Not detected", "P3", null),
                         playerKillApplicable = listOf(true, false, true, false),
-                        playerKills = listOf(2, null, 4, null),
-                        totalKills = 6,
+                        playerKills = listOf(2, 4, 4, null),
+                        totalKills = 10,
                         placement = 1,
                         slotNumber = 12,
                     ),
@@ -245,11 +245,20 @@ class MatchCalculatedEvidenceMapperTest {
             teamNamesBySlot = emptyMap(),
         ) as MatchOcrReviewUiState.Ready
 
-        assertEquals(listOf(1, 3), restored.rows.single().playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf(1, 2, 3, 4), restored.rows.single().playerKillEvidence.map { it.playerSlot })
         assertEquals(
-            listOf(1, 3),
+            listOf(true, false, true, false),
+            restored.rows.single().playerKillEvidence.map { it.isPlayerDetected },
+        )
+        assertEquals(
+            listOf(1, 2, 3, 4),
             restored.correctionDraft!!.rows.single().playerKillDrafts.map { it.playerSlot },
         )
+        assertEquals(
+            listOf("2", "4", "4", ""),
+            restored.correctionDraft!!.rows.single().playerKillDrafts.map { it.killsDraftValue },
+        )
+        assertEquals("10", restored.correctionDraft!!.rows.single().killsDraftValue)
     }
 
     @Test
@@ -350,6 +359,41 @@ class MatchCalculatedEvidenceMapperTest {
             corrected.result.positions.single { it.position == 12 }.playerKills,
         )
         assertEquals(8, corrected.result.positions.single { it.position == 12 }.totalKills)
+    }
+
+    @Test
+    fun undetectedPlayerKillPersistsWithoutChangingDetectionApplicability() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val reviewRow = reviewRow(12).copy(
+            detectedKillDisplayValue = "7",
+            originalParsedKillValue = null,
+            playerKillEvidence = listOf(
+                MatchOcrReviewPlayerKillEvidenceUiState(1, "2", isPlayerDetected = true),
+                MatchOcrReviewPlayerKillEvidenceUiState(2, "", isPlayerDetected = false),
+                MatchOcrReviewPlayerKillEvidenceUiState(3, "5", isPlayerDetected = true),
+            ),
+        )
+        val baseOcrState = sourceOcrState.copy(rows = listOf(reviewRow))
+        val editedOcrState = baseOcrState.withCorrection { draft ->
+            MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(draft, 11, 2, "4")
+        }
+
+        val baseEvidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, baseOcrState))
+            .result.positions.single { it.position == 12 }
+        val editedEvidence = requireNotNull(
+            MatchCalculatedEvidenceMapper.applyAcceptedResultCorrections(
+                evidence = MatchCalculatedEvidenceMapper.map(reviewState, baseOcrState)!!,
+                reviewState = reviewState,
+                ocrState = editedOcrState,
+            ),
+        ).result.positions.single { it.position == 12 }
+
+        assertEquals(listOf(2, null, 5, null), baseEvidence.playerKills)
+        assertEquals(7, baseEvidence.totalKills)
+        assertEquals(listOf(2, 4, 5, null), editedEvidence.playerKills)
+        assertEquals(listOf(true, false, true, false), editedEvidence.playerKillApplicable)
+        assertEquals(11, editedEvidence.totalKills)
+        assertEquals(MATCH_RESULT_NOT_DETECTED_PLAYER, editedEvidence.playerNames[1])
     }
 
     @Test

@@ -111,7 +111,12 @@ internal object MatchCalculatedEvidenceMapper {
                         ?: previous
                 }
             }
-            val acceptedTotalKills = if (rowDraft.killsDraftValue.isBlank()) {
+            val acceptedTotalKills = if (rowDraft.playerKillDrafts.isNotEmpty()) {
+                rowDraft.killsDraftValue
+                    .trim()
+                    .toIntOrNull()
+                    ?.takeIf { it >= 0 }
+            } else if (rowDraft.killsDraftValue.isBlank()) {
                 null
             } else {
                 rowDraft.killsDraftValue
@@ -249,9 +254,12 @@ internal object MatchCalculatedEvidenceMapper {
                         ?.isPlayerKillApplicable() == true
                 },
                 playerKills = playerKills,
-                totalKills = draft?.killsDraftValue
-                    ?.parseNonNegativeIntOrNull()
-                    ?: reviewRow?.detectedKillDisplayValue.parseNonNegativeIntOrNull(),
+                totalKills = if (draft?.playerKillDrafts?.isNotEmpty() == true) {
+                    draft.killsDraftValue.parseNonNegativeIntOrNull()
+                } else {
+                    draft?.killsDraftValue?.parseNonNegativeIntOrNull()
+                        ?: reviewRow?.detectedKillDisplayValue.parseNonNegativeIntOrNull()
+                },
                 placement = placement,
             )
         }

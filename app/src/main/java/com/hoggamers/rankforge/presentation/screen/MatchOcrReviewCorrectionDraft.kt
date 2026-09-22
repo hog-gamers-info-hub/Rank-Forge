@@ -35,6 +35,7 @@ data class MatchOcrReviewPlayerKillCorrectionDraft(
     val playerSlot: Int,
     val originalKillsValue: String,
     val killsDraftValue: String,
+    val isPlayerDetected: Boolean = true,
 )
 
 data class MatchOcrReviewRowCorrectionDraft(
@@ -119,6 +120,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                     playerSlot = evidence.playerSlot,
                     originalKillsValue = evidence.originalKillsValue,
                     killsDraftValue = evidence.originalKillsValue,
+                    isPlayerDetected = evidence.isPlayerDetected,
                 )
             }
             val originalKillsValue = if (playerKillDrafts.isEmpty()) {
@@ -165,7 +167,11 @@ object MatchOcrReviewCorrectionDraftReducer {
         rowIndex: Int,
         value: String,
     ): MatchOcrReviewCorrectionDraft = updateRow(draft, rowIndex) { row ->
-        row.copy(killsDraftValue = value)
+        if (row.playerKillDrafts.isEmpty()) {
+            row.copy(killsDraftValue = value)
+        } else {
+            row
+        }
     }
 
     fun onPlayerKillsChanged(
@@ -292,21 +298,26 @@ object MatchOcrReviewCorrectionDraftReducer {
                         row.playerKillDrafts.forEach { player ->
                             val playerKills = player.killsDraftValue.trim()
                             when {
-                                playerKills.isBlank() ->
+                                playerKills.isBlank() && player.isPlayerDetected ->
                                     blockers += MatchOcrReviewCorrectionReason.MISSING_KILLS
                                 playerKills.isStrictNegativeInteger() ->
                                     blockers += MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
-                                playerKills.toStrictNonNegativeIntOrNull() == null ->
+                                playerKills.isNotBlank() && playerKills.toStrictNonNegativeIntOrNull() == null ->
                                     blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
                             }
                         }
+                    }
 
-                        if (row.playerKillDrafts.all { player ->
-                                player.killsDraftValue.trim().toStrictNonNegativeIntOrNull() != null
-                            } && kills.toStrictNonNegativeIntOrNull() == null
-                        ) {
-                            blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
-                        }
+                    val hasUsablePlayerKill = row.playerKillDrafts.any { player ->
+                        player.killsDraftValue.trim().toStrictNonNegativeIntOrNull() != null
+                    }
+                    if (hasUsablePlayerKill && row.playerKillDrafts.all { player ->
+                            val playerKills = player.killsDraftValue.trim()
+                            (!player.isPlayerDetected && playerKills.isBlank()) ||
+                                playerKills.toStrictNonNegativeIntOrNull() != null
+                        } && kills.toStrictNonNegativeIntOrNull() == null
+                    ) {
+                        blockers += MatchOcrReviewCorrectionReason.INVALID_KILLS
                     }
 
                     when {
@@ -373,9 +384,19 @@ object MatchOcrReviewCorrectionDraftReducer {
         }
 
     private fun List<MatchOcrReviewPlayerKillCorrectionDraft>.derivedKillsDraftValue(): String {
-        val values = map { player -> player.killsDraftValue.trim().toStrictNonNegativeIntOrNull() }
-        return values.takeIf { it.all { value -> value != null } }
-            ?.sumOf { it!!.toLong() }
+        val hasInvalidValue = any { player ->
+            val text = player.killsDraftValue.trim()
+            (text.isBlank() && player.isPlayerDetected) ||
+                (text.isNotBlank() && text.toStrictNonNegativeIntOrNull() == null)
+        }
+
+        if (hasInvalidValue) return ""
+
+        val values = mapNotNull { player ->
+            player.killsDraftValue.trim().toStrictNonNegativeIntOrNull()
+        }
+        return values.takeIf { it.isNotEmpty() }
+            ?.sumOf { it.toLong() }
             ?.toString()
             .orEmpty()
     }

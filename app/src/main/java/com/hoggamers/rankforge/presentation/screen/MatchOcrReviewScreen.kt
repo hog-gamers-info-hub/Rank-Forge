@@ -1505,7 +1505,7 @@ private fun MatchOcrReviewCorrectionFields(
         CompactOcrNumberField(
             value = correctionDraft.killsDraftValue,
             onValueChange = { onKillsChanged(correctionDraft.rowIndex, it) },
-            enabled = correctionEnabled,
+            enabled = correctionEnabled && correctionDraft.playerKillDrafts.isEmpty(),
             label = {
                 Text(
                     text = stringResource(

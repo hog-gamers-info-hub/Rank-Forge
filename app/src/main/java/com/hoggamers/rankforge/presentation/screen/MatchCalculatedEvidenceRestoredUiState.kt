@@ -37,7 +37,11 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
                 val row = reviewRows.first { it.rowIndex == draft.rowIndex }
                 draft.copy(
                     placementDraftValue = row.detectedPlacementDisplayValue,
-                    killsDraftValue = row.detectedKillDisplayValue,
+                    killsDraftValue = if (draft.playerKillDrafts.isNotEmpty()) {
+                        draft.killsDraftValue
+                    } else {
+                        row.detectedKillDisplayValue
+                    },
                     assignedTeamSlotDraftValue = row.suggestedTeamSlotDisplayValue,
                     isExcluded = draft.rowIndex + 1 in excludedSourcePositions,
                 )
@@ -164,11 +168,26 @@ private fun ResultPositionCalculatedEvidence.toRestoredReviewRow(): MatchOcrRevi
         allPlayersSemanticallyNotDetected = playerKillApplicability().all { applicable ->
             !applicable
         },
-        playerKillEvidence = (1..4).filter { slot -> applicability[slot - 1] }.map { slot ->
-            MatchOcrReviewPlayerKillEvidenceUiState(
-                playerSlot = slot,
-                originalKillsValue = playerKills.getOrNull(slot - 1)?.toString().orEmpty(),
-            )
+        playerKillEvidence = if (hasRestorablePlayerKillEvidence()) {
+            (1..4).map { slot ->
+                MatchOcrReviewPlayerKillEvidenceUiState(
+                    playerSlot = slot,
+                    originalKillsValue = playerKills.getOrNull(slot - 1)?.toString().orEmpty(),
+                    isPlayerDetected = applicability[slot - 1],
+                )
+            }
+        } else {
+            emptyList()
         },
     )
 }
+
+private fun ResultPositionCalculatedEvidence.hasRestorablePlayerKillEvidence(): Boolean =
+    playerNames.any { name ->
+        name?.trim()?.let { it.isNotBlank() && it != MATCH_RESULT_NOT_DETECTED_PLAYER } == true
+    } ||
+        playerKillApplicable?.any { it } == true ||
+        playerKills.any { it != null } ||
+        totalKills != null ||
+        placement != null ||
+        slotNumber != null

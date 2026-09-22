@@ -249,6 +249,100 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun undetectedBlankPlayerKillIsOptionalAndDoesNotBlock() {
+        val row = playerKillDraft(
+            firstRowKills = listOf("3", "", "2", "1"),
+            firstRowDetected = listOf(true, false, true, true),
+        ).rows.first()
+
+        assertEquals(listOf(true, false, true, true), row.playerKillDrafts.map { it.isPlayerDetected })
+        assertEquals("6", row.killsDraftValue)
+        assertFalse(row.validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+    }
+
+    @Test
+    fun undetectedManualPlayerKillContributesToDerivedTotal() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(
+                firstRowKills = listOf("3", "", "2", "1"),
+                firstRowDetected = listOf(true, false, true, true),
+            ),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "4",
+        )
+
+        assertEquals("10", draft.rows.first().killsDraftValue)
+        assertFalse(draft.rows.first().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+    }
+
+    @Test
+    fun undetectedZeroPlayerKillIsValidAndIncludedAsZero() {
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(
+                firstRowKills = listOf("3", "", "2", "1"),
+                firstRowDetected = listOf(true, false, true, true),
+            ),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "0",
+        )
+
+        assertEquals("6", draft.rows.first().killsDraftValue)
+        assertTrue(draft.rows.first().validation.blockers.isEmpty())
+    }
+
+    @Test
+    fun undetectedInvalidAndNegativePlayerKillsStillBlock() {
+        val base = playerKillDraft(
+            firstRowKills = listOf("3", "", "2", "1"),
+            firstRowDetected = listOf(true, false, true, true),
+        )
+        val invalid = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(base, 0, 2, "abc")
+        val negative = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(base, 0, 2, "-1")
+
+        assertRowBlocked(invalid, 0, MatchOcrReviewCorrectionReason.INVALID_KILLS)
+        assertRowBlocked(negative, 0, MatchOcrReviewCorrectionReason.NEGATIVE_KILLS)
+    }
+
+    @Test
+    fun clearingOptionalPlayerKillRestoresDerivedTotalAndOriginalDirtyState() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(
+                firstRowKills = listOf("3", "", "2", "1"),
+                firstRowDetected = listOf(true, false, true, true),
+            ),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "4",
+        )
+        val cleared = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(changed, 0, 2, "")
+
+        assertEquals("6", cleared.rows.first().killsDraftValue)
+        assertFalse(cleared.rows.first().validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_KILLS))
+        assertFalse(cleared.rows.first().isDirty)
+    }
+
+    @Test
+    fun allOptionalBlankPlayerKillsRemainUnknownInsteadOfBecomingZero() {
+        val row = playerKillDraft(
+            firstRowKills = listOf("", ""),
+            firstRowDetected = listOf(false, false),
+        ).rows.first()
+
+        assertEquals("", row.killsDraftValue)
+        assertFalse(row.killsDraftValue == "0")
+        assertTrue(row.validation.blockers.isEmpty())
+    }
+
+    @Test
+    fun totalKillCorrectionCannotOverrideIndividualPlayerKillTotal() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(playerKillDraft(), 0, "99")
+
+        assertEquals("10", changed.rows.first().killsDraftValue)
+    }
+
+    @Test
     fun zeroPlayerKillIsValidAndIncludedInDerivedTotal() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
             draft = playerKillDraft(),
@@ -461,6 +555,24 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun resetOptionalPlayerKillRestoresBlankAndDerivedTotal() {
+        val changed = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = playerKillDraft(
+                firstRowKills = listOf("3", "", "2", "1"),
+                firstRowDetected = listOf(true, false, true, true),
+            ),
+            rowIndex = 0,
+            playerSlot = 2,
+            value = "4",
+        )
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(changed, 0)
+
+        assertEquals("", reset.rows.first().playerKillDrafts.single { it.playerSlot == 2 }.killsDraftValue)
+        assertEquals("6", reset.rows.first().killsDraftValue)
+        assertFalse(reset.rows.first().isDirty)
+    }
+
+    @Test
     fun resetRowRestoresExcludedStateAndNormalValidation() {
         val changed = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 3, "")
         val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(changed, 3)
@@ -639,10 +751,11 @@ class MatchOcrReviewCorrectionDraftReducerTest {
 
     private fun playerKillDraft(
         firstRowKills: List<String> = listOf("3", "2", "1", "4"),
+        firstRowDetected: List<Boolean> = List(firstRowKills.size) { true },
     ): MatchOcrReviewCorrectionDraft = initialDraft(
         rows = readyRows().mapIndexed { index, row ->
             when (index) {
-                0 -> row.withPlayerKillEvidence(firstRowKills)
+                0 -> row.withPlayerKillEvidence(firstRowKills, firstRowDetected)
                 1 -> row.withPlayerKillEvidence(listOf("2", "1"))
                 else -> row
             }
@@ -651,16 +764,21 @@ class MatchOcrReviewCorrectionDraftReducerTest {
 
     private fun MatchOcrReviewRowUiState.withPlayerKillEvidence(
         kills: List<String>,
-    ): MatchOcrReviewRowUiState = copy(
-        detectedKillDisplayValue = kills.sumOf { it.toInt() }.toString(),
-        originalParsedKillValue = kills.sumOf { it.toInt() },
-        playerKillEvidence = kills.mapIndexed { index, value ->
-            MatchOcrReviewPlayerKillEvidenceUiState(
-                playerSlot = index + 1,
-                originalKillsValue = value,
-            )
-        },
-    )
+        detected: List<Boolean> = List(kills.size) { true },
+    ): MatchOcrReviewRowUiState {
+        val numericKills = kills.mapNotNull { it.toIntOrNull() }
+        return copy(
+            detectedKillDisplayValue = numericKills.sum().toString(),
+            originalParsedKillValue = numericKills.takeIf { it.size == kills.size }?.sum(),
+            playerKillEvidence = kills.mapIndexed { index, value ->
+                MatchOcrReviewPlayerKillEvidenceUiState(
+                    playerSlot = index + 1,
+                    originalKillsValue = value,
+                    isPlayerDetected = detected[index],
+                )
+            },
+        )
+    }
 
     private fun readyRows(): List<MatchOcrReviewRowUiState> =
         (0..11).map { index ->
