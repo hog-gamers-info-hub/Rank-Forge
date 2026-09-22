@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionKillFallbackMerger
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
@@ -55,6 +56,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val lowerProcessingFallback = MatchResultLowerProcessingFallback()
     private val pairSemanticRoleResolver = MatchResultPairSemanticRoleResolver()
     private val mlKitKillFallbackResolver = MatchResultMlKitKillFallbackResolver()
+    private val positionKillFallbackMerger = MatchResultPositionKillFallbackMerger()
 
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -233,13 +235,19 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                     )
                 }
                 try {
-                    val semantics = runPanelPpProduction(
+                    val panelSemantics = runPanelPpProduction(
                         inputBitmap = inputBitmap,
                         role = assignedRole,
                         inputPlan = inputPlan,
                         allowUpperPositionElevenFallback = allowUpperFallback,
                         mlKitEvidence = prepared.evidence,
                         sourceCrops = processingGeometry.crops,
+                    )
+                    val semantics = recoverMissingKillsWithPositionPp(
+                        baseSemantics = panelSemantics,
+                        generatedCrops = generated.crops,
+                        role = assignedRole,
+                        allowUpperPositionElevenFallback = allowUpperFallback,
                     )
                     val extraction = semantics.toAcceptedExtraction(assignedRole, allowUpperFallback)
                         ?: run {
@@ -288,6 +296,66 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         ) : Prepared {
             override fun release() = Unit
         }
+    }
+
+    private suspend fun recoverMissingKillsWithPositionPp(
+        baseSemantics: List<MatchResultPositionSemanticResult>,
+        generatedCrops: List<MatchResultPositionBitmapCrop>,
+        role: MatchResultScreenshotRole,
+        allowUpperPositionElevenFallback: Boolean,
+    ): List<MatchResultPositionSemanticResult> {
+        var engine: MatchResultPositionPaddleOcrEngine? = null
+        var engineInitializationAttempted = false
+        return positionKillFallbackMerger.recover(
+            baseSemantics = baseSemantics,
+            availablePositions = generatedCrops.mapTo(mutableSetOf()) { it.geometry.position },
+            recoverPosition = recover@{ target ->
+                val crop = generatedCrops.firstOrNull { it.geometry.position == target.position }
+                    ?: return@recover null
+                if (!engineInitializationAttempted) {
+                    engineInitializationAttempted = true
+                    engine = paddleEngineProvider.getOrCreate()
+                }
+                val activeEngine = engine ?: return@recover null
+                val runResult = activeEngine.recognize(crop.bitmap)
+                val blocks = PaddleRawOcrGeometryMapper.map(
+                    runResult = runResult,
+                    cropWidth = crop.bitmap.width,
+                    cropHeight = crop.bitmap.height,
+                )
+                val classification = MatchResultPositionLogicalRowClassifier().classify(
+                    position = crop.geometry.position,
+                    cropWidth = crop.bitmap.width,
+                    cropHeight = crop.bitmap.height,
+                    slotCenterYLocal = crop.geometry.structuralCenterYInSource
+                        ?.minus(crop.geometry.bounds.top),
+                    blocks = blocks,
+                    allowSingleRowFallback = crop.geometry.topClipped ||
+                        crop.geometry.bottomClipped ||
+                        allowUpperPositionElevenFallback && crop.geometry.position == 11,
+                ) as? MatchResultPositionLogicalRowClassification.Available
+                    ?: return@recover null
+                val targeted = fieldMapper.map(
+                    MatchResultPositionOcrInput(
+                        role = role,
+                        position = crop.geometry.position,
+                        cropWidth = crop.bitmap.width,
+                        cropHeight = crop.bitmap.height,
+                        blocks = classification.blocks,
+                        rowCrops = classification.rowCrops,
+                        placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
+                        killVerifications = emptyMap(),
+                    ),
+                )
+                targeted.takeIf { semantic ->
+                    semantic.role == role &&
+                        semantic.position == target.position &&
+                        target.missingSlots.all { slot ->
+                            semantic.row?.playerSlots?.any { it.slot == slot } == true
+                        }
+                }
+            },
+        )
     }
 
     private suspend fun runPanelPpProduction(
