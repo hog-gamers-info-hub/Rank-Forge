@@ -79,6 +79,118 @@ class MatchResultAutoCropTest {
     }
 
     @Test
+    fun numericEliminationsTokenContributesItsCleanLeftBoundary() {
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 300, 100, 350, 140),
+                observation("1Eliminations", 450, 100, 550, 130),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(
+            box(300, 100, 350, 140),
+            MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence),
+        )
+    }
+
+    @Test
+    fun spacedNumericEliminationsTokenContributesItsCleanLeftBoundary() {
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 300, 100, 350, 140),
+                observation("3 Eliminations", 450, 100, 550, 130),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(
+            box(300, 100, 350, 140),
+            MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence),
+        )
+    }
+
+    @Test
+    fun truncatedEliminationsTokensRemainCleanAnchorEvidence() {
+        listOf("Eliminat", "Eliminati", "Eliminatio").forEach { text ->
+            val rawEvidence = MatchResultAutoCropEvidence(
+                observations = listOf(
+                    observation("4", 300, 100, 350, 140),
+                    observation(text, 450, 100, 550, 130),
+                ),
+                imageDimensions = dimensions,
+            )
+
+            assertEquals(
+                text,
+                box(300, 100, 350, 140),
+                MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence),
+            )
+        }
+    }
+
+    @Test
+    fun mergedPlayerEliminationsTokenDoesNotProvideItsPlayerLeftBoundary() {
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 300, 100, 350, 140),
+                observation("PRANES1Eliminations", 159, 100, 337, 130),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertNull(MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence))
+    }
+
+    @Test
+    fun cleanAndMergedEliminationsUseTheCleanBoundaryForPlacementValidation() {
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 300, 100, 350, 140),
+                observation("PRANES1Eliminations", 159, 100, 337, 130),
+                observation("1Eliminations", 450, 100, 550, 130),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(
+            box(300, 100, 350, 140),
+            MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence),
+        )
+    }
+
+    @Test
+    fun mergedOutlierNoLongerRejectsAValidPlacementAnchorAtTenPercentGap() {
+        val wideDimensions = OcrImageDimensions(width = 1_163, height = 800)
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 49, 100, 128, 140),
+                observation("PRANES1Eliminations", 159, 100, 337, 130),
+                observation("1Eliminations", 245, 100, 347, 130),
+            ),
+            imageDimensions = wideDimensions,
+        )
+
+        assertEquals(
+            box(49, 100, 128, 140),
+            MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence),
+        )
+    }
+
+    @Test
+    fun onlyMergedEliminationsEvidenceFailsClosedForPlacementValidation() {
+        val rawEvidence = MatchResultAutoCropEvidence(
+            observations = listOf(
+                observation("4", 100, 100, 150, 140),
+                observation("PRANES1Eliminations", 159, 100, 337, 130),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertNull(MatchResultAutoCropAnchorDetector().findAnchorFour(rawEvidence))
+    }
+
+    @Test
     fun nonExactFourTextIsRejected() {
         val result = MatchResultAutoCropAnchorDetector().findAnchorFour(
             evidence(

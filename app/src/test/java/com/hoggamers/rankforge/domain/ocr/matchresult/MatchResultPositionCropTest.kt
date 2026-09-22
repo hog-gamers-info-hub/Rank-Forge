@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -712,7 +713,7 @@ class MatchResultPositionCropTest {
     }
 
     @Test
-    fun sparseFallbackThreeWithTwoCloseC3ObservationsPairsAtPositionSixWithoutPitch() {
+    fun sparseFallbackThreeWithTwoCloseC3ObservationsUsesLeftDerivedPitch() {
         val result = availableResult(
             evidence = sparseRightFallbackThreeEvidence(
                 listOf(16 to 36, 48 to 68),
@@ -723,7 +724,7 @@ class MatchResultPositionCropTest {
             listOf(6),
             result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
         )
-        assertEquals(20.0, result.rightRowPitch, 0.001)
+        assertEquals(100.0 / 1.172, result.rightRowPitch, 0.001)
     }
 
     @Test
@@ -762,6 +763,217 @@ class MatchResultPositionCropTest {
             result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
         )
         assertEquals(100.0, result.rightRowPitch, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightUsesLeftDerivedSamePositionGapReference() {
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(6),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(100.0 / 1.172, result.rightRowPitch, 0.001)
+        assertEquals(117.0, result.crops.first { it.position == 6 }.structuralCenterYInSource!!, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightAcceptsDeviceLikeFiftyThreePixelPairAndConsumesFivePairs() {
+        val result = availableResult(
+            evidence = deviceLikeRightReferenceFallbackThreeEvidence(),
+        )
+
+        assertEquals(
+            (6..10).toList(),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(141.5 / 1.172, result.rightRowPitch, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightDistinguishesTwoAdjacentSingletonsFromACompletePair() {
+        val expectedHeight = 100.0 / 1.172
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    175 to 195,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(6, 7),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(expectedHeight, result.rightRowPitch, 0.001)
+        assertEquals(100.0, result.crops.first { it.position == 6 }.structuralCenterYInSource!!, 0.001)
+        assertEquals(185.0, result.crops.first { it.position == 7 }.structuralCenterYInSource!!, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightResolvesAllSingletonsFromLeftDerivedPositionHeight() {
+        val expectedHeight = 100.0 / 1.172
+        val centers = listOf(100, 185, 270, 355, 440)
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = centers.map { center -> center - 10 to center + 10 },
+            ),
+        )
+
+        assertEquals(
+            (6..10).toList(),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(expectedHeight, result.rightRowPitch, 0.001)
+        centers.forEachIndexed { index, center ->
+            assertEquals(
+                center.toDouble(),
+                result.crops.first { it.position == index + 6 }.structuralCenterYInSource!!,
+                0.001,
+            )
+        }
+    }
+
+    @Test
+    fun fallbackThreeRightKeepsMixedPairsAndSingletons() {
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                    240 to 260,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(6, 7),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(117.0, result.crops.first { it.position == 6 }.structuralCenterYInSource!!, 0.001)
+        assertEquals(250.0, result.crops.first { it.position == 7 }.structuralCenterYInSource!!, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightReconstructsMissingLowerRowAfterPreviousPosition() {
+        val expectedHeight = 100.0 / 1.172
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                    150 to 170,
+                ),
+            ),
+        )
+        val previous = result.crops.first { it.position == 6 }
+        val reconstructed = result.crops.first { it.position == 7 }
+
+        assertEquals(
+            previous.structuralCenterYInSource!! + expectedHeight,
+            reconstructed.structuralCenterYInSource!!,
+            0.001,
+        )
+    }
+
+    @Test
+    fun fallbackThreeRightReconstructsMissingUpperRowBeforeNextPosition() {
+        val expectedHeight = 100.0 / 1.172
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    165 to 185,
+                    190 to 210,
+                    224 to 244,
+                ),
+            ),
+        )
+        val reconstructed = result.crops.first { it.position == 6 }
+        val next = result.crops.first { it.position == 7 }
+
+        assertEquals(
+            next.structuralCenterYInSource!! - expectedHeight,
+            reconstructed.structuralCenterYInSource!!,
+            0.001,
+        )
+    }
+
+    @Test
+    fun fallbackThreeRightKeepsNonOverlappingSingletonCentered() {
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                    240 to 260,
+                ),
+            ),
+        )
+
+        assertEquals(250.0, result.crops.first { it.position == 7 }.structuralCenterYInSource!!, 0.001)
+    }
+
+    @Test
+    fun fallbackThreeRightFailsClosedWhenSingletonOverlapsBothNeighbors() {
+        val result = calculator.calculate(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                    160 to 180,
+                    190 to 210,
+                    224 to 244,
+                ),
+            ),
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
+
+        assertTrue(result !is MatchResultPositionCropCalculationResult.Available)
+    }
+
+    @Test
+    fun fallbackThreeRightFailsClosedWhenReconstructedSingletonsCollapseToOneSlot() {
+        val result = calculator.calculate(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    124 to 144,
+                    150 to 170,
+                    151 to 171,
+                    260 to 280,
+                    294 to 314,
+                ),
+            ),
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        )
+
+        assertTrue(result !is MatchResultPositionCropCalculationResult.Available)
+    }
+
+    @Test
+    fun fallbackThreeRightDoesNotForceAGapThatMatchesNeitherReference() {
+        val result = availableResult(
+            evidence = rightReferenceFallbackThreeEvidence(
+                c3Bounds = listOf(
+                    90 to 110,
+                    150 to 170,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(6, 7),
+            result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
+        )
+        assertEquals(60.0, result.rightRowPitch, 0.001)
     }
 
     @Test
@@ -910,6 +1122,64 @@ class MatchResultPositionCropTest {
         val onePlayer = result.crops.first { it.position == 3 }.bounds
         assertEquals(250, onePlayer.top)
         assertEquals(350, onePlayer.bottom)
+    }
+
+    @Test
+    fun fallbackThreeLeftKeepsGenuineSingletonCenteredOnItsObservation() {
+        val result = availableResult(
+            evidence = leftFallbackThreeEvidenceWithSingletonCenters(
+                singletonCenters = mapOf(3 to 280),
+            ),
+        )
+        val singleton = result.crops.first { it.position == 3 }
+
+        assertEquals(280.0, singleton.structuralCenterYInSource!!, 0.0)
+        assertEquals(280.0, (singleton.bounds.top + singleton.bounds.bottom) / 2.0, 0.0)
+    }
+
+    @Test
+    fun fallbackThreeLeftReconstructsLastPositionBelowPreviousCompletePosition() {
+        val result = availableResult(
+            evidence = leftFallbackThreeEvidenceWithSingletonCenters(
+                singletonCenters = mapOf(5 to 445),
+            ),
+        )
+        val previous = result.crops.first { it.position == 4 }
+        val last = result.crops.first { it.position == 5 }
+
+        assertEquals(415, previous.bounds.bottom)
+        assertEquals(460.0, last.structuralCenterYInSource!!, 0.0)
+        assertEquals(415, last.bounds.top)
+        assertEquals(505, last.bounds.bottom)
+        assertEquals(90, last.bounds.bottom - last.bounds.top)
+    }
+
+    @Test
+    fun fallbackThreeLeftReconstructsFirstPositionAboveNextCompletePosition() {
+        val result = availableResult(
+            evidence = leftFallbackThreeEvidenceWithSingletonCenters(
+                singletonCenters = mapOf(1 to 115),
+            ),
+        )
+        val first = result.crops.first { it.position == 1 }
+        val next = result.crops.first { it.position == 2 }
+
+        assertEquals(145, next.bounds.top)
+        assertEquals(100.0, first.structuralCenterYInSource!!, 0.0)
+        assertEquals(55, first.bounds.top)
+        assertEquals(145, first.bounds.bottom)
+    }
+
+    @Test
+    fun fallbackThreeLeftKeepsAtMostFivePixelSingletonOverlapCentered() {
+        val result = availableResult(
+            evidence = leftFallbackThreeEvidenceWithSingletonCenters(
+                singletonCenters = mapOf(5 to 458),
+            ),
+        )
+        val singleton = result.crops.first { it.position == 5 }
+
+        assertEquals(458.0, singleton.structuralCenterYInSource!!, 0.0)
     }
 
     @Test
@@ -1297,6 +1567,33 @@ class MatchResultPositionCropTest {
     }
 
     @Test
+    fun validExistingGeometryWinsWhenFallbackThreeEvidenceIsAlsoAvailable() {
+        val fallbackEvidence = fallbackThreeEvidence(
+            includeFourthColumn = true,
+            rightAnchorPositions = listOf(6, 7),
+        )
+        val result = availableResult(
+            evidence = fallbackEvidence.copy(
+                observations = fallbackEvidence.observations + listOf(
+                    observation("4", 50, 285, 75, 315),
+                    observation("5", 50, 385, 75, 415),
+                ),
+            ),
+        )
+
+        assertEquals(MatchResultPositionPitchSource.LEFT_FOUR_TO_FIVE, result.leftPitchSource)
+        assertEquals(MatchResultPositionPitchSource.RIGHT_CONSECUTIVE, result.rightPitchSource)
+        assertNotEquals(
+            MatchResultPositionPitchSource.FALLBACK_THREE_ELIMINATION_GEOMETRY,
+            result.leftPitchSource,
+        )
+        assertNotEquals(
+            MatchResultPositionPitchSource.FALLBACK_THREE_ELIMINATION_GEOMETRY,
+            result.rightPitchSource,
+        )
+    }
+
+    @Test
     fun eliminationGroupingAcceptsMixedPairSingletonPairGapFamilies() {
         assertEquals(
             listOf("NORMAL_PAIR", "SINGLETON", "NORMAL_PAIR"),
@@ -1378,6 +1675,63 @@ class MatchResultPositionCropTest {
 
         assertEquals(1, leftGroups.count { it == "NORMAL_PAIR" })
         assertEquals(1, rightGroups.count { it == "NORMAL_PAIR" })
+    }
+
+    @Test
+    fun fallbackThreeLeftFailsClosedWhenSingletonOverlapsBothReliableNeighbors() {
+        val calculatorClass = MatchResultPositionCropCalculator::class.java
+        val packageName = requireNotNull(calculatorClass.`package`).name
+        val groupKindClass = Class.forName("$packageName.FallbackThreeGroupKind")
+        val verticalGroupClass = Class.forName("$packageName.FallbackThreeVerticalGroup")
+        val resolvedGroupClass = Class.forName("$packageName.FallbackThreeResolvedGroup")
+        val normalPair = groupKindClass
+            .getDeclaredMethod("valueOf", String::class.java)
+            .invoke(null, "NORMAL_PAIR")
+        val singleton = groupKindClass
+            .getDeclaredMethod("valueOf", String::class.java)
+            .invoke(null, "SINGLETON")
+        val verticalConstructor = verticalGroupClass.declaredConstructors
+            .single { it.parameterTypes.size == 5 }
+            .apply { isAccessible = true }
+        val resolvedConstructor = resolvedGroupClass.declaredConstructors
+            .single { it.parameterTypes.size == 3 }
+            .apply { isAccessible = true }
+        val previousComplete = verticalConstructor.newInstance(
+            normalPair,
+            emptyList<RawOcrBoundingBox>(),
+            190.0,
+            150,
+            230,
+        )
+        val ambiguousSingleton = verticalConstructor.newInstance(
+            singleton,
+            emptyList<RawOcrBoundingBox>(),
+            240.0,
+            null,
+            null,
+        )
+        val nextComplete = verticalConstructor.newInstance(
+            normalPair,
+            emptyList<RawOcrBoundingBox>(),
+            290.0,
+            250,
+            330,
+        )
+        val resolvedGroups = listOf(
+            resolvedConstructor.newInstance(2, previousComplete, null),
+            resolvedConstructor.newInstance(3, ambiguousSingleton, null),
+            resolvedConstructor.newInstance(4, nextComplete, null),
+        )
+        val resolveMethod = calculatorClass.getDeclaredMethod(
+            "resolveFallbackThreeLeftSingletons",
+            List::class.java,
+            java.lang.Double.TYPE,
+            Double::class.javaObjectType,
+        ).apply { isAccessible = true }
+
+        val resolved = resolveMethod.invoke(calculator, resolvedGroups, 80.0, 80.0)
+
+        assertNull(resolved)
     }
 
     private fun available(
@@ -1527,6 +1881,55 @@ class MatchResultPositionCropTest {
         )
     }
 
+    private fun rightReferenceFallbackThreeEvidence(
+        c3Bounds: List<Pair<Int, Int>>,
+    ): MatchResultAutoCropEvidence {
+        val base = fallbackThreeEvidence(
+            includeFourthColumn = true,
+            includeThirdColumn = false,
+            rightAnchorPositions = emptyList(),
+        )
+        return base.copy(
+            observations = base.observations + c3Bounds.map { (top, bottom) ->
+                observation("Eliminations", 820, top, 900, bottom)
+            },
+        )
+    }
+
+    private fun deviceLikeRightReferenceFallbackThreeEvidence(): MatchResultAutoCropEvidence {
+        val pairUpperTops = listOf(90, 231, 373, 514, 656)
+        val leftColumns = listOf(260 to 340, 520 to 600).flatMap { (left, right) ->
+            pairUpperTops.flatMap { upperTop ->
+                listOf(
+                    observation("Eliminations", left, upperTop, right, upperTop + 20),
+                    observation("Eliminations", left, upperTop + 57, right, upperTop + 77),
+                )
+            }
+        }
+        val c3Bounds = listOf(
+            90 to 110,
+            140 to 159,
+            210 to 229,
+            263 to 282,
+            333 to 352,
+            384 to 403,
+            454 to 473,
+            504 to 524,
+            574 to 594,
+            623 to 643,
+        )
+        val c3 = c3Bounds.map { (top, bottom) ->
+            observation("Eliminations", 820, top, 900, bottom)
+        }
+        val c4 = listOf(128, 270, 412, 553, 695).map { center ->
+            observation("Eliminations", 1_080, center - 15, 1_160, center + 15)
+        }
+        return MatchResultAutoCropEvidence(
+            observations = leftColumns + c3 + c4,
+            imageDimensions = OcrImageDimensions(width = 1_200, height = 900),
+        )
+    }
+
     private fun eliminationObservations(): List<MatchResultAutoCropObservation> = listOf(
         observation("Eliminations", 250, 40, 340, 70),
         observation("Eliminations", 252, 220, 342, 250),
@@ -1664,6 +2067,38 @@ class MatchResultPositionCropTest {
         val height = heights[index]
         val top = (center - height / 2.0).toInt()
         observation(label, left, top, right, top + height)
+    }
+
+    private fun leftFallbackThreeEvidenceWithSingletonCenters(
+        singletonCenters: Map<Int, Int>,
+    ): MatchResultAutoCropEvidence {
+        val base = fallbackThreeEvidence(
+            includeFourthColumn = true,
+            includeFirstColumn = false,
+            rightAnchorPositions = emptyList(),
+        )
+        val centers = (1..5).map { 100 + (it - 1) * 90 }
+        val firstColumn = centers.flatMapIndexed { index, center ->
+            val position = index + 1
+            val singletonCenter = singletonCenters[position]
+            if (singletonCenter != null) {
+                listOf(
+                    observation(
+                        text = "Eliminations",
+                        left = 260,
+                        top = singletonCenter - 20,
+                        right = 340,
+                        bottom = singletonCenter + 20,
+                    ),
+                )
+            } else {
+                listOf(
+                    observation("Eliminations", 260, center - 40, 340, center),
+                    observation("Eliminations", 260, center, 340, center + 40),
+                )
+            }
+        }
+        return base.copy(observations = base.observations + firstColumn)
     }
 
     private fun assertEliminationClassifierAccepts(label: String) {

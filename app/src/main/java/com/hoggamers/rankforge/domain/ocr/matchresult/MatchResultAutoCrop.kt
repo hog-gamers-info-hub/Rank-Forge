@@ -65,10 +65,37 @@ private fun String.looksLikeEliminationText(): Boolean {
 
 private fun MatchResultAutoCropEvidence.leftmostEliminationBoundaryX(): Int? = observations
     .asSequence()
-    .filter { it.text.looksLikeEliminationText() }
+    .filter { it.text.eliminationAnchorTextKind() == EliminationAnchorTextKind.CLEAN }
     .mapNotNull { it.usableBoundingBoxOrNull(imageDimensions) }
     .map { it.left }
     .minOrNull()
+
+private enum class EliminationAnchorTextKind {
+    CLEAN,
+    MERGED_PLAYER_PREFIX,
+    NOT_ELIMINATION,
+}
+
+private fun String.eliminationAnchorTextKind(): EliminationAnchorTextKind {
+    val normalized = lowercase().filter { it.isLetterOrDigit() }
+    val eliminationStemIndex = normalized.indexOf(ELIMINATION_BOUNDARY_STEM)
+    if (
+        eliminationStemIndex >= 0 &&
+        normalized.substring(eliminationStemIndex).looksLikeEliminationText()
+    ) {
+        val prefix = normalized.substring(0, eliminationStemIndex)
+        return if (prefix.any { it.isLetter() }) {
+            EliminationAnchorTextKind.MERGED_PLAYER_PREFIX
+        } else {
+            EliminationAnchorTextKind.CLEAN
+        }
+    }
+    return if (looksLikeEliminationText()) {
+        EliminationAnchorTextKind.CLEAN
+    } else {
+        EliminationAnchorTextKind.NOT_ELIMINATION
+    }
+}
 
 class MatchResultAutoCropAnchorDetector {
     fun findAnchorFour(evidence: MatchResultAutoCropEvidence): RawOcrBoundingBox? =
@@ -107,6 +134,8 @@ class MatchResultAutoCropAnchorDetector {
         const val MIN_ANCHOR_TO_ELIMINATION_GAP_WIDTH_FRACTION = 0.10
     }
 }
+
+private const val ELIMINATION_BOUNDARY_STEM = "eliminat"
 
 private data class ResolvedCropGeometry(
     val p5CenterX: Double,
