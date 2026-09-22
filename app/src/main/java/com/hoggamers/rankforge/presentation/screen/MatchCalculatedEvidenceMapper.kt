@@ -208,9 +208,11 @@ internal object MatchCalculatedEvidenceMapper {
             val draft = correctionDraft?.rows?.singleOrNull { row ->
                 row.rowIndex == position - 1
             }
-            val assignedSlot = draft?.assignedTeamSlotDraftValue
-                ?.parseTeamSlotOrNull()
-                ?: reviewRow?.suggestedTeamSlotDisplayValue.parseTeamSlotOrNull()
+            val assignedSlot = if (draft != null) {
+                draft.assignedTeamSlotDraftValue.parseTeamSlotOrNull()
+            } else {
+                reviewRow?.suggestedTeamSlotDisplayValue.parseTeamSlotOrNull()
+            }
             val placement = draft?.placementDraftValue
                 ?.parseTeamSlotOrNull()
                 ?: reviewRow?.detectedPlacementDisplayValue.parseTeamSlotOrNull()
