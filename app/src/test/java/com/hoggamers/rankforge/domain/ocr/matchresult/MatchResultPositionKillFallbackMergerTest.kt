@@ -154,7 +154,7 @@ class MatchResultPositionKillFallbackMergerTest {
         )
         val evidence = listOf(
             ParsedEliminationText(
-                kill = 0,
+                kill = null,
                 playerSuffix = null,
                 markerMatched = true,
                 prefixType = MatchResultEliminationPrefixType.EMPTY_PREFIX,

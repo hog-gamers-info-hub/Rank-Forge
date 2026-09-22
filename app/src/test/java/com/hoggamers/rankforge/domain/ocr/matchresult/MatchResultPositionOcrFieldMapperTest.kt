@@ -26,12 +26,28 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
-    fun eliminationParserNormalizesOAndMissingPrefixToZero() {
+    fun eliminationParserNormalizesOAndLeavesMissingPrefixUnresolved() {
         assertEquals(0, MatchResultPositionSemanticTextParser.parse("O EliminatiokTS ASH!SH!!").kill)
         assertEquals("kTS ASH!SH!!", MatchResultPositionSemanticTextParser.parse("O EliminatiokTS ASH!SH!!").playerSuffix)
-        assertEquals(0, MatchResultPositionSemanticTextParser.parse("EliminationUGZ×SN!PEY").kill)
+        assertNull(MatchResultPositionSemanticTextParser.parse("EliminationUGZ×SN!PEY").kill)
         assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX,
             MatchResultPositionSemanticTextParser.parse("EliminationUGZ×SN!PEY").prefixType)
+    }
+
+    @Test
+    fun markerOnlyEliminationTextPreservesSuffixWithoutResolvingKill() {
+        listOf("Eliminations", "Elimination", "Eliminatio", "Eliminati").forEach { text ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue(parsed.markerMatched)
+            assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, parsed.prefixType)
+            assertNull(parsed.kill)
+        }
+
+        val withSuffix = MatchResultPositionSemanticTextParser.parse("EliminationsPLAYER")
+        assertTrue(withSuffix.markerMatched)
+        assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, withSuffix.prefixType)
+        assertNull(withSuffix.kill)
+        assertEquals("PLAYER", withSuffix.playerSuffix)
     }
 
     @Test
@@ -292,9 +308,24 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun markerOnlyRightKillRemainsCompletelyBlank() {
+        listOf("Eliminations", "Eliminati").forEach { markerOnlyText ->
+            val result = mapper.map(
+                rightInput(position = 7, middle = "PlayerB", right = markerOnlyText),
+            )
+            val kill = result.fields.single { it.id == "KILL_7_3" }
+
+            assertEquals("", kill.ocrText)
+            assertEquals("", kill.resolvedText)
+            assertEquals(MatchResultOcrFieldStatus.EMPTY, kill.status)
+            assertTrue(!result.isAutoAcceptable)
+        }
+    }
+
+    @Test
     fun verifiedKillFallbackFillsOnlyEmptyPpKill() {
         val result = mapper.map(
-            rightInput(position = 7, middle = "PlayerB", left = "", right = "").copy(
+            rightInput(position = 7, middle = "PlayerB", left = "", right = "Eliminations").copy(
                 killVerifications = mapOf(3 to verified(4)),
             ),
         )
@@ -561,8 +592,11 @@ class MatchResultPositionOcrFieldMapperTest {
     @Test
     fun weakMiddleMarkerIsRemovedFromMergedPlayerTextWhileExistingKillFallbackIsPreserved() {
         val result = mapper.map(rightInput(position = 7, middle = "EliminationsPLAYER"))
+        val kill = result.fields.single { it.id == "KILL_7_1" }
 
-        assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        assertEquals("", kill.ocrText)
+        assertEquals("", kill.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.EMPTY, kill.status)
         assertEquals("PLAYER", result.fields.single { it.id == "PLAYER_7_3" }.resolvedText)
         val boundary = requireNotNull(result.playerBoundaryEvidence[3])
         assertTrue(!boundary.boundaryAccepted)

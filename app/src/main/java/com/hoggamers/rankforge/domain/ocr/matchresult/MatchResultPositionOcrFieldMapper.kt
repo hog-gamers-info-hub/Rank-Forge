@@ -302,13 +302,7 @@ class MatchResultPositionOcrFieldMapper {
 
     private fun parseSharedMiddleElimination(line: RawOcrLine): ParsedEliminationText? {
         val parsed = line.text.parseElimination()
-        if (
-            parsed.markerMatched &&
-            (
-                parsed.prefixType == MatchResultEliminationPrefixType.O_NORMALIZED && parsed.kill == 0 ||
-                    parsed.prefixType == MatchResultEliminationPrefixType.EXPLICIT_NUMERIC && parsed.kill != null
-                )
-        ) {
+        if (parsed.isResolvedKill()) {
             return parsed
         }
 
@@ -391,9 +385,9 @@ class MatchResultPositionOcrFieldMapper {
         parsed: ParsedEliminationText?,
         verification: MatchResultNumericVerification?,
     ): MatchResultOcrField {
-        val ppResolved = parsed?.markerMatched == true
+        val ppResolved = parsed?.isResolvedKill() == true
         val ppRawText = parsed?.rawText.orEmpty()
-        val ppKill = parsed?.kill ?: 0
+        val ppKill = parsed?.kill
         val ppPrefixType = parsed?.prefixType
         val fallback = verification as? MatchResultNumericVerification.Verified
         return field(
@@ -412,7 +406,7 @@ class MatchResultPositionOcrFieldMapper {
                 else -> ""
             },
             resolvedText = when {
-                ppResolved -> ppKill.toString()
+                ppResolved -> ppKill?.toString().orEmpty()
                 fallback != null -> fallback.value.toString()
                 else -> ""
             },
@@ -456,9 +450,7 @@ class MatchResultPositionOcrFieldMapper {
     ): PlayerBoundaryResolution {
         val parsedLines = middleLines.map { line -> line to line.text.parseElimination() }
         val strong = parsedLines.firstOrNull { (_, parsed) ->
-            parsed.markerMatched &&
-                (parsed.prefixType == MatchResultEliminationPrefixType.O_NORMALIZED ||
-                    (parsed.prefixType == MatchResultEliminationPrefixType.EXPLICIT_NUMERIC && parsed.kill != null))
+            parsed.isResolvedKill()
         }
         if (strong != null) {
             return PlayerBoundaryResolution(
@@ -624,7 +616,7 @@ object MatchResultPositionSemanticTextParser {
             kill = when (prefixType) {
                 MatchResultEliminationPrefixType.O_NORMALIZED -> 0
                 MatchResultEliminationPrefixType.EXPLICIT_NUMERIC -> prefix.toIntOrNull()
-                MatchResultEliminationPrefixType.EMPTY_PREFIX -> 0
+                MatchResultEliminationPrefixType.EMPTY_PREFIX -> null
             },
             playerSuffix = match.groupValues[3].trim().ifBlank { null },
             markerMatched = true,
@@ -636,6 +628,13 @@ object MatchResultPositionSemanticTextParser {
 
     fun suffixAfterElimination(text: String): String = parse(text).playerSuffix.orEmpty()
 }
+
+internal fun ParsedEliminationText.isResolvedKill(): Boolean =
+    markerMatched && when (prefixType) {
+        MatchResultEliminationPrefixType.EXPLICIT_NUMERIC -> kill != null
+        MatchResultEliminationPrefixType.O_NORMALIZED -> kill == 0
+        MatchResultEliminationPrefixType.EMPTY_PREFIX -> false
+    }
 
 private fun RawOcrLine.centerX(): Double = geometry?.boundingBox?.let { (it.left + it.right) / 2.0 } ?: -1.0
 private fun RawOcrLine.centerY(): Double = geometry?.boundingBox?.let { (it.top + it.bottom) / 2.0 } ?: -1.0

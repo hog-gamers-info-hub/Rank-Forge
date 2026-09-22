@@ -113,11 +113,8 @@ class MatchResultMlKitKillFallbackResolver {
 
     private fun parseStrongValue(text: String): MatchResultNumericCandidate? {
         val parsed = MatchResultPositionSemanticTextParser.parse(text)
-        if (parsed.markerMatched &&
-            parsed.kill != null &&
-            parsed.prefixType != MatchResultEliminationPrefixType.EMPTY_PREFIX
-        ) {
-            return candidate(text, parsed.kill)
+        if (parsed.isResolvedKill()) {
+            return candidate(text, parsed.kill!!)
         }
         return NUMERIC_PREFIX_PATTERN.find(text)?.groupValues?.get(1)?.let { prefix ->
             val value = if (prefix.equals("O", ignoreCase = true)) 0 else prefix.toIntOrNull()
@@ -127,8 +124,8 @@ class MatchResultMlKitKillFallbackResolver {
 
     private fun parseValue(text: String): MatchResultNumericCandidate? {
         val parsed = MatchResultPositionSemanticTextParser.parse(text)
-        if (parsed.markerMatched && parsed.kill != null) {
-            return candidate(text, parsed.kill)
+        if (parsed.isResolvedKill()) {
+            return candidate(text, parsed.kill!!)
         }
         return NUMERIC_PREFIX_PATTERN.find(text)?.groupValues?.get(1)?.let { prefix ->
             val value = if (prefix.equals("O", ignoreCase = true)) 0 else prefix.toIntOrNull()
