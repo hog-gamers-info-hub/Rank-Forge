@@ -276,15 +276,14 @@ object MatchResultOcrPreviewUiStateMapper {
             originalParsedKillValue = totalKillsOrNull(this, allKillsNumeric, killValues),
             originalSuggestedTeamSlot = null,
             allPlayersSemanticallyNotDetected = allPlayersSemanticallyNotDetected(),
-            playerKillEvidence = slots
-                .sortedBy { it.slot }
-                .filter { it.isPlayerKillApplicable() }
-                .map { slot ->
+            playerKillEvidence = (1..4).map { playerSlot ->
+                val slot = slots.firstOrNull { it.slot == playerSlot }
                     MatchOcrReviewPlayerKillEvidenceUiState(
-                        playerSlot = slot.slot,
-                        originalKillsValue = slot.killText,
+                        playerSlot = playerSlot,
+                        originalKillsValue = slot?.killText.orEmpty(),
+                        isPlayerDetected = slot?.isPlayerKillApplicable() == true,
                     )
-                },
+            },
         )
     }
 
@@ -374,6 +373,7 @@ data class MatchOcrReviewRowUiState(
 data class MatchOcrReviewPlayerKillEvidenceUiState(
     val playerSlot: Int,
     val originalKillsValue: String,
+    val isPlayerDetected: Boolean = true,
 )
 
 data class MatchOcrReviewTeamSlotCandidateUiState(

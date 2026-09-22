@@ -67,7 +67,7 @@ class MatchOcrReviewPreviewMappingTest {
 
         assertEquals((1..10).toList(), result.rows.map { it.position })
         assertEquals(
-            listOf(1),
+            listOf(1, 2, 3, 4),
             MatchResultOcrPreviewUiStateMapper.toReviewRows(result)!!.first().playerKillEvidence
                 .map { it.playerSlot },
         )
@@ -110,7 +110,7 @@ class MatchOcrReviewPreviewMappingTest {
     }
 
     @Test
-    fun detectedOnlyPlayerSlotsCreateIndividualKillEvidenceWithoutPositionalShifting() {
+    fun completelyMissingLogicalSlotsCreateOptionalCorrectionEvidence() {
         val preview = MatchResultOcrPreviewUiState.Ready(
             roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
             rows = listOf(
@@ -118,11 +118,8 @@ class MatchOcrReviewPreviewMappingTest {
                     position = 12,
                     role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                     slots = listOf(
-                        previewSlot(1, "P1", "2"),
-                        previewSlot(2, "", "").copy(
-                            playerStatusLabel = MatchResultOcrFieldStatus.EMPTY.name,
-                        ),
-                        previewSlot(3, "P3", "4"),
+                        previewSlot(1, "P1", "3"),
+                        previewSlot(3, "P3", "2"),
                     ),
                 ),
             ),
@@ -132,8 +129,37 @@ class MatchOcrReviewPreviewMappingTest {
 
         val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![11]
 
-        assertEquals(listOf(1, 3), reviewRow.playerKillEvidence.map { it.playerSlot })
-        assertEquals(listOf("2", "4"), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(listOf(1, 2, 3, 4), reviewRow.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("3", "", "2", ""), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(listOf(true, false, true, false), reviewRow.playerKillEvidence.map { it.isPlayerDetected })
+
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow))
+        assertEquals(
+            listOf(1, 2, 3, 4),
+            draft.rows.single().playerKillDrafts.map { it.playerSlot },
+        )
+        assertEquals(
+            listOf(true, false, true, false),
+            draft.rows.single().playerKillDrafts.map { it.isPlayerDetected },
+        )
+
+        val edited = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+            draft = draft,
+            rowIndex = 11,
+            playerSlot = 2,
+            value = "4",
+        )
+        assertEquals("9", edited.rows.single().killsDraftValue)
+        assertTrue(
+            edited.rows.single().playerKillDrafts
+                .single { it.playerSlot == 4 }
+                .killsDraftValue
+                .isBlank(),
+        )
+        assertTrue(
+            edited.rows.single().validation.blockers
+                .none { it == MatchOcrReviewCorrectionReason.MISSING_KILLS },
+        )
     }
 
     @Test
@@ -183,8 +209,8 @@ class MatchOcrReviewPreviewMappingTest {
         assertEquals("P1 Alpha, P2 Bravo", first.detectedPlayerNameEvidenceLabel)
         assertEquals("5", first.detectedKillDisplayValue)
         assertEquals(5, first.originalParsedKillValue)
-        assertEquals(listOf(1, 2), first.playerKillEvidence.map { it.playerSlot })
-        assertEquals(listOf("2", "3"), first.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(listOf(1, 2, 3, 4), first.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("2", "3", "", ""), first.playerKillEvidence.map { it.originalKillsValue })
         assertEquals("Unavailable", first.suggestedTeamSlotDisplayValue)
         assertEquals(MatchOcrReviewSeverity.BLOCKING, first.severity)
         assertTrue(first.blockerLabels.any { it.contains("Team assignment") })
@@ -212,6 +238,7 @@ class MatchOcrReviewPreviewMappingTest {
 
         val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![9]
         assertEquals(listOf("4", "", "1", "3"), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(listOf(true, true, true, true), reviewRow.playerKillEvidence.map { it.isPlayerDetected })
         assertEquals(null, reviewRow.originalParsedKillValue)
 
         val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow))
@@ -251,8 +278,8 @@ class MatchOcrReviewPreviewMappingTest {
         val reviewRow = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!![10]
 
         assertEquals("11", reviewRow.expectedPlacementLabel)
-        assertEquals(listOf(1, 2), reviewRow.playerKillEvidence.map { it.playerSlot })
-        assertEquals(listOf("2", ""), reviewRow.playerKillEvidence.map { it.originalKillsValue })
+        assertEquals(listOf(1, 2, 3, 4), reviewRow.playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf("2", "", "", ""), reviewRow.playerKillEvidence.map { it.originalKillsValue })
         assertEquals(null, reviewRow.originalParsedKillValue)
     }
 

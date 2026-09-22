@@ -253,8 +253,12 @@ class MatchOcrReviewViewModelTest {
             preview.rows.single().slots.map { it.playerText },
         )
         assertEquals(listOf("2", "", "", ""), preview.rows.single().slots.map { it.killText })
-        assertEquals(listOf(1), row.playerKillEvidence.map { it.playerSlot })
-        assertEquals(listOf(1), state.correctionDraft!!.rows.single().playerKillDrafts.map { it.playerSlot })
+        assertEquals(listOf(1, 2, 3, 4), row.playerKillEvidence.map { it.playerSlot })
+        assertEquals(
+            listOf(true, false, false, false),
+            row.playerKillEvidence.map { it.isPlayerDetected },
+        )
+        assertEquals(listOf(1, 2, 3, 4), state.correctionDraft!!.rows.single().playerKillDrafts.map { it.playerSlot })
         assertEquals(0, resultRunnerCalls)
     }
 
@@ -365,7 +369,7 @@ class MatchOcrReviewViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertEquals(listOf(1, 2, 3), state.rows.first().playerKillEvidence.map { it.playerSlot })
+        assertEquals(listOf(1, 2, 3, 4), state.rows.first().playerKillEvidence.map { it.playerSlot })
     }
 
     @Test
