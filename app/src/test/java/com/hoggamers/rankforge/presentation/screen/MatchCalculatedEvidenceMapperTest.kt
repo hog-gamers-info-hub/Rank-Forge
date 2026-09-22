@@ -23,6 +23,7 @@ import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,6 +56,103 @@ class MatchCalculatedEvidenceMapperTest {
         assertEquals(listOf(true, false, true, false), result.playerKillApplicable)
         assertEquals(listOf(2, null, 5, null), result.playerKills)
         assertEquals(7, result.totalKills)
+    }
+
+    @Test
+    fun blankCorrectionDraftAssignmentPersistsNullInsteadOfSuggestedSlot() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val reviewRow = reviewRow(12).copy(
+            suggestedTeamSlotDisplayValue = "8",
+            originalSuggestedTeamSlot = null,
+        )
+        val ocrState = sourceOcrState.copy(
+            rows = listOf(reviewRow),
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow)),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 12 }
+
+        assertEquals(null, result.slotNumber)
+        assertEquals(null, result.teamName)
+    }
+
+    @Test
+    fun acceptedManualCorrectionPersistsInsteadOfSuggestedSlot() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val reviewRow = reviewRow(12).copy(
+            suggestedTeamSlotDisplayValue = "8",
+            originalSuggestedTeamSlot = 8,
+        )
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow))
+        val ocrState = sourceOcrState.copy(
+            rows = listOf(reviewRow),
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+                initialDraft,
+                rowIndex = 11,
+                value = "5",
+            ),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 12 }
+
+        assertEquals(5, result.slotNumber)
+    }
+
+    @Test
+    fun acceptedAutomaticAssignmentStillPersistsNormally() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val reviewRow = reviewRow(12).copy(
+            suggestedTeamSlotDisplayValue = "9",
+            originalSuggestedTeamSlot = 9,
+        )
+        val ocrState = sourceOcrState.copy(
+            rows = listOf(reviewRow),
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(reviewRow)),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 12 }
+
+        assertEquals(9, result.slotNumber)
+    }
+
+    @Test
+    fun blankAcceptedSlotRemainsUnassignedAfterCalculatedEvidenceRestore() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val reviewRows = listOf(
+            reviewRow(2).copy(
+                suggestedTeamSlotDisplayValue = "8",
+                originalSuggestedTeamSlot = null,
+            ),
+            reviewRow(8).copy(
+                suggestedTeamSlotDisplayValue = "8",
+                originalSuggestedTeamSlot = 8,
+            ),
+        )
+        val ocrState = sourceOcrState.copy(
+            rows = reviewRows,
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(reviewRows),
+        )
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+
+        assertEquals(null, evidence.result.positions.single { it.position == 2 }.slotNumber)
+        assertEquals(8, evidence.result.positions.single { it.position == 8 }.slotNumber)
+
+        val restored = evidence.toRestoredOcrReviewUiState(
+            tournamentId = "tournament-1",
+            matchId = "match-1",
+            teamNamesBySlot = emptyMap(),
+        ) as MatchOcrReviewUiState.Ready
+        val restoredDraft = requireNotNull(restored.correctionDraft)
+        val restoredUnassigned = restoredDraft.rows.single { it.rowIndex == 1 }
+        val restoredAssigned = restoredDraft.rows.single { it.rowIndex == 7 }
+
+        assertEquals("", restoredUnassigned.assignedTeamSlotDraftValue)
+        assertTrue(restoredUnassigned.validation.blockers.contains(MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT))
+        assertEquals("8", restoredAssigned.assignedTeamSlotDraftValue)
+        assertFalse(restoredAssigned.validation.blockers.contains(MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT))
     }
 
     @Test
