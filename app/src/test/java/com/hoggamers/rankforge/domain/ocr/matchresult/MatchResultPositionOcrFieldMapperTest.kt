@@ -165,6 +165,93 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun positionSevenPlayerTwoFragmentsUseHorizontalOrderDespiteVerticalJitter() {
+        val result = mapper.map(
+            fragmentedPlayerInput(
+                position = 7,
+                rowIndex = 2,
+                rowTop = 100,
+                rowBottom = 200,
+                lines = listOf(
+                    line("GTS", 735, 127, 773, 149),
+                    line("FARHAN", 771, 125, 843, 150),
+                ),
+            ),
+        )
+
+        assertEquals("GTS FARHAN", result.fields.single { it.id == "PLAYER_7_2" }.resolvedText)
+    }
+
+    @Test
+    fun positionTenPlayerOneFragmentsUseHorizontalOrderDespiteVerticalJitter() {
+        val result = mapper.map(
+            fragmentedPlayerInput(
+                position = 10,
+                rowIndex = 1,
+                rowTop = 300,
+                rowBottom = 400,
+                lines = listOf(
+                    line("SANULive", 781, 333, 860, 357),
+                    line("MRG", 737, 334, 794, 359),
+                ),
+            ),
+        )
+
+        assertEquals("MRG SANULive", result.fields.single { it.id == "PLAYER_10_1" }.resolvedText)
+    }
+
+    @Test
+    fun sameYPlayerFragmentsUseHorizontalOrder() {
+        val result = mapper.map(
+            fragmentedPlayerInput(
+                position = 7,
+                rowIndex = 1,
+                rowTop = 0,
+                rowBottom = 50,
+                lines = listOf(
+                    line("PLAYER", 180, 10, 260, 30),
+                    line("TEAM", 80, 10, 170, 30),
+                ),
+            ),
+        )
+
+        assertEquals("TEAM PLAYER", result.fields.single { it.id == "PLAYER_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun singlePlayerFragmentRemainsUnchanged() {
+        val result = mapper.map(
+            fragmentedPlayerInput(
+                position = 7,
+                rowIndex = 1,
+                rowTop = 0,
+                rowBottom = 50,
+                lines = listOf(line("SINGLEPLAYER", 80, 10, 260, 30)),
+            ),
+        )
+
+        assertEquals("SINGLEPLAYER", result.fields.single { it.id == "PLAYER_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun earlyPositionPlayerFragmentsUseHorizontalOrderDespiteVerticalJitter() {
+        val result = mapper.map(
+            fragmentedPlayerInput(
+                position = 5,
+                rowIndex = 1,
+                rowTop = 0,
+                rowBottom = 50,
+                lines = listOf(
+                    line("SHYAMLIVE", 251, 9, 400, 30),
+                    line("MG", 200, 10, 250, 31),
+                ),
+            ),
+        )
+
+        assertEquals("MG SHYAMLIVE", result.fields.single { it.id == "PLAYER_5_1" }.resolvedText)
+    }
+
+    @Test
     fun mergedMiddleAndRightTextMapKillsToSlotsByRow() {
         val result = mapper.map(
             MatchResultPositionOcrInput(
@@ -771,7 +858,7 @@ class MatchResultPositionOcrFieldMapperTest {
         )
 
         assertEquals(
-            "Svt vC3 Eliminatox",
+            "Eliminatox Svt vC3",
             result.fields.single { it.id == "PLAYER_5_3" }.resolvedText,
         )
     }
@@ -960,6 +1047,28 @@ class MatchResultPositionOcrFieldMapperTest {
         rowCrops = listOf(row(1, 0, 100), row(2, 100, 200)),
         placementVerification = unresolved(),
         killVerifications = killVerifications,
+    )
+
+    private fun fragmentedPlayerInput(
+        position: Int,
+        rowIndex: Int,
+        rowTop: Int,
+        rowBottom: Int,
+        lines: List<RawOcrLine>,
+    ) = MatchResultPositionOcrInput(
+        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        position = position,
+        cropWidth = 2200,
+        cropHeight = 500,
+        blocks = block(*lines.toTypedArray()),
+        rowCrops = listOf(
+            MatchResultPositionRowCrop(
+                rowIndex,
+                OcrPixelCropRect(0, rowTop, 2200, rowBottom),
+            ),
+        ),
+        placementVerification = unresolved(),
+        killVerifications = emptyMap(),
     )
 
     private fun singleRowInput(rowIndex: Int) = MatchResultPositionOcrInput(

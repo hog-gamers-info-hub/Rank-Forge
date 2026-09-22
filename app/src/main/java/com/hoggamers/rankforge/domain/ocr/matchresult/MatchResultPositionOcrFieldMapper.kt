@@ -215,7 +215,7 @@ class MatchResultPositionOcrFieldMapper {
                     it.text.parseElimination().markerMatched
             }?.text?.let(MatchResultPositionSemanticTextParser::parse)
             return SlotSemantic(
-                playerText = playerLines.joinToString(" ") { it.text.trim() }.trim()
+                playerText = playerLines.sortedForPlayerText().joinToString(" ") { it.text.trim() }.trim()
                     .ifBlank { if (!first) elimination?.playerSuffix.orEmpty() else "" },
                 elimination = elimination,
             )
@@ -233,7 +233,7 @@ class MatchResultPositionOcrFieldMapper {
                     !it.text.parseElimination().markerMatched
             }
             return SlotSemantic(
-                playerText = playerLines.joinToString(" ") { it.text.trim() }.trim(),
+                playerText = playerLines.sortedForPlayerText().joinToString(" ") { it.text.trim() }.trim(),
                 elimination = middleElimination,
             )
         }
@@ -425,6 +425,15 @@ class MatchResultPositionOcrFieldMapper {
             },
         )
     }
+
+    private fun List<RawOcrLine>.sortedForPlayerText(): List<RawOcrLine> =
+        sortedWith(
+            compareBy<RawOcrLine> {
+                it.geometry?.boundingBox?.left ?: Int.MAX_VALUE
+            }.thenBy {
+                it.geometry?.boundingBox?.top ?: Int.MAX_VALUE
+            },
+        )
 
     private data class SlotSemantic(
         val playerText: String,
