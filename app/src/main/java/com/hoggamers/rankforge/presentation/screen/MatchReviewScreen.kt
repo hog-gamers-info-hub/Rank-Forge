@@ -2376,37 +2376,24 @@ private fun MatchReviewContent(
     }
 
     if (showDeleteConfirmation && !uiState.isDeleting) {
-        AlertDialog(
+        PointIqConfirmationDialog(
             modifier = Modifier.testTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG),
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(stringResource(R.string.match_review_delete_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.match_review_delete_message,
-                        uiState.matchNumber ?: 0,
-                    ),
-                )
+            title = stringResource(R.string.match_review_delete_title),
+            message = stringResource(
+                R.string.match_review_delete_message,
+                uiState.matchNumber ?: 0,
+            ),
+            onDismiss = { showDeleteConfirmation = false },
+            dismissLabel = stringResource(R.string.cancel_action),
+            onConfirm = {
+                showDeleteConfirmation = false
+                onDeleteMatch()
             },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteConfirmation = false },
-                    modifier = Modifier.testTag(MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.cancel_action))
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmation = false
-                        onDeleteMatch()
-                    },
-                    modifier = Modifier.testTag(MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG),
-                ) {
-                    Text(stringResource(R.string.match_review_delete_confirm_action))
-                }
-            },
+            confirmLabel = stringResource(R.string.match_review_delete_confirm_action),
+            destructive = true,
+            dismissModifier = Modifier.testTag(MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG),
+            confirmModifier = Modifier.testTag(MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG),
         )
     }
 
