@@ -3534,6 +3534,13 @@ class MatchReviewViewModel @Inject constructor(
             }
             return
         }
+        val existingPreviewState = _uiState.value.resultPositionCropPreviews[storedRole]
+        if (
+            resultPositionCropInputs[storedRole] == inputKey &&
+            existingPreviewState is MatchResultPositionCropPreviewState.Available
+        ) {
+            return
+        }
         if (resultPositionCropJobs[storedRole]?.isActive == true && resultPositionCropInputs[storedRole] == inputKey) return
 
         resultPositionCropJobs.remove(storedRole)?.cancel()
