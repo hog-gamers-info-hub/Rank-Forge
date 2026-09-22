@@ -81,7 +81,7 @@ class MatchResultPositionKillFallbackMerger {
             val baseKill = baseKills[slot]
             val evidence = fallback.basicKillEvidence[slot]
             val fallbackKill = fallbackKills[slot]
-            val strongEvidence = evidence?.takeIf { it.isStrongNumericKill() }
+            val strongEvidence = evidence?.takeIf { it.isResolvedKill() }
             if (
                 basePlayer == null || basePlayer.resolvedText.isBlank() ||
                 baseKill == null || baseKill.resolvedText.isNotBlank() ||
@@ -132,12 +132,6 @@ class MatchResultPositionKillFallbackMerger {
         )
     }
 }
-
-private fun ParsedEliminationText?.isStrongNumericKill(): Boolean =
-    this?.markerMatched == true && (
-        prefixType == MatchResultEliminationPrefixType.EXPLICIT_NUMERIC && kill != null ||
-            prefixType == MatchResultEliminationPrefixType.O_NORMALIZED && kill == 0
-        )
 
 private fun ParsedEliminationText.toPositionPpKillStatus(): MatchResultOcrFieldStatus = when (prefixType) {
     MatchResultEliminationPrefixType.O_NORMALIZED -> MatchResultOcrFieldStatus.O_NORMALIZED_TO_0
