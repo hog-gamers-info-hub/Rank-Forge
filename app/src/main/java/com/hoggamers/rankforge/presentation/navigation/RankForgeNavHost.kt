@@ -774,10 +774,11 @@ fun RankForgeNavHost(
                     },
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
                         navController.navigate(
-                            CustomDesignSetupDestination(
+                            DownloadResultDestination(
                                 tournamentId = tournamentId,
                                 matchId = matchId,
-                                downloadScope = scope.name,
+                                initialDesign = DownloadResultDesignType.IMAGE.name,
+                                initialDownloadScope = scope.name,
                             ),
                         )
                     },
@@ -803,10 +804,11 @@ fun RankForgeNavHost(
                     },
                     onOpenCustomDesignSetup = { tournamentId, matchId, scope ->
                         navController.navigate(
-                            CustomDesignSetupDestination(
+                            DownloadResultDestination(
                                 tournamentId = tournamentId,
                                 matchId = matchId,
-                                downloadScope = scope.name,
+                                initialDesign = DownloadResultDesignType.IMAGE.name,
+                                initialDownloadScope = scope.name,
                             ),
                         )
                     },
@@ -858,12 +860,13 @@ fun RankForgeNavHost(
                     DownloadResultSelection.Overall
                 },
                 onBack = onBack,
-                onOpenCustomDesignSetup = { matchId, scope ->
+                onOpenCustomDesignSetup = { matchId, scope, candidateUri ->
                     navController.navigate(
                         CustomDesignSetupDestination(
                             tournamentId = destination.tournamentId,
                             matchId = matchId,
                             downloadScope = scope.name,
+                            candidateUri = candidateUri,
                         ),
                     )
                 },
@@ -872,6 +875,7 @@ fun RankForgeNavHost(
         composable<CustomDesignSetupDestination> { backStackEntry ->
             val destination = backStackEntry.toRoute<CustomDesignSetupDestination>()
             CustomDesignSetupRoute(
+                candidateUri = destination.candidateUri,
                 onBack = { navController.popBackStack() },
                 onSaveSuccessConfirmed = {
                     val downloadDestination = DownloadResultDestination(

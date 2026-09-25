@@ -62,16 +62,13 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
-    fun uploadRequestRejectsEveryBlankLabelBeforeOpeningPicker() {
+    fun uploadRequestAllowsBlankLabelsBeforeOpeningPicker() {
         val viewModel = viewModel()
 
         viewModel.requestPhotoPicker()
 
-        assertEquals(
-            CustomDesignLabelField.entries.toSet(),
-            viewModel.uiState.value.validationErrors,
-        )
-        assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
+        assertTrue(viewModel.uiState.value.isPhotoPickerLaunchPending)
         assertFalse(viewModel.uiState.value.hasUsableDraft)
     }
 
@@ -85,7 +82,10 @@ class CustomDesignSetupViewModelTest {
 
         advanceUntilIdle()
 
-        assertEquals(CustomDesignSetupUiState(), viewModel.uiState.value)
+        assertEquals(
+            CustomDesignSetupUiState(isInitialSavedDesignDiscoveryComplete = true),
+            viewModel.uiState.value,
+        )
     }
 
     @Test
@@ -129,7 +129,10 @@ class CustomDesignSetupViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, restoreCalls)
-        assertEquals(CustomDesignSetupUiState(), viewModel.uiState.value)
+        assertEquals(
+            CustomDesignSetupUiState(isInitialSavedDesignDiscoveryComplete = true),
+            viewModel.uiState.value,
+        )
     }
 
     @Test
@@ -178,16 +181,16 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
-    fun uploadRequestWithoutImagePreservesExistingLabelValidation() {
+    fun cancellingPhotoPickerLeavesFreshSetupUsable() {
         val viewModel = viewModel()
 
         viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult(null)
 
-        assertEquals(
-            CustomDesignLabelField.entries.toSet(),
-            viewModel.uiState.value.validationErrors,
-        )
         assertFalse(viewModel.uiState.value.isPhotoPickerLaunchPending)
+        assertEquals(null, viewModel.uiState.value.selectedImageReference)
+        assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
     }
 
     @Test
@@ -310,6 +313,122 @@ class CustomDesignSetupViewModelTest {
     }
 
     @Test
+    fun validImageSelectionWithoutLabelsStartsRawOcrButDoesNotCreateDraft() = runTest {
+        val runner = FakeCustomDesignOcrRunner()
+        val viewModel = viewModel(runner = runner)
+
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult("content://picker/custom-design")
+        advanceUntilIdle()
+
+        assertEquals("content://picker/custom-design", viewModel.uiState.value.selectedImageReference)
+        assertFalse(viewModel.uiState.value.hasUsableDraft)
+        assertEquals(1, runner.sources.size)
+        assertEquals(CustomDesignOcrStatus.COMPLETED, viewModel.uiState.value.ocrStatus)
+    }
+
+    @Test
+    fun typingLabelsRematchesCachedOcrWithoutRerunningIt() = runTest {
+        val runner = FakeCustomDesignOcrRunner(documentWithGridRows())
+        val viewModel = viewModel(runner = runner)
+
+        selectImageWithoutLabels(viewModel)
+        advanceUntilIdle()
+        assertEquals(1, runner.sources.size)
+
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("ELIM.")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+
+        assertEquals(1, runner.sources.size)
+        assertTrue(viewModel.uiState.value.hasUsableDraft)
+        assertTrue(viewModel.uiState.value.isFinalGridReady)
+    }
+
+    @Test
+    fun labelsEnteredBeforeOcrCompletesAreMatchedFromLatestState() = runTest {
+        val result = CompletableDeferred<CustomDesignRawOcrDocument>()
+        val runner = object : CustomDesignOcrRunner {
+            val sources = mutableListOf<CustomDesignOcrSource>()
+
+            override suspend fun recognize(source: CustomDesignOcrSource): CustomDesignRawOcrDocument {
+                sources += source
+                return result.await()
+            }
+        }
+        val viewModel = viewModel(runner = runner)
+
+        selectImageWithoutLabels(viewModel)
+        runCurrent()
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("ELIM.")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+        assertTrue(viewModel.uiState.value.hasUsableDraft)
+        assertFalse(viewModel.uiState.value.isFinalGridReady)
+
+        result.complete(documentWithGridRows())
+        advanceUntilIdle()
+
+        assertEquals(1, runner.sources.size)
+        assertEquals("TOTAL", viewModel.uiState.value.draft?.totalPointsLabel)
+        assertTrue(viewModel.uiState.value.isFinalGridReady)
+    }
+
+    @Test
+    fun progressivePreviewContainsOnlyDetectedColumnsAndNoRows() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithGridRows()))
+
+        selectImageWithoutLabels(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("MISSING")
+        viewModel.onPositionPointsChanged("POS.")
+
+        val progressive = viewModel.uiState.value.previewGridGeometry()
+        assertEquals(
+            setOf(
+                CustomDesignAnchorField.TEAM_NAME,
+                CustomDesignAnchorField.WIN,
+                CustomDesignAnchorField.POSITION_POINTS,
+            ),
+            progressive?.columnX?.keys,
+        )
+        assertTrue(progressive?.rowY?.isEmpty() == true)
+
+        viewModel.onWinChanged("WWCD")
+        assertFalse(
+            CustomDesignAnchorField.WIN in
+                viewModel.uiState.value.previewGridGeometry()!!.columnX,
+        )
+    }
+
+    @Test
+    fun completingFifthLabelSwitchesToCompleteFallbackGridAndRows() = runTest {
+        val viewModel = viewModel(runner = FakeCustomDesignOcrRunner(documentWithGridRows()))
+
+        selectImageWithoutLabels(viewModel)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged("TEAM NAME")
+        viewModel.onWinChanged("WIN")
+        viewModel.onTotalKillsChanged("MISSING")
+        viewModel.onPositionPointsChanged("POS.")
+        viewModel.onTotalPointsChanged("TOTAL")
+
+        val finalPreview = viewModel.uiState.value.previewGridGeometry()
+        assertTrue(viewModel.uiState.value.isFinalGridReady)
+        assertEquals(5, finalPreview?.columnX?.size)
+        assertEquals(12, finalPreview?.rowY?.size)
+        assertTrue(CustomDesignAnchorField.TOTAL_KILLS in finalPreview!!.columnX)
+    }
+
+    @Test
     fun ocrResultPopulatesPartialAnchorState() = runTest {
         val runner = FakeCustomDesignOcrRunner(documentWithHeader("WIN", 700))
         val viewModel = viewModel(runner = runner)
@@ -351,6 +470,7 @@ class CustomDesignSetupViewModelTest {
         assertEquals(null, viewModel.uiState.value.gridGeometry)
         assertEquals(5, viewModel.uiState.value.editableGridGeometry?.columnX?.size)
         assertEquals(12, viewModel.uiState.value.editableGridGeometry?.rowY?.size)
+        assertTrue(viewModel.uiState.value.isFinalGridReady)
     }
 
     @Test
@@ -363,6 +483,7 @@ class CustomDesignSetupViewModelTest {
         assertEquals(1, viewModel.uiState.value.gridGeometry?.columnX?.size)
         assertEquals(5, viewModel.uiState.value.editableGridGeometry?.columnX?.size)
         assertEquals(12, viewModel.uiState.value.editableGridGeometry?.rowY?.size)
+        assertTrue(viewModel.uiState.value.isFinalGridReady)
     }
 
     @Test
@@ -492,6 +613,7 @@ class CustomDesignSetupViewModelTest {
         viewModel.onWinChanged("")
         assertEquals(700f, viewModel.uiState.value.manualGridOverrides.columnX[CustomDesignAnchorField.WIN])
         assertEquals(null, viewModel.uiState.value.gridGeometry)
+        assertTrue(viewModel.uiState.value.previewGridGeometry()?.rowY?.isEmpty() == true)
 
         viewModel.onWinChanged("WINS")
 
@@ -1082,6 +1204,15 @@ class CustomDesignSetupViewModelTest {
         viewModel.onTotalKillsChanged("ELIM.")
         viewModel.onPositionPointsChanged("POS.")
         viewModel.onTotalPointsChanged("TOTAL")
+        viewModel.requestPhotoPicker()
+        viewModel.onPhotoPickerLaunchHandled()
+        viewModel.onPhotoPickerResult(uri)
+    }
+
+    private fun selectImageWithoutLabels(
+        viewModel: CustomDesignSetupViewModel,
+        uri: String = "content://picker/custom-design",
+    ) {
         viewModel.requestPhotoPicker()
         viewModel.onPhotoPickerLaunchHandled()
         viewModel.onPhotoPickerResult(uri)

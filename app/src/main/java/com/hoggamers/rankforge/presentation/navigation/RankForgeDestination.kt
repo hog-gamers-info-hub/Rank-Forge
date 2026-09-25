@@ -93,6 +93,7 @@ data class CustomDesignSetupDestination(
     val tournamentId: String,
     val matchId: String,
     val downloadScope: String,
+    val candidateUri: String,
 )
 
 @Serializable

@@ -26,6 +26,22 @@ class CustomDesignColumnTextColorsTest {
     }
 
     @Test
+    fun customHexValuesAllowOptionalHashAndNormalizeToUppercase() {
+        assertEquals("#F2F0FF", CustomDesignColumnTextColors.normalizeHexColor("#F2F0FF"))
+        assertEquals("#F2F0FF", CustomDesignColumnTextColors.normalizeHexColor("F2F0FF"))
+        assertEquals("#21D4FD", CustomDesignColumnTextColors.normalizeHexColor("21d4fd"))
+        assertEquals("#111111", CustomDesignColumnTextColors.normalizeHexColor("#111111"))
+    }
+
+    @Test
+    fun customHexValuesRejectInvalidLengthsAndCharacters() {
+        listOf("", "#FFF", "#FFFF", "#FFFFFFFF", "#GG0000", "12345", "1234567")
+            .forEach { value ->
+                assertNull(CustomDesignColumnTextColors.normalizeHexColor(value))
+            }
+    }
+
+    @Test
     fun missingExtraAndMalformedColorsAreRejected() {
         val base = CustomDesignAnchorField.entries.associateWith { "#000000" }
         assertNull(CustomDesignColumnTextColors.fromMap(base - CustomDesignAnchorField.WIN))

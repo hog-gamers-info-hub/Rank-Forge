@@ -82,9 +82,14 @@ class CustomDesignSetupViewModel @Inject constructor(
             } catch (_: Throwable) {
                 null
             }
-            if (_uiState.value != CustomDesignSetupUiState()) return@launch
+            if (_uiState.value != CustomDesignSetupUiState()) {
+                _uiState.update { it.copy(isInitialSavedDesignDiscoveryComplete = true) }
+                return@launch
+            }
             if (result is CustomDesignSavedIdDiscoveryResult.Found) {
                 restoreSavedCustomDesign(result.customDesignId)
+            } else {
+                _uiState.update { it.copy(isInitialSavedDesignDiscoveryComplete = true) }
             }
         }
     }
@@ -97,7 +102,8 @@ class CustomDesignSetupViewModel @Inject constructor(
             state.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
             state.deleteStatus == CustomDesignDeleteStatus.DELETING ||
             state.isImageValidationInProgress ||
-            state.isPhotoPickerLaunchPending
+            state.isPhotoPickerLaunchPending ||
+            !state.isFinalGridReady
         ) return
 
         saveNewCustomDesign()
@@ -119,6 +125,7 @@ class CustomDesignSetupViewModel @Inject constructor(
             _uiState.update { it.copy(saveStatus = CustomDesignSaveStatus.FAILED) }
             return
         }
+        if (!state.isFinalGridReady) return
         val request = CustomDesignSaveRequest(
             imageReference = draft.imageReference,
             draftSourceWidth = draft.imageWidth,
@@ -184,7 +191,12 @@ class CustomDesignSetupViewModel @Inject constructor(
         saveGeneration += 1
         rawOcrDocument = null
         val generation = ++restoreGeneration
-        _uiState.update { it.copy(restoreStatus = CustomDesignRestoreStatus.RESTORING) }
+        _uiState.update {
+            it.copy(
+                restoreStatus = CustomDesignRestoreStatus.RESTORING,
+                isInitialSavedDesignDiscoveryComplete = true,
+            )
+        }
         restoreJob = viewModelScope.launch {
             val result = try {
                 customDesignRestoreAction.restore(customDesignId)
@@ -429,13 +441,12 @@ class CustomDesignSetupViewModel @Inject constructor(
         ) {
             return
         }
-        val validationErrors = currentState.requiredLabelErrors()
         _uiState.update {
             it.copy(
-                validationErrors = validationErrors,
+                validationErrors = emptySet(),
                 imageValidationError = null,
                 photoPickerError = null,
-                isPhotoPickerLaunchPending = validationErrors.isEmpty(),
+                isPhotoPickerLaunchPending = true,
             )
         }
     }
@@ -455,7 +466,16 @@ class CustomDesignSetupViewModel @Inject constructor(
 
     fun onPhotoPickerResult(selectedUri: String?) {
         if (isRestoreLocked()) return
-        val uri = selectedUri?.takeIf { it.isNotBlank() } ?: return
+        val uri = selectedUri?.takeIf { it.isNotBlank() }
+        if (uri == null) {
+            _uiState.update {
+                it.copy(
+                    isPhotoPickerLaunchPending = false,
+                    photoPickerError = null,
+                )
+            }
+            return
+        }
         imageValidationJob?.cancel()
         val validationGeneration = ++imageValidationGeneration
         saveJob?.cancel()
@@ -511,7 +531,13 @@ class CustomDesignSetupViewModel @Inject constructor(
                     deleteStatus = CustomDesignDeleteStatus.IDLE,
                 )
             }
-            _uiState.value.draft?.let { draft -> startOcr(draft) }
+            startOcr(
+                CustomDesignOcrSource(
+                    imageReference = uri,
+                    sourceWidth = metadata.width,
+                    sourceHeight = metadata.height,
+                ),
+            )
         }
     }
 
@@ -531,20 +557,17 @@ class CustomDesignSetupViewModel @Inject constructor(
             } else {
                 nextState.copy(saveStatus = CustomDesignSaveStatus.SAVED)
             }
-            if (nextState.draft == null) {
-                nextStateWithSaveStatus.resetOcr(clearManualGridOverrides = false)
-            } else {
-                nextStateWithSaveStatus
-            }
+            nextStateWithSaveStatus
         }
         val currentState = _uiState.value
         val cachedDocument = rawOcrDocument
+        val source = currentState.toOcrSource()
         when {
-            currentState.draft != null && cachedDocument != null -> {
-                rematchCachedOcr(currentState.draft, cachedDocument)
+            source != null && cachedDocument != null -> {
+                rematchCachedOcr(source, cachedDocument)
             }
-            currentState.draft != null && currentState.ocrStatus == CustomDesignOcrStatus.IDLE -> {
-                startOcr(currentState.draft)
+            source != null && currentState.ocrStatus == CustomDesignOcrStatus.IDLE -> {
+                startOcr(source)
             }
         }
     }
@@ -554,7 +577,7 @@ class CustomDesignSetupViewModel @Inject constructor(
             _uiState.value.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
             _uiState.value.deleteStatus == CustomDesignDeleteStatus.DELETING
 
-    private fun startOcr(draft: CustomDesignDraft) {
+    private fun startOcr(source: CustomDesignOcrSource) {
         ocrJob?.cancel()
         ocrGeneration += 1
         val generation = ocrGeneration
@@ -569,29 +592,22 @@ class CustomDesignSetupViewModel @Inject constructor(
         }
         ocrJob = viewModelScope.launch {
             try {
-                val document = customDesignOcrRunner.recognize(
-                    CustomDesignOcrSource(
-                        imageReference = draft.imageReference,
-                        sourceWidth = draft.imageWidth,
-                        sourceHeight = draft.imageHeight,
-                    ),
-                )
+                val document = customDesignOcrRunner.recognize(source)
                 currentCoroutineContext().ensureActive()
                 if (generation != ocrGeneration) return@launch
                 if (
-                    document.sourceWidth != draft.imageWidth ||
-                    document.sourceHeight != draft.imageHeight
+                    document.sourceWidth != source.sourceWidth ||
+                    document.sourceHeight != source.sourceHeight
                 ) {
                     throw IllegalStateException("Custom Design OCR source dimensions changed")
                 }
                 rawOcrDocument = document
-                val currentDraft = _uiState.value.draft ?: return@launch
-                if (!sameImage(currentDraft, draft)) return@launch
-                rematchCachedOcr(currentDraft, document)
+                if (!_uiState.value.matchesOcrSource(source)) return@launch
+                rematchCachedOcr(source, document)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
-                if (generation == ocrGeneration && _uiState.value.draft?.let { sameImage(it, draft) } == true) {
+                if (generation == ocrGeneration && _uiState.value.matchesOcrSource(source)) {
                     _uiState.update {
                         it.copy(
                             ocrStatus = CustomDesignOcrStatus.FAILED,
@@ -599,8 +615,8 @@ class CustomDesignSetupViewModel @Inject constructor(
                             averageRankingBoundingBoxHeightPx = null,
                             gridGeometry = null,
                             editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
-                                sourceWidth = draft.imageWidth,
-                                sourceHeight = draft.imageHeight,
+                                sourceWidth = source.sourceWidth,
+                                sourceHeight = source.sourceHeight,
                                 automatic = null,
                             ),
                         )
@@ -611,19 +627,24 @@ class CustomDesignSetupViewModel @Inject constructor(
     }
 
     private fun rematchCachedOcr(
-        draft: CustomDesignDraft,
+        source: CustomDesignOcrSource,
         document: CustomDesignRawOcrDocument,
     ) {
-        if (!sameImage(draft, document)) return
+        if (!sameImage(source, document) || !_uiState.value.matchesOcrSource(source)) return
+        val state = _uiState.value
         val detection = customDesignAnchorDetector.detectDetailed(
-            sourceWidth = draft.imageWidth,
-            sourceHeight = draft.imageHeight,
-            labels = draft.ocrLabels(),
+            sourceWidth = source.sourceWidth,
+            sourceHeight = source.sourceHeight,
+            labels = state.ocrLabels(),
             blocks = document.blocks,
         )
-        val gridGeometry = customDesignGridBuilder.build(detection)
+        val gridGeometry = if (state.allRequiredLabelsFilled) {
+            customDesignGridBuilder.build(detection)
+        } else {
+            null
+        }
         logDetection(detection)
-        logGridGeometry(gridGeometry)
+        gridGeometry?.let(::logGridGeometry)
         _uiState.update {
             it.copy(
                 ocrStatus = CustomDesignOcrStatus.COMPLETED,
@@ -632,11 +653,15 @@ class CustomDesignSetupViewModel @Inject constructor(
                     detection.acceptedRankingBoundingBoxes,
                 ),
                 gridGeometry = gridGeometry,
-                editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
-                    sourceWidth = draft.imageWidth,
-                    sourceHeight = draft.imageHeight,
-                    automatic = gridGeometry,
-                ),
+                editableGridGeometry = if (gridGeometry != null) {
+                    CustomDesignEditableGridInitializer.initialize(
+                        sourceWidth = source.sourceWidth,
+                        sourceHeight = source.sourceHeight,
+                        automatic = gridGeometry,
+                    )
+                } else {
+                    it.editableGridGeometry
+                },
             )
         }
     }
@@ -667,7 +692,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         )
     }
 
-    private fun CustomDesignDraft.ocrLabels() = CustomDesignOcrLabels(
+    private fun CustomDesignSetupUiState.ocrLabels() = CustomDesignOcrLabels(
         teamName = teamNameLabel,
         win = winLabel,
         totalKills = totalKillsLabel,
@@ -675,13 +700,27 @@ class CustomDesignSetupViewModel @Inject constructor(
         totalPoints = totalPointsLabel,
     )
 
-    private fun sameImage(left: CustomDesignDraft, right: CustomDesignDraft): Boolean =
-        left.imageReference == right.imageReference &&
-            left.imageWidth == right.imageWidth &&
-            left.imageHeight == right.imageHeight
+    private fun CustomDesignSetupUiState.toOcrSource(): CustomDesignOcrSource? =
+        if (selectedImageReference != null && sourceImageWidth != null && sourceImageHeight != null) {
+            CustomDesignOcrSource(
+                imageReference = selectedImageReference,
+                sourceWidth = sourceImageWidth,
+                sourceHeight = sourceImageHeight,
+            )
+        } else {
+            null
+        }
 
-    private fun sameImage(draft: CustomDesignDraft, document: CustomDesignRawOcrDocument): Boolean =
-        draft.imageWidth == document.sourceWidth && draft.imageHeight == document.sourceHeight
+    private fun CustomDesignSetupUiState.matchesOcrSource(source: CustomDesignOcrSource): Boolean =
+        selectedImageReference == source.imageReference &&
+            sourceImageWidth == source.sourceWidth &&
+            sourceImageHeight == source.sourceHeight
+
+    private fun sameImage(
+        source: CustomDesignOcrSource,
+        document: CustomDesignRawOcrDocument,
+    ): Boolean = source.sourceWidth == document.sourceWidth &&
+        source.sourceHeight == document.sourceHeight
 
     private fun logDetection(
         detection: CustomDesignAnchorDetectionResult,

@@ -68,6 +68,19 @@ class CustomDesignAnchorDetectorTest {
     }
 
     @Test
+    fun blankLabelsNeverMatchBlankOcrObservations() {
+        val result = detector.detectDetailed(
+            1080,
+            1350,
+            labels(teamName = ""),
+            block(line(element("", 100, 100, 140, 120))),
+        )
+
+        assertFalse(CustomDesignAnchorField.TEAM_NAME in result.anchors.columnX)
+        assertTrue(CustomDesignAnchorField.TEAM_NAME in result.missingFields)
+    }
+
+    @Test
     fun rankParserAcceptsOnlyOneThroughTwelveWithOptionalLeadingZero() {
         listOf("1" to 1, "01" to 1, "09" to 9, "10" to 10, "12" to 12).forEach { (text, expected) ->
             val anchors = detector.detect(

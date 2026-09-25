@@ -95,6 +95,27 @@ class DownloadResultScreenTest {
         ).assertCountEquals(0)
     }
 
+    @Test
+    fun importYourDesignDelegatesTheCurrentDownloadSelection() {
+        var importedSelection: DownloadResultSelection? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Match("match-1"),
+                    previewState = DownloadResultPreviewState.ImportYourDesign,
+                    onImportYourDesign = { importedSelection = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Import Your Design").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(DownloadResultSelection.Match("match-1"), importedSelection)
+        }
+    }
+
     private fun testPngBytes(): ByteArray {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         return try {
