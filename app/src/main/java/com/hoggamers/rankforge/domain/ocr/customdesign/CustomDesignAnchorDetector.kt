@@ -140,7 +140,8 @@ private data class HeaderObservation(
     val text: String,
     val geometry: CandidateGeometry,
 ) {
-    fun matches(expected: String): Boolean = normalize(text) == normalize(expected)
+    fun matches(expected: String): Boolean =
+        expected.isNotBlank() && normalize(text) == normalize(expected)
 }
 
 private data class RankObservation(

@@ -16,7 +16,13 @@ class CustomDesignColumnTextColors private constructor(
 
     companion object {
         const val DEFAULT_COLOR = "#000000"
-        private val colorPattern = Regex("#[0-9A-Fa-f]{6}")
+        private val colorPattern = Regex("[0-9A-Fa-f]{6}")
+
+        fun normalizeHexColor(value: String): String? {
+            val digits = value.removePrefix("#")
+            if (!colorPattern.matches(digits)) return null
+            return "#${digits.uppercase(Locale.ROOT)}"
+        }
 
         fun allBlack(): CustomDesignColumnTextColors =
             CustomDesignColumnTextColors(
@@ -28,8 +34,7 @@ class CustomDesignColumnTextColors private constructor(
             val normalized = linkedMapOf<CustomDesignAnchorField, String>()
             for (field in CustomDesignAnchorField.entries) {
                 val value = values[field] ?: return null
-                if (!colorPattern.matches(value)) return null
-                normalized[field] = value.uppercase(Locale.ROOT)
+                normalized[field] = normalizeHexColor(value) ?: return null
             }
             return CustomDesignColumnTextColors(normalized)
         }

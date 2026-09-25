@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -621,7 +622,7 @@ fun DownloadResultRoute(
     initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
     initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
     onBack: () -> Unit,
-    onOpenCustomDesignSetup: (String, ResultDownloadScope) -> Unit = { _, _ -> },
+    onOpenCustomDesignSetup: (String, ResultDownloadScope, String) -> Unit = { _, _, _ -> },
     viewModel: DownloadResultViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -637,6 +638,24 @@ fun DownloadResultRoute(
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("image/png"),
         onResult = viewModel::onDestinationResult,
+    )
+    var pendingCustomDesignSelection by remember {
+        mutableStateOf<DownloadResultSelection?>(null)
+    }
+    val customDesignImagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { selectedUri ->
+            val selection = pendingCustomDesignSelection
+            pendingCustomDesignSelection = null
+            val matchId = (selection as? DownloadResultSelection.Match)?.matchId ?: sourceMatchId
+            if (selectedUri != null && selection != null && matchId != null) {
+                onOpenCustomDesignSetup(
+                    matchId,
+                    selection.exportScope,
+                    selectedUri.toString(),
+                )
+            }
+        },
     )
 
     LaunchedEffect(downloadState) {
@@ -677,8 +696,15 @@ fun DownloadResultRoute(
         },
         onImportYourDesign = { selection ->
             val matchId = (selection as? DownloadResultSelection.Match)?.matchId ?: sourceMatchId
-            if (matchId != null) {
-                onOpenCustomDesignSetup(matchId, selection.exportScope)
+            if (pendingCustomDesignSelection == null && matchId != null) {
+                pendingCustomDesignSelection = selection
+                try {
+                    customDesignImagePickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                } catch (_: Exception) {
+                    pendingCustomDesignSelection = null
+                }
             }
         },
         onDeleteSavedCustomDesign = viewModel::deleteSavedCustomDesign,

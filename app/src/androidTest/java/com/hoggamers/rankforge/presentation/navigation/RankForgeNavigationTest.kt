@@ -292,6 +292,7 @@ class RankForgeNavigationTest {
                     tournamentId = "tournament-id",
                     matchId = "match-id",
                     downloadScope = "CURRENT_MATCH",
+                    candidateUri = "content://picker/custom-design",
                 ),
             )
         }
@@ -304,6 +305,7 @@ class RankForgeNavigationTest {
                     tournamentId = "tournament-id",
                     matchId = "match-id",
                     downloadScope = "CURRENT_MATCH",
+                    candidateUri = "content://picker/custom-design",
                 ),
                 navController.currentBackStackEntry?.toRoute<CustomDesignSetupDestination>(),
             )

@@ -7,9 +7,6 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -29,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,7 +41,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -75,6 +75,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -86,8 +87,6 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
-import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridInitializer
-import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.PointIqHomeSystemBars
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
@@ -118,6 +117,8 @@ const val CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG = "custom_design_position
 const val CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG = "custom_design_total_points_color"
 const val CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG = "custom_design_text_color_dialog"
 const val CUSTOM_DESIGN_TEXT_COLOR_OPTION_TEST_TAG_PREFIX = "custom_design_text_color_option_"
+const val CUSTOM_DESIGN_CUSTOM_HEX_FIELD_TEST_TAG = "custom_design_custom_hex_field"
+const val CUSTOM_DESIGN_CUSTOM_HEX_APPLY_TEST_TAG = "custom_design_custom_hex_apply"
 
 private val CustomDesignPointIqDanger = Color(0xFFD92D3A)
 private val CustomDesignPointIqDangerContainer = Color(0xFFFFF5F5)
@@ -130,7 +131,7 @@ private val CustomDesignPointIqCtaBorder = Color(0xFF4AAFF7)
 private val CustomDesignPointIqFieldInactive = Color(0xFF7D9DCE)
 private val CustomDesignPointIqCyan = Color(0xFF17C9F2)
 private const val WATCH_DEMO_URL =
-    "https://youtube.com/shorts/uM3RpjI8fdA?feature=share"
+    "https://youtu.be/fh3UwJ54XNs"
 private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
 
 private data class CustomDesignSelectableTextColor(
@@ -151,30 +152,20 @@ private val CustomDesignSelectableTextColors = listOf(
 
 @Composable
 fun CustomDesignSetupRoute(
+    candidateUri: String,
     onBack: () -> Unit,
     onSaveSuccessConfirmed: () -> Unit = {},
     viewModel: CustomDesignSetupViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { selectedUri ->
-            viewModel.onPhotoPickerResult(selectedUri?.toString())
-        },
-    )
-
-    LaunchedEffect(uiState.isPhotoPickerLaunchPending) {
-        if (!uiState.isPhotoPickerLaunchPending) return@LaunchedEffect
-
-        viewModel.onPhotoPickerLaunchHandled()
-        try {
-            imagePickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-            )
-        } catch (_: Exception) {
-            viewModel.onPhotoPickerLaunchFailed()
+    var submittedCandidateUri by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<String?>(null)
+    }
+    LaunchedEffect(candidateUri) {
+        if (submittedCandidateUri != candidateUri) {
+            submittedCandidateUri = candidateUri
+            viewModel.onPhotoPickerResult(candidateUri)
         }
     }
 
@@ -183,6 +174,11 @@ fun CustomDesignSetupRoute(
 
     CustomDesignSetupScreen(
         uiState = uiState,
+        isCandidatePending = submittedCandidateUri != candidateUri ||
+            (uiState.selectedImageReference == null &&
+                uiState.imageValidationError == null &&
+                uiState.photoPickerError == null),
+        allowManualUpload = false,
         onBack = onBack,
         onTeamNameChanged = viewModel::onTeamNameChanged,
         onWinChanged = viewModel::onWinChanged,
@@ -214,6 +210,8 @@ fun CustomDesignSetupRoute(
 @Composable
 fun CustomDesignSetupScreen(
     uiState: CustomDesignSetupUiState = CustomDesignSetupUiState(),
+    isCandidatePending: Boolean = false,
+    allowManualUpload: Boolean = true,
     onBack: () -> Unit = {},
     onTeamNameChanged: (String) -> Unit = {},
     onWinChanged: (String) -> Unit = {},
@@ -234,237 +232,234 @@ fun CustomDesignSetupScreen(
     var activeTextColorField by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<CustomDesignAnchorField?>(null)
     }
-    val editableGridGeometry = uiState.editableGridGeometry
-        ?: CustomDesignEditableGridInitializer.initialize(
-            sourceWidth = uiState.sourceImageWidth ?: 0,
-            sourceHeight = uiState.sourceImageHeight ?: 0,
-            automatic = uiState.gridGeometry,
-        )
+    val scrollState = rememberScrollState()
+    val actionBusy = uiState.saveStatus == CustomDesignSaveStatus.SAVING ||
+        uiState.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
+        uiState.deleteStatus == CustomDesignDeleteStatus.DELETING ||
+        uiState.isImageValidationInProgress ||
+        uiState.isPhotoPickerLaunchPending
+    val saveEnabled = uiState.selectedImageReference != null &&
+        uiState.allRequiredLabelsFilled &&
+        uiState.isFinalGridReady &&
+        uiState.savedCustomDesignId == null &&
+        !actionBusy
+    val deleteEnabled = uiState.savedCustomDesignId != null && !actionBusy
     Column(
         modifier = Modifier
             .fillMaxSize()
             .pointIqHomeBackground()
-            .testTag(CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG)
-            .verticalScroll(rememberScrollState())
-            .padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 24.dp),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Top,
+            .testTag(CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG),
     ) {
-        PointIqPageHeader(
-            title = "Import Your Design",
-            onBack = onBack,
-            backTestTag = CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG + "_back",
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        if (!isRestored) {
-            val introShape = RoundedCornerShape(12.dp)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0B386F).copy(alpha = 0.42f), introShape)
-                    .border(1.dp, Color(0xFF176AF7).copy(alpha = 0.5f), introShape)
-                    .padding(16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 24.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top,
+        ) {
+            PointIqPageHeader(
+                title = "Import Your Design",
+                onBack = onBack,
+                backTestTag = CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG + "_back",
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            if (!isRestored && !isCandidatePending) {
+                val introShape = RoundedCornerShape(12.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0B386F).copy(alpha = 0.42f), introShape)
+                        .border(1.dp, Color(0xFF176AF7).copy(alpha = 0.5f), introShape)
+                        .padding(16.dp),
                 ) {
-                    Text(
-                        text = "Set up columns",
-                        color = CustomDesignPointIqTitle,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
                     Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF071B3E))
-                            .border(
-                                1.dp,
-                                CustomDesignPointIqCyan.copy(alpha = 0.55f),
-                                RoundedCornerShape(10.dp),
-                            )
-                            .clickable(onClick = onWatchDemo)
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Watch demo",
-                            color = CustomDesignPointIqCyan,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "Set up columns",
+                            color = CustomDesignPointIqTitle,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = "Watch demo",
-                            tint = CustomDesignPointIqCyan,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF071B3E))
+                                .border(
+                                    1.dp,
+                                    CustomDesignPointIqCyan.copy(alpha = 0.55f),
+                                    RoundedCornerShape(10.dp),
+                                )
+                                .clickable(onClick = onWatchDemo)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Watch demo",
+                                color = CustomDesignPointIqCyan,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = "Watch demo",
+                                tint = CustomDesignPointIqCyan,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Enter the column headings exactly as they appear in your result design. " +
-                        "Choose the text color PointIQ should use when filling each column.",
-                    color = CustomDesignPointIqBody,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                )
-            }
-        }
-        uiState.selectedImageReference?.let { imageReference ->
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-            CustomDesignImagePreview(
-                imageReference = imageReference,
-                sourceWidth = uiState.sourceImageWidth,
-                sourceHeight = uiState.sourceImageHeight,
-                gridGeometry = if (isRestored) {
-                    null
-                } else {
-                    resolveCustomDesignEffectiveGridGeometry(
-                        editable = editableGridGeometry,
-                        overrides = uiState.manualGridOverrides,
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Enter the column headings exactly as they appear in your result design. " +
+                            "Choose the text color PointIQ should use when filling each column.",
+                        color = CustomDesignPointIqBody,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
                     )
-                },
-                onManualColumnXChanged = onManualColumnXChanged,
-                onManualRowYChanged = onManualRowYChanged,
-                modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG),
-            )
+                }
+            }
+            uiState.selectedImageReference?.let { imageReference ->
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+                CustomDesignImagePreview(
+                    imageReference = imageReference,
+                    sourceWidth = uiState.sourceImageWidth,
+                    sourceHeight = uiState.sourceImageHeight,
+                    gridGeometry = uiState.previewGridGeometry(),
+                    onManualColumnXChanged = onManualColumnXChanged,
+                    onManualRowYChanged = onManualRowYChanged,
+                    modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG),
+                )
+            }
+            if (!isRestored && uiState.selectedImageReference != null) {
+                Spacer(
+                    modifier = Modifier.height(RankForgeSpacing.Medium),
+                )
+                CustomDesignLabelWithColor(
+                    value = uiState.teamNameLabel,
+                    onValueChange = onTeamNameChanged,
+                    label = "Team Name",
+                    testTag = CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
+                    isError = CustomDesignLabelField.TEAM_NAME in uiState.validationErrors,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
+                    colorTestTag = CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.TEAM_NAME },
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                CustomDesignLabelWithColor(
+                    value = uiState.winLabel,
+                    onValueChange = onWinChanged,
+                    label = "Win",
+                    testTag = CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
+                    isError = CustomDesignLabelField.WIN in uiState.validationErrors,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.WIN),
+                    colorTestTag = CUSTOM_DESIGN_WIN_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.WIN },
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                CustomDesignLabelWithColor(
+                    value = uiState.totalKillsLabel,
+                    onValueChange = onTotalKillsChanged,
+                    label = "Total Kills",
+                    testTag = CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
+                    isError = CustomDesignLabelField.TOTAL_KILLS in uiState.validationErrors,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS),
+                    colorTestTag = CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_KILLS },
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                CustomDesignLabelWithColor(
+                    value = uiState.positionPointsLabel,
+                    onValueChange = onPositionPointsChanged,
+                    label = "Position Points",
+                    testTag = CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
+                    isError = CustomDesignLabelField.POSITION_POINTS in uiState.validationErrors,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS),
+                    colorTestTag = CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.POSITION_POINTS },
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                CustomDesignLabelWithColor(
+                    value = uiState.totalPointsLabel,
+                    onValueChange = onTotalPointsChanged,
+                    label = "Total Points",
+                    testTag = CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
+                    isError = CustomDesignLabelField.TOTAL_POINTS in uiState.validationErrors,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS),
+                    colorTestTag = CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_POINTS },
+                )
+                uiState.validationErrors.takeIf { it.isNotEmpty() }?.let {
+                    Text(
+                        text = stringResource(R.string.required_field_error),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            if (!isRestored) {
+                uiState.imageValidationError?.let { error ->
+                    Text(
+                        text = stringResource(error.toCustomDesignMessageRes()),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
+                    )
+                }
+                uiState.photoPickerError?.let { error ->
+                    Text(
+                        text = stringResource(error.toCustomDesignMessageRes()),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
+                    )
+                }
+            }
         }
-        if (!isRestored) {
-            Spacer(
-                modifier = Modifier.height(
-                    if (uiState.selectedImageReference == null) 24.dp else RankForgeSpacing.Medium,
-                ),
-            )
-            CustomDesignLabelWithColor(
-                value = uiState.teamNameLabel,
-                onValueChange = onTeamNameChanged,
-                label = "Team Name",
-                testTag = CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG,
-                isError = CustomDesignLabelField.TEAM_NAME in uiState.validationErrors,
-                color = uiState.textColors.colorFor(CustomDesignAnchorField.TEAM_NAME),
-                colorTestTag = CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG,
-                onColorClick = { activeTextColorField = CustomDesignAnchorField.TEAM_NAME },
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelWithColor(
-                value = uiState.winLabel,
-                onValueChange = onWinChanged,
-                label = "Win",
-                testTag = CUSTOM_DESIGN_WIN_FIELD_TEST_TAG,
-                isError = CustomDesignLabelField.WIN in uiState.validationErrors,
-                color = uiState.textColors.colorFor(CustomDesignAnchorField.WIN),
-                colorTestTag = CUSTOM_DESIGN_WIN_COLOR_TEST_TAG,
-                onColorClick = { activeTextColorField = CustomDesignAnchorField.WIN },
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelWithColor(
-                value = uiState.totalKillsLabel,
-                onValueChange = onTotalKillsChanged,
-                label = "Total Kills",
-                testTag = CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG,
-                isError = CustomDesignLabelField.TOTAL_KILLS in uiState.validationErrors,
-                color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_KILLS),
-                colorTestTag = CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG,
-                onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_KILLS },
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelWithColor(
-                value = uiState.positionPointsLabel,
-                onValueChange = onPositionPointsChanged,
-                label = "Position Points",
-                testTag = CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG,
-                isError = CustomDesignLabelField.POSITION_POINTS in uiState.validationErrors,
-                color = uiState.textColors.colorFor(CustomDesignAnchorField.POSITION_POINTS),
-                colorTestTag = CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG,
-                onColorClick = { activeTextColorField = CustomDesignAnchorField.POSITION_POINTS },
-            )
-            Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            CustomDesignLabelWithColor(
-                value = uiState.totalPointsLabel,
-                onValueChange = onTotalPointsChanged,
-                label = "Total Points",
-                testTag = CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG,
-                isError = CustomDesignLabelField.TOTAL_POINTS in uiState.validationErrors,
-                color = uiState.textColors.colorFor(CustomDesignAnchorField.TOTAL_POINTS),
-                colorTestTag = CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG,
-                onColorClick = { activeTextColorField = CustomDesignAnchorField.TOTAL_POINTS },
-            )
-            uiState.validationErrors.takeIf { it.isNotEmpty() }?.let {
-                Text(
-                    text = stringResource(R.string.required_field_error),
-                    color = MaterialTheme.colorScheme.error,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+        ) {
+            Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+            when {
+                uiState.savedCustomDesignId != null -> OutlinedButton(
+                    onClick = onDeleteActionRequested,
+                    enabled = deleteEnabled,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = CustomDesignPointIqDangerContainer,
+                        contentColor = CustomDesignPointIqDanger,
+                        disabledContainerColor = CustomDesignPointIqDangerContainer.copy(alpha = 0.55f),
+                        disabledContentColor = CustomDesignPointIqDanger.copy(alpha = 0.45f),
+                    ),
+                    border = BorderStroke(1.dp, CustomDesignPointIqDanger.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG),
+                ) {
+                    Text(
+                        text = stringResource(R.string.custom_design_delete_action),
+                        fontSize = 14.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    )
+                }
+                uiState.selectedImageReference != null -> CustomDesignPrimaryAction(
+                    onClick = onSaveActionRequested,
+                    enabled = saveEnabled,
+                    testTag = CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG,
+                    label = stringResource(R.string.custom_design_save_action),
+                )
+                isCandidatePending || !allowManualUpload -> Unit
+                else -> CustomDesignPrimaryAction(
+                    onClick = onUploadCustomDesign,
+                    enabled = !actionBusy,
+                    testTag = CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG,
+                    label = "Upload Your Design",
                 )
             }
-            uiState.imageValidationError?.let { error ->
-                Text(
-                    text = stringResource(error.toCustomDesignMessageRes()),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
-                )
-            }
-            uiState.photoPickerError?.let { error ->
-                Text(
-                    text = stringResource(error.toCustomDesignMessageRes()),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag(CUSTOM_DESIGN_IMAGE_ERROR_TEST_TAG),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-        val actionBusy = uiState.saveStatus == CustomDesignSaveStatus.SAVING ||
-            uiState.restoreStatus == CustomDesignRestoreStatus.RESTORING ||
-            uiState.deleteStatus == CustomDesignDeleteStatus.DELETING ||
-            uiState.isImageValidationInProgress ||
-            uiState.isPhotoPickerLaunchPending
-        val saveEnabled = uiState.selectedImageReference != null &&
-            uiState.savedCustomDesignId == null &&
-            !actionBusy
-        val deleteEnabled = uiState.savedCustomDesignId != null && !actionBusy
-        when {
-            uiState.savedCustomDesignId != null -> OutlinedButton(
-                onClick = onDeleteActionRequested,
-                enabled = deleteEnabled,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = CustomDesignPointIqDangerContainer,
-                    contentColor = CustomDesignPointIqDanger,
-                    disabledContainerColor = CustomDesignPointIqDangerContainer.copy(alpha = 0.55f),
-                    disabledContentColor = CustomDesignPointIqDanger.copy(alpha = 0.45f),
-                ),
-                border = BorderStroke(1.dp, CustomDesignPointIqDanger.copy(alpha = 0.35f)),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    text = stringResource(R.string.custom_design_delete_action),
-                    fontSize = 14.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                )
-            }
-            else -> CustomDesignPrimaryAction(
-                onClick = if (uiState.selectedImageReference != null) {
-                    onSaveActionRequested
-                } else {
-                    onUploadCustomDesign
-                },
-                enabled = if (uiState.selectedImageReference != null) saveEnabled else !actionBusy,
-                testTag = if (uiState.selectedImageReference != null) {
-                    CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG
-                } else {
-                    CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG
-                },
-                label = if (uiState.selectedImageReference != null) {
-                    stringResource(R.string.custom_design_save_action)
-                } else {
-                    "Upload Your Design"
-                },
-            )
         }
     }
 
@@ -691,6 +686,10 @@ private fun CustomDesignTextColorDialog(
     onColorSelected: (String) -> Unit,
     onDismissRequest: () -> Unit,
 ) {
+    var customHex by androidx.compose.runtime.remember(selectedColor) {
+        androidx.compose.runtime.mutableStateOf(selectedColor)
+    }
+    val normalizedCustomHex = CustomDesignColumnTextColors.normalizeHexColor(customHex)
     AlertDialog(
         modifier = Modifier.testTag(CUSTOM_DESIGN_TEXT_COLOR_DIALOG_TEST_TAG),
         onDismissRequest = onDismissRequest,
@@ -732,6 +731,35 @@ private fun CustomDesignTextColorDialog(
                                     ),
                             )
                         }
+                    }
+                }
+                Text(text = stringResource(R.string.custom_design_custom_hex_label))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = customHex,
+                        onValueChange = { customHex = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(CUSTOM_DESIGN_CUSTOM_HEX_FIELD_TEST_TAG),
+                        singleLine = true,
+                        isError = customHex.isNotEmpty() && normalizedCustomHex == null,
+                        label = {
+                            Text(stringResource(R.string.custom_design_custom_hex_input_label))
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    )
+                    Spacer(modifier = Modifier.width(RankForgeSpacing.Small))
+                    TextButton(
+                        onClick = {
+                            normalizedCustomHex?.let(onColorSelected)
+                        },
+                        enabled = normalizedCustomHex != null,
+                        modifier = Modifier.testTag(CUSTOM_DESIGN_CUSTOM_HEX_APPLY_TEST_TAG),
+                    ) {
+                        Text(stringResource(R.string.custom_design_custom_hex_apply_action))
                     }
                 }
             }

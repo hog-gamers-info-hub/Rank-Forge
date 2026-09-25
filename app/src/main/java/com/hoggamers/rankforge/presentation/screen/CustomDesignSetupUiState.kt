@@ -2,10 +2,13 @@ package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrAnchors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 
 enum class CustomDesignSaveStatus {
     IDLE,
@@ -63,6 +66,7 @@ data class CustomDesignSetupUiState(
     val photoPickerError: PhotoPickerError? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
     val isImageValidationInProgress: Boolean = false,
+    val isInitialSavedDesignDiscoveryComplete: Boolean = false,
     val ocrStatus: CustomDesignOcrStatus = CustomDesignOcrStatus.IDLE,
     val ocrAnchors: CustomDesignOcrAnchors? = null,
     val averageRankingBoundingBoxHeightPx: Float? = null,
@@ -76,4 +80,54 @@ data class CustomDesignSetupUiState(
 ) {
     val hasUsableDraft: Boolean
         get() = draft != null
+
+    val allRequiredLabelsFilled: Boolean
+        get() = teamNameLabel.isNotBlank() &&
+            winLabel.isNotBlank() &&
+            totalKillsLabel.isNotBlank() &&
+            positionPointsLabel.isNotBlank() &&
+            totalPointsLabel.isNotBlank()
+
+    val isFinalGridReady: Boolean
+        get() = selectedImageReference != null &&
+            sourceImageWidth != null &&
+            sourceImageHeight != null &&
+            allRequiredLabelsFilled &&
+            ocrStatus in setOf(CustomDesignOcrStatus.COMPLETED, CustomDesignOcrStatus.FAILED) &&
+            editableGridGeometry?.let { geometry ->
+                geometry.columnX.keys.containsAll(CustomDesignAnchorField.entries) &&
+                    geometry.rowY.keys.containsAll((1..12).toSet())
+            } == true
+}
+
+internal fun CustomDesignSetupUiState.previewGridGeometry(): CustomDesignEffectiveGridGeometry? {
+    val sourceWidth = sourceImageWidth ?: return null
+    val sourceHeight = sourceImageHeight ?: return null
+    if (isFinalGridReady) {
+        return resolveCustomDesignEffectiveGridGeometry(editableGridGeometry, manualGridOverrides)
+    }
+
+    val labelsByField = mapOf(
+        CustomDesignAnchorField.TEAM_NAME to teamNameLabel,
+        CustomDesignAnchorField.WIN to winLabel,
+        CustomDesignAnchorField.TOTAL_KILLS to totalKillsLabel,
+        CustomDesignAnchorField.POSITION_POINTS to positionPointsLabel,
+        CustomDesignAnchorField.TOTAL_POINTS to totalPointsLabel,
+    )
+    val detectedColumns = ocrAnchors?.columnX
+        ?.filter { (field, x) ->
+            labelsByField[field]?.isNotBlank() == true &&
+                x.isFinite() &&
+                x in 0f..sourceWidth.toFloat()
+        }
+        ?.mapValues { (field, x) -> manualGridOverrides.columnX[field] ?: x }
+        .orEmpty()
+    if (detectedColumns.isEmpty()) return null
+
+    return CustomDesignEffectiveGridGeometry(
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
+        columnX = detectedColumns,
+        rowY = emptyMap(),
+    )
 }
