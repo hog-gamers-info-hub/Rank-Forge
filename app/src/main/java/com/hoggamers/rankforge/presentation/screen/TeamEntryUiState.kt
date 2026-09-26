@@ -4,6 +4,8 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 
 data class TeamEntryUiState(
     val isLoading: Boolean = true,
+    val tournamentName: String = "",
+    val stageName: String = "",
     val slots: List<TeamEntrySlotUiState> = emptyList(),
     val isSaving: Boolean = false,
     val hasSaveError: Boolean = false,

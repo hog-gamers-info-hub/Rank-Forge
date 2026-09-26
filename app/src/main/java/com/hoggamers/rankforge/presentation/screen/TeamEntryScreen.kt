@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,16 +28,21 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +64,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -71,9 +80,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.toArgb
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.export.TeamListEntry
+import com.hoggamers.rankforge.data.export.TeamListFormatter
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.launch
 
 private val PointIqTeamsBackground = Color(0xFF031225)
 private val PointIqTeamsAmbientBlue = Color(0xFF0B386F)
@@ -95,6 +107,8 @@ const val TEAM_ENTRY_SCREEN_TEST_TAG = "team_entry_screen"
 const val TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX = "team_entry_slot_input_"
 const val TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX = "team_entry_roster_button_"
 const val TEAM_ENTRY_TEAM_NAME_GAP_TEST_TAG = "team_entry_team_name_gap"
+const val TEAM_ENTRY_TEAM_LIST_MENU_TEST_TAG = "team_entry_team_list_menu"
+const val TEAM_ENTRY_COPY_TEAM_LIST_TEST_TAG = "team_entry_copy_team_list"
 private const val SHOW_TEAM_ENTRY_VALIDATION_ISSUES = false
 private const val SHOW_TEAM_ENTRY_ROSTER_ACTIONS = false
 private const val SHOW_TEAM_ENTRY_OVERVIEW = false
@@ -119,17 +133,56 @@ fun TeamEntryRoute(
         }
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    TeamEntryScreen(
-        uiState = uiState,
-        onTeamNameChanged = viewModel::onTeamNameChanged,
-        onBulkTeamNamesApplied = viewModel::onBulkTeamNamesApplied,
-        onSave = viewModel::saveTeamNames,
-        onBackToDetails = onBackToDetails,
-        onEditRoster = onEditRoster,
-        onReviewRoster = onReviewRoster,
-        focusSlotNumber = focusSlotNumber,
+    fun currentTeamListText(): String = TeamListFormatter.format(
+        tournamentName = uiState.tournamentName,
+        stageName = uiState.stageName,
+        entries = uiState.slots.map { slot ->
+            TeamListEntry(slotNumber = slot.slotNumber, teamName = slot.teamName)
+        },
     )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        TeamEntryScreen(
+            uiState = uiState,
+            onTeamNameChanged = viewModel::onTeamNameChanged,
+            onBulkTeamNamesApplied = viewModel::onBulkTeamNamesApplied,
+            onSave = viewModel::saveTeamNames,
+            onBackToDetails = onBackToDetails,
+            onEditRoster = onEditRoster,
+            onReviewRoster = onReviewRoster,
+            focusSlotNumber = focusSlotNumber,
+            onCopyTeamList = {
+                val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+                if (clipboardManager == null) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.team_list_copy_failed_message),
+                        )
+                    }
+                } else {
+                    clipboardManager.setPrimaryClip(
+                        ClipData.newPlainText(
+                            context.getString(R.string.team_entry_copy_team_list_action),
+                            currentTeamListText(),
+                        ),
+                    )
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.team_list_copied_message),
+                        )
+                    }
+                }
+            },
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
 }
 
 @Composable
@@ -142,6 +195,7 @@ fun TeamEntryScreen(
     onEditRoster: (Int) -> Unit = {},
     onReviewRoster: () -> Unit = {},
     focusSlotNumber: Int? = null,
+    onCopyTeamList: () -> Unit = {},
 ) {
     when {
         uiState.isLoading -> RankForgeLoadingState(
@@ -164,6 +218,7 @@ fun TeamEntryScreen(
                 hasSaveError = uiState.hasSaveError,
                 validationIssues = uiState.validationIssues,
                 hasTeamNameGap = uiState.hasTeamNameGap,
+                onCopyTeamList = onCopyTeamList,
             )
         }
     }
@@ -183,10 +238,14 @@ private fun TeamEntryContent(
     hasSaveError: Boolean,
     validationIssues: List<RosterValidationIssueUiState>,
     hasTeamNameGap: Boolean,
+    onCopyTeamList: () -> Unit,
 ) {
     val focusRequester = remember { BringIntoViewRequester() }
     var isPasteTeamListDialogVisible by remember { mutableStateOf(false) }
+    var isTeamListMenuVisible by remember { mutableStateOf(false) }
+    val hasRegisteredTeams = slots.any { it.teamName.trim().isNotEmpty() }
     val backDescription = stringResource(R.string.back_action)
+    val teamListMenuDescription = stringResource(R.string.team_entry_team_list_menu_description)
     val view = LocalView.current
     val window = (view.context as? Activity)?.window
 
@@ -312,6 +371,40 @@ private fun TeamEntryContent(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { isTeamListMenuVisible = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag(TEAM_ENTRY_TEAM_LIST_MENU_TEST_TAG),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = teamListMenuDescription,
+                                tint = PointIqTeamsNavy,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isTeamListMenuVisible,
+                            onDismissRequest = { isTeamListMenuVisible = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.team_entry_copy_team_list_action,
+                                        ),
+                                    )
+                                },
+                                onClick = {
+                                    isTeamListMenuVisible = false
+                                    onCopyTeamList()
+                                },
+                                enabled = hasRegisteredTeams,
+                                modifier = Modifier.testTag(TEAM_ENTRY_COPY_TEAM_LIST_TEST_TAG),
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(7.dp))

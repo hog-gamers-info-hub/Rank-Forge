@@ -215,6 +215,10 @@
     <string name="team_entry_paste_list_label">Team names</string>
     <string name="team_entry_paste_list_apply_action">Apply</string>
     <string name="team_entry_paste_list_overflow">Only 12 team names can be imported.</string>
+    <string name="team_entry_team_list_menu_description">Team list actions</string>
+    <string name="team_entry_copy_team_list_action">Copy Team List</string>
+    <string name="team_list_copied_message">Team list copied</string>
+    <string name="team_list_copy_failed_message">Team list could not be copied.</string>
     <string name="team_name_slot_label">Slot %1$d team name</string>
     <string name="save_team_names_action">Save team names</string>
     <string name="saving_team_names_action">Saving team namesâ€¦</string>
