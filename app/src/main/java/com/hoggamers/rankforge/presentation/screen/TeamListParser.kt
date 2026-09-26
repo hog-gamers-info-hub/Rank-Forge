@@ -14,8 +14,11 @@ object TeamListParser {
     )
     private val recognizedHeaders = setOf(
         "teamlist",
+        "teamlists",
         "slotlist",
+        "slotlists",
         "teams",
+        "slots",
         "teamnames",
     )
 
@@ -43,6 +46,8 @@ object TeamListParser {
     }
 
     private fun String.isRecognizedHeader(): Boolean =
-        lowercase(Locale.ROOT)
+        trim()
+            .trimEnd { character -> character.isWhitespace() || !character.isLetterOrDigit() }
+            .lowercase(Locale.ROOT)
             .filterNot { it.isWhitespace() || it == '-' || it == '_' } in recognizedHeaders
 }
