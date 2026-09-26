@@ -344,7 +344,7 @@ interface TournamentRepository {
         if (tournament == null) {
             flowOf(emptyMap())
         } else {
-            observeMatchById(matchId).flatMapLatest { match ->
+            observeMatchByIdAndOwner(matchId, ownerUserId).flatMapLatest { match ->
                 if (match?.tournamentId == tournamentId) {
                     observeDraftMatchValues(tournamentId, matchId)
                 } else {

@@ -136,6 +136,9 @@ fun TeamEntryRoute(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val teamListCopyFailedMessage = stringResource(R.string.team_list_copy_failed_message)
+    val copyTeamListLabel = stringResource(R.string.team_entry_copy_team_list_action)
+    val teamListCopiedMessage = stringResource(R.string.team_list_copied_message)
 
     fun currentTeamListText(): String = TeamListFormatter.format(
         tournamentName = uiState.tournamentName,
@@ -160,19 +163,19 @@ fun TeamEntryRoute(
                 if (clipboardManager == null) {
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.team_list_copy_failed_message),
+                            teamListCopyFailedMessage,
                         )
                     }
                 } else {
                     clipboardManager.setPrimaryClip(
                         ClipData.newPlainText(
-                            context.getString(R.string.team_entry_copy_team_list_action),
+                            copyTeamListLabel,
                             currentTeamListText(),
                         ),
                     )
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.team_list_copied_message),
+                            teamListCopiedMessage,
                         )
                     }
                 }
