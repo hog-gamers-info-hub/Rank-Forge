@@ -35,6 +35,7 @@ data class MatchResultPositionCrop(
     val bottomClipped: Boolean = false,
     val upperPhysicalRowSafe: Boolean = true,
     val lowerPhysicalRowSafe: Boolean = true,
+    val hasDetectedPositionAnchor: Boolean = false,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -334,6 +335,10 @@ class MatchResultPositionCropCalculator(
                 rowPitch = resolvedLeftPitch.pitch,
                 imageWidth = dimensions.width,
                 imageHeight = dimensions.height,
+                detectedAnchorPositions = setOfNotNull(
+                    anchorFour?.let { 4 },
+                    anchorFive?.let { 5 },
+                ),
             ) ?: return unavailable(MatchResultPositionCropUnavailableReason.POSITION_RECT_OUT_OF_BOUNDS)
             crops += leftCrops
         }
@@ -360,6 +365,7 @@ class MatchResultPositionCropCalculator(
             rowPitch = rightPitch.pitch,
             imageWidth = dimensions.width,
             imageHeight = dimensions.height,
+            detectedAnchorPositions = rightAnchors.mapTo(mutableSetOf()) { it.position },
         ) ?: return unavailable(MatchResultPositionCropUnavailableReason.POSITION_RECT_OUT_OF_BOUNDS)
         crops += rightCrops
 
@@ -483,6 +489,10 @@ class MatchResultPositionCropCalculator(
                     rowPitch = resolvedLeftPitch.pitch,
                     imageWidth = dimensions.width,
                     imageHeight = dimensions.height,
+                    detectedAnchorPositions = setOfNotNull(
+                        anchorFour?.let { 4 },
+                        anchorFive?.let { 5 },
+                    ),
                 )?.let { crops ->
                     ExistingUpperSideGeometry(crops = crops, pitch = resolvedLeftPitch)
                 }
@@ -518,6 +528,7 @@ class MatchResultPositionCropCalculator(
                     rowPitch = resolvedRightPitch.pitch,
                     imageWidth = dimensions.width,
                     imageHeight = dimensions.height,
+                    detectedAnchorPositions = rightAnchors.mapTo(mutableSetOf()) { it.position },
                 ) ?: return@let null
                 val crops = rightCrops.toMutableList()
                 val hasUpperPositionElevenFallback =
@@ -534,6 +545,7 @@ class MatchResultPositionCropCalculator(
                         rowPitch = resolvedRightPitch.pitch,
                         imageWidth = dimensions.width,
                         imageHeight = dimensions.height,
+                        detectedAnchorPositions = rightAnchors.mapTo(mutableSetOf()) { it.position },
                     )?.let(crops::addAll)
                 }
                 ExistingUpperSideGeometry(crops = crops, pitch = resolvedRightPitch)
@@ -846,6 +858,9 @@ class MatchResultPositionCropCalculator(
                 averageCropHeight = geometry.averageCropHeight,
                 imageWidth = imageWidth,
                 imageHeight = imageHeight,
+                hasDetectedPositionAnchor = anchors.any { anchor ->
+                    anchor.position == resolved.position
+                },
             )
         }
         if (crops.isEmpty()) return null
@@ -1527,6 +1542,7 @@ class MatchResultPositionCropCalculator(
         averageCropHeight: Double,
         imageWidth: Int,
         imageHeight: Int,
+        hasDetectedPositionAnchor: Boolean,
     ): MatchResultPositionCrop? {
         if (left < 0 || right > imageWidth || left >= right) return null
         val group = resolved.group
@@ -1593,6 +1609,7 @@ class MatchResultPositionCropCalculator(
             bottomClipped = rawBottom > imageHeight.toDouble(),
             upperPhysicalRowSafe = physicalRowSafety.upperSafe,
             lowerPhysicalRowSafe = physicalRowSafety.lowerSafe,
+            hasDetectedPositionAnchor = hasDetectedPositionAnchor,
         )
     }
 
@@ -1719,6 +1736,7 @@ class MatchResultPositionCropCalculator(
         rowPitch: Double,
         imageWidth: Int,
         imageHeight: Int,
+        detectedAnchorPositions: Set<Int> = emptySet(),
     ): List<MatchResultPositionCrop>? {
         if (left < 0 || right > imageWidth || left >= right) return null
         val output = mutableListOf<MatchResultPositionCrop>()
@@ -1757,6 +1775,7 @@ class MatchResultPositionCropCalculator(
                 bottomClipped = rawBottom > imageHeight.toDouble(),
                 upperPhysicalRowSafe = physicalRowSafety.upperSafe,
                 lowerPhysicalRowSafe = physicalRowSafety.lowerSafe,
+                hasDetectedPositionAnchor = position in detectedAnchorPositions,
             )
         }
         return output.takeIf { it.isNotEmpty() }

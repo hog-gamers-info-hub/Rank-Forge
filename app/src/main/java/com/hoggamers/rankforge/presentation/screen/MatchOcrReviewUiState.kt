@@ -332,6 +332,27 @@ object MatchResultOcrPreviewUiStateMapper {
         )
 }
 
+internal fun MatchResultOcrPreviewUiState.Ready.visiblePositionCropsByRole(): Map<
+    MatchResultScreenshotRole,
+    List<MatchResultPositionCrop>,
+> = authoritativePositionCropsByRole.mapValues { (role, crops) ->
+    val positionsWithRealAnchor = crops.asSequence()
+        .filter(MatchResultPositionCrop::hasDetectedPositionAnchor)
+        .map(MatchResultPositionCrop::position)
+        .toSet()
+    val positionsWithRealOcrContent = rows.asSequence()
+        .filter { row -> row.role == role && row.hasRealOcrContent() }
+        .map(MatchResultOcrPreviewRowUiState::position)
+        .toSet()
+    val visiblePositions = positionsWithRealAnchor union positionsWithRealOcrContent
+    crops.filter { crop -> crop.position in visiblePositions }
+}
+
+private fun MatchResultOcrPreviewRowUiState.hasRealOcrContent(): Boolean =
+    slots.any { slot ->
+        slot.playerOcrText.isNotBlank() || slot.killOcrText.isNotBlank()
+    }
+
 /**
  * OCR status is authoritative for production preview rows. The text fallback only supports
  * older/synthetic UI fixtures whose status label predates the enum-valued label.

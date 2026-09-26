@@ -416,7 +416,7 @@ fun MatchReviewRoute(
             viewModel.updateResultPositionCropPreviews(
                 authoritativePositionCropsByRole =
                     (ready.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
-                        ?.authoritativePositionCropsByRole
+                        ?.visiblePositionCropsByRole()
                         .orEmpty(),
             )
         }

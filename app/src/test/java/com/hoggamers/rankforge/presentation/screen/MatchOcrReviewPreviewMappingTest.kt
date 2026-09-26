@@ -18,6 +18,8 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrVisualRow
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizeOcrCorrectionMatchUseCase
@@ -70,6 +72,103 @@ class MatchOcrReviewPreviewMappingTest {
             listOf(1, 2, 3, 4),
             MatchResultOcrPreviewUiStateMapper.toReviewRows(result)!!.first().playerKillEvidence
                 .map { it.playerSlot },
+        )
+    }
+
+    @Test
+    fun positionCropVisibilityUsesRealAnchorOrRealOcrContent() {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = role,
+                    result = processed(
+                        role = role,
+                        rows = listOf(
+                            row(2, MatchResultOcrRowSource.UPPER_TEMPLATE),
+                            row(3, MatchResultOcrRowSource.UPPER_TEMPLATE),
+                        ),
+                        positionCrops = listOf(
+                            positionCrop(1, hasDetectedPositionAnchor = true),
+                            positionCrop(2),
+                            positionCrop(3, hasDetectedPositionAnchor = true),
+                            positionCrop(4),
+                        ),
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals(
+            listOf(1, 2, 3, 4),
+            result.authoritativePositionCropsByRole.getValue(role).map { it.position },
+        )
+        assertEquals(
+            listOf(1, 2, 3),
+            result.visiblePositionCropsByRole().getValue(role).map { it.position },
+        )
+    }
+
+    @Test
+    fun extrapolatedCropAndSynthesizedPlacementAloneRemainHidden() {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = role,
+                    result = processed(
+                        role = role,
+                        rows = listOf(synthesizedPlacementOnlyRow(6)),
+                        positionCrops = listOf(positionCrop(5), positionCrop(6)),
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertTrue(result.visiblePositionCropsByRole().getValue(role).isEmpty())
+    }
+
+    @Test
+    fun missingPositionAnchorWithRealPlayerOcrRemainsVisible() {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = role,
+                    result = processed(
+                        role = role,
+                        rows = listOf(row(7, MatchResultOcrRowSource.UPPER_TEMPLATE)),
+                        positionCrops = listOf(positionCrop(7)),
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals(
+            listOf(7),
+            result.visiblePositionCropsByRole().getValue(role).map { it.position },
+        )
+    }
+
+    @Test
+    fun normalPositionsWithRealOcrContentRemainVisible() {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = role,
+                    result = processed(
+                        role = role,
+                        rows = (1..10).map { row(it, MatchResultOcrRowSource.UPPER_TEMPLATE) },
+                        positionCrops = (1..10).map { position -> positionCrop(position) },
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals(
+            (1..10).toList(),
+            result.visiblePositionCropsByRole().getValue(role).map { it.position },
         )
     }
 
@@ -404,6 +503,7 @@ class MatchOcrReviewPreviewMappingTest {
         rows: List<MatchResultOcrRow>,
         ignored: List<MatchResultOcrIgnoredLowerVisualRow> = emptyList(),
         manual: List<MatchResultOcrManualReviewRow> = emptyList(),
+        positionCrops: List<MatchResultPositionCrop> = emptyList(),
     ): MatchResultOcrPreviewProcessingResult.Processed =
         MatchResultOcrPreviewProcessingResult.Processed(
             extraction = MatchResultOcrExtractionResult(
@@ -416,6 +516,7 @@ class MatchOcrReviewPreviewMappingTest {
             pixelCrop = OcrPixelCropRect(0, 0, 1, 1),
             cropWidth = 1,
             cropHeight = 1,
+            positionCrops = positionCrops,
         )
 
     private fun roleResult(
@@ -531,6 +632,32 @@ class MatchOcrReviewPreviewMappingTest {
             playerSlots = listOf(MatchResultOcrPlayerSlot(1, player, kill)),
         )
     }
+
+    private fun synthesizedPlacementOnlyRow(position: Int): MatchResultOcrRow {
+        val row = row(position, MatchResultOcrRowSource.UPPER_TEMPLATE)
+        return row.copy(
+            placement = row.placement.copy(
+                ocrText = "",
+                resolvedText = position.toString(),
+                status = MatchResultOcrFieldStatus.TEMPLATE_ONLY,
+            ),
+            playerSlots = emptyList(),
+        )
+    }
+
+    private fun positionCrop(
+        position: Int,
+        hasDetectedPositionAnchor: Boolean = false,
+    ): MatchResultPositionCrop = MatchResultPositionCrop(
+        position = position,
+        column = if (position <= 5) {
+            MatchResultPositionColumn.LEFT
+        } else {
+            MatchResultPositionColumn.RIGHT
+        },
+        bounds = OcrPixelCropRect(0, 0, 100, 100),
+        hasDetectedPositionAnchor = hasDetectedPositionAnchor,
+    )
 
     private fun field(
         id: String,
