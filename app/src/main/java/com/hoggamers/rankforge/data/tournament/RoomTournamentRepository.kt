@@ -85,6 +85,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
 import com.hoggamers.rankforge.presentation.screen.LocalImageCleanupResult
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
@@ -2877,7 +2878,15 @@ private data class PersistedState(
 )
 
 @Serializable
-private data class PersistedTournament(val id: String, val name: String, val date: String, val organizerName: String, val organizerContactNumber: String, val status: String, val ownerUserId: String? = null)
+private data class PersistedTournament(
+    val id: String,
+    val name: String,
+    val date: String,
+    @SerialName("organizerName") val stageName: String,
+    val organizerContactNumber: String,
+    val status: String,
+    val ownerUserId: String? = null,
+)
 @Serializable
 private data class PersistedSlot(val tournamentId: String, val slotNumber: Int, val teamName: String)
 @Serializable
@@ -2911,7 +2920,7 @@ private data class PersistedDraftValue(
 private data class PersistedTeamEntryDraft(val tournamentId: String, val names: Map<Int, String>)
 
 private fun RepositoryState.toPersistedState() = PersistedState(
-    tournaments = tournaments.map { PersistedTournament(it.id, it.name, it.date.toString(), it.organizerName, it.organizerContactNumber, it.status.name, it.ownerUserId) },
+    tournaments = tournaments.map { PersistedTournament(it.id, it.name, it.date.toString(), it.stageName, it.organizerContactNumber, it.status.name, it.ownerUserId) },
     slots = slots.values.flatten().map { PersistedSlot(it.tournamentId, it.slotNumber, it.teamName) },
     rosters = rosters.map { (key, players) -> players.map { PersistedRoster(key.tournamentId, key.slotNumber, it.displayName) } }.flatten(),
     matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> PersistedCorrection(correction.previousPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { PersistedKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { PersistedKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> PersistedParticipantResult(result.teamSlotNumber, result.participationStatus.name, result.placement, result.kills, result.pointAdjustment) }) },
@@ -2920,7 +2929,7 @@ private fun RepositoryState.toPersistedState() = PersistedState(
 )
 
 private fun PersistedState.toRepositoryState() = RepositoryState(
-    tournaments = tournaments.map { Tournament(it.id, it.name, LocalDate.parse(it.date), it.organizerName, it.organizerContactNumber, TournamentStatus.valueOf(it.status), it.ownerUserId) },
+    tournaments = tournaments.map { Tournament(it.id, it.name, LocalDate.parse(it.date), it.stageName, it.organizerContactNumber, TournamentStatus.valueOf(it.status), it.ownerUserId) },
     slots = slots.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { TeamSlot(it.tournamentId, it.slotNumber, it.teamName) } },
     rosters = rosters.groupBy { RosterKey(it.tournamentId, it.slotNumber) }.mapValues { (_, values) -> values.map { RosterPlayer(it.tournamentId, it.slotNumber, it.displayName) } },
     matches = matches.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { match -> Match(match.id, match.tournamentId, match.matchNumber, LocalDate.parse(match.date), match.mapName, MatchStatus.valueOf(match.status), match.placements.map { MatchPlacement(it.teamSlotNumber, it.position) }, match.kills.map { MatchKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> MatchCorrectionRecord(correction.previousPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { MatchKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { MatchKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> MatchParticipantResult(result.teamSlotNumber, MatchParticipationStatus.valueOf(result.participationStatus), result.placement, result.kills, result.pointAdjustment) }) } },

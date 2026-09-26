@@ -31,7 +31,7 @@ class ResultCanvasRenderer {
     ): ResultCanvasRenderResult = render(
         canvas = canvas,
         tournamentName = model.tournamentName,
-        organizerName = model.organizerName,
+        stageName = model.stageName,
         subtitle = "Current match - Match ${model.matchNumber} -- " +
             model.tournamentDate.format(DATE_FORMATTER),
         rows = model.rows,
@@ -43,7 +43,7 @@ class ResultCanvasRenderer {
     ): ResultCanvasRenderResult = render(
         canvas = canvas,
         tournamentName = model.tournamentName,
-        organizerName = model.organizerName,
+        stageName = model.stageName,
         subtitle = "Overall standings -- ${model.tournamentDate.format(DATE_FORMATTER)}",
         rows = model.rows,
     )
@@ -51,7 +51,7 @@ class ResultCanvasRenderer {
     private fun render(
         canvas: Canvas,
         tournamentName: String,
-        organizerName: String,
+        stageName: String,
         subtitle: String,
         rows: List<ResultExportRow>,
     ): ResultCanvasRenderResult {
@@ -61,7 +61,7 @@ class ResultCanvasRenderer {
 
         return try {
             canvas.drawColor(Color.WHITE)
-            drawHeader(canvas, tournamentName, organizerName, subtitle)
+            drawHeader(canvas, tournamentName, stageName, subtitle)
             drawTable(canvas, rows)
             drawFooter(canvas)
             ResultCanvasRenderResult.Success
@@ -73,7 +73,7 @@ class ResultCanvasRenderer {
     private fun drawHeader(
         canvas: Canvas,
         tournamentName: String,
-        organizerName: String,
+        stageName: String,
         subtitle: String,
     ) {
         drawBoundedCenteredText(
@@ -84,22 +84,22 @@ class ResultCanvasRenderer {
             paint = titlePaint,
             minimumTextSize = MIN_HEADER_TEXT_SIZE,
         )
-        val trimmedOrganizerName = organizerName.trim()
-        if (trimmedOrganizerName.isNotEmpty()) {
+        val trimmedStageName = stageName.trim()
+        if (trimmedStageName.isNotEmpty()) {
             drawBoundedCenteredText(
                 canvas = canvas,
-                text = trimmedOrganizerName,
+                text = trimmedStageName,
                 centerX = ResultLayoutSpec.LOGICAL_PAGE_WIDTH / 2f,
-                centerY = ResultLayoutSpec.ORGANIZER_BASELINE,
+                centerY = ResultLayoutSpec.STAGE_BASELINE,
                 paint = tournamentPaint,
-                minimumTextSize = MIN_ORGANIZER_TEXT_SIZE,
+                minimumTextSize = MIN_STAGE_TEXT_SIZE,
             )
         }
         canvas.drawText(
             subtitle,
             ResultLayoutSpec.OUTER_HORIZONTAL_MARGIN,
-            if (trimmedOrganizerName.isEmpty()) {
-                ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE
+            if (trimmedStageName.isEmpty()) {
+                ResultLayoutSpec.SUBTITLE_WITHOUT_STAGE_BASELINE
             } else {
                 ResultLayoutSpec.SUBTITLE_BASELINE
             },
@@ -321,7 +321,7 @@ class ResultCanvasRenderer {
         val DATE_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
         const val MIN_HEADER_TEXT_SIZE = 16f
-        const val MIN_ORGANIZER_TEXT_SIZE = 9f
+        const val MIN_STAGE_TEXT_SIZE = 9f
         const val HEADER_TEXT_SIZE_STEP = 0.5f
         const val HEADER_ELLIPSIS = "…"
         const val TEAM_NAME_TEXT_SIZE = 14f

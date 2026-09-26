@@ -35,7 +35,7 @@ class ResultExportModelBuilderTest {
 
         val model = matchSuccess(result)
         assertEquals("Synthetic Cup", model.tournamentName)
-        assertEquals("Organizer", model.organizerName)
+        assertEquals("Organizer", model.stageName)
         assertEquals(LocalDate.of(2026, 9, 3), model.tournamentDate)
         assertEquals(3, model.matchNumber)
         assertEquals(LocalDate.of(2026, 8, 31), model.matchDate)
@@ -133,7 +133,7 @@ class ResultExportModelBuilderTest {
         val model = tournamentSuccess(builder.buildTournament(input))
 
         assertEquals("Synthetic Cup", model.tournamentName)
-        assertEquals("Organizer", model.organizerName)
+        assertEquals("Organizer", model.stageName)
         assertEquals(LocalDate.of(2026, 7, 31), model.tournamentDate)
         assertEquals(2, model.finalizedMatchCount)
         assertEquals(12, model.rows.size)
@@ -283,7 +283,7 @@ class ResultExportModelBuilderTest {
             id = TOURNAMENT_ID,
             name = "Synthetic Cup",
             date = LocalDate.of(2026, 7, 31),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "1234567890",
             status = TournamentStatus.CONFIRMED,
         )

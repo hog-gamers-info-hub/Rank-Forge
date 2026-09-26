@@ -199,7 +199,7 @@ class ReconcileLegacyTournamentOwnershipUseCaseTest {
         id = id,
         name = "Tournament $id",
         date = LocalDate.of(2026, 1, 1),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = owner,

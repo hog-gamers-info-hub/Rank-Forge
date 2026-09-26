@@ -67,7 +67,7 @@ class ObserveTournamentSlotsUseCaseTest {
         id = id,
         name = "Summer Cup",
         date = LocalDate.of(2026, 7, 24),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = ownerUserId,

@@ -1841,7 +1841,7 @@ class MatchOcrReviewViewModelTest {
                 id = TOURNAMENT_ID,
                 name = "Synthetic Cup",
                 date = LocalDate.of(2026, 7, 24),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
                 ownerUserId = com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository.OWNER_USER_ID,

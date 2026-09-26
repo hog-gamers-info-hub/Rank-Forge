@@ -972,7 +972,7 @@ class RosterOcrReviewViewModelTest {
         id = id,
         name = "Synthetic tournament",
         date = LocalDate.of(2026, 1, 1),
-        organizerName = "Synthetic organizer",
+        stageName = "Synthetic organizer",
         organizerContactNumber = "synthetic-contact",
         status = TournamentStatus.DRAFT,
         ownerUserId = "synthetic-user",

@@ -594,7 +594,7 @@ class SavedLobbyTemplateUseCasesTest {
             id = tournamentId,
             name = "template",
             date = LocalDate.of(2026, 1, 1),
-            organizerName = "organizer",
+            stageName = "organizer",
             organizerContactNumber = "contact",
             status = TournamentStatus.DRAFT,
             ownerUserId = ownerUserId,

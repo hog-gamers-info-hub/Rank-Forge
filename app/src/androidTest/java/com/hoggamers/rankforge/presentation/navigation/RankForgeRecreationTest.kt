@@ -207,7 +207,7 @@ private class RecreationFixture private constructor(
         id = "recreation-tournament",
         name = "Recreation Cup",
         date = LocalDate.of(2026, 8, 15),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
     )

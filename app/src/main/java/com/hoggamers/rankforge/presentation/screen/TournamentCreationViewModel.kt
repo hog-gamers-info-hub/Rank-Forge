@@ -60,11 +60,11 @@ class TournamentCreationViewModel @Inject constructor(
         }
     }
 
-    fun onOrganizerNameChanged(value: String) {
+    fun onStageNameChanged(value: String) {
         _uiState.update {
             it.copy(
-                organizerName = value,
-                validationErrors = it.validationErrors - TournamentField.ORGANIZER_NAME,
+                stageName = value,
+                validationErrors = it.validationErrors - TournamentField.STAGE_NAME,
                 submissionError = null,
             )
         }
@@ -87,7 +87,7 @@ class TournamentCreationViewModel @Inject constructor(
         val input = CreateTournamentInput(
             name = currentState.tournamentName,
             date = currentState.tournamentDate,
-            organizerName = currentState.organizerName,
+            stageName = currentState.stageName,
             organizerContactNumber = currentState.organizerContactNumber,
         )
         val validationErrors = validateCreateTournamentInput(input, clock)

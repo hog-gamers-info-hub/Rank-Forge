@@ -6,7 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGrid
 
 enum class FreeDesignHeaderField {
     TOURNAMENT_NAME,
-    ORGANIZER_NAME,
+    STAGE_NAME,
     RESULT_HEADING,
     DATE,
 }

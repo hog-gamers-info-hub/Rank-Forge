@@ -55,7 +55,7 @@ class MatchResultScreenshotCropValidationGateTest {
                 id = GATE_TOURNAMENT_ID,
                 name = "Gate Cup",
                 date = LocalDate.of(2026, 8, 18),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),

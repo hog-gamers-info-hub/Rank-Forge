@@ -22,7 +22,7 @@ sealed interface TournamentCreationNavigation {
 data class TournamentCreationUiState(
     val tournamentName: String = "",
     val tournamentDate: LocalDate? = null,
-    val organizerName: String = "",
+    val stageName: String = "",
     val organizerContactNumber: String = "",
     val validationErrors: Map<TournamentField, TournamentValidationError> = emptyMap(),
     val isSubmitting: Boolean = false,
@@ -33,6 +33,6 @@ data class TournamentCreationUiState(
     val isDirty: Boolean
         get() = tournamentName.isNotEmpty() ||
             tournamentDate != null ||
-            organizerName.isNotEmpty() ||
+            stageName.isNotEmpty() ||
             organizerContactNumber.isNotEmpty()
 }

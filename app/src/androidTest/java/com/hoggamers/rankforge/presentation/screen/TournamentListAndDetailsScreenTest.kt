@@ -81,7 +81,7 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
         composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Organizer: Alex").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Stage: Alex").assertIsDisplayed()
         composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Contact: 123").assertCountEquals(0)
     }
@@ -522,7 +522,7 @@ class TournamentListAndDetailsScreenTest {
                                 id = cloudTournamentId,
                                 name = "Cloud Cup",
                                 date = "2026-07-24",
-                                organizerName = "Organizer",
+                                stageName = "Organizer",
                                 status = "draft",
                             ),
                         ),
@@ -561,7 +561,7 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
         composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Organizer: Alex").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Stage: Alex").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Contact: 123").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
     }
@@ -934,7 +934,7 @@ class TournamentListAndDetailsScreenTest {
         id = id,
         name = name,
         date = LocalDate.of(2026, 7, 24),
-        organizerName = "Alex",
+        stageName = "Alex",
         status = TournamentStatus.DRAFT,
     )
 
@@ -951,7 +951,7 @@ class TournamentListAndDetailsScreenTest {
         id = "stable-id",
         name = "Summer Cup",
         date = LocalDate.of(2026, 7, 24),
-        organizerName = "Alex",
+        stageName = "Alex",
         organizerContactNumber = "123",
         status = status,
         slots = slots,

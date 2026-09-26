@@ -81,13 +81,13 @@ class TournamentCreationViewModelTest {
     fun fieldUpdatesChangeStateAndMarkFormDirty() {
         viewModel.onTournamentNameChanged("Summer Cup")
         viewModel.onTournamentDateChanged(today)
-        viewModel.onOrganizerNameChanged("Alex")
+        viewModel.onStageNameChanged("Alex")
         viewModel.onOrganizerContactNumberChanged("123")
 
         assertTrue(viewModel.uiState.value.isDirty)
         assertEquals("Summer Cup", viewModel.uiState.value.tournamentName)
         assertEquals(today, viewModel.uiState.value.tournamentDate)
-        assertEquals("Alex", viewModel.uiState.value.organizerName)
+        assertEquals("Alex", viewModel.uiState.value.stageName)
         assertEquals("123", viewModel.uiState.value.organizerContactNumber)
     }
 
@@ -100,7 +100,7 @@ class TournamentCreationViewModelTest {
         assertFalse(viewModel.uiState.value.isSubmitting)
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.NAME))
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.DATE))
-        assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_NAME))
+        assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.STAGE_NAME))
         assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
         assertTrue(repository.records.isEmpty())
         assertNull(viewModel.uiState.value.navigation)
@@ -196,7 +196,7 @@ class TournamentCreationViewModelTest {
             id = existingTournamentId,
             name = "Existing",
             date = today,
-            organizerName = "Existing organizer",
+            stageName = "Existing organizer",
             organizerContactNumber = "",
             status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.DRAFT,
         )
@@ -255,7 +255,7 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.records.size)
-        assertEquals("", repository.records.single().organizerName)
+        assertEquals("", repository.records.single().stageName)
         assertEquals("", repository.records.single().organizerContactNumber)
         assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
     }
@@ -422,7 +422,7 @@ class TournamentCreationViewModelTest {
     private fun fillValidForm() {
         viewModel.onTournamentNameChanged("Summer Cup")
         viewModel.onTournamentDateChanged(today)
-        viewModel.onOrganizerNameChanged("Alex")
+        viewModel.onStageNameChanged("Alex")
         viewModel.onOrganizerContactNumberChanged("123")
     }
 

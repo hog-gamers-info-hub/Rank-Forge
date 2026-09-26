@@ -62,7 +62,7 @@ class MatchReviewResultScreenshotCancelContractTest {
                 id = CANCEL_CONTRACT_TOURNAMENT_ID,
                 name = "Cancel Contract Cup",
                 date = LocalDate.of(2026, 8, 31),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),

@@ -100,11 +100,11 @@ class CreateTournamentUseCaseTest {
     }
 
     @Test
-    fun blankOrganizerNameIsAccepted() = runTest {
-        val result = useCase(validInput().copy(organizerName = ""))
+    fun blankStageNameIsAccepted() = runTest {
+        val result = useCase(validInput().copy(stageName = ""))
 
         assertTrue(result is CreateTournamentResult.Created)
-        assertEquals("", result.createdTournament().organizerName)
+        assertEquals("", result.createdTournament().stageName)
     }
 
     @Test
@@ -116,17 +116,17 @@ class CreateTournamentUseCaseTest {
     }
 
     @Test
-    fun bothOrganizerFieldsBlankAreAccepted() = runTest {
+    fun bothStageAndOrganizerContactFieldsBlankAreAccepted() = runTest {
         val result = useCase(
             validInput().copy(
-                organizerName = "   ",
+                stageName = "   ",
                 organizerContactNumber = "   ",
             ),
         )
 
         assertTrue(result is CreateTournamentResult.Created)
         val created = result.createdTournament()
-        assertEquals("", created.organizerName)
+        assertEquals("", created.stageName)
         assertEquals("", created.organizerContactNumber)
     }
 
@@ -134,13 +134,13 @@ class CreateTournamentUseCaseTest {
     fun optionalValuesAreTrimmedBeforePersistence() = runTest {
         val result = useCase(
             validInput().copy(
-                organizerName = "  HOG Gamers  ",
+                stageName = "  HOG Gamers  ",
                 organizerContactNumber = "  9876543210  ",
             ),
         )
 
         val created = result.createdTournament()
-        assertEquals("HOG Gamers", created.organizerName)
+        assertEquals("HOG Gamers", created.stageName)
         assertEquals("9876543210", created.organizerContactNumber)
     }
 
@@ -162,7 +162,7 @@ class CreateTournamentUseCaseTest {
     private fun validInput() = CreateTournamentInput(
         name = "Summer Cup",
         date = today,
-        organizerName = "Alex",
+        stageName = "Alex",
         organizerContactNumber = "1234567890",
     )
 

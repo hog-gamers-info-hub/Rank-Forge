@@ -806,7 +806,7 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
                 id = TOURNAMENT_ID,
                 name = "Summer Cup",
                 date = LocalDate.of(2026, 7, 24),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
                 status = TournamentStatus.CONFIRMED,

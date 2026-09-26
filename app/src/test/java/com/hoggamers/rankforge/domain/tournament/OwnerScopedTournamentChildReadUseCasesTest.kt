@@ -143,7 +143,7 @@ class OwnerScopedTournamentChildReadUseCasesTest {
         id = id,
         name = id,
         date = LocalDate.of(2026, 8, 23),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = ownerUserId,

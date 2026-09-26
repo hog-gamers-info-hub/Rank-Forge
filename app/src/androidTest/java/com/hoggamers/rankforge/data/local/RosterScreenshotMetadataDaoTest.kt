@@ -208,7 +208,7 @@ class RosterScreenshotMetadataDaoTest {
         id = id,
         name = "Cup",
         date = "2026-07-30",
-        organizerName = "Org",
+        stageName = "Org",
         organizerContactNumber = "123",
         status = "CONFIRMED",
         ownerUserId = ownerUserId,

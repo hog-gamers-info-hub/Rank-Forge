@@ -347,7 +347,7 @@ class MatchResultScreenshotAssetDaoTest {
                 id = "tournament-1",
                 name = "Cup",
                 date = "2026-08-07",
-                organizerName = "Org",
+                stageName = "Org",
                 organizerContactNumber = "123",
                 status = "CONFIRMED",
             ),
