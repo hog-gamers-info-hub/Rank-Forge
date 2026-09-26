@@ -24,6 +24,63 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
+    fun upperUnsafeDropsUpperRowAndItsOcrWithoutRenumberingLowerRow() {
+        val result = classifyCustom(
+            position = 7,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(
+                line("Player A", 10, 10, 100, 20),
+                line("Player B", 10, 70, 100, 80),
+            ),
+            upperPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW2_ONLY, result.diagnostics.classification)
+        assertEquals(listOf(2), result.rowCrops.map { it.rowIndex })
+        assertEquals(listOf("Player B"), result.blocks.flatMap { it.lines }.map { it.text })
+    }
+
+    @Test
+    fun lowerUnsafeDropsLowerRowAndItsOcrWithoutRenumberingUpperRow() {
+        val result = classifyCustom(
+            position = 7,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(
+                line("Player A", 10, 10, 100, 20),
+                line("Player B", 10, 70, 100, 80),
+            ),
+            lowerPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_ONLY, result.diagnostics.classification)
+        assertEquals(listOf(1), result.rowCrops.map { it.rowIndex })
+        assertEquals(listOf("Player A"), result.blocks.flatMap { it.lines }.map { it.text })
+    }
+
+    @Test
+    fun bothUnsafePhysicalRowsAreUnavailable() {
+        val result = classifyCustom(
+            position = 7,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(
+                line("Player A", 10, 10, 100, 20),
+                line("Player B", 10, 70, 100, 80),
+            ),
+            upperPhysicalRowSafe = false,
+            lowerPhysicalRowSafe = false,
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS, result.diagnostics.reason)
+    }
+
+    @Test
     fun physicalStyleOnePlayerCenteredRowMapsToRowOne() {
         val result = classifyCustom(
             position = 8,
@@ -41,6 +98,35 @@ class MatchResultPositionLogicalRowClassifierTest {
         assertEquals(2, result.diagnostics.centerCount)
         assertEquals(0, result.diagnostics.upperCount)
         assertEquals(0, result.diagnostics.lowerCount)
+    }
+
+    @Test
+    fun centeredOnePlayerRowSurvivesEitherUnsafePhysicalSide() {
+        val lines = listOf(
+            line("SOUMO`BHAI", 40, 32, 150, 43),
+            line("0 Eliminations", 210, 35, 330, 44),
+        )
+        val upperUnsafe = classifyCustom(
+            position = 8,
+            cropWidth = 491,
+            cropHeight = 81,
+            center = 40.5,
+            lines = lines,
+            upperPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+        val lowerUnsafe = classifyCustom(
+            position = 8,
+            cropWidth = 491,
+            cropHeight = 81,
+            center = 40.5,
+            lines = lines,
+            lowerPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, upperUnsafe.diagnostics.classification)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, lowerUnsafe.diagnostics.classification)
+        assertEquals(listOf(1), upperUnsafe.rowCrops.map { it.rowIndex })
+        assertEquals(listOf(1), lowerUnsafe.rowCrops.map { it.rowIndex })
     }
 
     @Test
@@ -63,6 +149,37 @@ class MatchResultPositionLogicalRowClassifierTest {
         assertEquals(4, result.diagnostics.centerCount)
         assertEquals(0, result.diagnostics.upperCount)
         assertEquals(0, result.diagnostics.lowerCount)
+    }
+
+    @Test
+    fun centeredTwoPlayerRowSurvivesEitherUnsafePhysicalSide() {
+        val lines = listOf(
+            line("MG SHYAMLIVE", 40, 41, 150, 52),
+            line("MG BAAZIGAR", 300, 44, 400, 54),
+            line("0 Eliminations", 170, 41, 270, 52),
+            line("1 Eliminations", 410, 44, 480, 55),
+        )
+        val upperUnsafe = classifyCustom(
+            position = 5,
+            cropWidth = 491,
+            cropHeight = 95,
+            center = 48.0,
+            lines = lines,
+            upperPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+        val lowerUnsafe = classifyCustom(
+            position = 5,
+            cropWidth = 491,
+            cropHeight = 95,
+            center = 48.0,
+            lines = lines,
+            lowerPhysicalRowSafe = false,
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, upperUnsafe.diagnostics.classification)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, lowerUnsafe.diagnostics.classification)
+        assertEquals(listOf(1), upperUnsafe.rowCrops.map { it.rowIndex })
+        assertEquals(listOf(1), lowerUnsafe.rowCrops.map { it.rowIndex })
     }
 
     @Test
@@ -596,6 +713,38 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
+    fun explicitlyEnabledSingleUpperRowRequiresUpperSafety() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(box("upper-one", 25.0, 10), box("upper-two", 26.0, 10)),
+            allowSingleRowFallback = true,
+            upperPhysicalRowSafe = false,
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS, result.diagnostics.reason)
+    }
+
+    @Test
+    fun explicitlyEnabledSingleLowerRowRequiresLowerSafety() {
+        val result = classifyCustom(
+            position = 11,
+            cropWidth = 200,
+            cropHeight = 90,
+            center = 47.0,
+            lines = listOf(box("lower-one", 68.0, 10), box("lower-two", 69.0, 10)),
+            allowSingleRowFallback = true,
+            lowerPhysicalRowSafe = false,
+        )
+
+        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
+        assertEquals(MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS, result.diagnostics.reason)
+    }
+
+    @Test
     fun enabledSingleRowFallbackStillRejectsCenterOnlyEvidence() {
         val result = classifyCustom(
             position = 11,
@@ -636,6 +785,8 @@ class MatchResultPositionLogicalRowClassifierTest {
         center: Double,
         lines: List<RawOcrLine>,
         allowSingleRowFallback: Boolean = false,
+        upperPhysicalRowSafe: Boolean = true,
+        lowerPhysicalRowSafe: Boolean = true,
     ): MatchResultPositionLogicalRowClassification = classifier.classify(
         position = position,
         cropWidth = cropWidth,
@@ -643,6 +794,8 @@ class MatchResultPositionLogicalRowClassifierTest {
         slotCenterYLocal = center,
         blocks = listOf(RawOcrBlock("", null, null, RawOcrConfidence.Unavailable, lines)),
         allowSingleRowFallback = allowSingleRowFallback,
+        upperPhysicalRowSafe = upperPhysicalRowSafe,
+        lowerPhysicalRowSafe = lowerPhysicalRowSafe,
     )
 
     private fun line(text: String, left: Int, top: Int, right: Int, bottom: Int) = RawOcrLine(
