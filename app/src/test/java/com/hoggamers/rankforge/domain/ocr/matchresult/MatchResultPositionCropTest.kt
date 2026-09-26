@@ -58,6 +58,25 @@ class MatchResultPositionCropTest {
     }
 
     @Test
+    fun calculatedCropsRecordOnlyGenuineDetectedPositionAnchors() {
+        val result = available(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            observation("4", 50, 320, 75, 350),
+            observation("5", 50, 420, 75, 450),
+            observation("6", 650, 20, 680, 50),
+            observation("7", 650, 100, 680, 130),
+        )
+
+        assertEquals(
+            setOf(4, 5, 6, 7),
+            result.crops.filter(MatchResultPositionCrop::hasDetectedPositionAnchor)
+                .mapTo(mutableSetOf(), MatchResultPositionCrop::position),
+        )
+        assertFalse(result.crops.first { it.position == 3 }.hasDetectedPositionAnchor)
+        assertFalse(result.crops.first { it.position == 8 }.hasDetectedPositionAnchor)
+    }
+
+    @Test
     fun exactThirtyThreePercentBoundaryRemainsSafeAtBothImageEdges() {
         val upperBoundary = available(
             role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -503,6 +522,8 @@ class MatchResultPositionCropTest {
         assertTrue("Expected fallback-three geometry, got $result", result is MatchResultPositionCropCalculationResult.Available)
         result as MatchResultPositionCropCalculationResult.Available
         assertEquals((1..10).toList(), result.crops.map { it.position })
+        assertTrue(result.crops.first { it.position == 6 }.hasDetectedPositionAnchor)
+        assertFalse(result.crops.first { it.position == 7 }.hasDetectedPositionAnchor)
         assertEquals(
             MatchResultPositionPitchSource.FALLBACK_THREE_ELIMINATION_GEOMETRY,
             result.leftPitchSource,
