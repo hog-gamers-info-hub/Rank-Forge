@@ -50,6 +50,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,6 +105,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -136,6 +139,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.math.BigInteger
 
 private val PointIqMatchReviewNavy = Color(0xFF071B3E)
 private val PointIqMatchReviewBody = Color(0xFF607393)
@@ -161,6 +165,8 @@ private val PointIqMatchReviewCtaBottomBlue = Color(0xFF1675F0)
 private val PointIqMatchReviewCtaBorder = Color(0xFF4AAFF7)
 private val PointIqMatchReviewBlockerIcon = Color(0xFFFF6B6B)
 private val PointIqMatchReviewBlockerMessage = Color(0xFFF4D7DB)
+private val PointAdjustmentInputPattern = Regex("-?\\d+")
+
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
 private const val RESULT_SCREENSHOT_PREVIEW_HEIGHT_RATIO = 384f / 936f
 
@@ -224,6 +230,17 @@ const val MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG = "match_review_delete_con
 const val MATCH_REVIEW_DELETE_CANCEL_ACTION_TEST_TAG = "match_review_delete_cancel_action"
 const val MATCH_REVIEW_DELETE_PROGRESS_TEST_TAG = "match_review_delete_progress"
 const val MATCH_REVIEW_DELETE_ERROR_TEST_TAG = "match_review_delete_error"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG = "match_review_adjust_team_points_action"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG = "match_review_adjust_team_points_dialog"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_SELECTOR_TEST_TAG =
+    "match_review_adjust_team_points_team_selector"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_OPTION_TEST_TAG_PREFIX =
+    "match_review_adjust_team_points_team_option_"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG = "match_review_adjust_team_points_input"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_CANCEL_TEST_TAG = "match_review_adjust_team_points_cancel"
+const val MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG = "match_review_adjust_team_points_apply"
+const val MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX =
+    "match_review_adjustment_indicator_"
 const val MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG = "match_review_ocr_review_action"
 const val MATCH_REVIEW_OCR_READY_TEST_TAG = "match_review_ocr_ready"
 const val MATCH_REVIEW_OCR_STALE_TEST_TAG = "match_review_ocr_stale"
@@ -809,6 +826,7 @@ fun MatchReviewRoute(
         onOcrFinalize = resolvedOcrReviewViewModel::onFinalizeOcrCorrection,
         onOcrConfirmFinalizeWarnings = resolvedOcrReviewViewModel::onConfirmFinalizeWarnings,
         onOcrDismissFinalizeWarnings = resolvedOcrReviewViewModel::onDismissFinalizeWarnings,
+        onSaveTeamPointAdjustment = viewModel::saveTeamPointAdjustment,
     )
 }
 
@@ -871,6 +889,7 @@ fun MatchReviewScreen(
     onOcrFinalize: () -> Unit = {},
     onOcrConfirmFinalizeWarnings: () -> Unit = {},
     onOcrDismissFinalizeWarnings: () -> Unit = {},
+    onSaveTeamPointAdjustment: (Int, Int) -> Unit = { _, _ -> },
 ) {
     PointIqMatchReviewSystemBars()
 
@@ -948,6 +967,7 @@ fun MatchReviewScreen(
             onOcrFinalize = onOcrFinalize,
             onOcrConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
             onOcrDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+            onSaveTeamPointAdjustment = onSaveTeamPointAdjustment,
         )
     }
 
@@ -1372,6 +1392,7 @@ private fun MatchReviewContent(
     onOcrFinalize: () -> Unit,
     onOcrConfirmFinalizeWarnings: () -> Unit,
     onOcrDismissFinalizeWarnings: () -> Unit,
+    onSaveTeamPointAdjustment: (Int, Int) -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -1379,6 +1400,13 @@ private fun MatchReviewContent(
     var showResultScopeDialog by remember { mutableStateOf(false) }
     var showResultFormatDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by rememberSaveable { mutableStateOf(false) }
+    var showAdjustTeamPointsDialog by remember(uiState.matchId) { mutableStateOf(false) }
+    var adjustmentTeamSlotNumber by remember(uiState.matchId) { mutableStateOf<Int?>(null) }
+    val pointAdjustmentsByTeamSlot = if (uiState.isEditable) {
+        uiState.rows.associate { row -> row.teamSlotNumber to row.pointAdjustment }
+    } else {
+        emptyMap()
+    }
     var selectedResultScope by remember { mutableStateOf<ResultDownloadScope?>(null) }
     var selectedResultFormat by remember { mutableStateOf<ResultDownloadFormatOption?>(null) }
     var showOcrPreflight by remember { mutableStateOf(false) }
@@ -1397,6 +1425,10 @@ private fun MatchReviewContent(
         showResultScopeDialog = false
         onOpenDownloadResult()
         showOverflowMenu = false
+    }
+    val openAdjustTeamPointsDialog: (Int?) -> Unit = { teamSlotNumber ->
+        adjustmentTeamSlotNumber = teamSlotNumber
+        showAdjustTeamPointsDialog = true
     }
     val ocrPreflightItems = classifyOcrScreenshotPreflight(
         lobbySlots = lobbyUiState.slots,
@@ -1470,7 +1502,9 @@ private fun MatchReviewContent(
                     onFinalizeOcrCorrection = onOcrFinalize,
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                    onAdjustTeamPoints = openAdjustTeamPointsDialog,
                     showPlayerRows = false,
+                    pointAdjustmentsByTeamSlot = emptyMap(),
                 )
             }
         } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
@@ -1486,6 +1520,8 @@ private fun MatchReviewContent(
                 onFinalizeOcrCorrection = onOcrFinalize,
                 onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
     }
@@ -1500,6 +1536,8 @@ private fun MatchReviewContent(
                 onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
                 onExcludeOcrRow = onExcludeOcrRow,
                 onResetRowCorrection = onOcrResetRowCorrection,
+                onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
     }
@@ -1568,7 +1606,9 @@ private fun MatchReviewContent(
                     onFinalizeOcrCorrection = onOcrFinalize,
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                    onAdjustTeamPoints = openAdjustTeamPointsDialog,
                     onManualBack = requestManualBack,
+                    pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                 )
             }
         }
@@ -1702,6 +1742,22 @@ private fun MatchReviewContent(
                                 modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
                             )
                         }
+                        if (uiState.isEditable) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(stringResource(R.string.match_review_adjust_team_points_action))
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    adjustmentTeamSlotNumber = null
+                                    showAdjustTeamPointsDialog = true
+                                },
+                                colors = overflowItemColors,
+                                modifier = Modifier.testTag(
+                                    MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG,
+                                ),
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -1779,7 +1835,10 @@ private fun MatchReviewContent(
             }
             Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
             uiState.rows.forEach { row ->
-                MatchReviewRow(row)
+                MatchReviewRow(
+                    row = row,
+                    temporaryAdjustment = row.pointAdjustment.takeIf { uiState.isEditable } ?: 0,
+                )
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             }
             if (uiState.correctionHistory.isNotEmpty()) {
@@ -2435,6 +2494,18 @@ private fun MatchReviewContent(
             },
         )
     }
+    if (showAdjustTeamPointsDialog && uiState.isEditable) {
+        AdjustTeamPointsDialog(
+            teams = uiState.rows.filter { row -> row.teamName.isNotBlank() },
+            initialTeamSlotNumber = adjustmentTeamSlotNumber,
+            existingAdjustments = pointAdjustmentsByTeamSlot,
+            onDismiss = { showAdjustTeamPointsDialog = false },
+            onApply = { teamSlotNumber, points ->
+                showAdjustTeamPointsDialog = false
+                onSaveTeamPointAdjustment(teamSlotNumber, points)
+            },
+        )
+    }
     if (showResultScopeDialog) {
         ResultDownloadScopeDialog(
             selectedScope = selectedResultScope,
@@ -2897,6 +2968,190 @@ private fun MatchReviewOcrContainer(
             content()
         }
     }
+}
+
+@Composable
+private fun AdjustTeamPointsDialog(
+    teams: List<MatchReviewRowUiState>,
+    initialTeamSlotNumber: Int? = null,
+    existingAdjustments: Map<Int, Int> = emptyMap(),
+    onDismiss: () -> Unit,
+    onApply: (teamSlotNumber: Int, points: Int) -> Unit,
+) {
+    val initialSelectedTeamSlot = initialTeamSlotNumber ?: teams.firstOrNull()?.teamSlotNumber
+    val initialTeamAdjustment = existingAdjustments[initialSelectedTeamSlot] ?: 0
+    var selectedTeamSlot by remember(teams, initialTeamSlotNumber) {
+        mutableStateOf(initialSelectedTeamSlot)
+    }
+    var teamSelectorExpanded by remember { mutableStateOf(false) }
+    var workingAdjustment by remember(teams, initialTeamSlotNumber, existingAdjustments) {
+        mutableStateOf(initialTeamAdjustment.toString())
+    }
+    val selectedTeam = teams.firstOrNull { row -> row.teamSlotNumber == selectedTeamSlot }
+    val hasFixedTeam = initialTeamSlotNumber != null
+    val parsedAdjustment = workingAdjustment.toBigIntegerOrNull()
+    val isAdjustmentValid = workingAdjustment.matches(PointAdjustmentInputPattern) &&
+        parsedAdjustment != null
+    val isAdjustmentInIntRange = parsedAdjustment?.let { value ->
+        value >= BigInteger.valueOf(Int.MIN_VALUE.toLong()) &&
+            value <= BigInteger.valueOf(Int.MAX_VALUE.toLong())
+    } == true
+    val currentAdjustment = parsedAdjustment ?: BigInteger.ZERO
+
+    AlertDialog(
+        modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.match_review_adjust_team_points_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                if (!hasFixedTeam) {
+                    Text(stringResource(R.string.match_review_adjust_team_points_team_label))
+                    Box {
+                        OutlinedButton(
+                            onClick = { teamSelectorExpanded = true },
+                            enabled = teams.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_SELECTOR_TEST_TAG),
+                        ) {
+                            Text(
+                                text = selectedTeam?.let { row ->
+                                    stringResource(
+                                        R.string.match_review_team_label,
+                                        row.teamSlotNumber,
+                                        row.teamName,
+                                    )
+                                } ?: stringResource(R.string.match_review_adjust_team_points_no_teams),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = teamSelectorExpanded,
+                            onDismissRequest = { teamSelectorExpanded = false },
+                        ) {
+                            teams.forEach { row ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(
+                                                R.string.match_review_team_label,
+                                                row.teamSlotNumber,
+                                                row.teamName,
+                                            ),
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedTeamSlot = row.teamSlotNumber
+                                        teamSelectorExpanded = false
+                                        workingAdjustment = (
+                                            existingAdjustments[row.teamSlotNumber] ?: 0
+                                        ).toString()
+                                    },
+                                    modifier = Modifier.testTag(
+                                        MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_OPTION_TEST_TAG_PREFIX +
+                                            row.teamSlotNumber,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(stringResource(R.string.match_review_adjust_team_points_input_label))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            workingAdjustment = currentAdjustment.subtract(BigInteger.ONE).toString()
+                        },
+                        enabled = selectedTeam != null,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PointIqMatchReviewHeader,
+                        ),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = PointIqMatchReviewCtaBorder,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            text = "−",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = workingAdjustment,
+                        onValueChange = { value ->
+                            if (value.isEmpty() || value == "-" ||
+                                value.matches(PointAdjustmentInputPattern)
+                            ) {
+                                workingAdjustment = value
+                            }
+                        },
+                        singleLine = true,
+                        isError = workingAdjustment.isNotEmpty() &&
+                            workingAdjustment != "-" &&
+                            (!isAdjustmentValid || !isAdjustmentInIntRange),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                        modifier = Modifier
+                            .weight(1.5f)
+                            .testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            workingAdjustment = currentAdjustment.add(BigInteger.ONE).toString()
+                        },
+                        enabled = selectedTeam != null,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PointIqMatchReviewHeader,
+                        ),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = PointIqMatchReviewCtaBorder,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            text = "+",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_CANCEL_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.cancel_action))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val teamSlotNumber = selectedTeamSlot
+                    if (
+                        teamSlotNumber != null &&
+                        parsedAdjustment != null &&
+                        isAdjustmentValid &&
+                        isAdjustmentInIntRange
+                    ) {
+                        onApply(teamSlotNumber, parsedAdjustment.toInt())
+                    }
+                },
+                enabled = selectedTeam != null && isAdjustmentValid && isAdjustmentInIntRange,
+                modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG),
+            ) {
+                Text(stringResource(R.string.match_review_adjust_team_points_apply_action))
+            }
+        },
+    )
 }
 
 @Composable
@@ -3548,7 +3803,9 @@ private fun MatchReviewResultOcrDetailsContent(
     onFinalizeOcrCorrection: () -> Unit,
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
+    onAdjustTeamPoints: (Int?) -> Unit,
     onManualBack: (() -> Unit)? = null,
+    pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
     Column(
         modifier = Modifier
@@ -3596,6 +3853,8 @@ private fun MatchReviewResultOcrDetailsContent(
                 onFinalizeOcrCorrection = onFinalizeOcrCorrection,
                 onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onDismissFinalizeWarnings,
+                onAdjustTeamPoints = onAdjustTeamPoints,
+                pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
         onManualBack?.let { onBack ->
@@ -3641,6 +3900,36 @@ private fun MatchReviewResultOcrDetailsContent(
     }
 }
 
+private fun MatchOcrReviewRowUiState.temporaryTeamSlotNumber(
+    correctionDraft: MatchOcrReviewRowCorrectionDraft?,
+): Int? = correctionDraft
+    ?.assignedTeamSlotDraftValue
+    ?.toIntOrNull()
+    ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+    ?: suggestedTeamSlotDisplayValue
+        .toIntOrNull()
+        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+
+@Composable
+private fun TemporaryTeamPointAdjustmentIndicator(
+    teamSlotNumber: Int?,
+    adjustment: Int,
+) {
+    if (teamSlotNumber != null && adjustment != 0) {
+        Text(
+            text = stringResource(
+                R.string.match_review_adjust_team_points_indicator,
+                adjustment.toSignedPointAdjustment(),
+            ),
+            color = PointIqMatchReviewSubtitle,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag(
+                MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + teamSlotNumber,
+            ),
+        )
+    }
+}
+
 @Composable
 private fun MatchReviewResultOcrPositionContent(
     uiState: MatchOcrReviewUiState,
@@ -3651,6 +3940,8 @@ private fun MatchReviewResultOcrPositionContent(
     onAssignedTeamSlotChanged: (rowIndex: Int, value: String) -> Unit,
     onExcludeOcrRow: (rowIndex: Int) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
+    onAdjustTeamPoints: (Int?) -> Unit,
+    pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
     when (uiState) {
         is MatchOcrReviewUiState.Empty -> {
@@ -3677,6 +3968,7 @@ private fun MatchReviewResultOcrPositionContent(
                 ?.rows
                 ?.singleOrNull { it.position == position }
             val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
+            val teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex])
             MatchReviewOcrContainer {
                 MatchOcrReviewRow(
                     row = row,
@@ -3690,6 +3982,10 @@ private fun MatchReviewResultOcrPositionContent(
                     onExcludeRow = onExcludeOcrRow,
                     onResetRowCorrection = onResetRowCorrection,
                     correctionEnabled = !uiState.finalization.isFinalized,
+                    onAdjustTeamPoints = { onAdjustTeamPoints(teamSlotNumber) },
+                    adjustTeamPointsEnabled = teamSlotNumber != null &&
+                        !uiState.finalization.isFinalized,
+                    adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(row.rowIndex),
                     availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
                         emptyList()
                     } else {
@@ -3702,6 +3998,12 @@ private fun MatchReviewResultOcrPositionContent(
                     compactFieldRow = true,
                     showBlockerDetails = false,
                     compactResetAction = true,
+                )
+                TemporaryTeamPointAdjustmentIndicator(
+                    teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
+                    adjustment = pointAdjustmentsByTeamSlot[
+                        row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex])
+                    ] ?: 0,
                 )
             }
         }
@@ -3769,7 +4071,9 @@ private fun MatchReviewResultRowsPagerContent(
     onFinalizeOcrCorrection: () -> Unit,
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
+    onAdjustTeamPoints: (Int?) -> Unit,
     showPlayerRows: Boolean = true,
+    pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
     val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
         ?.rows
@@ -3821,6 +4125,7 @@ private fun MatchReviewResultRowsPagerContent(
                     .testTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG),
             ) { page ->
                 rows.getOrNull(page)?.let { row ->
+                    val teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex])
                     MatchReviewOcrContainer {
                         MatchOcrReviewRow(
                             row = row,
@@ -3834,6 +4139,10 @@ private fun MatchReviewResultRowsPagerContent(
                             onExcludeRow = onExcludeOcrRow,
                             onResetRowCorrection = onResetRowCorrection,
                             correctionEnabled = !uiState.finalization.isFinalized,
+                            onAdjustTeamPoints = { onAdjustTeamPoints(teamSlotNumber) },
+                            adjustTeamPointsEnabled = teamSlotNumber != null &&
+                                !uiState.finalization.isFinalized,
+                            adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(row.rowIndex),
                             availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
                                 emptyList()
                             } else {
@@ -3847,6 +4156,12 @@ private fun MatchReviewResultRowsPagerContent(
                             showBlockerDetails = false,
                             compactResetAction = true,
                             showPlayerRows = showPlayerRows,
+                        )
+                        TemporaryTeamPointAdjustmentIndicator(
+                            teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
+                            adjustment = pointAdjustmentsByTeamSlot[
+                                row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex])
+                            ] ?: 0,
                         )
                     }
                 }
@@ -4835,7 +5150,10 @@ private fun MatchCorrectionHistory(history: List<MatchCorrectionRecord>) {
 }
 
 @Composable
-private fun MatchReviewRow(row: MatchReviewRowUiState) {
+private fun MatchReviewRow(
+    row: MatchReviewRowUiState,
+    temporaryAdjustment: Int = 0,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -4870,6 +5188,21 @@ private fun MatchReviewRow(row: MatchReviewRowUiState) {
                 row.killsInput.ifBlank { stringResource(R.string.match_review_empty_value) },
             ),
         )
+        temporaryAdjustment
+            .takeIf { it != 0 }
+            ?.let { adjustment ->
+                Text(
+                    text = stringResource(
+                        R.string.match_review_adjust_team_points_indicator,
+                        adjustment.toSignedPointAdjustment(),
+                    ),
+                    color = PointIqMatchReviewSubtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag(
+                        MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + row.teamSlotNumber,
+                    ),
+                )
+            }
         if (row.validationErrors.isEmpty()) {
             Text(
                 text = stringResource(R.string.match_review_row_valid),
@@ -4890,6 +5223,9 @@ private fun MatchReviewRow(row: MatchReviewRowUiState) {
         }
     }
 }
+
+private fun Int.toSignedPointAdjustment(): String =
+    if (this > 0) "+$this" else toString()
 
 @Composable
 private fun MatchReviewNotFoundState(onBackToDetails: () -> Unit) {

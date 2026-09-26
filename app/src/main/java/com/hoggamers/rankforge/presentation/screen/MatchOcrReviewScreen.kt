@@ -25,11 +25,15 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -119,6 +123,7 @@ object MatchOcrReviewTestTags {
     fun compactPlayerKillInput(position: Int, slot: Int): String =
         "${compactPlayer(position, slot)}_kill_input"
     fun compactPlayerRow(position: Int, row: Int): String = "${compactRow(position)}_players_$row"
+    fun adjustTeamPoints(rowIndex: Int): String = "${row(rowIndex)}_adjust_team_points"
     fun placement(rowIndex: Int): String = "${row(rowIndex)}_placement"
     fun playerName(rowIndex: Int): String = "${row(rowIndex)}_player_name"
     fun kills(rowIndex: Int): String = "${row(rowIndex)}_kills"
@@ -695,6 +700,9 @@ internal fun MatchOcrReviewCompactRow(
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
     compactDeleteTestTag: String? = null,
+    onCompactAdjustTeamPoints: (() -> Unit)? = null,
+    compactAdjustEnabled: Boolean = true,
+    compactAdjustTestTag: String? = null,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -730,6 +738,9 @@ internal fun MatchOcrReviewCompactRow(
             onCompactDelete = onCompactDelete,
             compactDeleteEnabled = compactDeleteEnabled,
             compactDeleteTestTag = compactDeleteTestTag,
+            onCompactAdjustTeamPoints = onCompactAdjustTeamPoints,
+            compactAdjustEnabled = compactAdjustEnabled,
+            compactAdjustTestTag = compactAdjustTestTag,
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -1139,6 +1150,9 @@ internal fun MatchOcrReviewRow(
     onExcludeRow: ((rowIndex: Int) -> Unit)? = null,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     correctionEnabled: Boolean,
+    onAdjustTeamPoints: (() -> Unit)? = null,
+    adjustTeamPointsEnabled: Boolean = true,
+    adjustTeamPointsTestTag: String? = null,
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
@@ -1175,6 +1189,9 @@ internal fun MatchOcrReviewRow(
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = correctionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
+                onCompactAdjustTeamPoints = onAdjustTeamPoints,
+                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1190,6 +1207,9 @@ internal fun MatchOcrReviewRow(
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = correctionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
+                onCompactAdjustTeamPoints = onAdjustTeamPoints,
+                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1201,6 +1221,9 @@ internal fun MatchOcrReviewRow(
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = correctionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
+                onCompactAdjustTeamPoints = onAdjustTeamPoints,
+                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1287,6 +1310,9 @@ private fun MatchOcrReviewMissingPreviewRow(
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
     compactDeleteTestTag: String? = null,
+    onCompactAdjustTeamPoints: (() -> Unit)? = null,
+    compactAdjustEnabled: Boolean = true,
+    compactAdjustTestTag: String? = null,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -1316,6 +1342,9 @@ private fun MatchOcrReviewMissingPreviewRow(
             onCompactDelete = onCompactDelete,
             compactDeleteEnabled = compactDeleteEnabled,
             compactDeleteTestTag = compactDeleteTestTag,
+            onCompactAdjustTeamPoints = onCompactAdjustTeamPoints,
+            compactAdjustEnabled = compactAdjustEnabled,
+            compactAdjustTestTag = compactAdjustTestTag,
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -1346,6 +1375,9 @@ private fun MatchOcrReviewPositionHeader(
     onCompactDelete: (() -> Unit)?,
     compactDeleteEnabled: Boolean,
     compactDeleteTestTag: String?,
+    onCompactAdjustTeamPoints: (() -> Unit)?,
+    compactAdjustEnabled: Boolean,
+    compactAdjustTestTag: String?,
     onCompactReset: (() -> Unit)?,
     compactResetEnabled: Boolean,
     compactResetTestTag: String?,
@@ -1364,7 +1396,54 @@ private fun MatchOcrReviewPositionHeader(
                 .weight(1f)
                 .testTag(placementTestTag),
         )
-        if (onCompactDelete != null && compactDeleteTestTag != null) {
+        if (
+            onCompactAdjustTeamPoints != null &&
+            onCompactDelete != null &&
+            compactAdjustTestTag != null &&
+            compactDeleteTestTag != null
+        ) {
+            val actionMenuExpanded = remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { actionMenuExpanded.value = true },
+                    enabled = compactAdjustEnabled || compactDeleteEnabled,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = stringResource(R.string.logged_in_home_open_menu),
+                        tint = PointIqOcrReviewCyan,
+                    )
+                }
+                DropdownMenu(
+                    expanded = actionMenuExpanded.value,
+                    onDismissRequest = { actionMenuExpanded.value = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(R.string.match_review_adjust_team_points_action))
+                        },
+                        onClick = {
+                            actionMenuExpanded.value = false
+                            onCompactAdjustTeamPoints()
+                        },
+                        enabled = compactAdjustEnabled,
+                        modifier = Modifier.testTag(compactAdjustTestTag),
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(R.string.match_review_delete_team_action))
+                        },
+                        onClick = {
+                            actionMenuExpanded.value = false
+                            onCompactDelete()
+                        },
+                        enabled = compactDeleteEnabled,
+                        modifier = Modifier.testTag(compactDeleteTestTag),
+                    )
+                }
+            }
+        } else if (onCompactDelete != null && compactDeleteTestTag != null) {
             Box(
                 modifier = Modifier
                     .size(24.dp)

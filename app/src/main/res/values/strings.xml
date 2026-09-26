@@ -452,6 +452,7 @@
     <string name="match_ocr_review_correction_warnings_title">Correction warnings</string>
     <string name="match_ocr_review_reset_row_action">Reset row correction</string>
     <string name="match_ocr_review_exclude_row_action">Exclude OCR row</string>
+    <string name="match_review_delete_team_action">Delete Team</string>
     <string name="match_ocr_review_reset_all_action">Reset all corrections</string>
     <string name="match_ocr_review_correction_status_valid">valid</string>
     <string name="match_ocr_review_correction_status_warning">warning</string>
@@ -520,6 +521,13 @@
     <string name="match_review_delete_remote_error">The match could not be deleted from the cloud. Try again.</string>
     <string name="match_review_delete_local_cleanup_error">The match was deleted remotely, but local cleanup is incomplete. Try again.</string>
     <string name="match_review_delete_generic_error">Unable to delete match. Please try again.</string>
+    <string name="match_review_adjust_team_points_action">Adjust Team Points</string>
+    <string name="match_review_adjust_team_points_title">Adjust Team Points</string>
+    <string name="match_review_adjust_team_points_team_label">Team</string>
+    <string name="match_review_adjust_team_points_no_teams">No teams available</string>
+    <string name="match_review_adjust_team_points_input_label">Point Adjustment</string>
+    <string name="match_review_adjust_team_points_apply_action">Apply</string>
+    <string name="match_review_adjust_team_points_indicator">Points adjustment: %1$s</string>
     <string name="match_review_lobby_screenshots_title">Lobby Details</string>
     <string name="match_review_result_screenshots_title">Result Details</string>
     <string name="match_review_loading">Loading match review</string>

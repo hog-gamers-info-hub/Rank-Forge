@@ -56,6 +56,8 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueInput
+import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.export.MatchCsvExportFailure
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchCsvExportResult
@@ -182,6 +184,7 @@ class MatchReviewViewModel @Inject constructor(
     private val calculatedEvidenceSaveScheduler: ScreenshotReconciliationScheduler =
         ScreenshotReconciliationScheduler(),
     private val createNextMatchWorkflow: CreateNextMatchWorkflow? = null,
+    private val saveDraftValue: SaveMatchDraftValueUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -346,6 +349,7 @@ class MatchReviewViewModel @Inject constructor(
                                 ?: placementsBySlot[teamSlotNumber]?.position?.toString().orEmpty(),
                             killsInput = draft?.killsInput
                                 ?: killsBySlot[teamSlotNumber]?.kills?.toString().orEmpty(),
+                            pointAdjustment = draft?.pointAdjustment ?: 0,
                         )
                     }
                     val validation = if (match.status == MatchStatus.FINALIZED || draftValues.isEmpty()) {
@@ -555,6 +559,24 @@ class MatchReviewViewModel @Inject constructor(
     fun openKills() {
         if (_uiState.value.isEditable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.KILLS) }
+        }
+    }
+
+    fun saveTeamPointAdjustment(teamSlotNumber: Int, pointAdjustment: Int) {
+        val state = _uiState.value
+        val tournamentId = state.tournamentId?.takeIf { it.isNotBlank() } ?: return
+        val matchId = state.matchId?.takeIf { it.isNotBlank() } ?: return
+        if (!state.isEditable || teamSlotNumber !in TeamSlot.SLOT_NUMBERS) return
+        saveDraftValue ?: return
+        viewModelScope.launch {
+            saveDraftValue(
+                SaveMatchDraftValueInput(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    teamSlotNumber = teamSlotNumber,
+                    pointAdjustment = pointAdjustment,
+                ),
+            )
         }
     }
 

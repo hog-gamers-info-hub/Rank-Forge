@@ -174,6 +174,7 @@ internal fun MatchParticipantResult.toEntity(matchId: String): MatchParticipantR
         participationStatus = participationStatus.name,
         placement = placement,
         kills = kills,
+        pointAdjustment = pointAdjustment,
     )
 
 internal fun MatchParticipantResultEntity.toDomain(): MatchParticipantResult = MatchParticipantResult(
@@ -181,6 +182,7 @@ internal fun MatchParticipantResultEntity.toDomain(): MatchParticipantResult = M
     participationStatus = MatchParticipationStatus.valueOf(participationStatus),
     placement = placement,
     kills = kills,
+    pointAdjustment = pointAdjustment,
 )
 
 internal fun MatchDraftFieldValues.toEntity(
@@ -191,11 +193,13 @@ internal fun MatchDraftFieldValues.toEntity(
     teamSlotNumber = teamSlotNumber,
     placementInput = placementInput,
     killsInput = killsInput,
+    pointAdjustment = pointAdjustment,
 )
 
 internal fun MatchDraftValueEntity.toDomain(): MatchDraftFieldValues = MatchDraftFieldValues(
     placementInput = placementInput,
     killsInput = killsInput,
+    pointAdjustment = pointAdjustment,
 )
 
 internal fun MatchCorrectionRecord.toEntity(
@@ -262,6 +266,7 @@ private data class StoredParticipantResult(
     val participationStatus: String,
     val placement: Int?,
     val kills: Int,
+    val pointAdjustment: Int = 0,
 )
 
 private fun MatchPlacement.toStored(): StoredPlacement = StoredPlacement(teamSlotNumber, position)
@@ -273,6 +278,7 @@ private fun MatchParticipantResult.toStored(): StoredParticipantResult = StoredP
     participationStatus = participationStatus.name,
     placement = placement,
     kills = kills,
+    pointAdjustment = pointAdjustment,
 )
 
 private fun StoredPlacement.toDomain(): MatchPlacement = MatchPlacement(teamSlotNumber, position)
@@ -284,6 +290,7 @@ private fun StoredParticipantResult.toDomain(): MatchParticipantResult = MatchPa
     participationStatus = MatchParticipationStatus.valueOf(participationStatus),
     placement = placement,
     kills = kills,
+    pointAdjustment = pointAdjustment,
 )
 
 private fun Json.decodeCorrectionSnapshotOrNull(raw: String): StoredCorrectionSnapshot? =

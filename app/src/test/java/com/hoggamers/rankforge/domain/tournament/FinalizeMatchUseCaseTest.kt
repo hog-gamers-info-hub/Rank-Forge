@@ -30,6 +30,25 @@ class FinalizeMatchUseCaseTest {
     }
 
     @Test
+    fun finalizationCarriesDraftPointAdjustmentIntoParticipantResult() = runTest {
+        val repository = createRepository()
+        repository.saveDraftMatchValue(
+            tournamentId = "tournament-id",
+            matchId = "match-id",
+            teamSlotNumber = 1,
+            pointAdjustment = -3,
+        )
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
+
+        val result = useCase(FinalizeMatchInput("match-id", validRows()))
+
+        val finalized = result as FinalizeMatchResult.Finalized
+        val teamResult = finalized.match.finalizedParticipantResultsOrNull()!!.first { it.teamSlotNumber == 1 }
+        assertEquals(-3, teamResult.pointAdjustment)
+        assertEquals(9, teamResult.totalPoints)
+    }
+
+    @Test
     fun tenTeamDraftFinalizesAgainstActiveTeamSlots() = runTest {
         val repository = createRepository(activeTeamCount = 10)
         val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())

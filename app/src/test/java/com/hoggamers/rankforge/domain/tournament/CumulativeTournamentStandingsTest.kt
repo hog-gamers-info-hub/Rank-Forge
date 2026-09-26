@@ -102,6 +102,40 @@ class CumulativeTournamentStandingsTest {
     }
 
     @Test
+    fun pointAdjustmentsChangeCumulativeOfficialTotalWithoutChangingPlacementOrKills() {
+        val result = standings(
+            listOf(
+                match(
+                    id = "adjusted-match",
+                    matchNumber = 1,
+                    participantResults = listOf(
+                        MatchParticipantResult(
+                            teamSlotNumber = 1,
+                            participationStatus = MatchParticipationStatus.PARTICIPATED,
+                            placement = 1,
+                            kills = 2,
+                            pointAdjustment = -3,
+                        ),
+                        MatchParticipantResult(
+                            teamSlotNumber = 2,
+                            participationStatus = MatchParticipationStatus.PARTICIPATED,
+                            placement = 2,
+                            kills = 1,
+                            pointAdjustment = 3,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(11, result.first { it.teamSlotNumber == 1 }.totalPoints)
+        assertEquals(13, result.first { it.teamSlotNumber == 2 }.totalPoints)
+        assertEquals(12, result.first { it.teamSlotNumber == 1 }.totalPositionPoints)
+        assertEquals(2, result.first { it.teamSlotNumber == 1 }.totalKillPoints)
+        assertEquals(1, result.first { it.teamSlotNumber == 1 }.latestMatchPlacement)
+    }
+
+    @Test
     fun correctedTenTeamMatchUsesItsCurrentFinalizedValues() {
         val result = standings(
             listOf(

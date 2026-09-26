@@ -360,6 +360,7 @@ interface TournamentRepository {
         teamSlotNumber: Int,
         placementInput: String? = null,
         killsInput: String? = null,
+        pointAdjustment: Int? = null,
     ) = Unit
 
     suspend fun saveDraftMatchValueByOwner(
@@ -369,6 +370,7 @@ interface TournamentRepository {
         teamSlotNumber: Int,
         placementInput: String? = null,
         killsInput: String? = null,
+        pointAdjustment: Int? = null,
     ): OwnerScopedMatchMutationResult =
         error("Owner-scoped draft match value updates are not supported by this repository.")
 

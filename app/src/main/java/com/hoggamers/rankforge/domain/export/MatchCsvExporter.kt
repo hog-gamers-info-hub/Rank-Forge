@@ -3,7 +3,6 @@ package com.hoggamers.rankforge.domain.export
 import com.hoggamers.rankforge.domain.tournament.KillPointsEngine
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
-import com.hoggamers.rankforge.domain.tournament.MatchTotalEngine
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.PositionPointsEngine
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -40,7 +39,6 @@ sealed interface MatchCsvExportResult {
 class MatchCsvExporter(
     private val positionPointsEngine: PositionPointsEngine = PositionPointsEngine(),
     private val killPointsEngine: KillPointsEngine = KillPointsEngine(),
-    private val matchTotalEngine: MatchTotalEngine = MatchTotalEngine(),
 ) {
     fun export(input: MatchCsvExportInput): MatchCsvExportResult {
         return when (val rowsResult = buildMatchRows(input)) {
@@ -106,9 +104,7 @@ class MatchCsvExporter(
                     placementPoints = result.placement?.let(positionPointsEngine::invoke) ?: 0,
                     kills = result.kills,
                     killPoints = if (result.isNoShow) 0 else killPointsEngine(result.kills),
-                    totalPoints = result.placement?.let {
-                        matchTotalEngine(it, result.kills)
-                    } ?: 0,
+                    totalPoints = result.totalPoints,
                     correctionStatus = correctionStatus,
                 )
             }

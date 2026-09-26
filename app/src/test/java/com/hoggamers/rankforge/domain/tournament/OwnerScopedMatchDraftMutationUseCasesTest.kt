@@ -280,7 +280,7 @@ class OwnerScopedMatchDraftMutationUseCasesTest {
             if (matches.none { it.id == matchId } || ownerUserId != this.ownerUserId) SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.MATCH_NOT_FOUND) else {
                 killsOwnerUserId = ownerUserId; SaveMatchKillsRepositoryResult.Saved
             }
-        override suspend fun saveDraftMatchValueByOwner(tournamentId: String, matchId: String, ownerUserId: String, teamSlotNumber: Int, placementInput: String?, killsInput: String?): OwnerScopedMatchMutationResult =
+        override suspend fun saveDraftMatchValueByOwner(tournamentId: String, matchId: String, ownerUserId: String, teamSlotNumber: Int, placementInput: String?, killsInput: String?, pointAdjustment: Int?): OwnerScopedMatchMutationResult =
             dualResult(tournamentId, matchId, ownerUserId) { draftValueOwnerUserId = it }
         override suspend fun clearDraftMatchByOwner(tournamentId: String, matchId: String, ownerUserId: String): OwnerScopedMatchMutationResult =
             dualResult(tournamentId, matchId, ownerUserId) { clearDraftOwnerUserId = it }

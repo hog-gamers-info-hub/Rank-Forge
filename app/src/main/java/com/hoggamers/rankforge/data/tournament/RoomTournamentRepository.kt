@@ -2043,7 +2043,12 @@ class RoomTournamentRepository @Inject constructor(
                     val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
                     val expectedPlacements = (1..placements.size).toSet()
                     val finalizedParticipantResults = participantResults
-                        ?: buildLegacyParticipantResults(expectedTeamSlots, placements, kills)
+                        ?: buildLegacyParticipantResults(
+                            expectedTeamSlots,
+                            placements,
+                            kills,
+                            current.draftValues[DraftKey(match.tournamentId, matchId)].orEmpty(),
+                        )
                     if (
                         !participation.isReadyForMatchCreation ||
                         placements.isEmpty() ||
@@ -2155,7 +2160,7 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
                 }
                 val previousParticipantResults = match.finalizedParticipantResultsOrNull()
-                val correctedParticipantResults = participantResults ?: placements.map { placement ->
+                val correctedParticipantResults = (participantResults ?: placements.map { placement ->
                     val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
                         ?: return@withTransaction SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
                     MatchParticipantResult(
@@ -2163,6 +2168,13 @@ class RoomTournamentRepository @Inject constructor(
                         participationStatus = MatchParticipationStatus.PARTICIPATED,
                         placement = placement.position,
                         kills = kill.kills,
+                    )
+                }).map { corrected ->
+                    corrected.copy(
+                        pointAdjustment = previousParticipantResults
+                            ?.firstOrNull { it.teamSlotNumber == corrected.teamSlotNumber }
+                            ?.pointAdjustment
+                            ?: 0,
                     )
                 }
                 if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
@@ -2243,6 +2255,7 @@ class RoomTournamentRepository @Inject constructor(
         teamSlotNumber: Int,
         placementInput: String?,
         killsInput: String?,
+        pointAdjustment: Int?,
     ) {
         saveDraftMatchValueInternal(
             tournamentId = tournamentId,
@@ -2250,6 +2263,7 @@ class RoomTournamentRepository @Inject constructor(
             teamSlotNumber = teamSlotNumber,
             placementInput = placementInput,
             killsInput = killsInput,
+            pointAdjustment = pointAdjustment,
             ownerUserId = null,
         )
     }
@@ -2261,12 +2275,14 @@ class RoomTournamentRepository @Inject constructor(
         teamSlotNumber: Int,
         placementInput: String?,
         killsInput: String?,
+        pointAdjustment: Int?,
     ): OwnerScopedMatchMutationResult = saveDraftMatchValueInternal(
         tournamentId = tournamentId,
         matchId = matchId,
         teamSlotNumber = teamSlotNumber,
         placementInput = placementInput,
         killsInput = killsInput,
+        pointAdjustment = pointAdjustment,
         ownerUserId = ownerUserId,
     )
 
@@ -2276,6 +2292,7 @@ class RoomTournamentRepository @Inject constructor(
         teamSlotNumber: Int,
         placementInput: String?,
         killsInput: String?,
+        pointAdjustment: Int?,
         ownerUserId: String?,
     ): OwnerScopedMatchMutationResult {
         require(teamSlotNumber in TeamSlot.SLOT_NUMBERS)
@@ -2304,6 +2321,7 @@ class RoomTournamentRepository @Inject constructor(
                 val updated = old.copy(
                     placementInput = placementInput ?: old.placementInput,
                     killsInput = killsInput ?: old.killsInput,
+                    pointAdjustment = pointAdjustment ?: old.pointAdjustment,
                 )
                 val next = current.copy(
                     draftValues = current.draftValues + (key to (
@@ -2808,6 +2826,7 @@ private fun buildLegacyParticipantResults(
     registeredTeamSlots: Set<Int>,
     placements: List<MatchPlacement>,
     kills: List<MatchKill>,
+    draftValues: Map<Int, MatchDraftFieldValues> = emptyMap(),
 ): List<MatchParticipantResult> {
     val placementsBySlot = placements.associateBy { it.teamSlotNumber }
     val killsBySlot = kills.associateBy { it.teamSlotNumber }
@@ -2820,6 +2839,7 @@ private fun buildLegacyParticipantResults(
                 participationStatus = MatchParticipationStatus.PARTICIPATED,
                 placement = placement.position,
                 kills = kill.kills,
+                pointAdjustment = draftValues[teamSlotNumber]?.pointAdjustment ?: 0,
             )
         } else {
             MatchParticipantResult(
@@ -2871,11 +2891,22 @@ private data class PersistedKill(val teamSlotNumber: Int, val kills: Int)
 @Serializable
 private data class PersistedCorrection(val previousPlacements: List<PersistedPlacement> = emptyList(), val previousKills: List<PersistedKill> = emptyList(), val correctedPlacements: List<PersistedPlacement> = emptyList(), val correctedKills: List<PersistedKill> = emptyList())
 @Serializable
-private data class PersistedParticipantResult(val teamSlotNumber: Int, val participationStatus: String, val placement: Int? = null, val kills: Int)
+private data class PersistedParticipantResult(
+    val teamSlotNumber: Int,
+    val participationStatus: String,
+    val placement: Int? = null,
+    val kills: Int,
+    val pointAdjustment: Int = 0,
+)
 @Serializable
 private data class PersistedDraftMatch(val tournamentId: String, val matchId: String, val values: List<PersistedDraftValue>)
 @Serializable
-private data class PersistedDraftValue(val teamSlotNumber: Int, val placementInput: String, val killsInput: String)
+private data class PersistedDraftValue(
+    val teamSlotNumber: Int,
+    val placementInput: String,
+    val killsInput: String,
+    val pointAdjustment: Int = 0,
+)
 @Serializable
 private data class PersistedTeamEntryDraft(val tournamentId: String, val names: Map<Int, String>)
 
@@ -2883,8 +2914,8 @@ private fun RepositoryState.toPersistedState() = PersistedState(
     tournaments = tournaments.map { PersistedTournament(it.id, it.name, it.date.toString(), it.organizerName, it.organizerContactNumber, it.status.name, it.ownerUserId) },
     slots = slots.values.flatten().map { PersistedSlot(it.tournamentId, it.slotNumber, it.teamName) },
     rosters = rosters.map { (key, players) -> players.map { PersistedRoster(key.tournamentId, key.slotNumber, it.displayName) } }.flatten(),
-    matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> PersistedCorrection(correction.previousPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { PersistedKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { PersistedKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> PersistedParticipantResult(result.teamSlotNumber, result.participationStatus.name, result.placement, result.kills) }) },
-    draftValues = draftValues.map { (key, values) -> PersistedDraftMatch(key.tournamentId, key.matchId, values.map { (slot, value) -> PersistedDraftValue(slot, value.placementInput, value.killsInput) }) },
+    matches = matches.values.flatten().map { match -> PersistedMatch(match.id, match.tournamentId, match.matchNumber, match.date.toString(), match.mapName, match.status.name, match.placements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, match.kills.map { PersistedKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> PersistedCorrection(correction.previousPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { PersistedKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { PersistedPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { PersistedKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> PersistedParticipantResult(result.teamSlotNumber, result.participationStatus.name, result.placement, result.kills, result.pointAdjustment) }) },
+    draftValues = draftValues.map { (key, values) -> PersistedDraftMatch(key.tournamentId, key.matchId, values.map { (slot, value) -> PersistedDraftValue(slot, value.placementInput, value.killsInput, value.pointAdjustment) }) },
     teamEntryDrafts = teamEntryDrafts.map { (tournamentId, names) -> PersistedTeamEntryDraft(tournamentId, names) },
 )
 
@@ -2892,10 +2923,10 @@ private fun PersistedState.toRepositoryState() = RepositoryState(
     tournaments = tournaments.map { Tournament(it.id, it.name, LocalDate.parse(it.date), it.organizerName, it.organizerContactNumber, TournamentStatus.valueOf(it.status), it.ownerUserId) },
     slots = slots.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { TeamSlot(it.tournamentId, it.slotNumber, it.teamName) } },
     rosters = rosters.groupBy { RosterKey(it.tournamentId, it.slotNumber) }.mapValues { (_, values) -> values.map { RosterPlayer(it.tournamentId, it.slotNumber, it.displayName) } },
-    matches = matches.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { match -> Match(match.id, match.tournamentId, match.matchNumber, LocalDate.parse(match.date), match.mapName, MatchStatus.valueOf(match.status), match.placements.map { MatchPlacement(it.teamSlotNumber, it.position) }, match.kills.map { MatchKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> MatchCorrectionRecord(correction.previousPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { MatchKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { MatchKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> MatchParticipantResult(result.teamSlotNumber, MatchParticipationStatus.valueOf(result.participationStatus), result.placement, result.kills) }) } },
+    matches = matches.groupBy { it.tournamentId }.mapValues { (_, values) -> values.map { match -> Match(match.id, match.tournamentId, match.matchNumber, LocalDate.parse(match.date), match.mapName, MatchStatus.valueOf(match.status), match.placements.map { MatchPlacement(it.teamSlotNumber, it.position) }, match.kills.map { MatchKill(it.teamSlotNumber, it.kills) }, match.correctionHistory.map { correction -> MatchCorrectionRecord(correction.previousPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.previousKills.map { MatchKill(it.teamSlotNumber, it.kills) }, correction.correctedPlacements.map { MatchPlacement(it.teamSlotNumber, it.position) }, correction.correctedKills.map { MatchKill(it.teamSlotNumber, it.kills) }) }, match.participantResults.map { result -> MatchParticipantResult(result.teamSlotNumber, MatchParticipationStatus.valueOf(result.participationStatus), result.placement, result.kills, result.pointAdjustment) }) } },
     draftValues = draftValues.associate { draft ->
         DraftKey(draft.tournamentId, draft.matchId) to draft.values.associate { value ->
-            value.teamSlotNumber to MatchDraftFieldValues(value.placementInput, value.killsInput)
+            value.teamSlotNumber to MatchDraftFieldValues(value.placementInput, value.killsInput, value.pointAdjustment)
         }
     },
     teamEntryDrafts = teamEntryDrafts.associate { draft -> draft.tournamentId to draft.names },

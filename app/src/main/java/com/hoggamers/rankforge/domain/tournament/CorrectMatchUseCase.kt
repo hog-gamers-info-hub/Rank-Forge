@@ -106,6 +106,9 @@ class SubmitMatchCorrectionUseCase(
         )
         if (!validation.isValid) return SubmitMatchCorrectionResult.Invalid(validation)
 
+        val pointAdjustmentsByTeamSlot = participantSnapshot.associate {
+            it.teamSlotNumber to it.pointAdjustment
+        }
         val participantResults = input.rows.map { row ->
             val placement = row.placement?.trim()?.takeIf { it.isNotBlank() }?.toInt()
             val kills = row.kills?.trim()?.takeIf { it.isNotBlank() }?.toInt() ?: 0
@@ -114,6 +117,7 @@ class SubmitMatchCorrectionUseCase(
                 participationStatus = row.participationStatus,
                 placement = placement,
                 kills = kills,
+                pointAdjustment = pointAdjustmentsByTeamSlot[row.teamSlotNumber] ?: 0,
             )
         }
         val placements = participantResults.mapNotNull { result ->
