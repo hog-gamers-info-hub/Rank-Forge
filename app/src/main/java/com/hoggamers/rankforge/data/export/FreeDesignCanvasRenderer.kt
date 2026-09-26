@@ -64,7 +64,7 @@ class FreeDesignCanvasRenderer(
         canvas = canvas,
         template = template,
         tournamentName = model.tournamentName,
-        organizerName = model.organizerName,
+        stageName = model.stageName,
         resultHeading = "Match ${model.matchNumber}",
         date = model.tournamentDate.format(DATE_FORMATTER),
         rows = model.rows,
@@ -78,7 +78,7 @@ class FreeDesignCanvasRenderer(
         canvas = canvas,
         template = template,
         tournamentName = model.tournamentName,
-        organizerName = model.organizerName,
+        stageName = model.stageName,
         resultHeading = "Overall Standings",
         date = model.tournamentDate.format(DATE_FORMATTER),
         rows = model.rows,
@@ -88,7 +88,7 @@ class FreeDesignCanvasRenderer(
         canvas: Canvas,
         template: FreeDesignTemplate,
         tournamentName: String,
-        organizerName: String,
+        stageName: String,
         resultHeading: String,
         date: String,
         rows: List<ResultExportRow>,
@@ -114,7 +114,7 @@ class FreeDesignCanvasRenderer(
                         canvas = canvas,
                         template = template,
                         tournamentName = tournamentName.trim(),
-                        organizerName = organizerName.trim(),
+                        stageName = stageName.trim(),
                         resultHeading = resultHeading,
                         date = date,
                     )
@@ -136,7 +136,7 @@ class FreeDesignCanvasRenderer(
         canvas: Canvas,
         template: FreeDesignTemplate,
         tournamentName: String,
-        organizerName: String,
+        stageName: String,
         resultHeading: String,
         date: String,
     ) {
@@ -145,11 +145,11 @@ class FreeDesignCanvasRenderer(
             template.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME),
             tournamentName,
         )
-        if (organizerName.isNotEmpty()) {
+        if (stageName.isNotEmpty()) {
             drawHeaderText(
                 canvas,
-                template.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME),
-                organizerName,
+                template.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME),
+                stageName,
             )
         }
         drawHeaderText(

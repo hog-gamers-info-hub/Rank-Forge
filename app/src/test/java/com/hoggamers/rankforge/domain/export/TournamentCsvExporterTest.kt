@@ -835,7 +835,7 @@ class TournamentCsvExporterTest {
             id = TOURNAMENT_ID,
             name = name,
             date = LocalDate.of(2026, 7, 31),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "1234567890",
             status = TournamentStatus.CONFIRMED,
         )

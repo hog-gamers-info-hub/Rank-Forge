@@ -13,7 +13,7 @@ class ResultExportModelBuilder(
             is MatchExportRowsResult.Success -> MatchResultExportModelBuildResult.Success(
                 model = MatchResultExportModel(
                     tournamentName = input.tournament.name,
-                    organizerName = input.tournament.organizerName,
+                    stageName = input.tournament.stageName,
                     tournamentDate = input.tournament.date,
                     matchNumber = input.match.matchNumber,
                     matchDate = input.match.date,
@@ -34,7 +34,7 @@ class ResultExportModelBuilder(
                 TournamentResultExportModelBuildResult.Success(
                     model = TournamentResultExportModel(
                         tournamentName = input.tournament.name,
-                        organizerName = input.tournament.organizerName,
+                        stageName = input.tournament.stageName,
                         tournamentDate = input.tournament.date,
                         finalizedMatchCount = result.rows.first().exportedMatchCount,
                         rows = result.rows.map { row -> row.toResultExportRow() },

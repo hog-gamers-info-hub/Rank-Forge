@@ -147,7 +147,7 @@ fun TournamentCreationRoute(
         uiState = uiState,
         onTournamentNameChanged = viewModel::onTournamentNameChanged,
         onTournamentDateChanged = viewModel::onTournamentDateChanged,
-        onOrganizerNameChanged = viewModel::onOrganizerNameChanged,
+        onStageNameChanged = viewModel::onStageNameChanged,
         onOrganizerContactNumberChanged = viewModel::onOrganizerContactNumberChanged,
         onSubmit = viewModel::submit,
         onBackPressed = viewModel::onBackPressed,
@@ -161,7 +161,7 @@ fun TournamentCreationScreen(
     uiState: TournamentCreationUiState,
     onTournamentNameChanged: (String) -> Unit,
     onTournamentDateChanged: (LocalDate) -> Unit,
-    onOrganizerNameChanged: (String) -> Unit,
+    onStageNameChanged: (String) -> Unit,
     onOrganizerContactNumberChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     onBackPressed: () -> Unit,
@@ -343,10 +343,10 @@ fun TournamentCreationScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             PointIqTournamentField(
-                value = uiState.organizerName,
-                label = stringResource(R.string.organizer_name_label),
-                error = uiState.validationErrors[TournamentField.ORGANIZER_NAME],
-                onValueChange = onOrganizerNameChanged,
+                value = uiState.stageName,
+                label = stringResource(R.string.stage_name_label),
+                error = uiState.validationErrors[TournamentField.STAGE_NAME],
+                onValueChange = onStageNameChanged,
                 leadingIcon = { tint ->
                     Icon(
                         imageVector = Icons.Filled.Person,

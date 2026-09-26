@@ -53,7 +53,7 @@ class SupabaseTournamentQuotaRepositoryTest {
                             ownerId = "owner",
                             name = "Tournament $index",
                             tournamentDate = "2026-07-24",
-                            organizerName = "Organizer",
+                            stageName = "Organizer",
                             organizerContact = "",
                             status = "draft",
                             revision = 1,

@@ -241,7 +241,7 @@ private class DeletionTournamentRepository : TournamentRepository {
         id = "tournament-1",
         name = "Summer Cup",
         date = LocalDate.of(2026, 8, 21),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "000",
         status = TournamentStatus.CONFIRMED,
         ownerUserId = "owner-1",

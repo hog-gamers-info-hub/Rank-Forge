@@ -481,7 +481,7 @@ class TeamEntryViewModelTest {
         id = "stable-id",
         name = "Summer Cup",
         date = LocalDate.of(2026, 7, 24),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,

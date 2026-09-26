@@ -144,7 +144,7 @@ class ResultExportFileNameTest {
     ): MatchResultExportModel =
         MatchResultExportModel(
             tournamentName = tournamentName,
-            organizerName = "Organizer",
+            stageName = "Organizer",
             tournamentDate = LocalDate.of(2026, 8, 20),
             matchNumber = matchNumber,
             matchDate = LocalDate.of(2026, 8, 20),
@@ -157,7 +157,7 @@ class ResultExportFileNameTest {
     ): TournamentResultExportModel =
         TournamentResultExportModel(
             tournamentName = tournamentName,
-            organizerName = "Organizer",
+            stageName = "Organizer",
             tournamentDate = LocalDate.of(2026, 8, 20),
             finalizedMatchCount = 2,
             rows = rows(),

@@ -53,10 +53,10 @@ class ResultCanvasRendererTest {
     }
 
     @Test
-    fun blankOrganizerRemovesTheOrganizerLineForBothScopes() {
+    fun blankStageRemovesTheStageLineForBothScopes() {
         listOf(
-            renderer to { canvas: RecordingCanvas -> renderer.render(canvas, matchModel(organizerName = "  ")) },
-            renderer to { canvas: RecordingCanvas -> renderer.render(canvas, tournamentModel(organizerName = "  ")) },
+            renderer to { canvas: RecordingCanvas -> renderer.render(canvas, matchModel(stageName = "  ")) },
+            renderer to { canvas: RecordingCanvas -> renderer.render(canvas, tournamentModel(stageName = "  ")) },
         ).forEach { (_, render) ->
             val canvas = RecordingCanvas()
             try {
@@ -78,7 +78,7 @@ class ResultCanvasRendererTest {
                 canvas,
                 matchModel(
                     tournamentName = "A very long tournament name that must remain inside the export page bounds",
-                    organizerName = "A very long organizer name that must remain inside the export page bounds",
+                    stageName = "A very long stage name that must remain inside the export page bounds",
                 ),
             )
 
@@ -114,13 +114,13 @@ class ResultCanvasRendererTest {
             assertEquals(ResultCanvasRenderResult.Success, renderer.render(canvas, matchModel()))
 
             assertTrue(ResultLayoutSpec.TABLE_TOP > ResultLayoutSpec.SUBTITLE_BASELINE)
-            assertTrue(ResultLayoutSpec.TABLE_TOP > ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE)
+            assertTrue(ResultLayoutSpec.TABLE_TOP > ResultLayoutSpec.SUBTITLE_WITHOUT_STAGE_BASELINE)
             assertTrue(
                 ResultLayoutSpec.TABLE_TOP - ResultLayoutSpec.SUBTITLE_BASELINE <
                     36f,
             )
             assertTrue(
-                ResultLayoutSpec.TABLE_TOP - ResultLayoutSpec.SUBTITLE_WITHOUT_ORGANIZER_BASELINE <
+                ResultLayoutSpec.TABLE_TOP - ResultLayoutSpec.SUBTITLE_WITHOUT_STAGE_BASELINE <
                     36f,
             )
         } finally {
@@ -152,10 +152,10 @@ class ResultCanvasRendererTest {
 
     private fun matchModel(
         tournamentName: String = "Champions Cup 2026",
-        organizerName: String = "HOG Gamers",
+        stageName: String = "HOG Gamers",
     ) = MatchResultExportModel(
         tournamentName = tournamentName,
-        organizerName = organizerName,
+        stageName = stageName,
         tournamentDate = LocalDate.of(2026, 9, 3),
         matchNumber = 4,
         matchDate = LocalDate.of(2026, 8, 31),
@@ -164,10 +164,10 @@ class ResultCanvasRendererTest {
     )
 
     private fun tournamentModel(
-        organizerName: String = "HOG Gamers",
+        stageName: String = "HOG Gamers",
     ) = TournamentResultExportModel(
         tournamentName = "Champions Cup 2026",
-        organizerName = organizerName,
+        stageName = stageName,
         tournamentDate = LocalDate.of(2026, 9, 3),
         finalizedMatchCount = 2,
         rows = rows(),

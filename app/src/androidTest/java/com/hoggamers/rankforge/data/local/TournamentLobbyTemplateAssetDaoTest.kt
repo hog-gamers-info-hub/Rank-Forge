@@ -54,7 +54,7 @@ class TournamentLobbyTemplateAssetDaoTest {
         id = id,
         name = id,
         date = "2026-01-01",
-        organizerName = "organizer",
+        stageName = "organizer",
         organizerContactNumber = "contact",
         status = "DRAFT",
         ownerUserId = owner,

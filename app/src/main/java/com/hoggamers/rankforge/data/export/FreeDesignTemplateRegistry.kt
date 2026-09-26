@@ -89,7 +89,7 @@ object FreeDesignTemplateRegistry {
                 minimumTextSizePx = 20f,
                 typographyRole = FreeDesignTypographyRole.TITLE,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerY = 185f,
                 textSize = 46f,
                 maxWidthPx = 1000f,
@@ -160,7 +160,7 @@ object FreeDesignTemplateRegistry {
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = BLUE_HEADER_COLOR,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerY = 165f,
                 textSize = 47f,
                 maxWidthPx = 1000f,
@@ -234,7 +234,7 @@ object FreeDesignTemplateRegistry {
                 minimumTextSizePx = 32f,
                 typographyRole = FreeDesignTypographyRole.TITLE,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = V3_SOURCE_WIDTH / 2f,
                 centerY = 205f,
                 textSize = 40f,
@@ -308,7 +308,7 @@ object FreeDesignTemplateRegistry {
                 minimumTextSizePx = 32f,
                 typographyRole = FreeDesignTypographyRole.TITLE,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = SOURCE_WIDTH / 2f,
                 centerY = 165f,
                 textSize = 42f,
@@ -383,7 +383,7 @@ object FreeDesignTemplateRegistry {
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = V5_HEADER_COLOR,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = SOURCE_WIDTH / 2f,
                 centerY = 160f,
                 textSize = 42f,
@@ -461,7 +461,7 @@ object FreeDesignTemplateRegistry {
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = V6_HEADER_COLOR,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = V6_SOURCE_WIDTH / 2f,
                 centerY = 155f,
                 textSize = 42f,
@@ -539,7 +539,7 @@ object FreeDesignTemplateRegistry {
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = V7_HEADER_COLOR,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = V7_SOURCE_WIDTH / 2f,
                 centerY = 195f,
                 textSize = 40f,
@@ -617,7 +617,7 @@ object FreeDesignTemplateRegistry {
                 typographyRole = FreeDesignTypographyRole.TITLE,
                 color = V8_HEADER_COLOR,
             ),
-            FreeDesignHeaderField.ORGANIZER_NAME to headerAnchor(
+            FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = SOURCE_WIDTH / 2f,
                 centerY = 180f,
                 textSize = 40f,

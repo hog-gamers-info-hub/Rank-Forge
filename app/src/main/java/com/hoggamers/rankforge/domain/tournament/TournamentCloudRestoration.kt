@@ -8,7 +8,7 @@ data class TournamentCloudRestorationSummary(
     val id: String,
     val name: String,
     val date: String,
-    val organizerName: String,
+    val stageName: String,
     val status: String,
 )
 

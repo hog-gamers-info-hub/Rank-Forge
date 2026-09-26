@@ -66,7 +66,7 @@ data class TournamentDetailsItemUiState(
     val id: String,
     val name: String,
     val date: LocalDate,
-    val organizerName: String,
+    val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus,
     val slots: List<TeamSlotUiState>,
@@ -123,7 +123,7 @@ fun Tournament.toDetailsItemUiState(
         id = id,
         name = name,
         date = date,
-        organizerName = organizerName,
+        stageName = stageName,
         organizerContactNumber = organizerContactNumber,
         status = status,
         slots = slots

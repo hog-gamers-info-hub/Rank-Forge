@@ -119,7 +119,7 @@ class MatchCreationScreenTest {
                             id = "stable-id",
                             name = "Summer Cup",
                             date = LocalDate.of(2026, 7, 24),
-                            organizerName = "Alex",
+                            stageName = "Alex",
                             organizerContactNumber = "123",
                             status = TournamentStatus.CONFIRMED,
                             slots = emptyList(),

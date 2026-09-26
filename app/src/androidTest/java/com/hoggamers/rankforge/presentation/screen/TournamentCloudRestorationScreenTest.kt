@@ -31,7 +31,7 @@ class TournamentCloudRestorationScreenTest {
                                 id = TOURNAMENT_ID,
                                 name = "Summer Cup",
                                 date = "2026-07-24",
-                                organizerName = "Organizer",
+                                stageName = "Organizer",
                                 status = "draft",
                             ),
                         ),

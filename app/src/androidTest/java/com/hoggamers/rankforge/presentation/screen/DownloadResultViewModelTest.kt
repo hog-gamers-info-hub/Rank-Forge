@@ -143,7 +143,7 @@ class DownloadResultViewModelTest {
         id = "tournament-id",
         name = "Tournament",
         date = LocalDate.of(2026, 9, 5),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
     )

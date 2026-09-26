@@ -72,7 +72,7 @@ class MatchResultScreenshotCropViewModelTest {
                 id = CROP_TOURNAMENT_ID,
                 name = "Crop Cup",
                 date = LocalDate.of(2026, 8, 7),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),

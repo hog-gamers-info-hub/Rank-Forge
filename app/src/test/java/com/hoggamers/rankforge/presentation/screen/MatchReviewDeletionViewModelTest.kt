@@ -234,7 +234,7 @@ private class TestTournamentRepository : TournamentRepository {
         id = "tournament-1",
         name = "Test Cup",
         date = LocalDate.of(2026, 8, 21),
-        organizerName = "Test Organizer",
+        stageName = "Test Organizer",
         organizerContactNumber = "000",
         status = TournamentStatus.CONFIRMED,
         ownerUserId = "owner-1",

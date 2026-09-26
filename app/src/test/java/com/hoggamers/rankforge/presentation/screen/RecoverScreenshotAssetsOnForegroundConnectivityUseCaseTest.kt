@@ -236,7 +236,7 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
         id = "tournament-1",
         name = "Tournament",
         date = LocalDate.of(2026, 8, 14),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "contact",
         status = TournamentStatus.DRAFT,
         ownerUserId = "owner-1",

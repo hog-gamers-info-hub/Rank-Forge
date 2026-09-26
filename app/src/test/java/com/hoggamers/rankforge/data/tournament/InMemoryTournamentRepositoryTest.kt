@@ -25,7 +25,7 @@ class InMemoryTournamentRepositoryTest {
             id = "stable-id",
             name = "Spring Cup",
             date = LocalDate.of(2026, 7, 24),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
         )
@@ -42,7 +42,7 @@ class InMemoryTournamentRepositoryTest {
             id = "stable-id",
             name = "Spring Cup",
             date = LocalDate.of(2026, 7, 24),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
         )
@@ -60,7 +60,7 @@ class InMemoryTournamentRepositoryTest {
             id = "stable-id",
             name = "Spring Cup",
             date = LocalDate.of(2026, 7, 24),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
         )
@@ -388,7 +388,7 @@ class InMemoryTournamentRepositoryTest {
         id = id,
         name = "Spring Cup",
         date = LocalDate.of(2026, 7, 24),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
     )

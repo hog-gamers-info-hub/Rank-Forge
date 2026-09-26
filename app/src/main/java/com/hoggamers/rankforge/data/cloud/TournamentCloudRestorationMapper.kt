@@ -35,7 +35,7 @@ object TournamentCloudRestorationMapper {
                 id = payload.id,
                 name = payload.name,
                 date = parsedDate.toString(),
-                organizerName = payload.organizerName,
+                stageName = payload.stageName,
                 status = payload.status,
             )
         }
@@ -123,7 +123,7 @@ object TournamentCloudRestorationMapper {
                     id = payloads.tournament.id,
                     name = payloads.tournament.name,
                     date = date,
-                    organizerName = payloads.tournament.organizerName,
+                    stageName = payloads.tournament.stageName,
                     organizerContactNumber = payloads.tournament.organizerContact,
                     status = status,
                     ownerUserId = payloads.tournament.ownerId,

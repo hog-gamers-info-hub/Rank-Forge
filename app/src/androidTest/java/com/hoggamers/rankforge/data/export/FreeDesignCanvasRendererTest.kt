@@ -60,12 +60,12 @@ class FreeDesignCanvasRendererTest {
     }
 
     @Test
-    fun blankOrganizerIsSkippedWithoutMovingOtherHeaderAnchors() {
+    fun blankStageIsSkippedWithoutMovingOtherHeaderAnchors() {
         val canvas = RecordingCanvas()
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(canvas, tournamentModel(organizerName = "  "), template),
+                renderer.render(canvas, tournamentModel(stageName = "  "), template),
             )
             assertFalse(canvas.texts.any { it.text == "HOG Gamers" })
             assertTrue(canvas.texts.any { it.text == "Overall Standings - 03 Sep 2026" })
@@ -167,7 +167,7 @@ class FreeDesignCanvasRendererTest {
             FreeDesignHeaderField.entries.forEach { field ->
                 val text = when (field) {
                     FreeDesignHeaderField.TOURNAMENT_NAME -> "Champions Cup 2026"
-                    FreeDesignHeaderField.ORGANIZER_NAME -> "HOG Gamers"
+                    FreeDesignHeaderField.STAGE_NAME -> "HOG Gamers"
                     FreeDesignHeaderField.RESULT_HEADING -> "Overall Standings - 03 Sep 2026"
                     FreeDesignHeaderField.DATE -> "Overall Standings - 03 Sep 2026"
                 }
@@ -256,7 +256,7 @@ class FreeDesignCanvasRendererTest {
                 1f,
             )
             assertEquals(
-                template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZER_NAME).centerY,
+                template2.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY,
                 overallCanvas.texts.first { it.text == "HOG Gamers" }.centerY,
                 1f,
             )
@@ -341,7 +341,7 @@ class FreeDesignCanvasRendererTest {
 
     private fun matchModel() = MatchResultExportModel(
         tournamentName = "Champions Cup 2026",
-        organizerName = "HOG Gamers",
+        stageName = "HOG Gamers",
         tournamentDate = LocalDate.of(2026, 9, 3),
         matchNumber = 4,
         matchDate = LocalDate.of(2026, 8, 31),
@@ -351,11 +351,11 @@ class FreeDesignCanvasRendererTest {
 
     private fun tournamentModel(
         tournamentName: String = "Champions Cup 2026",
-        organizerName: String = "HOG Gamers",
+        stageName: String = "HOG Gamers",
         rows: List<ResultExportRow> = rows(1),
     ) = TournamentResultExportModel(
         tournamentName = tournamentName,
-        organizerName = organizerName,
+        stageName = stageName,
         tournamentDate = LocalDate.of(2026, 9, 3),
         finalizedMatchCount = 2,
         rows = rows,

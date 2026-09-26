@@ -453,7 +453,7 @@ class OwnerScopedTournamentSetupMutationUseCasesTest {
             id = TOURNAMENT_ID,
             name = "Tournament",
             date = LocalDate.of(2026, 8, 23),
-            organizerName = "Organizer",
+            stageName = "Organizer",
             organizerContactNumber = "123",
             status = status,
             ownerUserId = ownerUserId,

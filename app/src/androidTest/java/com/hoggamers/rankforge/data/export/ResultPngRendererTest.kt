@@ -38,8 +38,8 @@ class ResultPngRendererTest {
     }
 
     @Test
-    fun currentMatchWithoutOrganizerStillRendersValidPng() {
-        val bytes = pngSuccess(renderer.render(matchModel(organizerName = "")))
+    fun currentMatchWithoutStageStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(matchModel(stageName = "")))
 
         assertPngHeader(bytes)
         assertDecodedDimensions(bytes)
@@ -78,8 +78,8 @@ class ResultPngRendererTest {
     }
 
     @Test
-    fun wholeTournamentWithoutOrganizerStillRendersValidPng() {
-        val bytes = pngSuccess(renderer.render(tournamentModel(organizerName = "")))
+    fun wholeTournamentWithoutStageStillRendersValidPng() {
+        val bytes = pngSuccess(renderer.render(tournamentModel(stageName = "")))
 
         assertPngHeader(bytes)
         assertDecodedDimensions(bytes)
@@ -91,7 +91,7 @@ class ResultPngRendererTest {
             renderer.render(
                 tournamentModel(
                     tournamentName = "A very long tournament name that must remain bounded inside the export page",
-                    organizerName = "A very long organizer name that must remain bounded inside the export page",
+                    stageName = "A very long stage name that must remain bounded inside the export page",
                 ),
             ),
         )
@@ -170,13 +170,13 @@ class ResultPngRendererTest {
 
     private fun matchModel(
         tournamentName: String = "Synthetic Cup",
-        organizerName: String = "Synthetic Organizer",
+        stageName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): MatchResultExportModel =
         MatchResultExportModel(
             tournamentName = tournamentName,
-            organizerName = organizerName,
+            stageName = stageName,
             tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
@@ -186,13 +186,13 @@ class ResultPngRendererTest {
 
     private fun tournamentModel(
         tournamentName: String = "Synthetic Cup",
-        organizerName: String = "Synthetic Organizer",
+        stageName: String = "Synthetic Organizer",
         longTeamName: String? = null,
         rowCount: Int = 12,
     ): TournamentResultExportModel =
         TournamentResultExportModel(
             tournamentName = tournamentName,
-            organizerName = organizerName,
+            stageName = stageName,
             tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
             rows = rows(longTeamName, rowCount),

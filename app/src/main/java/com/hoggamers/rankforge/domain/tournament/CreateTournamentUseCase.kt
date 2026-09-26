@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.first
 data class CreateTournamentInput(
     val name: String,
     val date: LocalDate?,
-    val organizerName: String,
+    val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus = TournamentStatus.DRAFT,
 )
@@ -19,7 +19,7 @@ data class CreateTournamentInput(
 enum class TournamentField {
     NAME,
     DATE,
-    ORGANIZER_NAME,
+    STAGE_NAME,
     ORGANIZER_CONTACT_NUMBER,
     STATUS,
 }
@@ -83,7 +83,7 @@ class CreateTournamentUseCase(
             id = UUID.randomUUID().toString(),
             name = input.name.trim(),
             date = input.date!!,
-            organizerName = input.organizerName.trim(),
+            stageName = input.stageName.trim(),
             organizerContactNumber = input.organizerContactNumber.trim(),
             status = TournamentStatus.DRAFT,
             ownerUserId = ownerUserId,

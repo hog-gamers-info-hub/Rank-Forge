@@ -675,7 +675,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
         id = id,
         name = "Test Tournament",
         date = LocalDate.of(2026, 8, 21),
-        organizerName = "Organizer",
+        stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = "owner-a",

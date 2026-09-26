@@ -48,7 +48,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(tournamentName = name),
                     onTournamentNameChanged = { name = it },
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -63,7 +63,7 @@ class TournamentCreationScreenTest {
             .assertIsDisplayed()
             .performTextInput("Summer Cup")
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_date_label)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(context.getString(R.string.organizer_name_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.stage_name_label)).assertIsDisplayed()
         composeTestRule.onNodeWithText(context.getString(R.string.organizer_contact_number_label)).assertIsDisplayed()
         composeTestRule.runOnIdle { assertEquals("Summer Cup", name) }
     }
@@ -76,7 +76,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -118,7 +118,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -142,7 +142,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -166,7 +166,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(tournamentDate = selectedDate),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = { selectedDate = it },
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -198,7 +198,7 @@ class TournamentCreationScreenTest {
                     ),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -223,7 +223,7 @@ class TournamentCreationScreenTest {
                     ),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -244,7 +244,7 @@ class TournamentCreationScreenTest {
                     uiState = TournamentCreationUiState(isSubmitting = true),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -267,7 +267,7 @@ class TournamentCreationScreenTest {
                     ),
                     onTournamentNameChanged = {},
                     onTournamentDateChanged = {},
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = {},
@@ -293,7 +293,7 @@ class TournamentCreationScreenTest {
                     uiState = state,
                     onTournamentNameChanged = { state = state.copy(tournamentName = it) },
                     onTournamentDateChanged = { state = state.copy(tournamentDate = it) },
-                    onOrganizerNameChanged = {},
+                    onStageNameChanged = {},
                     onOrganizerContactNumberChanged = {},
                     onSubmit = {},
                     onBackPressed = { state = state.copy(showDiscardDialog = true) },

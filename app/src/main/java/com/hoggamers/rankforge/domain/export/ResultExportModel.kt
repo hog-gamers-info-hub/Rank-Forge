@@ -13,7 +13,7 @@ data class ResultExportRow(
 
 data class MatchResultExportModel(
     val tournamentName: String,
-    val organizerName: String,
+    val stageName: String,
     val tournamentDate: LocalDate,
     val matchNumber: Int,
     val matchDate: LocalDate,
@@ -23,7 +23,7 @@ data class MatchResultExportModel(
 
 data class TournamentResultExportModel(
     val tournamentName: String,
-    val organizerName: String,
+    val stageName: String,
     val tournamentDate: LocalDate,
     val finalizedMatchCount: Int,
     val rows: List<ResultExportRow>,

@@ -79,7 +79,7 @@ class MatchReviewResultScreenshotViewModelTest {
                 id = RESULT_TOURNAMENT_ID,
                 name = "Result Cup",
                 date = LocalDate.of(2026, 8, 7),
-                organizerName = "Organizer",
+                stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,
             ),
