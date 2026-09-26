@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -40,6 +42,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -54,11 +58,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -75,11 +81,14 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.AndroidExportResult
+import com.hoggamers.rankforge.data.export.TeamListEntry
+import com.hoggamers.rankforge.data.export.TeamListFormatter
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import kotlinx.coroutines.launch
 
 private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 
@@ -115,6 +124,7 @@ const val MATCH_CLOUD_RESTORE_ACTION_TEST_TAG = "match_cloud_restore_action"
 const val MATCH_CLOUD_RESTORE_STATUS_TEST_TAG = "match_cloud_restore_status"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG = "tournament_standings_csv_export_action"
 const val TOURNAMENT_STANDINGS_CSV_EXPORT_STATUS_TEST_TAG = "tournament_standings_csv_export_status"
+const val TOURNAMENT_COPY_TEAM_LIST_ACTION_TEST_TAG = "tournament_details_copy_team_list_action"
 const val TOURNAMENT_DELETE_ACTION_TEST_TAG = "tournament_delete_action"
 const val TOURNAMENT_DELETE_DIALOG_TEST_TAG = "tournament_delete_dialog"
 const val TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG = "tournament_delete_confirm_action"
@@ -152,6 +162,9 @@ fun TournamentDetailsRoute(
         viewModel.load(tournamentId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.matchReviewRequest) {
         uiState.matchReviewRequest?.let { request ->
             viewModel.onMatchReviewRequestHandled()
@@ -187,38 +200,77 @@ fun TournamentDetailsRoute(
         val state by matchCloudRestorationViewModel.uiState.collectAsStateWithLifecycle(); state
     }
 
-    TournamentDetailsScreen(
-        uiState = uiState,
-        onBackToList = onBackToList,
-        onEnterTeams = onEnterTeams,
-        onCreateMatch = onCreateMatch,
-        onCalculatePointsRequested = { viewModel.onCalculatePointsRequested() },
-        pendingTeamCountConfirmation = uiState.pendingTeamCountConfirmation,
-        calculatePointsMessage = uiState.calculatePointsMessage,
-        isCreatingMatch = uiState.isCreatingMatch,
-        onCancelTeamCountConfirmation = viewModel::cancelTeamCountConfirmation,
-        onUseEnteredTeams = viewModel::useEnteredTeams,
-        onUseDefaults = viewModel::useDefaults,
-        onEnterMatchPlacements = onEnterMatchPlacements,
-        onEnterMatchKills = onEnterMatchKills,
-        onReviewMatch = onReviewMatch,
-        onOpenStandings = onOpenStandings,
-        onOpenDownloadResult = onOpenDownloadResult,
-        onOpenScoringRules = onOpenScoringRules,
-        onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
-        onDeleteTournament = { viewModel.deleteTournament() },
-        isDeleting = uiState.isDeleting,
-        deletionError = uiState.deletionError,
-        uploadUiState = uploadUiState,
-        onUpload = { id -> uploadViewModel?.upload(id) },
-        draftMatchSyncUiState = draftMatchSyncUiState,
-        onSyncDraftMatches = { id -> draftMatchSyncViewModel?.sync(id) },
-        onResolveDraftConflict = onResolveDraftConflict,
-        finalizedMatchSyncUiState = finalizedMatchSyncUiState,
-        onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
-        matchCloudRestorationUiState = matchCloudRestorationUiState,
-        onRestoreMatches = { id -> matchCloudRestorationViewModel?.restore(id) },
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        TournamentDetailsScreen(
+            uiState = uiState,
+            onBackToList = onBackToList,
+            onEnterTeams = onEnterTeams,
+            onCreateMatch = onCreateMatch,
+            onCalculatePointsRequested = { viewModel.onCalculatePointsRequested() },
+            pendingTeamCountConfirmation = uiState.pendingTeamCountConfirmation,
+            calculatePointsMessage = uiState.calculatePointsMessage,
+            isCreatingMatch = uiState.isCreatingMatch,
+            onCancelTeamCountConfirmation = viewModel::cancelTeamCountConfirmation,
+            onUseEnteredTeams = viewModel::useEnteredTeams,
+            onUseDefaults = viewModel::useDefaults,
+            onEnterMatchPlacements = onEnterMatchPlacements,
+            onEnterMatchKills = onEnterMatchKills,
+            onReviewMatch = onReviewMatch,
+            onOpenStandings = onOpenStandings,
+            onOpenDownloadResult = onOpenDownloadResult,
+            onOpenScoringRules = onOpenScoringRules,
+            onCopyTeamList = {
+                uiState.tournament?.let { tournament ->
+                    val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+                    if (clipboardManager == null) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.team_list_copy_failed_message),
+                            )
+                        }
+                    } else {
+                        clipboardManager.setPrimaryClip(
+                            ClipData.newPlainText(
+                                context.getString(R.string.team_entry_copy_team_list_action),
+                                TeamListFormatter.format(
+                                    tournamentName = tournament.name,
+                                    stageName = tournament.stageName,
+                                    entries = tournament.slots.map { slot ->
+                                        TeamListEntry(
+                                            slotNumber = slot.slotNumber,
+                                            teamName = slot.teamName,
+                                        )
+                                    },
+                                ),
+                            ),
+                        )
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.team_list_copied_message),
+                            )
+                        }
+                    }
+                }
+            },
+            onPrepareStandingsCsvExport = { viewModel.prepareStandingsCsvExport() },
+            onDeleteTournament = { viewModel.deleteTournament() },
+            isDeleting = uiState.isDeleting,
+            deletionError = uiState.deletionError,
+            uploadUiState = uploadUiState,
+            onUpload = { id -> uploadViewModel?.upload(id) },
+            draftMatchSyncUiState = draftMatchSyncUiState,
+            onSyncDraftMatches = { id -> draftMatchSyncViewModel?.sync(id) },
+            onResolveDraftConflict = onResolveDraftConflict,
+            finalizedMatchSyncUiState = finalizedMatchSyncUiState,
+            onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
+            matchCloudRestorationUiState = matchCloudRestorationUiState,
+            onRestoreMatches = { id -> matchCloudRestorationViewModel?.restore(id) },
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
 }
 
 @Composable
@@ -240,6 +292,7 @@ fun TournamentDetailsScreen(
     onOpenStandings: (String) -> Unit = {},
     onOpenDownloadResult: (String, String) -> Unit = { _, _ -> },
     onOpenScoringRules: (String) -> Unit = {},
+    onCopyTeamList: () -> Unit = {},
     onPrepareStandingsCsvExport: (String) -> Unit = {},
     uploadUiState: TournamentCloudUploadUiState = TournamentCloudUploadUiState.Idle,
     onUpload: (String) -> Unit = {},
@@ -280,6 +333,7 @@ fun TournamentDetailsScreen(
             onOpenStandings = onOpenStandings,
             onOpenDownloadResult = onOpenDownloadResult,
             onOpenScoringRules = onOpenScoringRules,
+            onCopyTeamList = onCopyTeamList,
             onPrepareStandingsCsvExport = onPrepareStandingsCsvExport,
             csvExportResult = uiState.csvExportResult,
             uploadUiState = uploadUiState,
@@ -358,6 +412,7 @@ private fun PointIqTournamentHero(
     onEditTeams: () -> Unit,
     onOpenDownloadResult: (String) -> Unit,
     onOpenScoringRules: () -> Unit,
+    onCopyTeamList: () -> Unit,
     onDeleteTournament: () -> Unit,
     isDeleting: Boolean,
 ) {
@@ -470,6 +525,20 @@ private fun PointIqTournamentHero(
                             onEditTeams()
                         },
                         modifier = Modifier.testTag(EDIT_TEAMS_ACTION_TEST_TAG),
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.team_entry_copy_team_list_action),
+                                color = PointIqDetailsHeader,
+                            )
+                        },
+                        onClick = {
+                            onOverflowMenuChange(false)
+                            onCopyTeamList()
+                        },
+                        enabled = tournament.slots.any { it.teamName.trim().isNotEmpty() } && !isDeleting,
+                        modifier = Modifier.testTag(TOURNAMENT_COPY_TEAM_LIST_ACTION_TEST_TAG),
                     )
                     DropdownMenuItem(
                         text = {
@@ -754,6 +823,7 @@ private fun TournamentDetailsContent(
     onOpenStandings: (String) -> Unit,
     onOpenDownloadResult: (String, String) -> Unit,
     onOpenScoringRules: (String) -> Unit,
+    onCopyTeamList: () -> Unit,
     onPrepareStandingsCsvExport: (String) -> Unit,
     csvExportResult: AndroidExportResult?,
     uploadUiState: TournamentCloudUploadUiState,
@@ -804,6 +874,7 @@ private fun TournamentDetailsContent(
             onEditTeams = { onEnterTeams(tournament.id) },
             onOpenDownloadResult = { matchId -> onOpenDownloadResult(tournament.id, matchId) },
             onOpenScoringRules = { onOpenScoringRules(tournament.id) },
+            onCopyTeamList = onCopyTeamList,
             onDeleteTournament = { showDeleteConfirmation = true },
             isDeleting = isDeleting,
         )

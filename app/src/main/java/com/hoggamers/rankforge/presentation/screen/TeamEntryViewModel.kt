@@ -56,6 +56,7 @@ class TeamEntryViewModel @Inject constructor(
     val navigationEvents: Flow<TeamEntryNavigationEvent> = navigationEventsChannel.receiveAsFlow()
     private val draftWriteChannel = Channel<DraftWriteCommand>(Channel.UNLIMITED)
     private var loadJob: Job? = null
+    private var tournamentJob: Job? = null
     private var loadedTournamentId: String? = null
     private var initializedDraftValues = false
     private var editGeneration = 0L
@@ -105,16 +106,27 @@ class TeamEntryViewModel @Inject constructor(
         loadedTournamentId = tournamentId
         initializedDraftValues = false
         loadJob?.cancel()
+        tournamentJob?.cancel()
         _uiState.update { TeamEntryUiState(isLoading = true) }
+        tournamentJob = viewModelScope.launch {
+            tournamentRepository.observeById(tournamentId).collect { tournament ->
+                _uiState.update {
+                    it.copy(
+                        tournamentName = tournament?.name.orEmpty(),
+                        stageName = tournament?.stageName.orEmpty(),
+                    )
+                }
+            }
+        }
         loadJob = viewModelScope.launch {
             observeTournamentSlots(tournamentId).collect { slots ->
                 if (slots.isEmpty()) {
-                    _uiState.update { TeamEntryUiState(isLoading = false) }
+                    _uiState.update { it.copy(isLoading = false, slots = emptyList()) }
                 } else if (!initializedDraftValues) {
                     val draft = tournamentRepository.readTeamEntryDraft(tournamentId)
                     initializedDraftValues = true
                     _uiState.update {
-                        TeamEntryUiState(
+                        it.copy(
                             isLoading = false,
                             slots = slots.toTeamEntrySlotUiState().map { slot ->
                                 slot.copy(teamName = draft?.get(slot.slotNumber) ?: slot.teamName)
