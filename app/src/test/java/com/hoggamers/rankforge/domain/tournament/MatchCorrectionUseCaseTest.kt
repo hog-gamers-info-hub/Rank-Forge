@@ -68,6 +68,40 @@ class MatchCorrectionUseCaseTest {
     }
 
     @Test
+    fun validCorrectionPreservesExistingPointAdjustment() = runTest {
+        val repository = createDraftRepository()
+        val originalResults = (1..12).map { slotNumber ->
+            MatchParticipantResult(
+                teamSlotNumber = slotNumber,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = slotNumber,
+                kills = slotNumber - 1,
+                pointAdjustment = if (slotNumber == 1) 3 else 0,
+            )
+        }
+        repository.finalizeDraftMatch(
+            matchId = "match-id",
+            placements = originalResults.map { MatchPlacement(it.teamSlotNumber, it.placement!!) },
+            kills = originalResults.map { MatchKill(it.teamSlotNumber, it.kills) },
+            participantResults = originalResults,
+        )
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
+            ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
+        )(SubmitMatchCorrectionInput("match-id", correctedRows()))
+
+        val corrected = result as SubmitMatchCorrectionResult.Submitted
+        assertEquals(
+            3,
+            corrected.match.finalizedParticipantResultsOrNull()!!.first { it.teamSlotNumber == 1 }
+                .pointAdjustment,
+        )
+    }
+
+    @Test
     fun invalidCorrectionIsBlockedAndFinalizedResultRemains() = runTest {
         val repository = createFinalizedRepository()
         val result = SubmitMatchCorrectionUseCase(

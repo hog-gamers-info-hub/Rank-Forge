@@ -320,6 +320,31 @@ class MatchCsvExporterTest {
     }
 
     @Test
+    fun buildMatchRowsUsesAdjustmentAwareOfficialTotalPoints() {
+        val participantResults = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+            MatchParticipantResult(
+                teamSlotNumber = slotNumber,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = slotNumber,
+                kills = slotNumber - 1,
+                pointAdjustment = if (slotNumber == 1) -3 else 0,
+            )
+        }
+        val result = exporter.buildMatchRows(
+            validInput(match = validMatch().copy(participantResults = participantResults)),
+        ) as MatchExportRowsResult.Success
+
+        val firstPlace = result.rows.single { row -> row.teamSlot == 1 }
+        assertEquals(12, firstPlace.placementPoints)
+        assertEquals(0, firstPlace.killPoints)
+        assertEquals(
+            participantResults.first { it.teamSlotNumber == 1 }.totalPoints,
+            firstPlace.totalPoints,
+        )
+        assertEquals(9, firstPlace.totalPoints)
+    }
+
+    @Test
     fun correctedTypedRowsAndCsvShareTheSameValidationFailureSet() {
         val input = validInput(
             match = validMatch(

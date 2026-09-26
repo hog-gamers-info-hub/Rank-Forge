@@ -369,5 +369,6 @@ data class MatchReviewRowUiState(
     val playerNames: List<String> = emptyList(),
     val placementInput: String = "",
     val killsInput: String = "",
+    val pointAdjustment: Int = 0,
     val validationErrors: Set<MatchResultValidationError> = emptySet(),
 )

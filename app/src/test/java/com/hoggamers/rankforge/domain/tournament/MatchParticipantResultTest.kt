@@ -21,6 +21,24 @@ class MatchParticipantResultTest {
     }
 
     @Test
+    fun pointAdjustmentChangesOnlyOfficialTotal() {
+        val added = MatchParticipantResult(
+            teamSlotNumber = 1,
+            participationStatus = MatchParticipationStatus.PARTICIPATED,
+            placement = 1,
+            kills = 5,
+            pointAdjustment = 3,
+        )
+        val deducted = added.copy(pointAdjustment = -3)
+
+        assertEquals(3, added.pointAdjustment)
+        assertEquals(20, added.totalPoints)
+        assertEquals(14, deducted.totalPoints)
+        assertEquals(added.placementPoints, deducted.placementPoints)
+        assertEquals(added.killPoints, deducted.killPoints)
+    }
+
+    @Test
     fun noShowHasNullablePlacementZeroKillsAndZeroScores() {
         val result = MatchParticipantResult(
             teamSlotNumber = 7,

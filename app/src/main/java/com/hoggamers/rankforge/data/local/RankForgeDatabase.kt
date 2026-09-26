@@ -53,7 +53,7 @@ interface RankForgeStateDao {
         MatchCalculatedEvidenceEntity::class,
         AccountDeletionMarkerEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -703,6 +703,19 @@ abstract class RankForgeDatabase : RoomDatabase() {
                         PRIMARY KEY(`owner_user_id`)
                     )
                     """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `match_participant_results` " +
+                        "ADD COLUMN `point_adjustment` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `match_draft_values` " +
+                        "ADD COLUMN `point_adjustment` INTEGER NOT NULL DEFAULT 0",
                 )
             }
         }

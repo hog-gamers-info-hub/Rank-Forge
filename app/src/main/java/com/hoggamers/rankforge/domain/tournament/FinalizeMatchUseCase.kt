@@ -78,6 +78,12 @@ class FinalizeMatchUseCase(
             )
         }
 
+        val draftValues = repository.observeDraftMatchValuesByOwner(
+            tournamentId = match.tournamentId,
+            matchId = input.matchId,
+            ownerUserId = ownerUserId,
+        ).first()
+
         val validation = validateMatchResult.validateForInitialFinalization(
             rows = input.rows,
             registeredTeamSlots = participation.activeSlotNumbers,
@@ -96,12 +102,14 @@ class FinalizeMatchUseCase(
                         participationStatus = MatchParticipationStatus.PARTICIPATED,
                         placement = row.placement!!.trim().toInt(),
                         kills = row.kills!!.trim().toInt(),
+                        pointAdjustment = draftValues[teamSlotNumber]?.pointAdjustment ?: 0,
                     )
                 } ?: MatchParticipantResult(
                     teamSlotNumber = teamSlotNumber,
                     participationStatus = MatchParticipationStatus.NO_SHOW,
                     placement = null,
                     kills = 0,
+                    pointAdjustment = draftValues[teamSlotNumber]?.pointAdjustment ?: 0,
                 )
             }
 

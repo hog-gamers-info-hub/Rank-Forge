@@ -24,6 +24,7 @@ data class VerifiedMatchTeamScore(
     val confirmedKills: Int,
     val positionPoints: Int,
     val killPoints: Int,
+    val pointAdjustment: Int = 0,
     val matchTotal: Int,
 )
 
@@ -218,11 +219,12 @@ class ScoringVerificationEngine(
                     confirmedKills = result.kills,
                     positionPoints = positionPoints,
                     killPoints = killPoints,
-                    matchTotal = matchTotalEngine(confirmedPlacement, result.kills),
+                    pointAdjustment = result.pointAdjustment,
+                    matchTotal = matchTotalEngine(confirmedPlacement, result.kills) + result.pointAdjustment,
                 )
             }
         val matchTotalConsistent = teamScores.all { score ->
-            score.matchTotal == score.positionPoints + score.killPoints
+            score.matchTotal == score.positionPoints + score.killPoints + score.pointAdjustment
         }
 
         return MatchScoringVerification(
@@ -280,4 +282,3 @@ class ScoringVerificationEngine(
         var matchesIncluded: Int = 0
     }
 }
-

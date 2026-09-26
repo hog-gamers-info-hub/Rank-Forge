@@ -22,7 +22,6 @@ data class CumulativeTournamentStanding(
 class CumulativeTournamentStandingsEngine(
     private val positionPointsEngine: PositionPointsEngine = PositionPointsEngine(),
     private val killPointsEngine: KillPointsEngine = KillPointsEngine(),
-    private val matchTotalEngine: MatchTotalEngine = MatchTotalEngine(),
 ) {
     operator fun invoke(matches: List<Match>): List<CumulativeTournamentStanding> {
         val finalizedMatches = matches
@@ -57,7 +56,7 @@ class CumulativeTournamentStandingsEngine(
                     val placement = requireNotNull(result.placement)
                     totals.totalPositionPoints += positionPointsEngine(placement)
                     totals.totalKillPoints += killPointsEngine(result.kills)
-                    totals.totalPoints += matchTotalEngine(placement, result.kills)
+                    totals.totalPoints += result.totalPoints
                     if (placement == 1) totals.firstPlaceFinishes++
                     totals.latestMatchPlacement = placement
                     totals.bestPlacement = minOf(totals.bestPlacement ?: placement, placement)

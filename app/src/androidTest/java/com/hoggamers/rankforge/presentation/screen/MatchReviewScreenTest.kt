@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -181,6 +182,116 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG)
             .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun draftReviewAdjustsSelectedTeamWithTemporarySignedIndicator() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                var uiState by remember {
+                    mutableStateOf(availableState(resultScreenshots = allResultReadySlots()))
+                }
+                MatchReviewScreen(
+                    uiState = uiState,
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrStateWithRows(),
+                    onSaveTeamPointAdjustment = { teamSlotNumber, pointAdjustment ->
+                        uiState = uiState.copy(
+                            rows = uiState.rows.map { row ->
+                                if (row.teamSlotNumber == teamSlotNumber) {
+                                    row.copy(pointAdjustment = pointAdjustment)
+                                } else {
+                                    row
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+        openAdjustTeamPointsDialog()
+        applyTeamPointAdjustment(teamSlotNumber = 2, input = "-3")
+
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
+            .assertIsDisplayed()
+            .assertTextContains("Points adjustment: -3")
+        composeTestRule
+            .onNodeWithText("1. Player Two - [9]", substring = true)
+            .assertIsDisplayed()
+
+        openAdjustTeamPointsDialog()
+        applyTeamPointAdjustment(teamSlotNumber = 2, input = "+3")
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
+            .assertTextContains("Points adjustment: +3")
+
+        openAdjustTeamPointsDialog()
+        applyTeamPointAdjustment(teamSlotNumber = 2, input = "0")
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun cancelingTeamPointAdjustmentLeavesNoTemporaryIndicator() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = allResultReadySlots()),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = inlineOcrState(),
+                )
+            }
+        }
+
+        openAdjustTeamPointsDialog()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG)
+            .performTextInput("-3")
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_CANCEL_TEST_TAG)
+            .performClick()
+
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "1")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewHidesAdjustTeamPointsAndKeepsDeleteAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG)
             .assertIsDisplayed()
             .assertIsEnabled()
     }
@@ -4616,6 +4727,35 @@ class MatchReviewScreenTest {
         status = MatchStatus.DRAFT,
         slots = (1..3).map { index -> MatchLobbyScreenshotSlotUiState(index = index) },
     )
+
+    private fun openAdjustTeamPointsDialog() {
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    private fun applyTeamPointAdjustment(teamSlotNumber: Int, input: String) {
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_SELECTOR_TEST_TAG)
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(
+                MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_OPTION_TEST_TAG_PREFIX + teamSlotNumber,
+            )
+            .performClick()
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG)
+            .performTextReplacement(input)
+        composeTestRule
+            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG)
+            .assertIsEnabled()
+            .performClick()
+    }
 
     private fun availableState(
         validationErrors: Map<Int, Set<MatchResultValidationError>> = emptyMap(),

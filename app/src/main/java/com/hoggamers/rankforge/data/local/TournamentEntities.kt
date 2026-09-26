@@ -662,6 +662,7 @@ data class MatchParticipantResultEntity(
     @ColumnInfo(name = "participation_status") val participationStatus: String,
     val placement: Int?,
     val kills: Int,
+    @ColumnInfo(name = "point_adjustment", defaultValue = "0") val pointAdjustment: Int = 0,
 )
 
 @Entity(
@@ -682,6 +683,7 @@ data class MatchDraftValueEntity(
     @ColumnInfo(name = "team_slot_number") val teamSlotNumber: Int,
     @ColumnInfo(name = "placement_input") val placementInput: String,
     @ColumnInfo(name = "kills_input") val killsInput: String,
+    @ColumnInfo(name = "point_adjustment", defaultValue = "0") val pointAdjustment: Int = 0,
 )
 
 @Entity(

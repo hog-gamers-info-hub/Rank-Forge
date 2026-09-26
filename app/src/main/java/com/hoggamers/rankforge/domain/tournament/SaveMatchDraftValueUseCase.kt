@@ -10,6 +10,7 @@ data class SaveMatchDraftValueInput(
     val teamSlotNumber: Int,
     val placementInput: String? = null,
     val killsInput: String? = null,
+    val pointAdjustment: Int? = null,
 )
 
 sealed interface SaveMatchDraftValueResult {
@@ -35,6 +36,7 @@ class SaveMatchDraftValueUseCase(
             teamSlotNumber = input.teamSlotNumber,
             placementInput = input.placementInput,
             killsInput = input.killsInput,
+            pointAdjustment = input.pointAdjustment,
         )) {
             OwnerScopedMatchMutationResult.Saved -> SaveMatchDraftValueResult.Saved
             OwnerScopedMatchMutationResult.MatchNotFound -> SaveMatchDraftValueResult.MatchNotFound

@@ -69,6 +69,28 @@ class ScoringVerificationEngineTest {
     }
 
     @Test
+    fun verifiedAndCumulativeTotalsIncludeParticipantPointAdjustment() {
+        val source = match("adjusted-match")
+        val participantResults = source.placements.map { placement ->
+            MatchParticipantResult(
+                teamSlotNumber = placement.teamSlotNumber,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = placement.position,
+                kills = source.kills.first { it.teamSlotNumber == placement.teamSlotNumber }.kills,
+                pointAdjustment = if (placement.teamSlotNumber == 1) -3 else 0,
+            )
+        }
+
+        val result = verification(listOf(source.copy(participantResults = participantResults)))
+
+        val slotOne = result.matchVerifications.single().teamScores.first { it.teamSlotNumber == 1 }
+        assertEquals(-3, slotOne.pointAdjustment)
+        assertEquals(9, slotOne.matchTotal)
+        assertEquals(9, result.standings.first { it.teamSlotNumber == 1 }.totalPoints)
+        assertTrue(result.cumulativeTotalsConsistent)
+    }
+
+    @Test
     fun approvedTieBreakOrderingUsesExistingRules() {
         val result = verification(
             listOf(

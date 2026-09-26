@@ -10,6 +10,7 @@ data class MatchParticipantResult(
     val participationStatus: MatchParticipationStatus,
     val placement: Int?,
     val kills: Int,
+    val pointAdjustment: Int = 0,
 ) {
     init {
         require(teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
@@ -39,5 +40,9 @@ data class MatchParticipantResult(
         get() = if (isNoShow) 0 else KillPointsEngine()(kills)
 
     val totalPoints: Int
-        get() = if (isNoShow) 0 else MatchTotalEngine()(requireNotNull(placement), kills)
+        get() = if (isNoShow) {
+            0
+        } else {
+            MatchTotalEngine()(requireNotNull(placement), kills) + pointAdjustment
+        }
 }

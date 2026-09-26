@@ -72,6 +72,7 @@ private fun buildLegacyParticipantResults(
     registeredTeamSlots: Set<Int>,
     placements: List<MatchPlacement>,
     kills: List<MatchKill>,
+    draftValues: Map<Int, MatchDraftFieldValues> = emptyMap(),
 ): List<MatchParticipantResult> {
     val placementsBySlot = placements.associateBy { it.teamSlotNumber }
     val killsBySlot = kills.associateBy { it.teamSlotNumber }
@@ -84,6 +85,7 @@ private fun buildLegacyParticipantResults(
                 MatchParticipationStatus.PARTICIPATED,
                 placement.position,
                 kill.kills,
+                draftValues[teamSlotNumber]?.pointAdjustment ?: 0,
             )
         } else {
             MatchParticipantResult(
@@ -475,7 +477,12 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
         val expectedPlacements = 1..placements.size
         val finalizedParticipantResults = participantResults
-            ?: buildLegacyParticipantResults(expectedTeamSlots, placements, kills)
+            ?: buildLegacyParticipantResults(
+                expectedTeamSlots,
+                placements,
+                kills,
+                draftValuesByMatch.value[DraftKey(match.tournamentId, matchId)].orEmpty(),
+            )
         val hasValidParticipantAwareResult =
             participation.isReadyForMatchCreation &&
                 placements.isNotEmpty() &&
@@ -593,10 +600,17 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
         }
             val previousParticipantResults = match.finalizedParticipantResultsOrNull()
-            val correctedParticipantResults = participantResults ?: placements.map { placement ->
+            val correctedParticipantResults = (participantResults ?: placements.map { placement ->
                 val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
                     ?: return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
                 MatchParticipantResult(placement.teamSlotNumber, MatchParticipationStatus.PARTICIPATED, placement.position, kill.kills)
+            }).map { corrected ->
+                corrected.copy(
+                    pointAdjustment = previousParticipantResults
+                        ?.firstOrNull { it.teamSlotNumber == corrected.teamSlotNumber }
+                        ?.pointAdjustment
+                        ?: 0,
+                )
             }
             if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
@@ -649,6 +663,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         teamSlotNumber: Int,
         placementInput: String?,
         killsInput: String?,
+        pointAdjustment: Int?,
     ) {
         require(teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
             "Team slot number must be between 1 and 12."
@@ -661,6 +676,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                 teamSlotNumber to existing.copy(
                     placementInput = placementInput ?: existing.placementInput,
                     killsInput = killsInput ?: existing.killsInput,
+                    pointAdjustment = pointAdjustment ?: existing.pointAdjustment,
                 )
                 )))
         }
@@ -673,10 +689,18 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         teamSlotNumber: Int,
         placementInput: String?,
         killsInput: String?,
+        pointAdjustment: Int?,
     ): OwnerScopedMatchMutationResult = if (!isOwnedMatch(matchId, tournamentId, ownerUserId)) {
         OwnerScopedMatchMutationResult.MatchNotFound
     } else {
-        saveDraftMatchValue(tournamentId, matchId, teamSlotNumber, placementInput, killsInput)
+        saveDraftMatchValue(
+            tournamentId,
+            matchId,
+            teamSlotNumber,
+            placementInput,
+            killsInput,
+            pointAdjustment,
+        )
         OwnerScopedMatchMutationResult.Saved
     }
 
