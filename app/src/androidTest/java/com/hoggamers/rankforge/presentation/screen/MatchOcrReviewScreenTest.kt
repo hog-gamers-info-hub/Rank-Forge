@@ -21,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
@@ -259,6 +260,47 @@ class MatchOcrReviewScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(Triple(0, 3, "9"), playerKillChange)
         }
+    }
+
+    @Test
+    fun manualRowRendersOneAggregateFieldSetWithoutPlayerRowsOrDuplicateCompactFields() {
+        val row = defaultReadyRows().first()
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer
+            .createInitialDraft(listOf(row))
+            .rows
+            .single()
+        val origin = MatchCalculatedEvidenceOrigin.MANUAL
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = emptyMap(),
+                    correctionDraft = correctionDraft,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onResetRowCorrection = { _ -> },
+                    correctionEnabled = true,
+                    showPlayerRows = false,
+                    showAggregateResultFields = origin.shouldShowCompactAggregateResultFields(),
+                    compactFieldRow = true,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2))
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.killsInput(0))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .assertCountEquals(1)
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.local.ResultCalculatedEvidence
 import com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
@@ -29,6 +30,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchCalculatedEvidenceMapperTest {
+    @Test
+    fun mapsManualCalculationOriginIntoPersistedResultEvidence() {
+        val (reviewState, ocrState) = mapperInput()
+
+        val evidence = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(
+                reviewState,
+                ocrState.copy(calculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.MANUAL),
+            ),
+        )
+
+        assertEquals(MatchCalculatedEvidenceOrigin.MANUAL, evidence.result.calculationOrigin)
+    }
+
     @Test
     fun mapsExistingLobbyAndResultDisplayValuesAndGeometry() {
         val evidence = mapperInput().let { (reviewState, ocrState) ->

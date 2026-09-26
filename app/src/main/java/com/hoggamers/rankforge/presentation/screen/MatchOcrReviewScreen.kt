@@ -709,6 +709,7 @@ internal fun MatchOcrReviewCompactRow(
     correctionDraft: MatchOcrReviewRowCorrectionDraft? = null,
     correctionEnabled: Boolean = false,
     showPlayerRows: Boolean = true,
+    showAggregateResultFields: Boolean = true,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
 ) {
     val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
@@ -779,7 +780,7 @@ internal fun MatchOcrReviewCompactRow(
                 correctionEnabled = correctionEnabled,
                 onPlayerKillsChanged = onPlayerKillsChanged,
             )
-        } else {
+        } else if (showAggregateResultFields) {
             Spacer(modifier = Modifier.height(12.dp))
             MatchOcrReviewFinalizedResultFields(
                 placement = placement,
@@ -1159,6 +1160,7 @@ internal fun MatchOcrReviewRow(
     compactResetAction: Boolean = false,
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
     showPlayerRows: Boolean = true,
+    showAggregateResultFields: Boolean = true,
 ) {
     val compactResetCallback: (() -> Unit)? = if (compactResetAction && correctionDraft != null) {
         { onResetRowCorrection(row.rowIndex) }
@@ -1198,6 +1200,7 @@ internal fun MatchOcrReviewRow(
                 correctionDraft = correctionDraft,
                 correctionEnabled = correctionEnabled,
                 showPlayerRows = showPlayerRows,
+                showAggregateResultFields = showAggregateResultFields,
                 onPlayerKillsChanged = onPlayerKillsChanged,
             )
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
@@ -1230,6 +1233,7 @@ internal fun MatchOcrReviewRow(
                 correctionDraft = correctionDraft,
                 correctionEnabled = correctionEnabled,
                 showPlayerRows = showPlayerRows,
+                showAggregateResultFields = showAggregateResultFields,
                 onPlayerKillsChanged = onPlayerKillsChanged,
             )
         }
