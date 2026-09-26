@@ -490,6 +490,9 @@
     <string name="match_review_finalize_missing_kills">Player kills are missing</string>
     <string name="match_review_finalize_invalid_kills">Player kills are invalid</string>
     <string name="match_review_finalize_negative_kills">Player kills cannot be negative</string>
+    <string name="match_review_finalize_manual_missing_kills">Kills are missing</string>
+    <string name="match_review_finalize_manual_invalid_kills">Kills are invalid</string>
+    <string name="match_review_finalize_manual_negative_kills">Kills cannot be negative</string>
     <string name="match_review_finalize_missing_team_slot">Team slot is missing.</string>
     <string name="match_review_finalize_invalid_team_slot">Team slot is invalid.</string>
     <string name="match_review_finalize_duplicate_team_slot">Team slot is already assigned.</string>

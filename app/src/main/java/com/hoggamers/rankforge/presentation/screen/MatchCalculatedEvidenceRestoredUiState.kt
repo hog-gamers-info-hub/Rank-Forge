@@ -77,6 +77,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         matchResultOcrPreview = preview,
         teamNamesBySlot = restoredTeamNames,
         evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
+        calculatedEvidenceOrigin = result.calculationOrigin,
     )
 }
 
@@ -187,7 +188,4 @@ private fun ResultPositionCalculatedEvidence.hasRestorablePlayerKillEvidence(): 
         name?.trim()?.let { it.isNotBlank() && it != MATCH_RESULT_NOT_DETECTED_PLAYER } == true
     } ||
         playerKillApplicable?.any { it } == true ||
-        playerKills.any { it != null } ||
-        totalKills != null ||
-        placement != null ||
-        slotNumber != null
+        playerKills.any { it != null }

@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewProcessingResult
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewRoleResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbySlotNumberOcrResult
@@ -108,6 +109,8 @@ sealed interface MatchOcrReviewUiState {
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
         val phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
         val evidenceSource: MatchOcrReviewEvidenceSource = MatchOcrReviewEvidenceSource.LIVE,
+        val calculatedEvidenceOrigin: MatchCalculatedEvidenceOrigin =
+            MatchCalculatedEvidenceOrigin.AUTOMATIC,
     ) : MatchOcrReviewUiState
 
     data class Empty(

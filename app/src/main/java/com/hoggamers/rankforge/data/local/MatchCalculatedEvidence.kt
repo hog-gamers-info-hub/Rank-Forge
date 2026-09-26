@@ -10,6 +10,12 @@ data class MatchCalculatedEvidence(
 )
 
 @Serializable
+enum class MatchCalculatedEvidenceOrigin {
+    AUTOMATIC,
+    MANUAL,
+}
+
+@Serializable
 data class LobbyCalculatedEvidence(
     val teams: List<LobbyTeamCalculatedEvidence> = emptyList(),
 ) {
@@ -39,6 +45,8 @@ data class ResultCalculatedEvidence(
     val positions: List<ResultPositionCalculatedEvidence> = emptyList(),
     /** Source positions explicitly excluded from finalization; absent in legacy payloads. */
     val excludedSourcePositions: List<Int> = emptyList(),
+    /** Calculation path that produced this result evidence; absent legacy payloads are automatic. */
+    val calculationOrigin: MatchCalculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
 ) {
     init {
         require(positions.size <= 12) { "Result calculated evidence cannot contain more than 12 positions." }

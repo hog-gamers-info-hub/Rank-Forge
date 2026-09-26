@@ -70,6 +70,22 @@ class MatchCalculatedEvidenceCodecTest {
         """.trimIndent()
 
         assertEquals(emptyList<Int>(), codec.decodeResult(payload)?.excludedSourcePositions)
+        assertEquals(
+            MatchCalculatedEvidenceOrigin.AUTOMATIC,
+            codec.decodeResult(payload)?.calculationOrigin,
+        )
+    }
+
+    @Test
+    fun roundTripPreservesManualCalculationOrigin() {
+        val result = ResultCalculatedEvidence(
+            calculationOrigin = MatchCalculatedEvidenceOrigin.MANUAL,
+        )
+
+        assertEquals(
+            MatchCalculatedEvidenceOrigin.MANUAL,
+            codec.decodeResult(codec.encodeResult(result))?.calculationOrigin,
+        )
     }
 
     @Test

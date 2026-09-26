@@ -122,6 +122,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.data.export.AndroidExportResult
@@ -2114,6 +2115,7 @@ private fun MatchReviewContent(
                 MatchReviewFinalizeAction(
                     correctionDraft = correctionDraft,
                     teamNamesBySlot = readyOcrUiState.teamNamesBySlot,
+                    calculationOrigin = readyOcrUiState.calculatedEvidenceOrigin,
                     finalization = readyOcrUiState.finalization,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
@@ -2616,6 +2618,7 @@ private fun Modifier.pointIqMatchReviewBackground(): Modifier =
 private fun MatchReviewFinalizeAction(
     correctionDraft: MatchOcrReviewCorrectionDraft,
     teamNamesBySlot: Map<Int, String>,
+    calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
@@ -2628,7 +2631,10 @@ private fun MatchReviewFinalizeAction(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         if (blockers.hasBlockers) {
-            MatchReviewFinalizeBlockerContainer(blockers = blockers)
+            MatchReviewFinalizeBlockerContainer(
+                blockers = blockers,
+                calculationOrigin = calculationOrigin,
+            )
         }
         ReviewMatchActionButton(
             label = stringResource(
@@ -2650,6 +2656,7 @@ private fun MatchReviewFinalizeAction(
 @Composable
 private fun MatchReviewFinalizeBlockerContainer(
     blockers: MatchReviewFinalizationBlockers,
+    calculationOrigin: MatchCalculatedEvidenceOrigin,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -2676,7 +2683,9 @@ private fun MatchReviewFinalizeBlockerContainer(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             blockers.rowBlockers.forEach { blocker ->
-                val reason = stringResource(blocker.reason.toMatchReviewFinalizeBlockerMessageRes())
+                val reason = stringResource(
+                    blocker.reason.toMatchReviewFinalizeBlockerMessageRes(calculationOrigin),
+                )
                 Text(
                     text = stringResource(
                         if (blocker.correctedPlacement != null) {
@@ -2766,33 +2775,46 @@ private fun deriveMatchReviewFinalizationBlockers(
     )
 }
 
-private fun MatchOcrReviewCorrectionReason.toMatchReviewFinalizeBlockerMessageRes(): Int = when (this) {
-    MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ->
-        R.string.match_review_finalize_missing_placement
-    MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ->
-        R.string.match_review_finalize_invalid_placement
-    MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
-        R.string.match_review_finalize_duplicate_placement
-    MatchOcrReviewCorrectionReason.MISSING_KILLS ->
-        R.string.match_review_finalize_missing_kills
-    MatchOcrReviewCorrectionReason.INVALID_KILLS ->
-        R.string.match_review_finalize_invalid_kills
-    MatchOcrReviewCorrectionReason.NEGATIVE_KILLS ->
-        R.string.match_review_finalize_negative_kills
-    MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ->
-        R.string.match_review_finalize_missing_team_slot
-    MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ->
-        R.string.match_review_finalize_invalid_team_slot
-    MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT ->
-        R.string.match_review_finalize_duplicate_team_slot
-    MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT ->
-        R.string.match_review_finalize_malformed_row
-    MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR,
-    MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR,
-    MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION,
-    MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW,
-    MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE,
-    -> error("Warnings are not finalization blockers")
+internal fun MatchOcrReviewCorrectionReason.toMatchReviewFinalizeBlockerMessageRes(
+    calculationOrigin: MatchCalculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
+): Int = when {
+    calculationOrigin == MatchCalculatedEvidenceOrigin.MANUAL &&
+        this == MatchOcrReviewCorrectionReason.MISSING_KILLS ->
+        R.string.match_review_finalize_manual_missing_kills
+    calculationOrigin == MatchCalculatedEvidenceOrigin.MANUAL &&
+        this == MatchOcrReviewCorrectionReason.INVALID_KILLS ->
+        R.string.match_review_finalize_manual_invalid_kills
+    calculationOrigin == MatchCalculatedEvidenceOrigin.MANUAL &&
+        this == MatchOcrReviewCorrectionReason.NEGATIVE_KILLS ->
+        R.string.match_review_finalize_manual_negative_kills
+    else -> when (this) {
+        MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ->
+            R.string.match_review_finalize_missing_placement
+        MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ->
+            R.string.match_review_finalize_invalid_placement
+        MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
+            R.string.match_review_finalize_duplicate_placement
+        MatchOcrReviewCorrectionReason.MISSING_KILLS ->
+            R.string.match_review_finalize_missing_kills
+        MatchOcrReviewCorrectionReason.INVALID_KILLS ->
+            R.string.match_review_finalize_invalid_kills
+        MatchOcrReviewCorrectionReason.NEGATIVE_KILLS ->
+            R.string.match_review_finalize_negative_kills
+        MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT ->
+            R.string.match_review_finalize_missing_team_slot
+        MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT ->
+            R.string.match_review_finalize_invalid_team_slot
+        MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT ->
+            R.string.match_review_finalize_duplicate_team_slot
+        MatchOcrReviewCorrectionReason.MALFORMED_ROW_DRAFT ->
+            R.string.match_review_finalize_malformed_row
+        MatchOcrReviewCorrectionReason.PLACEMENT_CHANGED_FROM_OCR,
+        MatchOcrReviewCorrectionReason.KILLS_CHANGED_FROM_OCR,
+        MatchOcrReviewCorrectionReason.TEAM_SLOT_CHANGED_FROM_SUGGESTION,
+        MatchOcrReviewCorrectionReason.ROW_ORIGINALLY_REQUIRED_MANUAL_REVIEW,
+        MatchOcrReviewCorrectionReason.WEAK_CONFIDENCE_OR_SAFETY_EVIDENCE,
+        -> error("Warnings are not finalization blockers")
+    }
 }
 
 @Composable
@@ -3907,6 +3929,8 @@ private fun MatchReviewResultOcrDetailsContent(
                 onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onDismissFinalizeWarnings,
                 onAdjustTeamPoints = onAdjustTeamPoints,
+                showPlayerRows = uiState.calculatedEvidenceOrigin !=
+                    MatchCalculatedEvidenceOrigin.MANUAL,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
@@ -3962,6 +3986,9 @@ private fun MatchOcrReviewRowUiState.temporaryTeamSlotNumber(
     ?: suggestedTeamSlotDisplayValue
         .toIntOrNull()
         ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+
+internal fun MatchCalculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(): Boolean =
+    this != MatchCalculatedEvidenceOrigin.MANUAL
 
 @Composable
 private fun TemporaryTeamPointAdjustmentIndicator(
@@ -4051,6 +4078,10 @@ private fun MatchReviewResultOcrPositionContent(
                     compactFieldRow = true,
                     showBlockerDetails = false,
                     compactResetAction = true,
+                    showAggregateResultFields =
+                        uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
+                    showPlayerRows = uiState.calculatedEvidenceOrigin !=
+                        MatchCalculatedEvidenceOrigin.MANUAL,
                 )
                 TemporaryTeamPointAdjustmentIndicator(
                     teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
@@ -4208,6 +4239,8 @@ private fun MatchReviewResultRowsPagerContent(
                             compactFieldRow = true,
                             showBlockerDetails = false,
                             compactResetAction = true,
+                            showAggregateResultFields =
+                                uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
                             showPlayerRows = showPlayerRows,
                         )
                         TemporaryTeamPointAdjustmentIndicator(

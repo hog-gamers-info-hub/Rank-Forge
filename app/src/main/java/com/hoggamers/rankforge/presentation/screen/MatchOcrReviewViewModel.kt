@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.local.NoOpMatchLobbyScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
@@ -244,6 +245,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             teamNamesBySlot = currentTeamNames,
             lobbyPlayers = emptyList(),
             phase1LobbySlotNumberOcr = null,
+            calculationOrigin = MatchCalculatedEvidenceOrigin.MANUAL,
         )
         val expectedPlacementByRowIndex = ready.rows.associate { row ->
             row.rowIndex to row.expectedPlacementLabel
@@ -378,6 +380,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
                         phase1LobbySlotNumberOcr = slotNumberResult,
+                        calculationOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
                     )
                 } else {
                     null
@@ -963,6 +966,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         teamNamesBySlot: Map<Int, String>,
         lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
         phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
+        calculationOrigin: MatchCalculatedEvidenceOrigin,
     ): MatchOcrReviewUiState.Ready {
         val rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
@@ -986,6 +990,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             teamNamesBySlot = teamNamesBySlot,
             lobbyPlayers = lobbyPlayers,
             phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
+            calculatedEvidenceOrigin = calculationOrigin,
         )
     }
 

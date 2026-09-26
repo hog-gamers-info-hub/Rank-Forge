@@ -40,6 +40,7 @@ internal object MatchCalculatedEvidenceMapper {
                     ?.filter { it.isExcluded }
                     ?.map { it.rowIndex + 1 }
                     .orEmpty(),
+                calculationOrigin = ocrState.calculatedEvidenceOrigin,
             ),
         )
     }
