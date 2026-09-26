@@ -36,6 +36,28 @@ class CustomDesignCanvasRendererTest {
     }
 
     @Test
+    fun optionalMatchesPlayedColumnRendersWhenGeometryIncludesIt() {
+        val canvas = RecordingCanvas()
+        val optionalGeometry = geometry(
+            columnX = columns(CustomDesignAnchorField.MATCHES_PLAYED to 400f),
+        )
+        val colors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.entries.associateWith { "#112233" },
+        )!!
+        try {
+            assertEquals(
+                CustomDesignCanvasRenderResult.Success,
+                renderer.render(canvas, listOf(row(1, "Team 1", matchesPlayed = 3)), optionalGeometry, colors),
+            )
+            assertEquals(6, canvas.texts.size)
+            assertEquals("3", canvas.texts[2].text)
+            assertEquals(400f, canvas.texts[2].centerX, 0.01f)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
     fun validTwelveRowRenderSucceeds() {
         val canvas = RecordingCanvas()
         try {
@@ -222,10 +244,11 @@ class CustomDesignCanvasRendererTest {
     fun everySemanticFieldUsesMediumTypefaceWithoutChangingColors() {
         val canvas = RecordingCanvas()
         val colors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { field ->
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { field ->
                 when (field) {
                     CustomDesignAnchorField.TEAM_NAME -> "#112233"
                     CustomDesignAnchorField.WIN -> "#223344"
+                    CustomDesignAnchorField.MATCHES_PLAYED -> "#000000"
                     CustomDesignAnchorField.TOTAL_KILLS -> "#334455"
                     CustomDesignAnchorField.POSITION_POINTS -> "#445566"
                     CustomDesignAnchorField.TOTAL_POINTS -> "#556677"
@@ -390,13 +413,14 @@ class CustomDesignCanvasRendererTest {
 
     private fun rows(count: Int) = (1..count).map { row(rank = it, teamName = "Team $it") }
 
-    private fun row(rank: Int?, teamName: String) = ResultExportRow(
+    private fun row(rank: Int?, teamName: String, matchesPlayed: Int = 0) = ResultExportRow(
         rank = rank,
         teamName = teamName,
         win = 0,
         totalKills = 1,
         positionPoints = 12,
         totalPoints = 24,
+        matchesPlayed = matchesPlayed,
     )
 
     private class RecordingCanvas(

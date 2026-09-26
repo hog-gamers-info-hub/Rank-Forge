@@ -5,7 +5,7 @@ import java.util.Locale
 class CustomDesignColumnTextColors private constructor(
     private val colorsByField: Map<CustomDesignAnchorField, String>,
 ) {
-    fun colorFor(field: CustomDesignAnchorField): String = colorsByField.getValue(field)
+    fun colorFor(field: CustomDesignAnchorField): String = colorsByField[field] ?: DEFAULT_COLOR
 
     fun asMap(): Map<CustomDesignAnchorField, String> = colorsByField
 
@@ -26,13 +26,20 @@ class CustomDesignColumnTextColors private constructor(
 
         fun allBlack(): CustomDesignColumnTextColors =
             CustomDesignColumnTextColors(
-                CustomDesignAnchorField.entries.associateWith { DEFAULT_COLOR },
+                CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { DEFAULT_COLOR },
             )
 
         fun fromMap(values: Map<CustomDesignAnchorField, String>): CustomDesignColumnTextColors? {
-            if (values.keys != CustomDesignAnchorField.entries.toSet()) return null
+            val requiredKeys = CustomDesignAnchorField.REQUIRED_FIELDS.toSet()
+            val allKeys = CustomDesignAnchorField.entries.toSet()
+            if (values.keys != requiredKeys && values.keys != allKeys) return null
+            val activeFields = if (values.keys == requiredKeys) {
+                CustomDesignAnchorField.REQUIRED_FIELDS
+            } else {
+                CustomDesignAnchorField.entries
+            }
             val normalized = linkedMapOf<CustomDesignAnchorField, String>()
-            for (field in CustomDesignAnchorField.entries) {
+            activeFields.forEach { field ->
                 val value = values[field] ?: return null
                 normalized[field] = normalizeHexColor(value) ?: return null
             }

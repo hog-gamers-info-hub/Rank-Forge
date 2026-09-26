@@ -6,15 +6,28 @@ import org.junit.Test
 
 class CustomDesignColumnTextColorsTest {
     @Test
-    fun defaultsAreBlackForAllFiveSemanticFields() {
+    fun defaultsAreBlackForAllRequiredSemanticFields() {
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#000000" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#000000" },
             CustomDesignColumnTextColors.allBlack().asMap(),
         )
     }
 
     @Test
-    fun validColorsAreExactlyFiveAndNormalizedToUppercase() {
+    fun legacyFiveColorsAreAcceptedAndOptionalColorDefaultsToBlack() {
+        val colors = CustomDesignColumnTextColors.fromMap(
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#a1b2c3" },
+        )
+
+        assertEquals(
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#A1B2C3" },
+            colors?.asMap(),
+        )
+        assertEquals("#000000", colors?.colorFor(CustomDesignAnchorField.MATCHES_PLAYED))
+    }
+
+    @Test
+    fun sixColorsAreAcceptedAndNormalizedToUppercase() {
         val colors = CustomDesignColumnTextColors.fromMap(
             CustomDesignAnchorField.entries.associateWith { "#a1b2c3" },
         )

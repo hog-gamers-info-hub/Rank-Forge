@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
+import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreservationResult
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
 import io.github.jan.supabase.auth.auth
@@ -179,7 +180,6 @@ class CustomDesignRestoreCoordinator internal constructor(
 
 internal object CustomDesignTemplateValidator {
     private val labelKeys = setOf("teamName", "win", "totalKills", "positionPoints", "totalPoints")
-    private val columnKeys = CustomDesignAnchorField.entries.mapTo(linkedSetOf()) { it.name }
     private val rowKeys = (1..12).mapTo(linkedSetOf(), Int::toString)
 
     fun validate(
@@ -217,10 +217,21 @@ internal object CustomDesignTemplateValidator {
             } == true
         ) return null
 
+        val matchesPlayedLabel = when {
+            "matchesPlayed" !in payload.labelsJson -> null
+            else -> (payload.labelsJson["matchesPlayed"] as? JsonPrimitive)
+                ?.takeIf { it.isString && it.content.isNotBlank() }
+                ?.content
+                ?: return null
+        }
+        val activeFields = activeCustomDesignFields(matchesPlayedLabel)
+        val expectedLabelKeys = labelKeys + if (matchesPlayedLabel != null) setOf("matchesPlayed") else emptySet()
+        if (payload.labelsJson.keys != expectedLabelKeys) return null
+
         val textColors = if (payload.textColorsJson == null) {
             CustomDesignColumnTextColors.allBlack()
         } else {
-            parseTextColors(payload.textColorsJson) ?: return null
+            parseTextColors(payload.textColorsJson, activeFields) ?: return null
         }
 
         val labels = labelKeys.associateWith { key ->
@@ -231,7 +242,7 @@ internal object CustomDesignTemplateValidator {
         if (labels.values.any { it == null }) return null
 
         val columns = linkedMapOf<CustomDesignAnchorField, Float>()
-        for (field in CustomDesignAnchorField.entries) {
+        for (field in activeFields) {
             val x = payload.columnsJson[field.name]?.finiteNumber() ?: return null
             if (x !in 0.0..payload.sourceWidth.toDouble()) return null
             columns[field] = x.toFloat()
@@ -243,8 +254,7 @@ internal object CustomDesignTemplateValidator {
             rows[rank] = y.toFloat()
         }
         if ((1..11).any { rows.getValue(it) >= rows.getValue(it + 1) }) return null
-        if (payload.labelsJson.keys != labelKeys ||
-            payload.columnsJson.keys != columnKeys ||
+        if (payload.columnsJson.keys != activeFields.mapTo(linkedSetOf()) { it.name } ||
             payload.rowsJson.keys != rowKeys
         ) return null
         return VerifiedCustomDesignTemplate(
@@ -260,6 +270,7 @@ internal object CustomDesignTemplateValidator {
             labels = CustomDesignOcrLabels(
                 teamName = labels.getValue("teamName")!!,
                 win = labels.getValue("win")!!,
+                matchesPlayed = matchesPlayedLabel,
                 totalKills = labels.getValue("totalKills")!!,
                 positionPoints = labels.getValue("positionPoints")!!,
                 totalPoints = labels.getValue("totalPoints")!!,
@@ -277,10 +288,18 @@ internal object CustomDesignTemplateValidator {
 
     private fun parseTextColors(
         json: kotlinx.serialization.json.JsonObject,
+        activeFields: List<CustomDesignAnchorField>,
     ): CustomDesignColumnTextColors? {
-        if (json.keys != columnKeys) return null
+        val requiredKeys = CustomDesignAnchorField.REQUIRED_FIELDS.mapTo(linkedSetOf()) { it.name }
+        val activeKeys = activeFields.mapTo(linkedSetOf()) { it.name }
+        if (json.keys != requiredKeys && json.keys != activeKeys) return null
+        val fieldsToParse = if (json.keys == requiredKeys) {
+            CustomDesignAnchorField.REQUIRED_FIELDS
+        } else {
+            activeFields
+        }
         val values = linkedMapOf<CustomDesignAnchorField, String>()
-        for (field in CustomDesignAnchorField.entries) {
+        for (field in fieldsToParse) {
             val value = json[field.name] as? JsonPrimitive
             if (value == null || !value.isString) return null
             values[field] = value.content

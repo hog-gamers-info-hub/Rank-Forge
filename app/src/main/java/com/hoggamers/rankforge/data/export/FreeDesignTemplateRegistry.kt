@@ -75,7 +75,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { HEADER_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { HEADER_COLOR },
         ) ?: error("Free Design v1 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.1f,
@@ -145,7 +145,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { BLUE_HEADER_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { BLUE_HEADER_COLOR },
         ) ?: error("Free Design v2 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.30f,
@@ -219,7 +219,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V3_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V3_RESULT_COLOR },
         ) ?: error("Free Design v3 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.30f,
@@ -293,7 +293,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V4_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V4_RESULT_COLOR },
         ) ?: error("Free Design v4 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.20f,
@@ -367,7 +367,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V5_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V5_RESULT_COLOR },
         ) ?: error("Free Design v5 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.20f,
@@ -445,7 +445,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V6_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V6_RESULT_COLOR },
         ) ?: error("Free Design v6 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.20f,
@@ -523,7 +523,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V7_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V7_RESULT_COLOR },
         ) ?: error("Free Design v7 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.20f,
@@ -601,7 +601,7 @@ object FreeDesignTemplateRegistry {
             ),
         ),
         resultColumnTextColors = CustomDesignColumnTextColors.fromMap(
-            CustomDesignAnchorField.entries.associateWith { V8_RESULT_COLOR },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { V8_RESULT_COLOR },
         ) ?: error("Free Design v8 must define all result-column colors"),
         resultTextStyle = FreeDesignResultTextStyle(
             textSizeMultiplier = 1.20f,

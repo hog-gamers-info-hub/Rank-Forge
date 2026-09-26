@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import com.hoggamers.rankforge.domain.ocr.customdesign.averageRankingBoundingBoxHeightPx
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -138,6 +139,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 totalKills = draft.totalKillsLabel,
                 positionPoints = draft.positionPointsLabel,
                 totalPoints = draft.totalPointsLabel,
+                matchesPlayed = draft.matchesPlayedLabel.takeIf { it.isNotBlank() },
             ),
             effectiveGridGeometry = resolveCustomDesignEffectiveGridGeometry(
                 editable = state.editableGridGeometry,
@@ -213,12 +215,14 @@ class CustomDesignSetupViewModel @Inject constructor(
                         sourceWidth = design.sourceWidth,
                         sourceHeight = design.sourceHeight,
                         automatic = null,
+                        activeFields = activeCustomDesignFields(design.labels.matchesPlayed),
                     ) ?: return@launch
                     rawOcrDocument = null
                     _uiState.update {
                         it.copy(
                             teamNameLabel = design.labels.teamName,
                             winLabel = design.labels.win,
+                            matchesPlayedLabel = design.labels.matchesPlayed.orEmpty(),
                             totalKillsLabel = design.labels.totalKills,
                             positionPointsLabel = design.labels.positionPoints,
                             totalPointsLabel = design.labels.totalPoints,
@@ -235,6 +239,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                                 totalKillsLabel = design.labels.totalKills,
                                 positionPointsLabel = design.labels.positionPoints,
                                 totalPointsLabel = design.labels.totalPoints,
+                                matchesPlayedLabel = design.labels.matchesPlayed.orEmpty(),
                             ),
                             validationErrors = emptySet(),
                             imageValidationError = null,
@@ -296,6 +301,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                     it.copy(
                         teamNameLabel = "",
                         winLabel = "",
+                        matchesPlayedLabel = "",
                         totalKillsLabel = "",
                         positionPointsLabel = "",
                         totalPointsLabel = "",
@@ -336,6 +342,11 @@ class CustomDesignSetupViewModel @Inject constructor(
     fun onWinChanged(value: String) {
         if (isRestoreLocked()) return
         updateLabels { it.copy(winLabel = value) }
+    }
+
+    fun onMatchesPlayedChanged(value: String) {
+        if (isRestoreLocked()) return
+        updateLabels { it.copy(matchesPlayedLabel = value) }
     }
 
     fun onTotalKillsChanged(value: String) {
@@ -547,10 +558,22 @@ class CustomDesignSetupViewModel @Inject constructor(
             saveGeneration += 1
         }
         _uiState.update { current ->
-            val nextState = transform(current).copy(
+            val transformed = transform(current)
+            val nextEditableGrid = if (transformed.activeFields.toSet() != current.activeFields.toSet()) {
+                CustomDesignEditableGridInitializer.initialize(
+                    sourceWidth = transformed.sourceImageWidth ?: 0,
+                    sourceHeight = transformed.sourceImageHeight ?: 0,
+                    automatic = transformed.gridGeometry,
+                    activeFields = transformed.activeFields,
+                )
+            } else {
+                transformed.editableGridGeometry
+            }
+            val nextState = transformed.copy(
                 imageValidationError = null,
                 photoPickerError = null,
                 restoreStatus = CustomDesignRestoreStatus.IDLE,
+                editableGridGeometry = nextEditableGrid,
             ).withDraft()
             val nextStateWithSaveStatus = if (current.savedCustomDesignId == null) {
                 nextState.copy(saveStatus = CustomDesignSaveStatus.IDLE)
@@ -618,6 +641,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                                 sourceWidth = source.sourceWidth,
                                 sourceHeight = source.sourceHeight,
                                 automatic = null,
+                                activeFields = _uiState.value.activeFields,
                             ),
                         )
                     }
@@ -658,6 +682,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         sourceWidth = source.sourceWidth,
                         sourceHeight = source.sourceHeight,
                         automatic = gridGeometry,
+                        activeFields = state.activeFields,
                     )
                 } else {
                     it.editableGridGeometry
@@ -683,6 +708,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 sourceWidth = sourceImageWidth ?: 0,
                 sourceHeight = sourceImageHeight ?: 0,
                 automatic = null,
+                activeFields = activeFields,
             ),
             manualGridOverrides = if (clearManualGridOverrides) {
                 CustomDesignGridOverrides()
@@ -695,6 +721,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     private fun CustomDesignSetupUiState.ocrLabels() = CustomDesignOcrLabels(
         teamName = teamNameLabel,
         win = winLabel,
+        matchesPlayed = matchesPlayedLabel.takeIf { it.isNotBlank() },
         totalKills = totalKillsLabel,
         positionPoints = positionPointsLabel,
         totalPoints = totalPointsLabel,
@@ -728,7 +755,7 @@ class CustomDesignSetupViewModel @Inject constructor(
         if (!BuildConfig.DEBUG) return
         val anchors = detection.anchors
         debugLog("SOURCE width=${anchors.sourceWidth} height=${anchors.sourceHeight}")
-        CustomDesignAnchorField.entries.forEach { field ->
+        _uiState.value.activeFields.forEach { field ->
             when {
                 field in detection.ambiguousFields -> debugLog("HEADER $field AMBIGUOUS")
                 anchors.columnX[field] != null -> debugLog(
@@ -803,6 +830,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                     totalKillsLabel = totalKillsLabel,
                     positionPointsLabel = positionPointsLabel,
                     totalPointsLabel = totalPointsLabel,
+                    matchesPlayedLabel = matchesPlayedLabel,
                 )
             } else {
                 null

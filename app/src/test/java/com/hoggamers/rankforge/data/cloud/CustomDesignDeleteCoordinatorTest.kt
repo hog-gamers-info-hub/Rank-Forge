@@ -173,7 +173,7 @@ class CustomDesignDeleteCoordinatorTest {
             put("totalPoints", "TOTAL")
         },
         columnsJson = buildJsonObject {
-            CustomDesignAnchorField.entries.forEachIndexed { index, field -> put(field.name, index * 100) }
+            CustomDesignAnchorField.REQUIRED_FIELDS.forEachIndexed { index, field -> put(field.name, index * 100) }
         },
         rowsJson = buildJsonObject {
             (1..12).forEach { put(it.toString(), it * 100) }

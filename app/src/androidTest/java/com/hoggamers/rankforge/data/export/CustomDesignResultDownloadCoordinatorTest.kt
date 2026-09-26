@@ -277,7 +277,7 @@ class CustomDesignResultDownloadCoordinatorTest {
         geometry = CustomDesignEffectiveGridGeometry(
             sourceWidth = 17,
             sourceHeight = 19,
-            columnX = CustomDesignAnchorField.entries.associateWith { 1f },
+            columnX = CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { 1f },
             rowY = (1..12).associateWith { it.toFloat() },
         ),
         textColors = CustomDesignColumnTextColors.fromMap(

@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 
 enum class CustomDesignSaveStatus {
@@ -48,11 +49,13 @@ data class CustomDesignDraft(
     val totalKillsLabel: String,
     val positionPointsLabel: String,
     val totalPointsLabel: String,
+    val matchesPlayedLabel: String = "",
 )
 
 data class CustomDesignSetupUiState(
     val teamNameLabel: String = "",
     val winLabel: String = "",
+    val matchesPlayedLabel: String = "",
     val totalKillsLabel: String = "",
     val positionPointsLabel: String = "",
     val totalPointsLabel: String = "",
@@ -88,6 +91,9 @@ data class CustomDesignSetupUiState(
             positionPointsLabel.isNotBlank() &&
             totalPointsLabel.isNotBlank()
 
+    val activeFields: List<CustomDesignAnchorField>
+        get() = activeCustomDesignFields(matchesPlayedLabel)
+
     val isFinalGridReady: Boolean
         get() = selectedImageReference != null &&
             sourceImageWidth != null &&
@@ -95,7 +101,7 @@ data class CustomDesignSetupUiState(
             allRequiredLabelsFilled &&
             ocrStatus in setOf(CustomDesignOcrStatus.COMPLETED, CustomDesignOcrStatus.FAILED) &&
             editableGridGeometry?.let { geometry ->
-                geometry.columnX.keys.containsAll(CustomDesignAnchorField.entries) &&
+                geometry.columnX.keys == activeFields.toSet() &&
                     geometry.rowY.keys.containsAll((1..12).toSet())
             } == true
 }
@@ -110,6 +116,7 @@ internal fun CustomDesignSetupUiState.previewGridGeometry(): CustomDesignEffecti
     val labelsByField = mapOf(
         CustomDesignAnchorField.TEAM_NAME to teamNameLabel,
         CustomDesignAnchorField.WIN to winLabel,
+        CustomDesignAnchorField.MATCHES_PLAYED to matchesPlayedLabel,
         CustomDesignAnchorField.TOTAL_KILLS to totalKillsLabel,
         CustomDesignAnchorField.POSITION_POINTS to positionPointsLabel,
         CustomDesignAnchorField.TOTAL_POINTS to totalPointsLabel,
