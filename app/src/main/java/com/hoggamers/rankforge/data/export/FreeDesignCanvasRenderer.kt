@@ -220,7 +220,7 @@ class FreeDesignCanvasRenderer(
         }
 
         if (
-            template.tableGeometry.columnX.keys != CustomDesignAnchorField.entries.toSet() ||
+            template.tableGeometry.columnX.keys != CustomDesignAnchorField.REQUIRED_FIELDS.toSet() ||
             template.tableGeometry.rowY.keys != (1..FREE_DESIGN_ROW_COUNT).toSet()
         ) {
             return FreeDesignCanvasRenderFailure.INVALID_TEMPLATE_GEOMETRY

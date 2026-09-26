@@ -54,6 +54,7 @@ class ResultExportModelBuilder(
             totalKills = kills,
             positionPoints = placementPoints,
             totalPoints = totalPoints,
+            matchesPlayed = if (participationStatus == MatchParticipationStatus.PARTICIPATED.name) 1 else 0,
         )
 
     private fun TournamentStandingsExportRow.toResultExportRow(): ResultExportRow =
@@ -64,5 +65,6 @@ class ResultExportModelBuilder(
             totalKills = totalKills,
             positionPoints = totalPositionPoints,
             totalPoints = totalPoints,
+            matchesPlayed = matchesPlayed,
         )
 }

@@ -29,13 +29,16 @@ class CustomDesignAnchorDetector @Inject constructor() {
         val observations = blocks.flatMap { block ->
             block.lines.flatMap { line -> line.headerObservations() }
         }
-        val configuredLabels = linkedMapOf(
-            CustomDesignAnchorField.TEAM_NAME to labels.teamName,
-            CustomDesignAnchorField.WIN to labels.win,
-            CustomDesignAnchorField.TOTAL_KILLS to labels.totalKills,
-            CustomDesignAnchorField.POSITION_POINTS to labels.positionPoints,
-            CustomDesignAnchorField.TOTAL_POINTS to labels.totalPoints,
-        )
+        val configuredLabels = buildList {
+            add(CustomDesignAnchorField.TEAM_NAME to labels.teamName)
+            add(CustomDesignAnchorField.WIN to labels.win)
+            labels.matchesPlayed
+                ?.takeIf { it.isNotBlank() }
+                ?.let { add(CustomDesignAnchorField.MATCHES_PLAYED to it) }
+            add(CustomDesignAnchorField.TOTAL_KILLS to labels.totalKills)
+            add(CustomDesignAnchorField.POSITION_POINTS to labels.positionPoints)
+            add(CustomDesignAnchorField.TOTAL_POINTS to labels.totalPoints)
+        }
         val columnX = linkedMapOf<CustomDesignAnchorField, Float>()
         val headerY = linkedMapOf<CustomDesignAnchorField, Float>()
         val ambiguousFields = linkedSetOf<CustomDesignAnchorField>()

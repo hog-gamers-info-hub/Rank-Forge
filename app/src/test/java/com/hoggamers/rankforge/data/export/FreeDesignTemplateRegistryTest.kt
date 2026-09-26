@@ -125,7 +125,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.30f, template2.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(16f, template2.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#F4F7FF" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F4F7FF" },
             template2.resultColumnTextColors.asMap(),
         )
         assertEquals(76f, template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
@@ -170,7 +170,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.30f, template3.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(16f, template3.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#F4F4F4" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F4F4F4" },
             template3.resultColumnTextColors.asMap(),
         )
         assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
@@ -222,7 +222,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.20f, template4.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(24f, template4.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#111111" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#111111" },
             template4.resultColumnTextColors.asMap(),
         )
         assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
@@ -274,7 +274,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.20f, template5.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(20f, template5.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#F2F0FF" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F2F0FF" },
             template5.resultColumnTextColors.asMap(),
         )
         FreeDesignHeaderField.entries.forEach { field ->
@@ -336,7 +336,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.20f, template6.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(20f, template6.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#111111" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#111111" },
             template6.resultColumnTextColors.asMap(),
         )
         FreeDesignHeaderField.entries.forEach { field ->
@@ -398,7 +398,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.20f, template7.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(16f, template7.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#E8EDF2" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#E8EDF2" },
             template7.resultColumnTextColors.asMap(),
         )
         FreeDesignHeaderField.entries.forEach { field ->
@@ -460,7 +460,7 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1.20f, template8.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(20f, template8.resultTextStyle.teamNameStartPaddingPx, 0f)
         assertEquals(
-            CustomDesignAnchorField.entries.associateWith { "#F3F3F3" },
+            CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F3F3F3" },
             template8.resultColumnTextColors.asMap(),
         )
         FreeDesignHeaderField.entries.forEach { field ->
@@ -488,7 +488,7 @@ class FreeDesignTemplateRegistryTest {
     @Test
     fun allTemplatesContainAllColumnsAndRowsWithinSourceBounds() {
         FreeDesignTemplateRegistry.all.forEach { template ->
-            assertEquals(CustomDesignAnchorField.entries.toSet(), template.tableGeometry.columnX.keys)
+            assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.toSet(), template.tableGeometry.columnX.keys)
             assertEquals((1..12).toSet(), template.tableGeometry.rowY.keys)
             assertTrue(template.tableGeometry.columnX.values.all { it in 0f..template.sourceWidth.toFloat() })
             assertTrue(template.tableGeometry.rowY.values.all { it in 0f..template.sourceHeight.toFloat() })
@@ -499,7 +499,7 @@ class FreeDesignTemplateRegistryTest {
     fun allTemplatesDefineEverySemanticColumnColor() {
         FreeDesignTemplateRegistry.all.forEach { template ->
             assertEquals(
-                CustomDesignAnchorField.entries.toSet(),
+                CustomDesignAnchorField.REQUIRED_FIELDS.toSet(),
                 template.resultColumnTextColors.asMap().keys,
             )
         }

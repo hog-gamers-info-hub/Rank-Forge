@@ -1,10 +1,10 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
-import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
+import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import io.github.jan.supabase.auth.auth
 import java.util.UUID
 import javax.inject.Inject
@@ -153,9 +153,10 @@ class CustomDesignSaveCoordinator internal constructor(
             request.labels.totalPoints.isBlank()
         ) return CustomDesignSaveFailure.VALIDATION
         val geometry = request.effectiveGridGeometry ?: return CustomDesignSaveFailure.VALIDATION
+        val activeFields = activeCustomDesignFields(request.labels.matchesPlayed)
         if (geometry.sourceWidth != request.currentSourceWidth ||
             geometry.sourceHeight != request.currentSourceHeight ||
-            geometry.columnX.keys != CustomDesignAnchorField.entries.toSet() ||
+            geometry.columnX.keys != activeFields.toSet() ||
             geometry.rowY.keys != (1..12).toSet()
         ) return CustomDesignSaveFailure.VALIDATION
         if (geometry.columnX.values.any { !it.isFinite() || it !in 0f..request.currentSourceWidth.toFloat() }) {
@@ -194,12 +195,15 @@ class CustomDesignSaveCoordinator internal constructor(
             labelsJson = buildJsonObject {
                 put("teamName", labels.teamName)
                 put("win", labels.win)
+                labels.matchesPlayed
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { put("matchesPlayed", it) }
                 put("totalKills", labels.totalKills)
                 put("positionPoints", labels.positionPoints)
                 put("totalPoints", labels.totalPoints)
             },
             columnsJson = buildJsonObject {
-                CustomDesignAnchorField.entries.forEach { field ->
+                activeCustomDesignFields(labels.matchesPlayed).forEach { field ->
                     put(field.name, geometry.columnX.getValue(field).toDouble())
                 }
             },
@@ -207,7 +211,7 @@ class CustomDesignSaveCoordinator internal constructor(
                 (1..12).forEach { rank -> put(rank.toString(), geometry.rowY.getValue(rank).toDouble()) }
             },
             textColorsJson = buildJsonObject {
-                CustomDesignAnchorField.entries.forEach { field ->
+                activeCustomDesignFields(labels.matchesPlayed).forEach { field ->
                     put(field.name, textColors.colorFor(field))
                 }
             },

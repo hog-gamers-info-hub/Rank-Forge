@@ -9,6 +9,7 @@ data class ResultExportRow(
     val totalKills: Int,
     val positionPoints: Int,
     val totalPoints: Int,
+    val matchesPlayed: Int = 0,
 )
 
 data class MatchResultExportModel(

@@ -99,6 +99,7 @@ import kotlinx.coroutines.withContext
 const val CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG = "custom_design_setup_screen"
 const val CUSTOM_DESIGN_TEAM_NAME_FIELD_TEST_TAG = "custom_design_team_name_field"
 const val CUSTOM_DESIGN_WIN_FIELD_TEST_TAG = "custom_design_win_field"
+const val CUSTOM_DESIGN_MATCHES_PLAYED_FIELD_TEST_TAG = "custom_design_matches_played_field"
 const val CUSTOM_DESIGN_TOTAL_KILLS_FIELD_TEST_TAG = "custom_design_total_kills_field"
 const val CUSTOM_DESIGN_POSITION_POINTS_FIELD_TEST_TAG = "custom_design_position_points_field"
 const val CUSTOM_DESIGN_TOTAL_POINTS_FIELD_TEST_TAG = "custom_design_total_points_field"
@@ -112,6 +113,7 @@ const val CUSTOM_DESIGN_SAVE_SUCCESS_DIALOG_TEST_TAG = "custom_design_save_succe
 const val CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG = "custom_design_save_success_ok"
 const val CUSTOM_DESIGN_TEAM_NAME_COLOR_TEST_TAG = "custom_design_team_name_color"
 const val CUSTOM_DESIGN_WIN_COLOR_TEST_TAG = "custom_design_win_color"
+const val CUSTOM_DESIGN_MATCHES_PLAYED_COLOR_TEST_TAG = "custom_design_matches_played_color"
 const val CUSTOM_DESIGN_TOTAL_KILLS_COLOR_TEST_TAG = "custom_design_total_kills_color"
 const val CUSTOM_DESIGN_POSITION_POINTS_COLOR_TEST_TAG = "custom_design_position_points_color"
 const val CUSTOM_DESIGN_TOTAL_POINTS_COLOR_TEST_TAG = "custom_design_total_points_color"
@@ -182,6 +184,7 @@ fun CustomDesignSetupRoute(
         onBack = onBack,
         onTeamNameChanged = viewModel::onTeamNameChanged,
         onWinChanged = viewModel::onWinChanged,
+        onMatchesPlayedChanged = viewModel::onMatchesPlayedChanged,
         onTotalKillsChanged = viewModel::onTotalKillsChanged,
         onPositionPointsChanged = viewModel::onPositionPointsChanged,
         onTotalPointsChanged = viewModel::onTotalPointsChanged,
@@ -215,6 +218,7 @@ fun CustomDesignSetupScreen(
     onBack: () -> Unit = {},
     onTeamNameChanged: (String) -> Unit = {},
     onWinChanged: (String) -> Unit = {},
+    onMatchesPlayedChanged: (String) -> Unit = {},
     onTotalKillsChanged: (String) -> Unit = {},
     onPositionPointsChanged: (String) -> Unit = {},
     onTotalPointsChanged: (String) -> Unit = {},
@@ -358,6 +362,17 @@ fun CustomDesignSetupScreen(
                     color = uiState.textColors.colorFor(CustomDesignAnchorField.WIN),
                     colorTestTag = CUSTOM_DESIGN_WIN_COLOR_TEST_TAG,
                     onColorClick = { activeTextColorField = CustomDesignAnchorField.WIN },
+                )
+                Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+                CustomDesignLabelWithColor(
+                    value = uiState.matchesPlayedLabel,
+                    onValueChange = onMatchesPlayedChanged,
+                    label = "Matches (Optional)",
+                    testTag = CUSTOM_DESIGN_MATCHES_PLAYED_FIELD_TEST_TAG,
+                    isError = false,
+                    color = uiState.textColors.colorFor(CustomDesignAnchorField.MATCHES_PLAYED),
+                    colorTestTag = CUSTOM_DESIGN_MATCHES_PLAYED_COLOR_TEST_TAG,
+                    onColorClick = { activeTextColorField = CustomDesignAnchorField.MATCHES_PLAYED },
                 )
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
                 CustomDesignLabelWithColor(

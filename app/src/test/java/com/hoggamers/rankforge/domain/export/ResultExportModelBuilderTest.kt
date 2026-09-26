@@ -64,6 +64,7 @@ class ResultExportModelBuilderTest {
             assertEquals(source.kills, result.totalKills)
             assertEquals(source.placementPoints, result.positionPoints)
             assertEquals(source.totalPoints, result.totalPoints)
+            assertEquals(1, result.matchesPlayed)
         }
     }
 
@@ -90,6 +91,7 @@ class ResultExportModelBuilderTest {
         assertEquals(0, model.rows.last().totalKills)
         assertEquals(0, model.rows.last().positionPoints)
         assertEquals(0, model.rows.last().totalPoints)
+        assertEquals(0, model.rows.last().matchesPlayed)
     }
 
     @Test
@@ -161,6 +163,7 @@ class ResultExportModelBuilderTest {
             assertEquals(source.totalKills, result.totalKills)
             assertEquals(source.totalPositionPoints, result.positionPoints)
             assertEquals(source.totalPoints, result.totalPoints)
+            assertEquals(source.matchesPlayed, result.matchesPlayed)
         }
     }
 

@@ -156,7 +156,7 @@ class CustomDesignSemanticColumnLabelsTest {
     fun fallbackColumnsStillProduceAllFiveSemanticIdentitiesWithoutChangingRows() {
         val rows = mapOf(1 to 100f, 2 to 200f, 12 to 1200f)
         val geometry = geometry(
-            columnX = CustomDesignAnchorField.entries
+            columnX = CustomDesignAnchorField.REQUIRED_FIELDS
                 .mapIndexed { index, field -> field to (100 + index * 100).toFloat() }
                 .toMap(),
             rowY = rows,
@@ -165,9 +165,9 @@ class CustomDesignSemanticColumnLabelsTest {
             geometry,
         )
 
-        assertEquals(CustomDesignAnchorField.entries.toSet(), labels.map { it.field }.toSet())
+        assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.toSet(), labels.map { it.field }.toSet())
         assertEquals(rows, geometry.rowY)
-        assertEquals(CustomDesignAnchorField.entries.map { it.name }, labels.map { it.text })
+        assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.map { it.name }, labels.map { it.text })
     }
 
     private fun geometry(

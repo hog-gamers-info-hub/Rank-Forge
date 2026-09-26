@@ -38,6 +38,40 @@ class CustomDesignSaveCoordinatorTest {
     }
 
     @Test
+    fun successSerializesOptionalMatchesPlayedAsSixthColumn() = runTest {
+        val captured = RecordingDependencies(mutableListOf())
+        val request = validRequest().copy(
+            labels = CustomDesignOcrLabels(
+                teamName = "TEAM NAME",
+                win = "WIN",
+                totalKills = "ELIM.",
+                positionPoints = "POS.",
+                totalPoints = "TOTAL",
+                matchesPlayed = "MATCHES",
+            ),
+            effectiveGridGeometry = validGeometry().copy(
+                columnX = validGeometry().columnX +
+                    (CustomDesignAnchorField.MATCHES_PLAYED to 500f),
+            ),
+            textColors = CustomDesignColumnTextColors.fromMap(
+                CustomDesignAnchorField.entries.associateWith { "#112233" },
+            )!!,
+        )
+
+        assertTrue(captured.coordinator().save(request) is CustomDesignSaveResult.Success)
+        val payload = captured.inserted.single()
+        assertEquals(
+            setOf("teamName", "win", "matchesPlayed", "totalKills", "positionPoints", "totalPoints"),
+            payload.labelsJson.keys,
+        )
+        assertEquals(
+            setOf("TEAM_NAME", "WIN", "MATCHES_PLAYED", "TOTAL_KILLS", "POSITION_POINTS", "TOTAL_POINTS"),
+            payload.columnsJson.keys,
+        )
+        assertEquals(payload.columnsJson.keys, payload.textColorsJson?.keys)
+    }
+
+    @Test
     fun databaseFailureAttemptsStorageCompensationAndDoesNotSucceed() = runTest {
         val dependencies = RecordingDependencies(mutableListOf(), insertFailure = true)
 

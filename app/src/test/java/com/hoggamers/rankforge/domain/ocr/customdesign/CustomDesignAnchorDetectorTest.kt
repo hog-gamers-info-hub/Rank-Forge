@@ -35,6 +35,27 @@ class CustomDesignAnchorDetectorTest {
     }
 
     @Test
+    fun optionalMatchesPlayedHeaderIsDetectedOnlyWhenConfigured() {
+        val blocks = block(line(element("MATCHES", 520, 100, 600, 120)))
+
+        val configured = detector.detect(
+            1080,
+            1350,
+            labels(matchesPlayed = "MATCHES"),
+            blocks,
+        )
+        val unconfigured = detector.detect(
+            1080,
+            1350,
+            labels(),
+            blocks,
+        )
+
+        assertEquals(560f, configured.columnX[CustomDesignAnchorField.MATCHES_PLAYED])
+        assertFalse(CustomDesignAnchorField.MATCHES_PLAYED in unconfigured.columnX)
+    }
+
+    @Test
     fun contiguousElementsOnOneLineUseTheTeamNameLeftEdge() {
         val anchors = detector.detect(
             1080,
@@ -214,7 +235,15 @@ class CustomDesignAnchorDetectorTest {
         totalKills: String = "ELIM.",
         positionPoints: String = "POS.",
         totalPoints: String = "TOTAL",
-    ) = CustomDesignOcrLabels(teamName, win, totalKills, positionPoints, totalPoints)
+        matchesPlayed: String? = null,
+    ) = CustomDesignOcrLabels(
+        teamName = teamName,
+        win = win,
+        totalKills = totalKills,
+        positionPoints = positionPoints,
+        totalPoints = totalPoints,
+        matchesPlayed = matchesPlayed,
+    )
 
     private fun detectRanks(rankTexts: List<String>): Set<Int> = detector.detect(
         1080,

@@ -12,7 +12,7 @@ class CustomDesignEditableGridInitializerTest {
 
         val editable = initialize(automatic)
 
-        CustomDesignAnchorField.entries.forEach { field ->
+        CustomDesignAnchorField.REQUIRED_FIELDS.forEach { field ->
             assertEquals(automatic.columnX[field], editable.columnX[field]?.x)
             assertEquals(
                 CustomDesignEditableCoordinateSource.AUTOMATIC,
@@ -29,7 +29,7 @@ class CustomDesignEditableGridInitializerTest {
 
         val editable = initialize(automatic)
 
-        assertEquals(CustomDesignAnchorField.entries.size, editable.columnX.size)
+        assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.size, editable.columnX.size)
         assertEquals(
             CustomDesignEditableCoordinateSource.ESTIMATED,
             editable.columnX[CustomDesignAnchorField.TOTAL_KILLS]?.source,
@@ -44,10 +44,10 @@ class CustomDesignEditableGridInitializerTest {
             ),
         )
 
-        val missing = CustomDesignAnchorField.entries
+        val missing = CustomDesignAnchorField.REQUIRED_FIELDS
             .filter { it != CustomDesignAnchorField.WIN }
             .map { editable.columnX[it]!! }
-        assertEquals(CustomDesignAnchorField.entries.size, editable.columnX.size)
+        assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.size, editable.columnX.size)
         assertTrue(missing.all { it.source == CustomDesignEditableCoordinateSource.FALLBACK })
         assertTrue(missing.all { it.x in 0f..1080f && it.x.isFinite() })
         assertEquals(missing.size, missing.map { it.x }.toSet().size)
@@ -57,7 +57,7 @@ class CustomDesignEditableGridInitializerTest {
     fun zeroAutomaticColumnsStillProducesAllFiveFallbackColumns() {
         val editable = initialize(null)
 
-        assertEquals(CustomDesignAnchorField.entries.size, editable.columnX.size)
+        assertEquals(CustomDesignAnchorField.REQUIRED_FIELDS.size, editable.columnX.size)
         assertTrue(editable.columnX.values.all { it.source == CustomDesignEditableCoordinateSource.FALLBACK })
     }
 

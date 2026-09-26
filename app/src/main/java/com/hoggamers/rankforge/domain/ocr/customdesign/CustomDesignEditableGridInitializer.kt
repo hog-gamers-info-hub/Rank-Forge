@@ -5,6 +5,7 @@ object CustomDesignEditableGridInitializer {
         sourceWidth: Int,
         sourceHeight: Int,
         automatic: CustomDesignGridGeometry?,
+        activeFields: List<CustomDesignAnchorField> = CustomDesignAnchorField.REQUIRED_FIELDS,
     ): CustomDesignEditableGridGeometry? {
         if (sourceWidth <= 0 || sourceHeight <= 0) return null
 
@@ -15,7 +16,7 @@ object CustomDesignEditableGridInitializer {
         return CustomDesignEditableGridGeometry(
             sourceWidth = sourceWidth,
             sourceHeight = sourceHeight,
-            columnX = initializeColumns(sourceWidth, usableAutomatic),
+            columnX = initializeColumns(sourceWidth, usableAutomatic, activeFields),
             rowY = initializeRows(sourceHeight, usableAutomatic),
         )
     }
@@ -23,11 +24,12 @@ object CustomDesignEditableGridInitializer {
     private fun initializeColumns(
         sourceWidth: Int,
         automatic: CustomDesignGridGeometry?,
+        activeFields: List<CustomDesignAnchorField>,
     ): Map<CustomDesignAnchorField, CustomDesignEditableColumnCoordinate> {
         val automaticColumns = automatic?.columnX
             ?.filterValues { it.isFinite() && it in 0f..sourceWidth.toFloat() }
             .orEmpty()
-        val fields = CustomDesignAnchorField.entries
+        val fields = activeFields
         val canonicalOrderCompatible = fields
             .mapNotNull { field -> automaticColumns[field] }
             .zipWithNext()
@@ -80,6 +82,7 @@ object CustomDesignEditableGridInitializer {
                 sourceWidth = sourceWidth,
                 fieldIndex = index,
                 occupied = occupied,
+                fieldCount = fields.size,
             )
             result[field] = CustomDesignEditableColumnCoordinate(
                 x = fallbackX,
@@ -94,15 +97,16 @@ object CustomDesignEditableGridInitializer {
         sourceWidth: Int,
         fieldIndex: Int,
         occupied: Set<Float>,
+        fieldCount: Int,
     ): Float {
-        val slotCount = CustomDesignAnchorField.entries.size * 4 + 2
+        val slotCount = fieldCount * 4 + 2
         val preferredSlot = fieldIndex + 1
         val candidates = (1..slotCount).asSequence()
             .sortedBy { slot -> kotlin.math.abs(slot - preferredSlot) }
             .map { slot -> sourceWidth * slot.toFloat() / (slotCount + 1).toFloat() }
             .filter { it !in occupied }
         return candidates.firstOrNull() ?:
-            (sourceWidth * preferredSlot.toFloat() / (CustomDesignAnchorField.entries.size + 1))
+            (sourceWidth * preferredSlot.toFloat() / (fieldCount + 1))
                 .coerceIn(0f, sourceWidth.toFloat())
     }
 

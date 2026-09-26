@@ -84,6 +84,20 @@ class CustomDesignRestoreCoordinatorTest {
     }
 
     @Test
+    fun restoreHydratesOptionalMatchesPlayedColumn() = runTest {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val result = coordinator(
+            payload = payloadWithMatchesPlayed(bytes),
+            bytes = bytes,
+        ).restore(designId)
+
+        val design = (result as CustomDesignRestoreResult.Success).design
+        assertEquals("MATCHES", design.labels.matchesPlayed)
+        assertEquals(500f, design.geometry.columnX[CustomDesignAnchorField.MATCHES_PLAYED])
+        assertEquals("#667788", design.textColors.colorFor(CustomDesignAnchorField.MATCHES_PLAYED))
+    }
+
+    @Test
     fun legacyPayloadWithoutAverageStillDecodesAndValidates() {
         val legacyJson = Json { encodeDefaults = false }.encodeToString(
             CustomDesignTemplateCloudPayload.serializer(),
@@ -235,6 +249,47 @@ class CustomDesignRestoreCoordinatorTest {
     }
 
     @Test
+    fun validatorAcceptsSixColumnPayloadAndRejectsInconsistentOptionalPairs() {
+        val valid = payloadWithMatchesPlayed(byteArrayOf(1, 2, 3, 4))
+        val restored = CustomDesignTemplateValidator.validate(valid, designId, ownerId)
+
+        assertEquals("MATCHES", restored?.labels?.matchesPlayed)
+        assertEquals(6, restored?.geometry?.columnX?.size)
+        assertEquals("#667788", restored?.textColors?.colorFor(CustomDesignAnchorField.MATCHES_PLAYED))
+        assertEquals(
+            "#000000",
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = payload(byteArrayOf(1, 2, 3, 4)).textColorsJson),
+                designId,
+                ownerId,
+            )?.textColors?.colorFor(CustomDesignAnchorField.MATCHES_PLAYED),
+        )
+        assertEquals(
+            "#000000",
+            CustomDesignTemplateValidator.validate(
+                valid.copy(textColorsJson = null),
+                designId,
+                ownerId,
+            )?.textColors?.colorFor(CustomDesignAnchorField.MATCHES_PLAYED),
+        )
+
+        assertNull(
+            CustomDesignTemplateValidator.validate(
+                valid.copy(columnsJson = payload(byteArrayOf(1, 2, 3, 4)).columnsJson),
+                designId,
+                ownerId,
+            ),
+        )
+        assertNull(
+            CustomDesignTemplateValidator.validate(
+                valid.copy(labelsJson = payload(byteArrayOf(1, 2, 3, 4)).labelsJson),
+                designId,
+                ownerId,
+            ),
+        )
+    }
+
+    @Test
     fun legacyNullColorsUseBlackAndInvalidOrIncompleteColorsAreRejected() {
         val valid = payload(byteArrayOf(1, 2, 3, 4))
         assertEquals(
@@ -366,6 +421,33 @@ class CustomDesignRestoreCoordinatorTest {
         textColorsJson = buildJsonObject {
             put("TEAM_NAME", "#112233")
             put("WIN", "#223344")
+            put("TOTAL_KILLS", "#334455")
+            put("POSITION_POINTS", "#445566")
+            put("TOTAL_POINTS", "#556677")
+        },
+    )
+
+    private fun payloadWithMatchesPlayed(bytes: ByteArray) = payload(bytes).copy(
+        labelsJson = buildJsonObject {
+            put("teamName", " TEAM NAME ")
+            put("win", "WIN")
+            put("matchesPlayed", "MATCHES")
+            put("totalKills", "ELIM.")
+            put("positionPoints", "POS.")
+            put("totalPoints", "TOTAL")
+        },
+        columnsJson = buildJsonObject {
+            put("TEAM_NAME", 900)
+            put("WIN", 100)
+            put("MATCHES_PLAYED", 500)
+            put("TOTAL_KILLS", 700)
+            put("POSITION_POINTS", 300)
+            put("TOTAL_POINTS", 500)
+        },
+        textColorsJson = buildJsonObject {
+            put("TEAM_NAME", "#112233")
+            put("WIN", "#223344")
+            put("MATCHES_PLAYED", "#667788")
             put("TOTAL_KILLS", "#334455")
             put("POSITION_POINTS", "#445566")
             put("TOTAL_POINTS", "#556677")

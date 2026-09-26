@@ -24,7 +24,7 @@ data class CustomDesignGridGeometry(
     val estimatedRowStep: Float?,
 ) {
     val hasAllColumns: Boolean
-        get() = columnX.keys.containsAll(CustomDesignAnchorField.entries)
+        get() = columnX.keys.containsAll(CustomDesignAnchorField.REQUIRED_FIELDS)
 
     val hasAllRows: Boolean
         get() = rowY.keys.containsAll((1..12).toSet())
