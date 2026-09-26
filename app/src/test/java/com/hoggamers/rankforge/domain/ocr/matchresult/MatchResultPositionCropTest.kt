@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrImageDimensions
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -51,6 +52,55 @@ class MatchResultPositionCropTest {
             result.crops.first { it.position == 10 }.bounds.right,
         )
         assertEquals(355.0, result.crops.first { it.position == 10 }.structuralCenterYInSource!!, 0.001)
+        val fullyVisiblePosition = result.crops.first { it.position == 4 }
+        assertTrue(fullyVisiblePosition.upperPhysicalRowSafe)
+        assertTrue(fullyVisiblePosition.lowerPhysicalRowSafe)
+    }
+
+    @Test
+    fun exactThirtyThreePercentBoundaryRemainsSafeAtBothImageEdges() {
+        val upperBoundary = available(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            observation("4", 50, 318, 75, 348),
+            observation("5", 50, 418, 75, 448),
+            observation("6", 650, 80, 680, 110),
+            observation("7", 650, 160, 680, 190),
+        ).crops.single { it.position == 1 }
+        val lowerBoundary = available(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            observation("4", 50, 352, 75, 382),
+            observation("5", 50, 452, 75, 482),
+            observation("6", 650, 80, 680, 110),
+            observation("7", 650, 160, 680, 190),
+        ).crops.single { it.position == 5 }
+
+        assertEquals(33.0, requireNotNull(upperBoundary.structuralCenterYInSource), 0.001)
+        assertTrue(upperBoundary.upperPhysicalRowSafe)
+        assertEquals(467.0, requireNotNull(lowerBoundary.structuralCenterYInSource), 0.001)
+        assertTrue(lowerBoundary.lowerPhysicalRowSafe)
+    }
+
+    @Test
+    fun lessThanThirtyThreePercentDistanceMarksOnlyNearerPhysicalRowUnsafe() {
+        val nearTop = available(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            observation("4", 50, 317, 75, 348),
+            observation("5", 50, 417, 75, 448),
+            observation("6", 650, 80, 680, 110),
+            observation("7", 650, 160, 680, 190),
+        ).crops.single { it.position == 1 }
+        val nearBottom = available(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            observation("4", 50, 352, 75, 383),
+            observation("5", 50, 452, 75, 483),
+            observation("6", 650, 80, 680, 110),
+            observation("7", 650, 160, 680, 190),
+        ).crops.single { it.position == 5 }
+
+        assertFalse(nearTop.upperPhysicalRowSafe)
+        assertTrue(nearTop.lowerPhysicalRowSafe)
+        assertTrue(nearBottom.upperPhysicalRowSafe)
+        assertFalse(nearBottom.lowerPhysicalRowSafe)
     }
 
     @Test
@@ -221,6 +271,9 @@ class MatchResultPositionCropTest {
             listOf(6, 7, 8, 9),
             result.crops.filter { it.column == MatchResultPositionColumn.RIGHT }.map { it.position },
         )
+        val clippedPosition = result.crops.single { it.position == 9 }
+        assertEquals(490.0, requireNotNull(clippedPosition.structuralCenterYInSource), 0.001)
+        assertTrue(clippedPosition.bottomClipped)
         assertEquals(MatchResultPositionPitchSource.RIGHT_CONSECUTIVE, result.rightPitchSource)
     }
 
@@ -590,6 +643,34 @@ class MatchResultPositionCropTest {
         ).crops.first { it.position == 6 }
         assertEquals(634, bottomClamped.bounds.top)
         assertEquals(700, bottomClamped.bounds.bottom)
+    }
+
+    @Test
+    fun fallbackThreeOmitsPositionsWhoseStructuralCentersAreOutsideImage() {
+        val result = availableResult(
+            evidence = fallbackThreeEvidence(includeFourthColumn = true).copy(
+                imageDimensions = OcrImageDimensions(width = 1_200, height = 480),
+            ),
+        )
+
+        assertEquals(listOf(1, 2, 3, 4, 6, 7, 8, 9), result.crops.map { it.position })
+    }
+
+    @Test
+    fun fallbackThreeKeepsClippedPositionsWhoseStructuralCentersAreInsideImage() {
+        val result = availableResult(
+            evidence = fallbackThreeEvidence(includeFourthColumn = true).copy(
+                imageDimensions = OcrImageDimensions(width = 1_200, height = 510),
+            ),
+        )
+
+        assertEquals((1..10).toList(), result.crops.map { it.position })
+        val clippedPosition = result.crops.single { it.position == 5 }
+        assertEquals(500.0, requireNotNull(clippedPosition.structuralCenterYInSource), 0.001)
+        assertEquals(510, clippedPosition.bounds.bottom)
+        assertTrue(clippedPosition.bottomClipped)
+        assertTrue(clippedPosition.upperPhysicalRowSafe)
+        assertFalse(clippedPosition.lowerPhysicalRowSafe)
     }
 
     @Test

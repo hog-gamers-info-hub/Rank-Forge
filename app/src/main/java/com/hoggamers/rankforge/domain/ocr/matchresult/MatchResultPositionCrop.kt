@@ -33,6 +33,8 @@ data class MatchResultPositionCrop(
     val structuralCenterYInSource: Double? = null,
     val topClipped: Boolean = false,
     val bottomClipped: Boolean = false,
+    val upperPhysicalRowSafe: Boolean = true,
+    val lowerPhysicalRowSafe: Boolean = true,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -72,6 +74,11 @@ private data class PositionedBox(
 private data class PitchResolution(
     val pitch: Double,
     val source: MatchResultPositionPitchSource,
+)
+
+private data class PhysicalRowSafety(
+    val upperSafe: Boolean,
+    val lowerSafe: Boolean,
 )
 
 private data class RightPitchCandidate(
@@ -1524,6 +1531,14 @@ class MatchResultPositionCropCalculator(
         if (left < 0 || right > imageWidth || left >= right) return null
         val group = resolved.group
         val resolvedBounds = resolved.resolvedBounds
+        val structuralCenterYInSource = resolvedBounds?.centerY ?: group.centerY
+        if (
+            !structuralCenterYInSource.isFinite() ||
+            structuralCenterYInSource < 0.0 ||
+            structuralCenterYInSource >= imageHeight.toDouble()
+        ) {
+            return null
+        }
         val rawTop: Double
         val rawBottom: Double
         if (resolvedBounds != null) {
@@ -1556,6 +1571,11 @@ class MatchResultPositionCropCalculator(
         ) {
             return null
         }
+        val physicalRowSafety = resolvePhysicalRowSafety(
+            structuralCenterYInSource = structuralCenterYInSource,
+            structuralRectangleHeight = expectedHeight,
+            imageHeight = imageHeight,
+        ) ?: return null
         val top = floor(visibleTop).toInt().coerceIn(0, imageHeight)
         val bottom = ceil(visibleBottom).toInt().coerceIn(0, imageHeight)
         if (bottom <= top) return null
@@ -1568,9 +1588,11 @@ class MatchResultPositionCropCalculator(
                 right = right,
                 bottom = bottom,
             ),
-            structuralCenterYInSource = resolvedBounds?.centerY ?: group.centerY,
+            structuralCenterYInSource = structuralCenterYInSource,
             topClipped = rawTop < 0.0,
             bottomClipped = rawBottom > imageHeight.toDouble(),
+            upperPhysicalRowSafe = physicalRowSafety.upperSafe,
+            lowerPhysicalRowSafe = physicalRowSafety.lowerSafe,
         )
     }
 
@@ -1703,6 +1725,11 @@ class MatchResultPositionCropCalculator(
         for (position in positions) {
             val centerY = referenceCenterY + (position - referencePosition) * rowPitch
             if (!centerY.isFinite() || centerY < 0.0 || centerY >= imageHeight.toDouble()) continue
+            val physicalRowSafety = resolvePhysicalRowSafety(
+                structuralCenterYInSource = centerY,
+                structuralRectangleHeight = rowPitch,
+                imageHeight = imageHeight,
+            ) ?: continue
             val rawTop = centerY - rowPitch / 2.0
             val rawBottom = centerY + rowPitch / 2.0
             val visibleTop = maxOf(0.0, rawTop)
@@ -1728,9 +1755,31 @@ class MatchResultPositionCropCalculator(
                 structuralCenterYInSource = centerY,
                 topClipped = rawTop < 0.0,
                 bottomClipped = rawBottom > imageHeight.toDouble(),
+                upperPhysicalRowSafe = physicalRowSafety.upperSafe,
+                lowerPhysicalRowSafe = physicalRowSafety.lowerSafe,
             )
         }
         return output.takeIf { it.isNotEmpty() }
+    }
+
+    private fun resolvePhysicalRowSafety(
+        structuralCenterYInSource: Double,
+        structuralRectangleHeight: Double,
+        imageHeight: Int,
+    ): PhysicalRowSafety? {
+        if (
+            !structuralCenterYInSource.isFinite() ||
+            !structuralRectangleHeight.isFinite() ||
+            structuralRectangleHeight <= 0.0 ||
+            imageHeight <= 0
+        ) {
+            return null
+        }
+        val minimumSafeDistance = structuralRectangleHeight * PHYSICAL_ROW_SAFE_DISTANCE_FRACTION
+        return PhysicalRowSafety(
+            upperSafe = structuralCenterYInSource >= minimumSafeDistance,
+            lowerSafe = imageHeight.toDouble() - structuralCenterYInSource >= minimumSafeDistance,
+        )
     }
 
     private fun applyVerticalPositionPadding(
@@ -1975,6 +2024,7 @@ class MatchResultPositionCropCalculator(
         const val FALLBACK_THREE_LEFT_OFFSET_MULTIPLIER = 3.0
         const val FALLBACK_THREE_RIGHT_START_PADDING_WIDTH_FACTOR = 0.13
         const val POSITION_RECT_VERTICAL_PADDING_FRACTION = 0.15
+        const val PHYSICAL_ROW_SAFE_DISTANCE_FRACTION = 0.33
         const val FALLBACK_THREE_POSITION_RECT_VERTICAL_PADDING_FRACTION = 0.22
         const val FALLBACK_THREE_MAX_SAME_ROW_GAP_HEIGHT_FACTOR = 3.0
         const val FALLBACK_THREE_MIN_GAP_FAMILY_GAP_COUNT = 3

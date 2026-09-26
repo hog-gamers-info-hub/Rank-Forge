@@ -83,6 +83,8 @@ class MatchResultPositionLogicalRowClassifier {
         slotCenterYLocal: Double?,
         blocks: List<RawOcrBlock>,
         allowSingleRowFallback: Boolean = false,
+        upperPhysicalRowSafe: Boolean = true,
+        lowerPhysicalRowSafe: Boolean = true,
     ): MatchResultPositionLogicalRowClassification {
         val totalMappedLines = blocks.sumOf { it.lines.size }
         if (slotCenterYLocal == null) return unavailable(
@@ -206,6 +208,17 @@ class MatchResultPositionLogicalRowClassifier {
             }
             if (singleRow != null) {
                 val rowIndex = if (singleRow.centerY < slotCenterYLocal) 1 else 2
+                val physicalRowSafe = if (rowIndex == 1) {
+                    upperPhysicalRowSafe
+                } else {
+                    lowerPhysicalRowSafe
+                }
+                if (!physicalRowSafe) return unavailable(
+                    position, cropHeight, slotCenterYLocal, totalMappedLines,
+                    medianHeight = medianHeight, tolerance = tolerance,
+                    placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+                    reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
+                )
                 val rowCrop = rowCrop(rowIndex, lines, cropWidth, cropHeight)
                 if (rowCrop != null) {
                     val diagnostics = MatchResultPositionLogicalRowDiagnostics(
@@ -280,22 +293,51 @@ class MatchResultPositionLogicalRowClassifier {
             reason = MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS,
         )
 
-        val rowCrops = listOf(rowCrop(1, upper, cropWidth, cropHeight), rowCrop(2, lower, cropWidth, cropHeight))
+        val retainedUpper = if (upperPhysicalRowSafe) upper else emptyList()
+        val retainedLower = if (lowerPhysicalRowSafe) lower else emptyList()
+        if (retainedUpper.isEmpty() && retainedLower.isEmpty()) return unavailable(
+            position, cropHeight, slotCenterYLocal, totalMappedLines,
+            medianHeight = medianHeight, tolerance = tolerance,
+            placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
+            usableLines = 0,
+            reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
+        )
+        val rowCrops = buildList {
+            if (retainedUpper.isNotEmpty()) {
+                add(rowCrop(1, retainedUpper, cropWidth, cropHeight))
+            }
+            if (retainedLower.isNotEmpty()) {
+                add(rowCrop(2, retainedLower, cropWidth, cropHeight))
+            }
+        }
         if (rowCrops.any { it == null }) return unavailable(
             position, cropHeight, slotCenterYLocal, totalMappedLines,
             medianHeight = medianHeight, tolerance = tolerance,
             placementRemoved = placementRemoved, spanningIgnored = spanningIgnored,
-            usableLines = lines.size - ignoredLineCount, upper = upper.size, lower = lower.size,
+            usableLines = retainedUpper.size + retainedLower.size,
+            upper = retainedUpper.size, lower = retainedLower.size,
             reason = MatchResultPositionLogicalRowFallbackReason.NO_LOGICAL_ROWS,
         )
+        val retainedAssignedLines = assignedLines.filter { line ->
+            when (line.band) {
+                MatchResultPositionLogicalRowBand.UPPER -> upperPhysicalRowSafe
+                MatchResultPositionLogicalRowBand.LOWER -> lowerPhysicalRowSafe
+                else -> true
+            }
+        }
         val diagnostics = MatchResultPositionLogicalRowDiagnostics(
             position = position, positionHeight = cropHeight, slotCenterYLocal = slotCenterYLocal,
             medianTextHeight = medianHeight, derivedTolerance = tolerance,
             totalMappedLines = totalMappedLines, placementLinesRemoved = placementRemoved,
             spanningIgnored = spanningIgnored,
-            usableLines = lines.size - ignoredLineCount, upperCount = upper.size, centerCount = 0,
-            lowerCount = lower.size,
-            classification = MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2,
+            usableLines = retainedUpper.size + retainedLower.size,
+            upperCount = retainedUpper.size, centerCount = 0,
+            lowerCount = retainedLower.size,
+            classification = when {
+                retainedUpper.isEmpty() -> MatchResultPositionLogicalRowClassificationKind.ROW2_ONLY
+                retainedLower.isEmpty() -> MatchResultPositionLogicalRowClassificationKind.ROW1_ONLY
+                else -> MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2
+            },
         )
 
         return MatchResultPositionLogicalRowClassification.Available(
@@ -303,7 +345,7 @@ class MatchResultPositionLogicalRowClassifier {
             diagnostics = diagnostics,
             blocks = blocks.mapNotNull { block ->
                 block.copy(lines = block.lines.filter { line ->
-                    assignedLines.any {
+                    retainedAssignedLines.any {
                         it.candidate.line === line && it.band != MatchResultPositionLogicalRowBand.PLACEMENT_FILTERED
                     }
                 })

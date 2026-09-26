@@ -318,9 +318,9 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                     slotCenterYLocal = crop.geometry.structuralCenterYInSource
                         ?.minus(crop.geometry.bounds.top),
                     blocks = blocks,
-                    allowSingleRowFallback = crop.geometry.topClipped ||
-                        crop.geometry.bottomClipped ||
-                        allowUpperPositionElevenFallback && crop.geometry.position == 11,
+                    allowSingleRowFallback = allowUpperPositionElevenFallback && crop.geometry.position == 11,
+                    upperPhysicalRowSafe = crop.geometry.upperPhysicalRowSafe,
+                    lowerPhysicalRowSafe = crop.geometry.lowerPhysicalRowSafe,
                 ) as? MatchResultPositionLogicalRowClassification.Available
                     ?: return@recover null
                 val targeted = fieldMapper.map(
@@ -370,9 +370,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             mapPanelPosition(
                 role = role,
                 evidence = evidence,
-                allowSingleRowFallback = evidence.crop.topClipped ||
-                    evidence.crop.bottomClipped ||
-                    allowUpperPositionElevenFallback && evidence.crop.position == 11,
+                allowSingleRowFallback = allowUpperPositionElevenFallback && evidence.crop.position == 11,
                 mlKitEvidence = mlKitEvidence,
                 sourceCrop = sourceCrop,
             )
@@ -401,6 +399,8 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             slotCenterYLocal = crop.structuralCenterYInSource?.minus(crop.bounds.top),
             blocks = evidence.blocks,
             allowSingleRowFallback = allowSingleRowFallback,
+            upperPhysicalRowSafe = crop.upperPhysicalRowSafe,
+            lowerPhysicalRowSafe = crop.lowerPhysicalRowSafe,
         )
         val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
             try {
