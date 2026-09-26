@@ -65,6 +65,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -105,6 +106,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -2978,17 +2981,15 @@ private fun AdjustTeamPointsDialog(
     onDismiss: () -> Unit,
     onApply: (teamSlotNumber: Int, points: Int) -> Unit,
 ) {
-    val initialSelectedTeamSlot = initialTeamSlotNumber ?: teams.firstOrNull()?.teamSlotNumber
-    val initialTeamAdjustment = existingAdjustments[initialSelectedTeamSlot] ?: 0
-    var selectedTeamSlot by remember(teams, initialTeamSlotNumber) {
-        mutableStateOf(initialSelectedTeamSlot)
+    val selectedTeam = initialTeamSlotNumber?.let { teamSlotNumber ->
+        teams.firstOrNull { row -> row.teamSlotNumber == teamSlotNumber }
     }
-    var teamSelectorExpanded by remember { mutableStateOf(false) }
+    val initialTeamAdjustment = initialTeamSlotNumber?.let { teamSlotNumber ->
+        existingAdjustments[teamSlotNumber]
+    } ?: 0
     var workingAdjustment by remember(teams, initialTeamSlotNumber, existingAdjustments) {
         mutableStateOf(initialTeamAdjustment.toString())
     }
-    val selectedTeam = teams.firstOrNull { row -> row.teamSlotNumber == selectedTeamSlot }
-    val hasFixedTeam = initialTeamSlotNumber != null
     val parsedAdjustment = workingAdjustment.toBigIntegerOrNull()
     val isAdjustmentValid = workingAdjustment.matches(PointAdjustmentInputPattern) &&
         parsedAdjustment != null
@@ -2997,68 +2998,78 @@ private fun AdjustTeamPointsDialog(
             value <= BigInteger.valueOf(Int.MAX_VALUE.toLong())
     } == true
     val currentAdjustment = parsedAdjustment ?: BigInteger.ZERO
+    val dialogShape = RoundedCornerShape(12.dp)
+    val inputColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = PointIqMatchReviewHeader,
+        unfocusedTextColor = PointIqMatchReviewHeader,
+        focusedContainerColor = PointIqMatchReviewNavy,
+        unfocusedContainerColor = PointIqMatchReviewNavy,
+        disabledContainerColor = PointIqMatchReviewNavy,
+        focusedBorderColor = Color(0xFF17C9F2),
+        unfocusedBorderColor = PointIqMatchReviewInactive,
+        errorBorderColor = PointIqMatchReviewBlockerIcon,
+        cursorColor = Color(0xFF17C9F2),
+    )
 
     AlertDialog(
-        modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.match_review_adjust_team_points_title)) },
+        modifier = Modifier
+            .border(BorderStroke(1.dp, PointIqMatchReviewBlue), dialogShape)
+            .testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG),
+        shape = dialogShape,
+        containerColor = PointIqMatchReviewNavy,
+        titleContentColor = PointIqMatchReviewHeader,
+        textContentColor = PointIqMatchReviewSubtitle,
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = stringResource(R.string.match_review_adjust_team_points_title),
+                color = PointIqMatchReviewHeader,
+                fontSize = 20.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
-                if (!hasFixedTeam) {
-                    Text(stringResource(R.string.match_review_adjust_team_points_team_label))
-                    Box {
-                        OutlinedButton(
-                            onClick = { teamSelectorExpanded = true },
-                            enabled = teams.isNotEmpty(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_SELECTOR_TEST_TAG),
-                        ) {
-                            Text(
-                                text = selectedTeam?.let { row ->
-                                    stringResource(
-                                        R.string.match_review_team_label,
-                                        row.teamSlotNumber,
-                                        row.teamName,
-                                    )
-                                } ?: stringResource(R.string.match_review_adjust_team_points_no_teams),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = teamSelectorExpanded,
-                            onDismissRequest = { teamSelectorExpanded = false },
-                        ) {
-                            teams.forEach { row ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            stringResource(
-                                                R.string.match_review_team_label,
-                                                row.teamSlotNumber,
-                                                row.teamName,
-                                            ),
-                                        )
-                                    },
-                                    onClick = {
-                                        selectedTeamSlot = row.teamSlotNumber
-                                        teamSelectorExpanded = false
-                                        workingAdjustment = (
-                                            existingAdjustments[row.teamSlotNumber] ?: 0
-                                        ).toString()
-                                    },
-                                    modifier = Modifier.testTag(
-                                        MATCH_REVIEW_ADJUST_TEAM_POINTS_TEAM_OPTION_TEST_TAG_PREFIX +
-                                            row.teamSlotNumber,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-                Text(stringResource(R.string.match_review_adjust_team_points_input_label))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.match_review_adjust_team_points_team_label)}:",
+                        color = PointIqMatchReviewSubtitle,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = selectedTeam?.teamName
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.match_review_adjust_team_points_no_teams),
+                        color = PointIqMatchReviewHeader,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(PointIqMatchReviewBlue.copy(alpha = 0.35f)),
+                )
+                Text(
+                    text = stringResource(R.string.match_review_adjust_team_points_input_label),
+                    color = PointIqMatchReviewSubtitle,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     OutlinedButton(
@@ -3067,21 +3078,26 @@ private fun AdjustTeamPointsDialog(
                         },
                         enabled = selectedTeam != null,
                         colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = PointIqMatchReviewNavy,
                             contentColor = PointIqMatchReviewHeader,
+                            disabledContainerColor = PointIqMatchReviewNavy,
+                            disabledContentColor = PointIqMatchReviewInactive,
                         ),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = PointIqMatchReviewCtaBorder,
+                            color = Color(0xFF17C9F2),
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.size(56.dp),
                     ) {
                         Text(
                             text = "−",
-                            fontSize = 20.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
+                    Spacer(modifier = Modifier.width(12.dp))
                     OutlinedTextField(
                         value = workingAdjustment,
                         onValueChange = { value ->
@@ -3096,46 +3112,71 @@ private fun AdjustTeamPointsDialog(
                             workingAdjustment != "-" &&
                             (!isAdjustmentValid || !isAdjustmentInIntRange),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                        colors = inputColors,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = PointIqMatchReviewHeader,
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
                         modifier = Modifier
-                            .weight(1.5f)
+                            .width(112.dp)
+                            .height(56.dp)
                             .testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG),
                     )
+                    Spacer(modifier = Modifier.width(12.dp))
                     OutlinedButton(
                         onClick = {
                             workingAdjustment = currentAdjustment.add(BigInteger.ONE).toString()
                         },
                         enabled = selectedTeam != null,
                         colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = PointIqMatchReviewNavy,
                             contentColor = PointIqMatchReviewHeader,
+                            disabledContainerColor = PointIqMatchReviewNavy,
+                            disabledContentColor = PointIqMatchReviewInactive,
                         ),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = PointIqMatchReviewCtaBorder,
+                            color = Color(0xFF17C9F2),
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.size(56.dp),
                     ) {
                         Text(
                             text = "+",
-                            fontSize = 20.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(PointIqMatchReviewBlue.copy(alpha = 0.35f)),
+                )
             }
         },
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = PointIqMatchReviewSubtitle,
+                ),
                 modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_CANCEL_TEST_TAG),
             ) {
-                Text(stringResource(R.string.cancel_action))
+                Text(
+                    text = stringResource(R.string.cancel_action),
+                    color = PointIqMatchReviewSubtitle,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    val teamSlotNumber = selectedTeamSlot
+                    val teamSlotNumber = initialTeamSlotNumber
                     if (
                         teamSlotNumber != null &&
                         parsedAdjustment != null &&
@@ -3146,9 +3187,21 @@ private fun AdjustTeamPointsDialog(
                     }
                 },
                 enabled = selectedTeam != null && isAdjustmentValid && isAdjustmentInIntRange,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = Color(0xFF17C9F2),
+                    disabledContentColor = PointIqMatchReviewInactive,
+                ),
                 modifier = Modifier.testTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG),
             ) {
-                Text(stringResource(R.string.match_review_adjust_team_points_apply_action))
+                Text(
+                    text = stringResource(R.string.match_review_adjust_team_points_apply_action),
+                    color = if (selectedTeam != null && isAdjustmentValid && isAdjustmentInIntRange) {
+                        Color(0xFF17C9F2)
+                    } else {
+                        PointIqMatchReviewInactive
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
     )
