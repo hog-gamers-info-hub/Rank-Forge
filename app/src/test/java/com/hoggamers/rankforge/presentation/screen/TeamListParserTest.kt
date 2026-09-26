@@ -57,6 +57,34 @@ class TeamListParserTest {
     }
 
     @Test
+    fun removesPluralTeamAndSlotHeadersBeforeTwelveNames() {
+        val teamNames = (1..12).map { number -> "Team $number" }
+        val headers = listOf("SLOT LISTS", "SLOT LIST", "TEAM LISTS")
+
+        headers.forEach { header ->
+            val result = TeamListParser.parse(
+                "$header\n" + teamNames.mapIndexed { index, name -> "${index + 1}. $name" }
+                    .joinToString("\n"),
+            )
+
+            assertEquals(teamNames, result.teamNames)
+            assertEquals(false, result.hasOverflow)
+        }
+    }
+
+    @Test
+    fun recognizesMixedCaseHyphenatedAndPunctuatedHeaders() {
+        val headers = listOf("sLoT-lIsTs:", "TEAM LISTS!", "slots")
+
+        headers.forEach { header ->
+            assertNames(
+                input = "$header\nAlpha\nBravo",
+                expected = listOf("Alpha", "Bravo"),
+            )
+        }
+    }
+
+    @Test
     fun recognizesHeadersCaseInsensitivelyAndIgnoresBlankLinesBeforeThem() {
         assertNames(
             input = "\n  TEAM_NAMES  \nAlpha",
@@ -67,8 +95,8 @@ class TeamListParserTest {
     @Test
     fun removesHeaderOnlyFromFirstMeaningfulLine() {
         assertNames(
-            input = "Alpha\nTeam Names\nBravo",
-            expected = listOf("Alpha", "Team Names", "Bravo"),
+            input = "Alpha\nTeam Names\nTEAM LIST\nSLOT LISTS\nBravo",
+            expected = listOf("Alpha", "Team Names", "TEAM LIST", "SLOT LISTS", "Bravo"),
         )
     }
 
