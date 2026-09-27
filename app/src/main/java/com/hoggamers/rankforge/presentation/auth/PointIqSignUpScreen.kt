@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.LocalAutofillHighlightColor
+import androidx.compose.foundation.text.LocalAutofillHighlightBrush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -139,7 +140,7 @@ private fun PointIqSignUpEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
-    CompositionLocalProvider(LocalAutofillHighlightColor provides SignUpAutofillHighlight) {
+    CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(SignUpAutofillHighlight)) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -170,7 +171,7 @@ private fun PointIqSignUpPasswordField(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
-    CompositionLocalProvider(LocalAutofillHighlightColor provides SignUpAutofillHighlight) {
+    CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(SignUpAutofillHighlight)) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -401,10 +402,10 @@ private fun PointIqSignUpEyeIcon(visible: Boolean) {
         val stroke = 1.6.dp.toPx()
         val eye = Path().apply {
             moveTo(size.width * 0.08f, size.height * 0.5f)
-            quadraticBezierTo(size.width * 0.28f, size.height * 0.18f, size.width * 0.5f, size.height * 0.18f)
-            quadraticBezierTo(size.width * 0.72f, size.height * 0.18f, size.width * 0.92f, size.height * 0.5f)
-            quadraticBezierTo(size.width * 0.72f, size.height * 0.82f, size.width * 0.5f, size.height * 0.82f)
-            quadraticBezierTo(size.width * 0.28f, size.height * 0.82f, size.width * 0.08f, size.height * 0.5f)
+            quadraticTo(size.width * 0.28f, size.height * 0.18f, size.width * 0.5f, size.height * 0.18f)
+            quadraticTo(size.width * 0.72f, size.height * 0.18f, size.width * 0.92f, size.height * 0.5f)
+            quadraticTo(size.width * 0.72f, size.height * 0.82f, size.width * 0.5f, size.height * 0.82f)
+            quadraticTo(size.width * 0.28f, size.height * 0.82f, size.width * 0.08f, size.height * 0.5f)
             close()
         }
         drawPath(eye, color = SignUpSecondary, style = Stroke(stroke))

@@ -25,12 +25,14 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.presentation.theme.RankForgePageBackground
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 const val ROSTER_SCREENSHOT_CROP_SCREEN_TEST_TAG = "roster_screenshot_crop_screen"
 const val ROSTER_SCREENSHOT_CROP_EDITOR_TEST_TAG = "roster_screenshot_crop_editor"
 const val ROSTER_SCREENSHOT_CROP_CANCEL_TEST_TAG = "roster_screenshot_crop_cancel"
 
 @Composable
+@OptIn(ExperimentalCoroutinesApi::class)
 fun RosterScreenshotCropRoute(
     tournamentId: String,
     screenshotIndex: Int,

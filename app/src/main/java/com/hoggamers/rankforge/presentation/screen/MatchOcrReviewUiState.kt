@@ -588,11 +588,11 @@ object MatchOcrReviewUiStateMapper {
             TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT -> Unit
             TeamAssignmentSafetyStatus.REVIEW_REQUIRED -> {
                 warnings += "Safety: Review required"
-                warnings += safetyResult?.reasons.orEmpty().map { "Safety: ${it.label()}" }
+                warnings += safetyResult.reasons.orEmpty().map { "Safety: ${it.label()}" }
             }
             TeamAssignmentSafetyStatus.MANUAL_REQUIRED -> {
                 blockers += "Safety: Manual required"
-                blockers += safetyResult?.reasons.orEmpty().map { "Safety: ${it.label()}" }
+                blockers += safetyResult.reasons.orEmpty().map { "Safety: ${it.label()}" }
             }
             null -> blockers += "Safety: Unavailable"
         }

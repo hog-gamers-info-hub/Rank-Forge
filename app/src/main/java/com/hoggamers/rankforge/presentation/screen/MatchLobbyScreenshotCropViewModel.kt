@@ -239,7 +239,7 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
             tournamentId = tournamentId,
             matchId = matchId,
             lobbyScreenshotIndex = index,
-            imageUri = if (exists) file?.toURI()?.toString() else null,
+            imageUri = if (exists) file.toURI().toString() else null,
             originalWidth = originalWidth,
             originalHeight = originalHeight,
             confirmedCrop = confirmed,

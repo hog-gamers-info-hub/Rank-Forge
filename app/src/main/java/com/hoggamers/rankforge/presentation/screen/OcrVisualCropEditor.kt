@@ -175,7 +175,7 @@ fun OcrVisualCropEditor(
                     )
                 } ?: ButtonDefaults.outlinedButtonColors(),
                 border = theme?.let { BorderStroke(1.dp, it.secondaryActionBorder) }
-                    ?: ButtonDefaults.outlinedButtonBorder,
+                    ?: ButtonDefaults.outlinedButtonBorder(enabled = true),
                 modifier = Modifier
                     .weight(1f)
                     .testTag(OCR_VISUAL_CROP_RESET_ACTION_TEST_TAG),

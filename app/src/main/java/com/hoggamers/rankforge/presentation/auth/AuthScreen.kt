@@ -34,7 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -700,7 +700,7 @@ private fun SignedInAuthContent(
             .testTag(AUTH_LOGOUT_ACTION_TEST_TAG),
     ) {
         Icon(
-            imageVector = Icons.Filled.ExitToApp,
+            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
             contentDescription = null,
             tint = PointIqAccountHeader,
             modifier = Modifier.size(22.dp),

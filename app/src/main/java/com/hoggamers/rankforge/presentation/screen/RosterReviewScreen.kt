@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 const val ROSTER_REVIEW_SCREEN_TEST_TAG = "roster_review_screen"
 const val ROSTER_REVIEW_SLOT_ITEM_TEST_TAG_PREFIX = "roster_review_slot_item_"
@@ -30,6 +31,7 @@ const val ROSTER_REVIEW_CONFIRM_BUTTON_TEST_TAG = "roster_review_confirm"
 const val ROSTER_REVIEW_STATUS_TEST_TAG = "roster_review_status"
 
 @Composable
+@OptIn(ExperimentalCoroutinesApi::class)
 fun RosterReviewRoute(
     tournamentId: String,
     onEditTeam: (Int) -> Unit,

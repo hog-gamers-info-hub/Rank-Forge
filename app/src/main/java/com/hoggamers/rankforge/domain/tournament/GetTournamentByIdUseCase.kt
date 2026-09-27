@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -11,6 +12,7 @@ class GetTournamentByIdUseCase(
 ) {
     constructor(repository: TournamentRepository) : this(repository::observeById)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     constructor(
         repository: TournamentRepository,
         authRepository: AuthRepository,
