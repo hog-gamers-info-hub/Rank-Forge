@@ -809,22 +809,9 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         }
         val retainCloudState = sameIdentityRecovery &&
             existingAsset?.uploadStatus == ScreenshotUploadStatus.UPLOADED.name &&
-            !existingAsset?.storageBucket.isNullOrBlank() &&
-            !existingAsset?.storageObjectPath.isNullOrBlank()
+            !existingAsset.storageBucket.isNullOrBlank() &&
+            !existingAsset.storageObjectPath.isNullOrBlank()
         if (generation != intakeGeneration) return false
-        if (ownerId == null) {
-            if (!sameIdentityRecovery) duplicateDetector.rollback(identity, fingerprint, existing?.fingerprint)
-            localImagePreserver.cleanupLobbyScreenshot(tournamentId, matchId, index)
-            if (generation != intakeGeneration) return false
-            updateSlot(index) {
-                it.copy(
-                    isPreservationInProgress = false,
-                    isPreviewPreparationInProgress = false,
-                    preservationError = MatchLobbyScreenshotPreservationError.OWNER_MISSING,
-                )
-            }
-            return false
-        }
         val now = clock.millis()
         val asset = MatchLobbyScreenshotAssetEntity(
             tournamentId = tournamentId,
@@ -842,10 +829,10 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             localStatus = if (preservation is LocalImagePreservationResult.PreservedWithCleanupFailure) {
                 ScreenshotLocalStatus.CLEANUP_FAILED.name
             } else ScreenshotLocalStatus.PRESERVED.name,
-            uploadStatus = if (retainCloudState) existingAsset?.uploadStatus.orEmpty() else ScreenshotUploadStatus.PENDING.name,
-            uploadFailureCode = if (retainCloudState) existingAsset?.uploadFailureCode else null,
-            storageBucket = if (retainCloudState) existingAsset?.storageBucket else null,
-            storageObjectPath = if (retainCloudState) existingAsset?.storageObjectPath else null,
+            uploadStatus = if (retainCloudState) existingAsset.uploadStatus.orEmpty() else ScreenshotUploadStatus.PENDING.name,
+            uploadFailureCode = if (retainCloudState) existingAsset.uploadFailureCode else null,
+            storageBucket = if (retainCloudState) existingAsset.storageBucket else null,
+            storageObjectPath = if (retainCloudState) existingAsset.storageObjectPath else null,
             cropProfileId = if (sameIdentityRecovery) existingAsset?.cropProfileId else null,
             cropLeft = if (sameIdentityRecovery) existingAsset?.cropLeft else null,
             cropTop = if (sameIdentityRecovery) existingAsset?.cropTop else null,
@@ -854,7 +841,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             createdAt = existingAsset?.let { assetCreatedAt(it) } ?: now,
             updatedAt = now,
             preservedAt = now,
-            uploadedAt = if (retainCloudState) existingAsset?.uploadedAt else null,
+            uploadedAt = if (retainCloudState) existingAsset.uploadedAt else null,
             revision = (existingAsset?.revision ?: 0L) + 1L,
         )
         val saveResult = assetRepository.saveOrReplaceByOwner(asset, ownerId)
@@ -1228,7 +1215,7 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
         val crop = confirmedLobbyCropOrNull()
         return MatchLobbyScreenshotSlotUiState(
             index = index,
-            selectedScreenshotUri = if (exists) file?.toURI()?.toString() else null,
+            selectedScreenshotUri = if (exists) file.toURI().toString() else null,
             selectedScreenshotMimeType = mimeType,
             selectedScreenshotWidth = originalWidth,
             selectedScreenshotHeight = originalHeight,

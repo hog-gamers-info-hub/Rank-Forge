@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.LocalAutofillHighlightColor
+import androidx.compose.foundation.text.LocalAutofillHighlightBrush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -156,7 +157,7 @@ private fun PointIqEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
-    CompositionLocalProvider(LocalAutofillHighlightColor provides LoginAutofillHighlight) {
+    CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(LoginAutofillHighlight)) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -187,7 +188,7 @@ private fun PointIqPasswordField(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
-    CompositionLocalProvider(LocalAutofillHighlightColor provides LoginAutofillHighlight) {
+    CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(LoginAutofillHighlight)) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -431,25 +432,25 @@ private fun PointIqEyeIcon(visible: Boolean) {
         val color = LoginSecondary
         val eye = Path().apply {
             moveTo(size.width * 0.08f, size.height * 0.5f)
-            quadraticBezierTo(
+            quadraticTo(
                 size.width * 0.28f,
                 size.height * 0.18f,
                 size.width * 0.5f,
                 size.height * 0.18f,
             )
-            quadraticBezierTo(
+            quadraticTo(
                 size.width * 0.72f,
                 size.height * 0.18f,
                 size.width * 0.92f,
                 size.height * 0.5f,
             )
-            quadraticBezierTo(
+            quadraticTo(
                 size.width * 0.72f,
                 size.height * 0.82f,
                 size.width * 0.5f,
                 size.height * 0.82f,
             )
-            quadraticBezierTo(
+            quadraticTo(
                 size.width * 0.28f,
                 size.height * 0.82f,
                 size.width * 0.08f,

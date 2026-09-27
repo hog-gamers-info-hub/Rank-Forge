@@ -124,7 +124,7 @@ class RoomRosterOcrSourceProvider @Inject constructor(
 
 @Singleton
 class AndroidRosterOcrPanelPreparer @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val localImageStore: com.hoggamers.rankforge.presentation.screen.RosterScreenshotLocalImageStore,
 ) : RosterOcrPanelPreparer {
     internal var inputStreamOpener: RosterOcrInputStreamOpener =
@@ -139,7 +139,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
     private suspend fun prepareOnIo(
         source: RosterOcrScreenshotSource,
     ): RosterOcrPanelPreparationResult {
-        val crop = normalizedCropOrNull(source)?.takeIf {
+        val crop = normalizedCropOrNull(source).takeIf {
             OcrCropValidator.validate(it, OcrCropValidationProfiles.Roster) is OcrCropValidationResult.Valid
         }
             ?: return RosterOcrPanelPreparationResult.Failed(
@@ -258,7 +258,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
                 is DecodeResult.Decoded -> decode.bitmap
             }
             currentCoroutineContext().ensureActive()
-            if (decoded!!.width != boundsWidth || decoded!!.height != boundsHeight) {
+            if (decoded.width != boundsWidth || decoded.height != boundsHeight) {
                 return RosterOcrPanelPreparationResult.Failed(
                     RosterOcrPanelPreparationFailure.UNSAFE_DIMENSIONS,
                 )
@@ -266,7 +266,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
 
             cropped = try {
                 Bitmap.createBitmap(
-                    decoded!!,
+                    decoded,
                     pixelCrop.left,
                     pixelCrop.top,
                     pixelCrop.width,
@@ -291,9 +291,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
                 recycle(decoded)
                 decoded = null
             }
-            val ownedBitmap = cropped ?: return RosterOcrPanelPreparationResult.Failed(
-                RosterOcrPanelPreparationFailure.CROP_FAILURE,
-            )
+            val ownedBitmap = cropped
             cropped = null
             decoded = null
             handedOff = true
@@ -327,7 +325,7 @@ class AndroidRosterOcrPanelPreparer @Inject constructor(
                 ?: return DecodeResult.Unreadable
             currentCoroutineContext().ensureActive()
             handedOff = true
-            DecodeResult.Decoded(decoded!!)
+            DecodeResult.Decoded(decoded)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: OutOfMemoryError) {

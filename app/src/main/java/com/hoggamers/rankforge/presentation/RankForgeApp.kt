@@ -19,11 +19,13 @@ import com.hoggamers.rankforge.presentation.auth.PointIqLoginScreen
 import com.hoggamers.rankforge.presentation.auth.PointIqSignUpScreen
 import com.hoggamers.rankforge.presentation.navigation.RankForgeNavHost
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 const val AUTH_SESSION_LOADING_SCREEN_TEST_TAG = "auth_session_loading_screen"
 const val AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG = "auth_external_auth_callback_processing"
 
 @Composable
+@OptIn(ExperimentalCoroutinesApi::class)
 fun RankForgeApp(
     authViewModel: AuthViewModel = hiltViewModel(),
 ) {

@@ -71,8 +71,10 @@ import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.DraftConflictResolutionRoute
 import com.hoggamers.rankforge.presentation.screen.ContactUsRoute
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @Composable
+@OptIn(ExperimentalCoroutinesApi::class)
 fun RankForgeNavHost(
     navController: NavHostController = rememberNavController(),
     authUiState: AuthUiState = AuthUiState(),

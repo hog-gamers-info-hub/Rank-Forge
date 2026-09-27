@@ -21,6 +21,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 const val ROSTER_SCREENSHOT_INTAKE_SECTION_TEST_TAG = "roster_screenshot_intake_section"
 const val ROSTER_SCREENSHOT_INTAKE_SET_STATUS_TEST_TAG = "roster_screenshot_intake_set_status"
@@ -36,6 +37,7 @@ const val ROSTER_SCREENSHOT_INTAKE_SET_CROP_BUTTON_TEST_TAG_PREFIX = "roster_scr
 const val ROSTER_SCREENSHOT_INTAKE_CLEAR_CROP_BUTTON_TEST_TAG_PREFIX = "roster_screenshot_intake_clear_crop_"
 
 @Composable
+@OptIn(ExperimentalCoroutinesApi::class)
 fun RosterScreenshotIntakeRoute(
     tournamentId: String,
     onOpenCropEditor: (Int) -> Unit,

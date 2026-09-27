@@ -2095,7 +2095,7 @@ class RoomTournamentRepository @Inject constructor(
                     updatedState = next
                     FinalizeMatchRepositoryResult.Finalized(finalizedMatch)
                 }
-                if (result is FinalizeMatchRepositoryResult.Finalized && updatedState != null) state.value = updatedState!!
+                if (result is FinalizeMatchRepositoryResult.Finalized && updatedState != null) state.value = updatedState
                 result
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -2212,7 +2212,7 @@ class RoomTournamentRepository @Inject constructor(
                 updatedState = next
                 SubmitMatchCorrectionRepositoryResult.Submitted(correctedMatch)
                 }
-            if (result is SubmitMatchCorrectionRepositoryResult.Submitted && updatedState != null) state.value = updatedState!!
+            if (result is SubmitMatchCorrectionRepositoryResult.Submitted && updatedState != null) state.value = updatedState
             result
         }
     }
