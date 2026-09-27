@@ -830,6 +830,7 @@ fun MatchReviewRoute(
         onOcrFinalize = resolvedOcrReviewViewModel::onFinalizeOcrCorrection,
         onOcrConfirmFinalizeWarnings = resolvedOcrReviewViewModel::onConfirmFinalizeWarnings,
         onOcrDismissFinalizeWarnings = resolvedOcrReviewViewModel::onDismissFinalizeWarnings,
+        onCompactAddTeam = resolvedOcrReviewViewModel::onCompactAddTeam,
         onSaveTeamPointAdjustment = viewModel::saveTeamPointAdjustment,
     )
 }
@@ -893,6 +894,7 @@ fun MatchReviewScreen(
     onOcrFinalize: () -> Unit = {},
     onOcrConfirmFinalizeWarnings: () -> Unit = {},
     onOcrDismissFinalizeWarnings: () -> Unit = {},
+    onCompactAddTeam: () -> Unit = {},
     onSaveTeamPointAdjustment: (Int, Int) -> Unit = { _, _ -> },
 ) {
     PointIqMatchReviewSystemBars()
@@ -971,6 +973,7 @@ fun MatchReviewScreen(
             onOcrFinalize = onOcrFinalize,
             onOcrConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
             onOcrDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+            onCompactAddTeam = onCompactAddTeam,
             onSaveTeamPointAdjustment = onSaveTeamPointAdjustment,
         )
     }
@@ -1396,6 +1399,7 @@ private fun MatchReviewContent(
     onOcrFinalize: () -> Unit,
     onOcrConfirmFinalizeWarnings: () -> Unit,
     onOcrDismissFinalizeWarnings: () -> Unit,
+    onCompactAddTeam: () -> Unit,
     onSaveTeamPointAdjustment: (Int, Int) -> Unit,
 ) {
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
@@ -1482,6 +1486,16 @@ private fun MatchReviewContent(
         ?.map { it.rowIndex + 1 }
         ?.toSet()
         .orEmpty()
+    val manuallyRevealedResultPositions = if (uiState.status == MatchStatus.FINALIZED) {
+        emptySet()
+    } else {
+        (ocrUiState as? MatchOcrReviewUiState.Ready)
+            ?.manuallyRevealedPositions
+            .orEmpty()
+    }
+    val compactAddTeamEnabled = uiState.status != MatchStatus.FINALIZED &&
+        (ocrUiState as? MatchOcrReviewUiState.Ready)
+            ?.nextManualResultPositionOrNull() != null
     val hasCombinedPositionCropPreviews = uiState.resultScreenshots.any { slot ->
         slot.hasSelection() && transientResultPositionCropPreviews[slot.role]
             ?.sortedCrops()
@@ -1507,6 +1521,8 @@ private fun MatchReviewContent(
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
                     onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                    onCompactAddTeam = {},
+                    compactAddTeamEnabled = false,
                     showPlayerRows = false,
                     pointAdjustmentsByTeamSlot = emptyMap(),
                 )
@@ -1525,6 +1541,8 @@ private fun MatchReviewContent(
                 onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
                 onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
@@ -1541,6 +1559,8 @@ private fun MatchReviewContent(
                 onExcludeOcrRow = onExcludeOcrRow,
                 onResetRowCorrection = onOcrResetRowCorrection,
                 onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
             )
         }
@@ -1611,6 +1631,8 @@ private fun MatchReviewContent(
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
                     onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                    onCompactAddTeam = onCompactAddTeam,
+                    compactAddTeamEnabled = compactAddTeamEnabled,
                     onManualBack = requestManualBack,
                     pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                 )
@@ -1923,6 +1945,7 @@ private fun MatchReviewContent(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = transientResultPositionCropPreviews,
                     explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
+                    manuallyRevealedResultPositions = manuallyRevealedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
@@ -2023,6 +2046,7 @@ private fun MatchReviewContent(
                     resultScreenshots = uiState.resultScreenshots,
                     resultPositionCropPreviews = transientResultPositionCropPreviews,
                     explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
+                    manuallyRevealedResultPositions = manuallyRevealedResultPositions,
                     isEditable = uiState.isEditable,
                     onSelectScreenshot = onSelectResultScreenshot,
                     onSelectBatch = onSelectResultScreenshotBatch,
@@ -2049,6 +2073,7 @@ private fun MatchReviewContent(
                 resultScreenshots = uiState.resultScreenshots,
                 resultPositionCropPreviews = uiState.resultPositionCropPreviews,
                 explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
+                manuallyRevealedResultPositions = manuallyRevealedResultPositions,
                 isEditable = uiState.isEditable,
                 onSelectScreenshot = onSelectResultScreenshot,
                 onSelectBatch = onSelectResultScreenshotBatch,
@@ -3879,6 +3904,8 @@ private fun MatchReviewResultOcrDetailsContent(
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
     onAdjustTeamPoints: (Int?) -> Unit,
+    onCompactAddTeam: () -> Unit,
+    compactAddTeamEnabled: Boolean,
     onManualBack: (() -> Unit)? = null,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
@@ -3929,6 +3956,8 @@ private fun MatchReviewResultOcrDetailsContent(
                 onConfirmFinalizeWarnings = onConfirmFinalizeWarnings,
                 onDismissFinalizeWarnings = onDismissFinalizeWarnings,
                 onAdjustTeamPoints = onAdjustTeamPoints,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 showPlayerRows = uiState.calculatedEvidenceOrigin !=
                     MatchCalculatedEvidenceOrigin.MANUAL,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
@@ -4021,6 +4050,8 @@ private fun MatchReviewResultOcrPositionContent(
     onExcludeOcrRow: (rowIndex: Int) -> Unit,
     onResetRowCorrection: (rowIndex: Int) -> Unit,
     onAdjustTeamPoints: (Int?) -> Unit,
+    onCompactAddTeam: () -> Unit,
+    compactAddTeamEnabled: Boolean,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
     when (uiState) {
@@ -4066,6 +4097,8 @@ private fun MatchReviewResultOcrPositionContent(
                     adjustTeamPointsEnabled = teamSlotNumber != null &&
                         !uiState.finalization.isFinalized,
                     adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(row.rowIndex),
+                    onCompactAddTeam = onCompactAddTeam,
+                    compactAddTeamEnabled = compactAddTeamEnabled,
                     availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
                         emptyList()
                     } else {
@@ -4156,6 +4189,8 @@ private fun MatchReviewResultRowsPagerContent(
     onConfirmFinalizeWarnings: () -> Unit,
     onDismissFinalizeWarnings: () -> Unit,
     onAdjustTeamPoints: (Int?) -> Unit,
+    onCompactAddTeam: () -> Unit,
+    compactAddTeamEnabled: Boolean,
     showPlayerRows: Boolean = true,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
@@ -4227,6 +4262,8 @@ private fun MatchReviewResultRowsPagerContent(
                             adjustTeamPointsEnabled = teamSlotNumber != null &&
                                 !uiState.finalization.isFinalized,
                             adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(row.rowIndex),
+                            onCompactAddTeam = onCompactAddTeam,
+                            compactAddTeamEnabled = compactAddTeamEnabled,
                             availableTeamSlotOptions = if (uiState.finalization.isFinalized) {
                                 emptyList()
                             } else {
@@ -4261,6 +4298,7 @@ private fun ResultScreenshotSelector(
     resultScreenshots: List<MatchResultScreenshotSlotUiState>,
     resultPositionCropPreviews: Map<MatchResultScreenshotRole, MatchResultPositionCropPreviewState>,
     explicitlyExcludedResultPositions: Set<Int> = emptySet(),
+    manuallyRevealedResultPositions: Set<Int> = emptySet(),
     isEditable: Boolean,
     onSelectScreenshot: (MatchResultScreenshotRole) -> Unit,
     onSelectBatch: (() -> Unit)?,
@@ -4295,20 +4333,33 @@ private fun ResultScreenshotSelector(
             .orEmpty()
             .filterNot { preview -> preview.position in explicitlyExcludedResultPositions }
     }
-    val positionItems = selectedPages
+    val ocrPositionItems = selectedPages
         .flatMap { (role, _) ->
             positionCropsByRole[role].orEmpty()
-                .map { preview -> ResultPositionPageItem(role = role, preview = preview) }
+                .map { preview ->
+                    ResultPositionPageItem(
+                        role = role,
+                        position = preview.position,
+                        preview = preview,
+                    )
+                }
         }
-        .groupBy { it.preview.position }
+        .groupBy { it.position }
         .values
         .mapNotNull { items ->
             items.firstOrNull { item ->
                 item.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER &&
-                    item.preview.position >= 11
+                    item.position >= 11
             } ?: items.firstOrNull()
         }
-        .sortedBy { it.preview.position }
+        .sortedBy { it.position }
+    val ocrPositions = ocrPositionItems.map { item -> item.position }.toSet()
+    val positionItems = (
+        ocrPositionItems + manuallyRevealedResultPositions
+            .filterNot { position -> position in explicitlyExcludedResultPositions }
+            .filterNot { position -> position in ocrPositions }
+            .map { position -> ResultPositionPageItem(position = position) }
+        ).sortedBy { item -> item.position }
     val hasCombinedPositionCropPreviews = positionItems.isNotEmpty()
     val nextEmptyRole = roles.firstOrNull { role ->
         !resultScreenshots.slot(role).hasSelection()
@@ -4408,6 +4459,7 @@ private fun ResultScreenshotSelector(
         if (hasCombinedPositionCropPreviews) {
             ResultPositionCropPreviews(
                 items = positionItems,
+                manuallyRevealedPositions = manuallyRevealedResultPositions,
                 ocrPositionContent = ocrPositionContent,
             )
         }
@@ -4721,7 +4773,11 @@ private fun ResultScreenshotPage(
         if (showPositionCropPreviews && (previewImageUri != null || !showSourceScreenshot)) {
             ResultPositionCropPreviews(
                 items = positionCropPreviews.map { preview ->
-                    ResultPositionPageItem(role = role, preview = preview)
+                    ResultPositionPageItem(
+                        role = role,
+                        position = preview.position,
+                        preview = preview,
+                    )
                 },
                 ocrPositionContent = ocrPositionContent,
             )
@@ -4801,8 +4857,9 @@ private fun ResultScreenshotPage(
 }
 
 private data class ResultPositionPageItem(
-    val role: MatchResultScreenshotRole,
-    val preview: MatchResultPositionCropPreview,
+    val position: Int,
+    val role: MatchResultScreenshotRole? = null,
+    val preview: MatchResultPositionCropPreview? = null,
 )
 
 internal fun calculateResultPositionPreviewHeight(
@@ -4813,17 +4870,32 @@ internal fun calculateResultPositionPreviewHeight(
 @Composable
 private fun ResultPositionCropPreviews(
     items: List<ResultPositionPageItem>,
+    manuallyRevealedPositions: Set<Int> = emptySet(),
     ocrPositionContent: @Composable (Int) -> Unit,
 ) {
     if (items.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { items.size })
+    var previousManuallyRevealedPositions by remember {
+        mutableStateOf(manuallyRevealedPositions)
+    }
     LaunchedEffect(pagerState, items.size) {
         val lastPage = items.lastIndex
         if (lastPage >= 0 && pagerState.currentPage > lastPage) {
             pagerState.scrollToPage(lastPage)
         }
     }
-    val previews = items.map { it.preview }
+    LaunchedEffect(manuallyRevealedPositions) {
+        val newlyRevealedPosition = (manuallyRevealedPositions - previousManuallyRevealedPositions)
+            .maxOrNull()
+        previousManuallyRevealedPositions = manuallyRevealedPositions
+        val targetPage = newlyRevealedPosition?.let { position ->
+            items.indexOfFirst { item -> item.position == position }
+        } ?: -1
+        if (targetPage >= 0) {
+            pagerState.scrollToPage(targetPage)
+        }
+    }
+    val previews = items.mapNotNull { item -> item.preview }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxCropHeightRatio = previews
             .mapNotNull { preview ->
@@ -4851,17 +4923,19 @@ private fun ResultPositionCropPreviews(
             ) {
                 StableHeightHorizontalPager(
                     state = pagerState,
-                    pageCount = previews.size,
+                    pageCount = items.size,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_COMBINED_PAGER_TEST_TAG),
                 ) { page ->
-                    previews.getOrNull(page)?.let { preview ->
-                        (preview.image as? AndroidMatchResultPositionCropPreviewImage)?.let { image ->
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-                            ) {
+                    items.getOrNull(page)?.let { item ->
+                        val preview = item.preview
+                        val image = preview?.image as? AndroidMatchResultPositionCropPreviewImage
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                        ) {
+                            if (image != null) {
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -4884,8 +4958,8 @@ private fun ResultPositionCropPreviews(
                                         )
                                     }
                                 }
-                                ocrPositionContent(preview.position)
                             }
+                            ocrPositionContent(item.position)
                         }
                     }
                 }

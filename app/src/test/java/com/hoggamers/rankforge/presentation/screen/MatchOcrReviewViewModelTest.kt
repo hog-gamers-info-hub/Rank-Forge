@@ -45,6 +45,8 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrPlayerSlot
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
@@ -1240,6 +1242,68 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun compactAddTeamRevealsTheNextPositionAfterVisibleOcrCrops() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..6))
+
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(setOf(7), ready.manuallyRevealedPositions)
+    }
+
+    @Test
+    fun compactAddTeamRevealsPositionsSequentially() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..6))
+
+        viewModel.onCompactAddTeam()
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(setOf(7, 8), ready.manuallyRevealedPositions)
+    }
+
+    @Test
+    fun deletingManuallyRevealedPositionHidesItAndDoesNotResurrectIt() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..6))
+
+        viewModel.onCompactAddTeam()
+        viewModel.onExcludeRow(6)
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(setOf(8), ready.manuallyRevealedPositions)
+        assertTrue(ready.correctionDraft!!.rows[6].isExcluded)
+    }
+
+    @Test
+    fun compactAddTeamUsesTheExistingCorrectionDraftForManuallyRevealedRows() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..6))
+
+        viewModel.onCompactAddTeam()
+        viewModel.onPlacementChanged(6, "7")
+        viewModel.onKillsChanged(6, "2")
+        viewModel.onAssignedTeamSlotChanged(6, "7")
+
+        val manualDraft = (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
+            .correctionDraft!!
+            .rows[6]
+        assertEquals("7", manualDraft.placementDraftValue)
+        assertEquals("2", manualDraft.killsDraftValue)
+        assertEquals("7", manualDraft.assignedTeamSlotDraftValue)
+    }
+
+    @Test
+    fun compactAddTeamDoesNothingWhenAllTwelvePositionsAreAlreadyUsed() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..12))
+
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.manuallyRevealedPositions.isEmpty())
+        assertNull(ready.nextManualResultPositionOrNull())
+    }
+
+    @Test
     fun onExcludeRowDoesNotFinalizePersistOrCloudSync() = runTest(dispatcher) {
         val repository = createRepository()
         val beforeMatch = repository.observeMatchById(MATCH_ID).first()
@@ -1884,6 +1948,53 @@ class MatchOcrReviewViewModelTest {
         hasUnavailableEvidence = false,
         correctionDraft = correctionDraft,
     )
+
+    private fun automaticReadyState(
+        visiblePositions: IntRange,
+    ): MatchOcrReviewUiState.Ready {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(role),
+            rows = visiblePositions.map { position ->
+                MatchResultOcrPreviewRowUiState(
+                    position = position,
+                    role = role,
+                    sourceLabel = "SYNTHETIC",
+                    placementText = position.toString(),
+                    slots = emptyList(),
+                )
+            },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+            authoritativePositionCropsByRole = mapOf(
+                role to visiblePositions.map { position ->
+                    MatchResultPositionCrop(
+                        position = position,
+                        column = MatchResultPositionColumn.LEFT,
+                        bounds = OcrPixelCropRect(0, 0, 1, 1),
+                        hasDetectedPositionAnchor = true,
+                    )
+                },
+            ),
+        )
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        return MatchOcrReviewUiState.Ready(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            rowCount = rows.size,
+            rows = rows,
+            blockerCount = draft.blockerCount,
+            warningCount = draft.warningCount,
+            safeRowCount = 0,
+            manualRequiredRowCount = rows.size,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = true,
+            hasUnavailableEvidence = true,
+            correctionDraft = draft,
+            matchResultOcrPreview = preview,
+        )
+    }
 
     private fun correctionDraft(
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },

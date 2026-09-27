@@ -118,12 +118,14 @@ object MatchOcrReviewTestTags {
     fun lobbyPlayer(slot: Int, player: Int): String = "${lobbySlot(slot)}_player_$player"
     fun compactRow(position: Int): String = "${COMPACT_LIST}_row_$position"
     fun compactPlacement(position: Int): String = "${compactRow(position)}_placement"
+    fun compactMenu(position: Int): String = "${compactRow(position)}_menu"
     fun compactTeam(position: Int): String = "${compactRow(position)}_team"
     fun compactPlayer(position: Int, slot: Int): String = "${compactRow(position)}_player_$slot"
     fun compactPlayerKillInput(position: Int, slot: Int): String =
         "${compactPlayer(position, slot)}_kill_input"
     fun compactPlayerRow(position: Int, row: Int): String = "${compactRow(position)}_players_$row"
     fun adjustTeamPoints(rowIndex: Int): String = "${row(rowIndex)}_adjust_team_points"
+    fun compactAddTeam(position: Int): String = "${compactRow(position)}_add_team"
     fun placement(rowIndex: Int): String = "${row(rowIndex)}_placement"
     fun playerName(rowIndex: Int): String = "${row(rowIndex)}_player_name"
     fun kills(rowIndex: Int): String = "${row(rowIndex)}_kills"
@@ -703,6 +705,8 @@ internal fun MatchOcrReviewCompactRow(
     onCompactAdjustTeamPoints: (() -> Unit)? = null,
     compactAdjustEnabled: Boolean = true,
     compactAdjustTestTag: String? = null,
+    onCompactAddTeam: () -> Unit = {},
+    compactAddTeamEnabled: Boolean = true,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -736,12 +740,16 @@ internal fun MatchOcrReviewCompactRow(
         MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, placement),
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(previewRow.position),
+            compactMenuTestTag = MatchOcrReviewTestTags.compactMenu(previewRow.position),
             onCompactDelete = onCompactDelete,
             compactDeleteEnabled = compactDeleteEnabled,
             compactDeleteTestTag = compactDeleteTestTag,
             onCompactAdjustTeamPoints = onCompactAdjustTeamPoints,
             compactAdjustEnabled = compactAdjustEnabled,
             compactAdjustTestTag = compactAdjustTestTag,
+            onCompactAddTeam = onCompactAddTeam,
+            compactAddTeamEnabled = compactAddTeamEnabled,
+            compactAddTeamTestTag = MatchOcrReviewTestTags.compactAddTeam(previewRow.position),
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -1154,6 +1162,8 @@ internal fun MatchOcrReviewRow(
     onAdjustTeamPoints: (() -> Unit)? = null,
     adjustTeamPointsEnabled: Boolean = true,
     adjustTeamPointsTestTag: String? = null,
+    onCompactAddTeam: () -> Unit = {},
+    compactAddTeamEnabled: Boolean = true,
     showWarningDetails: Boolean = true,
     compactFieldRow: Boolean = false,
     showBlockerDetails: Boolean = true,
@@ -1194,6 +1204,8 @@ internal fun MatchOcrReviewRow(
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
                 compactAdjustEnabled = adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1213,6 +1225,8 @@ internal fun MatchOcrReviewRow(
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
                 compactAdjustEnabled = adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1227,6 +1241,8 @@ internal fun MatchOcrReviewRow(
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
                 compactAdjustEnabled = adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
+                onCompactAddTeam = onCompactAddTeam,
+                compactAddTeamEnabled = compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
                 compactResetEnabled = correctionEnabled,
                 compactResetTestTag = compactResetTestTag,
@@ -1317,6 +1333,8 @@ private fun MatchOcrReviewMissingPreviewRow(
     onCompactAdjustTeamPoints: (() -> Unit)? = null,
     compactAdjustEnabled: Boolean = true,
     compactAdjustTestTag: String? = null,
+    onCompactAddTeam: () -> Unit = {},
+    compactAddTeamEnabled: Boolean = true,
     onCompactReset: (() -> Unit)? = null,
     compactResetEnabled: Boolean = true,
     compactResetTestTag: String? = null,
@@ -1343,12 +1361,16 @@ private fun MatchOcrReviewMissingPreviewRow(
         MatchOcrReviewPositionHeader(
             text = stringResource(R.string.match_ocr_review_compact_position, position),
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1),
+            compactMenuTestTag = MatchOcrReviewTestTags.compactMenu(row.rowIndex + 1),
             onCompactDelete = onCompactDelete,
             compactDeleteEnabled = compactDeleteEnabled,
             compactDeleteTestTag = compactDeleteTestTag,
             onCompactAdjustTeamPoints = onCompactAdjustTeamPoints,
             compactAdjustEnabled = compactAdjustEnabled,
             compactAdjustTestTag = compactAdjustTestTag,
+            onCompactAddTeam = onCompactAddTeam,
+            compactAddTeamEnabled = compactAddTeamEnabled,
+            compactAddTeamTestTag = MatchOcrReviewTestTags.compactAddTeam(row.rowIndex + 1),
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
@@ -1376,12 +1398,16 @@ private fun MatchOcrReviewMissingPreviewRow(
 private fun MatchOcrReviewPositionHeader(
     text: String,
     placementTestTag: String,
+    compactMenuTestTag: String,
     onCompactDelete: (() -> Unit)?,
     compactDeleteEnabled: Boolean,
     compactDeleteTestTag: String?,
     onCompactAdjustTeamPoints: (() -> Unit)?,
     compactAdjustEnabled: Boolean,
     compactAdjustTestTag: String?,
+    onCompactAddTeam: () -> Unit,
+    compactAddTeamEnabled: Boolean,
+    compactAddTeamTestTag: String,
     onCompactReset: (() -> Unit)?,
     compactResetEnabled: Boolean,
     compactResetTestTag: String?,
@@ -1411,7 +1437,9 @@ private fun MatchOcrReviewPositionHeader(
                 IconButton(
                     onClick = { actionMenuExpanded.value = true },
                     enabled = compactAdjustEnabled || compactDeleteEnabled,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag(compactMenuTestTag),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
@@ -1425,7 +1453,18 @@ private fun MatchOcrReviewPositionHeader(
                 ) {
                     DropdownMenuItem(
                         text = {
-                            Text(stringResource(R.string.match_review_adjust_team_points_action))
+                            Text(stringResource(R.string.match_review_delete_team_action))
+                        },
+                        onClick = {
+                            actionMenuExpanded.value = false
+                            onCompactDelete()
+                        },
+                        enabled = compactDeleteEnabled,
+                        modifier = Modifier.testTag(compactDeleteTestTag),
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(R.string.match_review_bonus_penalty_action))
                         },
                         onClick = {
                             actionMenuExpanded.value = false
@@ -1436,14 +1475,14 @@ private fun MatchOcrReviewPositionHeader(
                     )
                     DropdownMenuItem(
                         text = {
-                            Text(stringResource(R.string.match_review_delete_team_action))
+                            Text(stringResource(R.string.match_review_add_team_action))
                         },
                         onClick = {
                             actionMenuExpanded.value = false
-                            onCompactDelete()
+                            onCompactAddTeam()
                         },
-                        enabled = compactDeleteEnabled,
-                        modifier = Modifier.testTag(compactDeleteTestTag),
+                        enabled = compactAddTeamEnabled,
+                        modifier = Modifier.testTag(compactAddTeamTestTag),
                     )
                 }
             }

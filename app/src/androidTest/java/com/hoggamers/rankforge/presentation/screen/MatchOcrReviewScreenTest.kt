@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,6 +26,7 @@ import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -361,6 +363,100 @@ class MatchOcrReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun compactActionMenuShowsDeleteBonusPenaltyAndAddTeamInOrder() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = defaultReadyRows().first(),
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = emptyMap(),
+                    correctionDraft = null,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onExcludeRow = {},
+                    onResetRowCorrection = {},
+                    correctionEnabled = true,
+                    onAdjustTeamPoints = {},
+                    adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(0),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Open menu").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactAddTeam(1))
+            .assertIsDisplayed()
+            .assertTextEquals("Add Team")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(0))
+            .assertTextEquals("Bonus / Penalty")
+
+        val deleteTop = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val adjustTop = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(0))
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val addTop = composeTestRule
+            .onNodeWithTag(MatchOcrReviewTestTags.compactAddTeam(1))
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(deleteTop < adjustTop)
+        assertTrue(adjustTop < addTop)
+    }
+
+    @Test
+    fun compactActionMenuInvokesAddAdjustAndDeleteCallbacksIndependently() {
+        var addRequests = 0
+        var adjustRequests = 0
+        var deletedRowIndex: Int? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = defaultReadyRows().first(),
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = emptyMap(),
+                    correctionDraft = null,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onExcludeRow = { deletedRowIndex = it },
+                    onResetRowCorrection = {},
+                    correctionEnabled = true,
+                    onAdjustTeamPoints = { adjustRequests++ },
+                    adjustTeamPointsTestTag = MatchOcrReviewTestTags.adjustTeamPoints(0),
+                    onCompactAddTeam = { addRequests++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Open menu").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactAddTeam(1)).performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, addRequests)
+            assertEquals(0, adjustRequests)
+            assertEquals(null, deletedRowIndex)
+        }
+
+        composeTestRule.onNodeWithContentDescription("Open menu").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(0)).performClick()
+        composeTestRule.onNodeWithContentDescription("Open menu").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0)).performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, addRequests)
+            assertEquals(1, adjustRequests)
+            assertEquals(0, deletedRowIndex)
+        }
     }
 
     @Test
