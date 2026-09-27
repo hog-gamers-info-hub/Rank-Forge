@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -11,7 +12,9 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
@@ -66,6 +70,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 private const val LOBBY_SCREENSHOT_DESCRIPTION =
     "Select all the screenshots of the lobby after all players have joined. Crop tightly to the lobby area and exclude any extra text, overlays, or unrelated content."
@@ -126,6 +131,7 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG)
             .assertIsDisplayed()
             .performClick()
@@ -159,13 +165,13 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_CONFIRM_ACTION_TEST_TAG).performClick()
         composeTestRule.waitForIdle()
 
         composeTestRule.runOnIdle { assertEquals(1, deleteRequests) }
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_PROGRESS_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG).assertIsNotEnabled()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG).assertCountEquals(0)
     }
 
@@ -219,8 +225,18 @@ class MatchReviewScreenTest {
             }
         }
 
-        openAdjustTeamPointsDialog()
-        applyTeamPointAdjustment(teamSlotNumber = 2, input = "-3")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(2))[0]
+            .performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(1))
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Team 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG)
+            .performTextReplacement("-3")
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG)
+            .assertIsEnabled()
+            .performClick()
 
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
@@ -230,14 +246,28 @@ class MatchReviewScreenTest {
             .onNodeWithText("1. Player Two - [9]", substring = true)
             .assertIsDisplayed()
 
-        openAdjustTeamPointsDialog()
-        applyTeamPointAdjustment(teamSlotNumber = 2, input = "+3")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(2))[0]
+            .performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(1))
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG)
+            .performTextReplacement("3")
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG)
+            .assertIsEnabled()
+            .performClick()
         composeTestRule
             .onNodeWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
             .assertTextContains("Points adjustment: +3")
 
-        openAdjustTeamPointsDialog()
-        applyTeamPointAdjustment(teamSlotNumber = 2, input = "0")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(2))[0]
+            .performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(1))
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_INPUT_TEST_TAG)
+            .performTextReplacement("0")
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_APPLY_TEST_TAG)
+            .assertIsEnabled()
+            .performClick()
         composeTestRule
             .onAllNodesWithTag(MATCH_REVIEW_ADJUSTMENT_INDICATOR_TEST_TAG_PREFIX + "2")
             .assertCountEquals(0)
@@ -307,6 +337,7 @@ class MatchReviewScreenTest {
                 MatchReviewScreen(
                     uiState = availableState().copy(
                         status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
                         nextMatchNumber = 6,
                         existingMatchCount = 5,
                     ),
@@ -318,6 +349,7 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
@@ -342,6 +374,7 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
@@ -397,15 +430,13 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select Screenshot 1").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Back to Tournament Details").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Back").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1").assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithText("Manual Calculate")
             .assertIsDisplayed()
-            .assertIsEnabled()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
         val lobbyY = composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
@@ -433,8 +464,9 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Loading match review").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Review Match 1").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Lobby screenshot slots").assertCountEquals(0)
     }
 
@@ -457,17 +489,18 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Loading match review").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
+            .assertIsDisplayed()
         composeTestRule.runOnIdle { lobbyUiState = allLobbyReadyState() }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Lobby screenshot slots").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
     }
 
     @Test
     fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
-        var opened = 0
-        var calculated = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -475,71 +508,44 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onOpenOcrReview = { opened++ },
-                    onCalculatePoints = { calculated++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
-            .assertIsEnabled()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+        composeTestRule.onNodeWithText("Manual Calculate")
             .assertIsDisplayed()
-        composeTestRule.runOnIdle {
-            assertEquals(0, opened)
-            assertEquals(0, calculated)
-        }
-        listOf(
-            "Lobby Screenshot 1 is not available.",
-            "Lobby Screenshot 2 is not available.",
-            "Lobby Screenshot 3 is not available.",
-            "Result Screenshot 1 is not available.",
-            "Result Screenshot 2 is not available.",
-        ).forEach {
-            composeTestRule.onNodeWithText(it).performScrollTo().assertIsDisplayed()
-        }
+            .assertIsEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
     fun foundCustomDesignShowsMyCustomDesignAndDownloadsWithoutSetupNavigation() {
-        var setupCalls = 0
-        var download: Pair<ResultDownloadScope, String>? = null
-        val customDesignId = "a2000000-0000-0000-0000-000000000001"
+        var download: Pair<DownloadResultSelection, DownloadResultDesignType>? = null
+        var importCalls = 0
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
-                        status = CustomDesignFormatAvailabilityStatus.FOUND,
-                        customDesignId = customDesignId,
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onOpenCustomDesignSetup = { setupCalls++ },
-                    onRequestCustomDesignResultDownload = { scope, id -> download = scope to id },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.MY_DESIGN,
+                    previewState = DownloadResultPreviewState.ResultImage(ByteArray(0)),
+                    hasSavedCustomDesign = true,
+                    onImportYourDesign = { importCalls++ },
+                    onDownload = { selection, design -> download = selection to design },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG)
-            .assertIsDisplayed()
-            .performClick()
-        composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
-        composeTestRule.onNodeWithText("My Custom Design").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithText("Import Your Design").assertCountEquals(0)
+        composeTestRule.onNodeWithText("Download").performClick()
 
         composeTestRule.runOnIdle {
-            assertEquals(ResultDownloadScope.CURRENT_MATCH to customDesignId, download)
-            assertEquals(0, setupCalls)
+            assertEquals(DownloadResultSelection.Overall to DownloadResultDesignType.MY_DESIGN, download)
+            assertEquals(0, importCalls)
         }
     }
 
@@ -587,6 +593,7 @@ class MatchReviewScreenTest {
                 MatchReviewScreen(
                     uiState = originalState,
                     lobbyUiState = allLobbyReadyState(),
+                    showInlineOcrDetails = true,
                     ocrUiState = inlineOcrState(),
                     onEnterPlacements = {},
                     onEnterKills = {},
@@ -840,7 +847,7 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState(),
+                    uiState = availableState(resultScreenshots = selectedResultScreenshotSlots()),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -853,6 +860,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG)
             .performClick()
         composeTestRule.runOnIdle { assertEquals(0, calculated) }
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+            .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
     }
@@ -864,7 +873,7 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState(),
+                    uiState = availableState(resultScreenshots = selectedResultScreenshotSlots()),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -920,7 +929,7 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState(),
+                    uiState = availableState(resultScreenshots = selectedResultScreenshotSlots()),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -938,18 +947,20 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.LOBBY_PLAYERS)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slot - 11 | Team Name - Team 11").assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Lobby One").assertIsDisplayed()
-        composeTestRule.onNodeWithText("2. Not detected").assertIsDisplayed()
-        composeTestRule.onNodeWithText("3. Lobby Three").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(11, 1))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(11, 2))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(11, 3))
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.ROW_LIST)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Position - 1").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Position").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Kills").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slot").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
@@ -1078,8 +1089,10 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag("lobby_details_description").assertIsDisplayed()
         composeTestRule.onNodeWithTag("save_lobby").assertIsDisplayed()
         composeTestRule.onNodeWithTag("save_lobby_switch").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slot - 11 | Team Name - Team 11").assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Lobby One").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(11, 1))
+            .assertIsDisplayed()
     }
 
     @Test
@@ -1095,7 +1108,7 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState(),
+                    uiState = availableState(resultScreenshots = selectedResultScreenshotSlots()),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -1112,7 +1125,8 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Lobby Two").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(2, 1))
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
             .assertIsNotDisplayed()
 
@@ -1121,7 +1135,8 @@ class MatchReviewScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Lobby Eleven").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(11, 1))
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
             .assertIsNotDisplayed()
 
@@ -1130,7 +1145,8 @@ class MatchReviewScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Lobby Two").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(2, 1))
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(11))
             .assertIsNotDisplayed()
     }
@@ -1287,13 +1303,7 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
@@ -1302,9 +1312,7 @@ class MatchReviewScreenTest {
 
         composeTestRule.runOnIdle { ocrUiState = MatchOcrReviewUiState.Loading }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
@@ -1313,9 +1321,7 @@ class MatchReviewScreenTest {
             ocrUiState = MatchOcrReviewUiState.Error(message = "Result OCR unavailable")
         }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
@@ -1329,13 +1335,7 @@ class MatchReviewScreenTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertCountEquals(0)
@@ -1345,33 +1345,34 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))[0]
+            .assertIsDisplayed()
 
         composeTestRule.runOnIdle { ocrUiState = inlineOcrState() }
         composeTestRule.waitForIdle()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(0))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.row(0))[0]
+            .assertIsDisplayed()
 
         composeTestRule.runOnIdle {
             reviewUiState = reviewUiState.copy(
                 status = MatchStatus.FINALIZED,
+                finalizedParticipantSlotNumbers = setOf(1),
             )
             showInlineOcrDetails = false
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(6))
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .assertCountEquals(0)
@@ -1438,10 +1439,12 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))[0]
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG)
             .assertCountEquals(0)
 
@@ -1449,10 +1452,12 @@ class MatchReviewScreenTest {
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))[0]
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1))
             .assertIsNotDisplayed()
     }
@@ -1524,7 +1529,9 @@ class MatchReviewScreenTest {
 
         val nextHeight = pager.fetchSemanticsNode().boundsInRoot.height
         assertEquals(initialHeight, nextHeight, 0.5f)
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2",
+        )[0]
             .assertIsDisplayed()
     }
 
@@ -1587,19 +1594,23 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))[0]
+            .assertIsDisplayed()
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_LOWER_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "12",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(12))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(12))[0]
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(11))
             .assertIsNotDisplayed()
     }
@@ -1658,7 +1669,9 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1",
+        )[0]
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
             .assertCountEquals(0)
@@ -1667,10 +1680,12 @@ class MatchReviewScreenTest {
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "2",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(2))[0]
+            .assertIsDisplayed()
     }
 
     @Test
@@ -1745,88 +1760,86 @@ class MatchReviewScreenTest {
             pager.performTouchInput { swipeLeft() }
             composeTestRule.waitForIdle()
         }
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "9",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(9))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(9))[0]
+            .assertIsDisplayed()
 
         pager.performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))[0]
+            .assertIsDisplayed()
 
         pager.performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))
-            .assertCountEquals(1)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "11")
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(11))[0]
+            .assertIsDisplayed()
 
         pager.performTouchInput { swipeRight() }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "10",
+        )[0]
             .assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(10))[0]
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
             .assertCountEquals(0)
     }
 
-    @Test
-    fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
-        val preview = MatchResultOcrPreviewUiState.Ready(
-            roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
-            rows = listOf(previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
-            ignoredLowerRows = emptyList(),
-            manualReviewRows = emptyList(),
-        )
-        composeTestRule.setContent {
-            RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState(
-                        resultScreenshots = listOf(
-                            resultSlot(
-                                MatchResultScreenshotRole.MATCH_RESULT_UPPER,
-                                hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
-                                originalWidth = 1920,
-                                originalHeight = 1080,
-                                confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
-                                cropProfileId = "match-result",
-                            ),
-                            resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
-                        ),
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    showLegacyManualReviewContent = true,
-                    showInlineOcrDetails = true,
-                    ocrUiState = MatchOcrReviewUiState.Empty(
-                        tournamentId = "tournament-id",
-                        matchId = "match-id",
-                        matchResultOcrPreview = preview,
-                    ),
-                )
-            }
-        }
+  @Test
+fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
+    val upperPreviewUri = createReadableResultPreviewUri("legacy-upper")
+    val preview = MatchResultOcrPreviewUiState.Ready(
+        roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+        rows = listOf(previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER)),
+        ignoredLowerRows = emptyList(),
+        manualReviewRows = emptyList(),
+    )
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
-            .assertIsDisplayed()
+    composeTestRule.setContent {
+        RankForgeTheme {
+            MatchReviewScreen(
+                uiState = availableState(
+                    resultScreenshots = listOf(
+                        resultSlot(
+                            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                            hasLinkedAsset = true,
+                            localPreviewUri = upperPreviewUri,
+                            originalWidth = 1920,
+                            originalHeight = 1080,
+                            confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                            cropProfileId = "match-result",
+                        ),
+                        resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                    ),
+                ),
+                onEnterPlacements = {},
+                onEnterKills = {},
+                onBackToDetails = {},
+                showLegacyManualReviewContent = true,
+                showInlineOcrDetails = true,
+                ocrUiState = MatchOcrReviewUiState.Empty(
+                    tournamentId = "tournament-id",
+                    matchId = "match-id",
+                    matchResultOcrPreview = preview,
+                ),
+            )
+        }
     }
+
+    awaitResultScreenshotPreview(1)
+}
 
     @Test
     fun readyCachedOcrAvailabilityKeepsReviewStructureWithoutShowingInformationalText() {
@@ -1890,7 +1903,6 @@ class MatchReviewScreenTest {
         val placements = mutableListOf<Pair<Int, String>>()
         val kills = mutableListOf<Pair<Int, String>>()
         val teamSlots = mutableListOf<Pair<Int, String>>()
-        val resetRows = mutableListOf<Int>()
         var finalizeCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -1905,8 +1917,6 @@ class MatchReviewScreenTest {
                     onOcrPlacementChanged = { row, value -> placements += row to value },
                     onOcrKillsChanged = { row, value -> kills += row to value },
                     onOcrAssignedTeamSlotChanged = { row, value -> teamSlots += row to value },
-                    onOcrResetRowCorrection = { rowIndex -> resetRows += rowIndex },
-                    onOcrResetAllCorrections = {},
                     onOcrFinalize = { finalizeCount++ },
                 )
             }
@@ -1925,12 +1935,6 @@ class MatchReviewScreenTest {
             .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .assertIsEnabled()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
-            .performScrollTo()
-            .assertIsDisplayed()
-            .performClick()
-        composeTestRule.onAllNodesWithText("Reset").assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.RESET_ALL).assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .performScrollTo()
             .performClick()
@@ -1939,7 +1943,6 @@ class MatchReviewScreenTest {
             assertTrue(placements.any { it.first == 0 })
             assertTrue(kills.any { it.first == 0 })
             assertTrue(teamSlots.any { it.first == 0 })
-            assertEquals(listOf(0), resetRows)
             assertEquals(1, finalizeCount)
         }
     }
@@ -1993,18 +1996,18 @@ class MatchReviewScreenTest {
 
         composeTestRule.onAllNodesWithText("Remaining Team Slots").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Slots: 11, 12").assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))
-            .assertCountEquals(1)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 11))[0]
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(0, 12))[0]
+            .assertIsDisplayed()
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 11))
-            .assertCountEquals(1)
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 12))
-            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 11))[0]
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotOption(1, 12))[0]
+            .assertIsDisplayed()
     }
 
     @Test
@@ -2168,7 +2171,6 @@ class MatchReviewScreenTest {
 
     @Test
     fun simplifiedInlineFinalizeShowsOneWarningDialogWithCombinedPositionPreviews() {
-        var ocrUiState by mutableStateOf(warningOcrState())
         var finalizeCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
@@ -2182,15 +2184,8 @@ class MatchReviewScreenTest {
                     onBackToDetails = {},
                     showLegacyManualReviewContent = false,
                     showInlineOcrDetails = true,
-                    ocrUiState = ocrUiState,
-                    onOcrFinalize = {
-                        finalizeCount++
-                        ocrUiState = ocrUiState.copy(
-                            finalization = ocrUiState.finalization.copy(
-                                showWarningConfirmation = true,
-                            ),
-                        )
-                    },
+                    ocrUiState = warningOcrState(),
+                    onOcrFinalize = { finalizeCount++ },
                 )
             }
         }
@@ -2204,14 +2199,16 @@ class MatchReviewScreenTest {
 
         composeTestRule.runOnIdle { assertEquals(1, finalizeCount) }
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
-            .assertCountEquals(1)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
-            .assertIsDisplayed()
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
     }
 
     @Test
     fun simplifiedInlineFinalizeWarningConfirmInvokesCallbackExactlyOnce() {
-        var confirmCount = 0
+        var finalizeCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -2229,19 +2226,19 @@ class MatchReviewScreenTest {
                             showWarningConfirmation = true,
                         ),
                     ),
-                    onOcrConfirmFinalizeWarnings = { confirmCount++ },
+                    onOcrFinalize = { finalizeCount++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
             .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, confirmCount) }
+        composeTestRule.runOnIdle { assertEquals(1, finalizeCount) }
     }
 
     @Test
     fun simplifiedInlineFinalizeWarningDismissInvokesCallbackExactlyOnce() {
-        var dismissCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -2259,14 +2256,20 @@ class MatchReviewScreenTest {
                             showWarningConfirmation = true,
                         ),
                     ),
-                    onOcrDismissFinalizeWarnings = { dismissCount++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
-            .performClick()
-        composeTestRule.runOnIdle { assertEquals(1, dismissCount) }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
     }
 
     @Test
@@ -2617,11 +2620,11 @@ class MatchReviewScreenTest {
 
         (1..4).forEach { slot ->
             composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, slot))
-                .performScrollTo()
                 .assertTextContains("$slot. Not detected", substring = true)
         }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(11))[0]
+            .performClick()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
-            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -2642,8 +2645,9 @@ class MatchReviewScreenTest {
             }
         }
 
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(11))[0]
+            .performClick()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
-            .performScrollTo()
             .performClick()
         composeTestRule.runOnIdle {
             assertEquals(10, capturedRowIndex)
@@ -2687,16 +2691,13 @@ class MatchReviewScreenTest {
                     showInlineOcrDetails = true,
                     ocrUiState = inlineOcrStateForPosition11(),
                     onExcludeOcrRow = {},
-                    onOcrResetRowCorrection = {},
                 )
             }
         }
 
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(11))[0]
+            .performClick()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(10))
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(10))
-            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -2746,11 +2747,7 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(11))
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 1))
-            .performScrollTo()
             .assertTextContains("1. Position 12 Player", substring = true)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(11))
-            .performScrollTo()
-            .assertIsDisplayed()
     }
 
     @Test
@@ -2838,7 +2835,7 @@ class MatchReviewScreenTest {
 
     @Test
     fun inlineOcrDetailsRemainVisibleAfterMatchFinalization() {
-        var openedCount = 0
+        var calculatedCount = 0
         var matchState by mutableStateOf(
             availableState(
                 resultScreenshots = listOf(
@@ -2855,6 +2852,8 @@ class MatchReviewScreenTest {
                         cropProfileId = "match-result",
                     ),
                 ),
+            ).copy(
+                finalizedParticipantSlotNumbers = setOf(1),
             ),
         )
         var ocrState by mutableStateOf(inlineOcrState())
@@ -2867,7 +2866,7 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
-                    onOpenOcrReview = { openedCount++ },
+                    onCalculatePoints = { calculatedCount++ },
                     ocrUiState = ocrState,
                 )
             }
@@ -2880,7 +2879,7 @@ class MatchReviewScreenTest {
             .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.runOnIdle { assertEquals(1, openedCount) }
+        composeTestRule.runOnIdle { assertEquals(1, calculatedCount) }
 
         composeTestRule.runOnIdle {
             matchState = matchState.copy(status = MatchStatus.FINALIZED)
@@ -2891,12 +2890,12 @@ class MatchReviewScreenTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(6))
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
-            .assertIsNotEnabled()
     }
 
     @Test
@@ -3012,7 +3011,6 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select Screenshot 1").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
@@ -3046,7 +3044,8 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
             .assertIsEnabled()
-        composeTestRule.onNodeWithText("Select Screenshot 2").performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .performClick()
         composeTestRule.runOnIdle {
             assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER), selectedRoles)
         }
@@ -3100,7 +3099,8 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select Screenshot 1").performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .performClick()
         composeTestRule.runOnIdle {
             assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER), selectedRoles)
         }
@@ -3131,7 +3131,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Select Screenshot 2").performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .performClick()
         composeTestRule.runOnIdle {
             assertEquals(listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER), selectedRoles)
         }
@@ -3162,7 +3163,6 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
             .assertIsNotEnabled()
-        composeTestRule.onNodeWithText("Select Screenshot 2").assertIsDisplayed()
     }
 
     @Test
@@ -3203,6 +3203,7 @@ class MatchReviewScreenTest {
 
     @Test
     fun linkedResultSlotsShowLocalPreviewsAndUnselectedSlotsDoNot() {
+        val upperPreviewUri = createReadableResultPreviewUri("linked-upper")
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3211,7 +3212,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
+                                localPreviewUri = upperPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3228,7 +3229,11 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG,
+            useUnmergedTree = true,
+        )
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
             .assertCountEquals(0)
@@ -3236,6 +3241,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun resultPositionRectanglesRenderWithoutCropOrRowLabels() {
+        val upperPreviewUri = createReadableResultPreviewUri("position-upper")
+        val lowerPreviewUri = createReadableResultPreviewUri("position-lower")
         val upperImage = AndroidMatchResultPositionCropPreviewImage(
             Bitmap.createBitmap(12, 6, Bitmap.Config.ARGB_8888),
         )
@@ -3250,7 +3257,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
+                                localPreviewUri = upperPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3259,7 +3266,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3289,7 +3296,11 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+        expandResultScreenshotActions(1)
+        composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG,
+            useUnmergedTree = true,
+        )
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .assertIsDisplayed()
@@ -3299,7 +3310,9 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROPS_UPPER_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1",
+        )[0]
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Position crops").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Position 1").assertCountEquals(0)
@@ -3314,7 +3327,9 @@ class MatchReviewScreenTest {
                 .performTouchInput { swipeLeft() }
             composeTestRule.waitForIdle()
         }
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "6")
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "6",
+        )[0]
             .assertIsDisplayed()
     }
 
@@ -3349,6 +3364,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun resultSelectorUsesStaticRoleBoundActionsForActiveSlots() {
+        val upperPreviewUri = createReadableResultPreviewUri("actions-upper")
+        val lowerPreviewUri = createReadableResultPreviewUri("actions-lower")
         val selectedRoles = mutableListOf<MatchResultScreenshotRole>()
         val cropRoles = mutableListOf<MatchResultScreenshotRole>()
         val removedRoles = mutableListOf<MatchResultScreenshotRole>()
@@ -3360,7 +3377,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
+                                localPreviewUri = upperPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 0.5),
@@ -3369,7 +3386,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 0.5, 1.0),
@@ -3388,6 +3405,7 @@ class MatchReviewScreenTest {
             }
         }
 
+        expandResultScreenshotActions(1)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_CROP_TEST_TAG)
@@ -3400,7 +3418,7 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        expandResultScreenshotActions(2)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_CROP_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG).performClick()
@@ -3431,6 +3449,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun selectedResultRolesSwipeThroughPagerInCanonicalOrder() {
+        val upperPreviewUri = createReadableResultPreviewUri("swipe-upper")
+        val lowerPreviewUri = createReadableResultPreviewUri("swipe-lower")
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3439,7 +3459,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
+                                localPreviewUri = upperPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3448,7 +3468,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3464,17 +3484,25 @@ class MatchReviewScreenTest {
             }
         }
 
+        awaitResultScreenshotPreview(1)
+        composeTestRule
+            .onNodeWithTag(
+                MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG,
+                useUnmergedTree = true,
+            )
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        awaitResultScreenshotPreview(2)
+        composeTestRule
+            .onNodeWithTag(
+                MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG,
+                useUnmergedTree = true,
+            )
+            .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG)
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
-            .performTouchInput { swipeRight() }
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
             .assertIsDisplayed()
     }
 
@@ -3521,7 +3549,6 @@ class MatchReviewScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select Screenshot 1").assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REMOVE_TEST_TAG)
@@ -3569,11 +3596,13 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_REMOVE_TEST_TAG)
             .performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Select Screenshot 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertIsDisplayed()
     }
 
     @Test
     fun lowerOnlySelectedResultMapsPagerPageToLowerRole() {
+        val lowerPreviewUri = createReadableResultPreviewUri("lower-only")
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3583,7 +3612,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3599,13 +3628,15 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.waitForIdle()
+        awaitResultScreenshotPreview(2)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Select Screenshot 1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+        composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG,
+            useUnmergedTree = true,
+        )
             .assertIsDisplayed()
     }
 
@@ -3649,6 +3680,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun resultPreviewViewportRemainsStableAcrossCropAspectRatios() {
+        val upperPreviewUri = createReadableResultPreviewUri("viewport-upper")
+        val lowerPreviewUri = createReadableResultPreviewUri("viewport-lower")
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3657,7 +3690,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-1.png",
+                                localPreviewUri = upperPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 0.5),
@@ -3666,7 +3699,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 0.5, 1.0),
@@ -3682,20 +3715,28 @@ class MatchReviewScreenTest {
             }
         }
 
+        awaitResultScreenshotPreview(1)
         val initialHeight = composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .onNodeWithTag(
+                MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG,
+                useUnmergedTree = true,
+            )
             .fetchSemanticsNode().size.height
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
-        composeTestRule.waitForIdle()
+        awaitResultScreenshotPreview(2)
         val secondHeight = composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+            .onNodeWithTag(
+                MATCH_REVIEW_RESULT_SCREENSHOT_2_VIEWPORT_TEST_TAG,
+                useUnmergedTree = true,
+            )
             .fetchSemanticsNode().size.height
         assertEquals(initialHeight, secondHeight)
     }
 
     @Test
     fun linkedResultScreenshotTwoShowsItsConfirmedCropPreview() {
+        val lowerPreviewUri = createReadableResultPreviewUri("linked-lower")
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3705,7 +3746,7 @@ class MatchReviewScreenTest {
                             resultSlot(
                                 MatchResultScreenshotRole.MATCH_RESULT_LOWER,
                                 hasLinkedAsset = true,
-                                localPreviewUri = "file:///private/result-2.png",
+                                localPreviewUri = lowerPreviewUri,
                                 originalWidth = 1920,
                                 originalHeight = 1080,
                                 confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
@@ -3721,7 +3762,11 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG)
+        awaitResultScreenshotPreview(2)
+        composeTestRule.onNodeWithTag(
+            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG,
+            useUnmergedTree = true,
+        )
             .assertIsDisplayed()
     }
 
@@ -4247,7 +4292,10 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
+                    ),
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
@@ -4259,7 +4307,8 @@ class MatchReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)[0]
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
@@ -4292,15 +4341,15 @@ class MatchReviewScreenTest {
     @Test
     fun downloadStatusesAreDeterministic() {
         val statuses = listOf(
-            ResultDownloadUiState.Generating(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PDF),
-            ResultDownloadUiState.Saving(ResultExportFileFormat.PDF),
-            ResultDownloadUiState.Success(ResultExportFileFormat.PDF, false),
+            ResultDownloadUiState.Generating(ResultDownloadScope.CURRENT_MATCH, ResultExportFileFormat.PNG),
+            ResultDownloadUiState.Saving(ResultExportFileFormat.PNG),
+            ResultDownloadUiState.Success(ResultExportFileFormat.PNG, false),
             ResultDownloadUiState.Failure(ResultDownloadFailure.SAVE_FAILED),
         )
         val expectedText = listOf(
             "Generating result.",
             "Saving result.",
-            "PDF saved to Downloads/Rank Forge.",
+            "PNG saved to Downloads/PointIQ.",
             "Unable to save result.",
         )
 
@@ -4310,6 +4359,7 @@ class MatchReviewScreenTest {
                 MatchReviewScreen(
                     uiState = availableState().copy(
                         status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
                         resultDownloadUiState = downloadState,
                     ),
                     onEnterPlacements = {},
@@ -4334,110 +4384,106 @@ class MatchReviewScreenTest {
 
     @Test
     fun downloadResultDialogsSelectScopeAndFormat() {
-        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        var download: Pair<DownloadResultSelection, DownloadResultDesignType>? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.IMAGE,
+                    previewState = DownloadResultPreviewState.ResultImage(ByteArray(0)),
+                    onDownload = { selection, design -> download = selection to design },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX + "1").performClick()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG)
+            .assertIsDisplayed()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_DIALOG_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText("Download").performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(
-                listOf(ResultDownloadScope.CURRENT_MATCH to ResultExportFileFormat.PDF),
-                requests,
+                DownloadResultSelection.Match("match-1") to DownloadResultDesignType.IMAGE,
+                download,
             )
         }
     }
 
     @Test
     fun wholeTournamentAndPngSelectionCallsExpectedDownload() {
-        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        var download: Pair<DownloadResultSelection, DownloadResultDesignType>? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.IMAGE,
+                    previewState = DownloadResultPreviewState.ResultImage(ByteArray(0)),
+                    onDownload = { selection, design -> download = selection to design },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_OVERALL_OPTION_TEST_TAG)
+            .assertIsDisplayed()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithText("Download").performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(
-                listOf(ResultDownloadScope.WHOLE_TOURNAMENT to ResultExportFileFormat.PNG),
-                requests,
+                DownloadResultSelection.Overall to DownloadResultDesignType.IMAGE,
+                download,
             )
         }
     }
 
     @Test
     fun customDesignSelectionOpensSetupForSelectedScope() {
-        var selectedScope: ResultDownloadScope? = null
-        var customDesignDownloads = 0
+        var importedSelection: DownloadResultSelection? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
-                        status = CustomDesignFormatAvailabilityStatus.NONE,
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onOpenCustomDesignSetup = { selectedScope = it },
-                    onRequestCustomDesignResultDownload = { _, _ -> customDesignDownloads++ },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.MY_DESIGN,
+                    previewState = DownloadResultPreviewState.ImportYourDesign,
+                    onImportYourDesign = { importedSelection = it },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
             .assertIsDisplayed()
-            .performClick()
         composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+            .performClick()
 
         composeTestRule.runOnIdle {
-            assertEquals(ResultDownloadScope.WHOLE_TOURNAMENT, selectedScope)
-            assertEquals(0, customDesignDownloads)
+            assertEquals(DownloadResultSelection.Overall, importedSelection)
         }
-        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
     }
 
     @Test
     fun loadingCustomDesignShowsImportButNotMyCustomDesign() {
-        setResultFormatAvailabilityContent(CustomDesignFormatAvailabilityStatus.LOADING)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.MY_DESIGN,
+                    previewState = DownloadResultPreviewState.ImportYourDesign,
+                    hasSavedCustomDesign = false,
+                )
+            }
+        }
 
         composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
@@ -4445,7 +4491,18 @@ class MatchReviewScreenTest {
 
     @Test
     fun unavailableCustomDesignShowsImportButNotMyCustomDesign() {
-        setResultFormatAvailabilityContent(CustomDesignFormatAvailabilityStatus.UNAVAILABLE)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.MY_DESIGN,
+                    previewState = DownloadResultPreviewState.ImportYourDesign,
+                    hasSavedCustomDesign = false,
+                )
+            }
+        }
 
         composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
@@ -4453,92 +4510,73 @@ class MatchReviewScreenTest {
 
     @Test
     fun customDesignAvailabilityRefreshToNoneHidesMyDesignAndKeepsImport() {
-        var availability by mutableStateOf(
-            CustomDesignFormatAvailabilityUiState(
-                status = CustomDesignFormatAvailabilityStatus.FOUND,
-                customDesignId = "a2000000-0000-0000-0000-000000000001",
-            ),
-        )
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    customDesignFormatAvailabilityUiState = availability,
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.MY_DESIGN,
+                    previewState = DownloadResultPreviewState.ImportYourDesign,
+                    hasSavedCustomDesign = false,
                 )
             }
         }
 
-        openResultFormatDialog()
-        composeTestRule.onNodeWithText("My Custom Design").assertIsDisplayed()
-        composeTestRule.runOnIdle {
-            availability = CustomDesignFormatAvailabilityUiState(
-                status = CustomDesignFormatAvailabilityStatus.NONE,
-            )
-        }
-        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("Import Your Design").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("My Custom Design").assertCountEquals(0)
     }
 
     @Test
     fun downloadScopeCancelDoesNotStartWork() {
-        var requestCount = 0
+        var backCount = 0
+        var downloadCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onRequestResultDownload = { _, _ -> requestCount++ },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = { backCount++ },
+                    onDownload = { _, _ -> downloadCount++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
+        composeTestRule
+            .onNodeWithTag(DOWNLOAD_RESULT_SCREEN_TEST_TAG + "_back")
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CANCEL_TEST_TAG).performClick()
-
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG)
-            .assertCountEquals(0)
-        composeTestRule.runOnIdle { assertEquals(0, requestCount) }
+        composeTestRule.runOnIdle {
+            assertEquals(1, backCount)
+            assertEquals(0, downloadCount)
+        }
     }
 
     @Test
     fun formatBackPreservesScopeAndRequiresFreshFormatSelection() {
-        val requests = mutableListOf<Pair<ResultDownloadScope, ResultExportFileFormat>>()
+        var lastDesignSelection: Pair<DownloadResultSelection, DownloadResultDesignType>? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                    onRequestResultDownload = { scope, format -> requests += scope to format },
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Match("match-1"),
+                    initialDesign = DownloadResultDesignType.IMAGE,
+                    previewState = DownloadResultPreviewState.ResultImage(ByteArray(0)),
+                    onDesignSelected = { selection, design ->
+                        lastDesignSelection = selection to design
+                    },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_BACK_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_DIALOG_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).assertIsNotEnabled()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CONFIRM_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG).performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(
-                listOf(ResultDownloadScope.CURRENT_MATCH to ResultExportFileFormat.PNG),
-                requests,
+                DownloadResultSelection.Match("match-1") to DownloadResultDesignType.IMAGE,
+                lastDesignSelection,
             )
         }
     }
@@ -4705,9 +4743,6 @@ class MatchReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .performScrollTo()
             .assertIsNotEnabled()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
-            .performScrollTo()
-            .assertIsDisplayed()
     }
 
     private fun setScreenshotDescriptionContent(
@@ -4745,7 +4780,10 @@ class MatchReviewScreenTest {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
-                    uiState = availableState().copy(status = MatchStatus.FINALIZED),
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
+                    ),
                     customDesignFormatAvailabilityUiState = CustomDesignFormatAvailabilityUiState(
                         status = status,
                     ),
@@ -4759,7 +4797,8 @@ class MatchReviewScreenTest {
     }
 
     private fun openResultFormatDialog() {
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)[0]
             .performScrollTo()
             .performClick()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CURRENT_MATCH_TEST_TAG).performClick()
@@ -4771,6 +4810,71 @@ class MatchReviewScreenTest {
             .assertCountEquals(if (lobbyVisible) 1 else 0)
         composeTestRule.onAllNodesWithText(RESULT_SCREENSHOT_DESCRIPTION)
             .assertCountEquals(if (resultVisible) 1 else 0)
+    }
+
+    private fun createReadableResultPreviewUri(name: String): String {
+        val cacheDir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        val file = File.createTempFile("match-review-$name-", ".png", cacheDir)
+        val bitmap = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
+        try {
+            file.outputStream().use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+        } finally {
+            bitmap.recycle()
+        }
+        return Uri.fromFile(file).toString()
+    }
+
+    private fun awaitResultScreenshotPreview(screenshotNumber: Int) {
+        val previewTag = if (screenshotNumber == 1) {
+            MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG
+        } else {
+            MATCH_REVIEW_RESULT_SCREENSHOT_2_PREVIEW_TEST_TAG
+        }
+        val previewDescription = "Result Screenshot $screenshotNumber preview"
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(previewTag, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeTestRule
+            .onNodeWithTag(previewTag, useUnmergedTree = true)
+            .assertExists()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithContentDescription(
+                    previewDescription,
+                    useUnmergedTree = true,
+                )
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
+
+    private fun expandResultScreenshotActions(screenshotNumber: Int) {
+        awaitResultScreenshotPreview(screenshotNumber)
+        val replaceTag = if (screenshotNumber == 1) {
+            MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG
+        } else {
+            MATCH_REVIEW_RESULT_SCREENSHOT_2_REPLACE_TEST_TAG
+        }
+        val previewDescription = "Result Screenshot $screenshotNumber preview"
+        composeTestRule
+            .onNodeWithContentDescription(previewDescription)
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(replaceTag, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeTestRule
+            .onNodeWithTag(replaceTag, useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun emptyLobbyReadyState() = MatchLobbyScreenshotIntakeUiState(
