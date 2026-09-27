@@ -296,6 +296,8 @@ const val MATCH_REVIEW_SCREENSHOT_METADATA_RESTORED_TEST_TAG = "match_review_scr
 const val MATCH_REVIEW_SCREENSHOT_LOCAL_MISSING_TEST_TAG = "match_review_screenshot_local_missing"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_SECTION_TEST_TAG = "match_review_result_screenshot_1_section"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_SECTION_TEST_TAG = "match_review_result_screenshot_2_section"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG = "match_review_result_screenshot_1_viewport"
+const val MATCH_REVIEW_RESULT_SCREENSHOT_2_VIEWPORT_TEST_TAG = "match_review_result_screenshot_2_viewport"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_SELECT_TEST_TAG = "match_review_result_screenshot_1_select"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_2_SELECT_TEST_TAG = "match_review_result_screenshot_2_select"
 const val MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG = "match_review_result_screenshot_1_replace"
@@ -1505,11 +1507,20 @@ private fun MatchReviewContent(
         !hasLobbyScreenshotSelection &&
         !hasResultScreenshotSelection &&
         !hasProcessedLobbyOcrData
+    val resultRowsPagerUiState = if (uiState.status == MatchStatus.FINALIZED) {
+        uiState.toFinalizedResultOcrUiState()
+    } else {
+        ocrUiState as? MatchOcrReviewUiState.Ready
+    }
+    val resultRowsPagerState = rememberPagerState(
+        pageCount = { resultRowsPagerUiState?.resultRowsForPager().orEmpty().size },
+    )
     val resultOcrDetailsContent: @Composable () -> Unit = {
         if (uiState.status == MatchStatus.FINALIZED) {
             uiState.toFinalizedResultOcrUiState()?.let { finalizedUiState ->
                 MatchReviewResultRowsPagerContent(
                     uiState = finalizedUiState,
+                    pagerState = resultRowsPagerState,
                     onPlacementChanged = onOcrPlacementChanged,
                     onKillsChanged = onOcrKillsChanged,
                     onPlayerKillsChanged = onOcrPlayerKillsChanged,
@@ -1544,6 +1555,7 @@ private fun MatchReviewContent(
                 onCompactAddTeam = onCompactAddTeam,
                 compactAddTeamEnabled = compactAddTeamEnabled,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                pagerState = resultRowsPagerState,
             )
         }
     }
@@ -1635,6 +1647,7 @@ private fun MatchReviewContent(
                     compactAddTeamEnabled = compactAddTeamEnabled,
                     onManualBack = requestManualBack,
                     pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                    pagerState = resultRowsPagerState,
                 )
             }
         }
@@ -3908,6 +3921,7 @@ private fun MatchReviewResultOcrDetailsContent(
     compactAddTeamEnabled: Boolean,
     onManualBack: (() -> Unit)? = null,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
+    pagerState: PagerState,
 ) {
     Column(
         modifier = Modifier
@@ -3961,6 +3975,7 @@ private fun MatchReviewResultOcrDetailsContent(
                 showPlayerRows = uiState.calculatedEvidenceOrigin !=
                     MatchCalculatedEvidenceOrigin.MANUAL,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                pagerState = pagerState,
             )
         }
         onManualBack?.let { onBack ->
@@ -4175,9 +4190,17 @@ private fun MatchReviewResultPreviewPager(
     }
 }
 
+private fun MatchOcrReviewUiState.Ready.resultRowsForPager(): List<MatchOcrReviewRowUiState> {
+    val correctionRowsByIndex = correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
+    return rows.filter { row ->
+        correctionRowsByIndex[row.rowIndex]?.isExcluded != true
+    }
+}
+
 @Composable
 private fun MatchReviewResultRowsPagerContent(
     uiState: MatchOcrReviewUiState.Ready,
+    pagerState: PagerState,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
@@ -4199,10 +4222,7 @@ private fun MatchReviewResultRowsPagerContent(
         .orEmpty()
         .associateBy { it.position }
     val correctionRowsByIndex = uiState.correctionDraft?.rows.orEmpty().associateBy { it.rowIndex }
-    val rows = uiState.rows.filter { row ->
-        correctionRowsByIndex[row.rowIndex]?.isExcluded != true
-    }
-    val pagerState = rememberPagerState(pageCount = { rows.size })
+    val rows = uiState.resultRowsForPager()
     val teamSlotAssistant = MatchOcrReviewTeamSlotAssistant.deriveForUiState(uiState)
 
     LaunchedEffect(pagerState, rows.size) {
@@ -4686,6 +4706,13 @@ private fun ResultScreenshotPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(imageAreaHeight)
+                            .testTag(
+                                if (screenshotNumber == 1) {
+                                    MATCH_REVIEW_RESULT_SCREENSHOT_1_VIEWPORT_TEST_TAG
+                                } else {
+                                    MATCH_REVIEW_RESULT_SCREENSHOT_2_VIEWPORT_TEST_TAG
+                                },
+                            )
                             .clip(MaterialTheme.shapes.medium)
                             .border(
                                 width = 1.dp,
