@@ -639,12 +639,38 @@ class MatchOcrReviewViewModel @Inject constructor(
         }
     }
 
+    fun onCompactAddTeam() {
+        _uiState.update { state ->
+            if (state !is MatchOcrReviewUiState.Ready || state.finalization.isFinalized) {
+                state
+            } else {
+                state.nextManualResultPositionOrNull()?.let { position ->
+                    state.copy(manuallyRevealedPositions = state.manuallyRevealedPositions + position)
+                } ?: state
+            }
+        }
+    }
+
     fun onExcludeRow(rowIndex: Int) {
-        updateCorrectionDraft { draft ->
-            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
-                draft = draft,
-                rowIndex = rowIndex,
-            )
+        _uiState.update { state ->
+            if (state is MatchOcrReviewUiState.Ready) {
+                if (state.finalization.isFinalized) return@update state
+                val currentDraft = state.correctionDraft
+                    ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
+                state.copy(
+                    manuallyRevealedPositions = state.manuallyRevealedPositions - (rowIndex + 1),
+                    correctionDraft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+                        draft = currentDraft,
+                        rowIndex = rowIndex,
+                    ),
+                    finalization = state.finalization.copy(
+                        showWarningConfirmation = false,
+                        error = null,
+                    ),
+                )
+            } else {
+                state
+            }
         }
     }
 

@@ -45,6 +45,7 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreview
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyTeamCropPreviewResult
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.RosterScreenshotPosition
 import com.hoggamers.rankforge.domain.ocr.layout.RosterVisibleSlotPosition
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRow
@@ -52,6 +53,8 @@ import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbyPlayerRowCropBounds
 import com.hoggamers.rankforge.domain.ocr.matchlobby.LobbySlotAnchorSource
 import com.hoggamers.rankforge.domain.ocr.parsing.RosterSlotNumberCandidate
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionColumn
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchKill
@@ -2546,6 +2549,57 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun addTeamRendersNextManualPositionWithoutAddingACrop() {
+        composeTestRule.setContent {
+            var currentOcrState by remember { mutableStateOf(automaticOcrState(1..6)) }
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = positionCropTestUiState((1..6).toList()),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = currentOcrState,
+                    onCompactAddTeam = {
+                        val ready = currentOcrState as MatchOcrReviewUiState.Ready
+                        currentOcrState = ready.nextManualResultPositionOrNull()
+                            ?.let { position ->
+                                ready.copy(
+                                    manuallyRevealedPositions =
+                                        ready.manuallyRevealedPositions + position,
+                                )
+                            }
+                            ?: ready
+                    },
+                )
+            }
+        }
+
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1")[0]
+            .assertIsDisplayed()
+        composeTestRule
+            .onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(1))[0]
+            .performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactAddTeam(1)).performClick()
+
+        composeTestRule
+            .onAllNodesWithTag(MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "7")
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactPlacement(7))[0]
+            .assertIsDisplayed()
+            .assertTextContains("Position - 7")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactTeam(7))[0]
+            .assertTextContains("Team name - Not matched")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(6))[0]
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.killsInput(6))[0]
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotInput(6))[0]
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun inlinePosition11WithFourNotDetectedPlayersShowsDelete() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -4989,6 +5043,45 @@ class MatchReviewScreenTest {
                     ),
                 ),
             ),
+        )
+    }
+
+    private fun automaticOcrState(
+        visiblePositions: IntRange,
+    ): MatchOcrReviewUiState.Ready {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        val preview = MatchResultOcrPreviewUiState.Ready(
+            roles = listOf(role),
+            rows = visiblePositions.map { position -> previewRow(position, role) },
+            ignoredLowerRows = emptyList(),
+            manualReviewRows = emptyList(),
+            authoritativePositionCropsByRole = mapOf(
+                role to visiblePositions.map { position ->
+                    MatchResultPositionCrop(
+                        position = position,
+                        column = MatchResultPositionColumn.LEFT,
+                        bounds = OcrPixelCropRect(0, 0, 1, 1),
+                        hasDetectedPositionAnchor = true,
+                    )
+                },
+            ),
+        )
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview)!!
+        val draft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        return MatchOcrReviewUiState.Ready(
+            tournamentId = "tournament-id",
+            matchId = "match-id",
+            rowCount = rows.size,
+            rows = rows,
+            blockerCount = draft.blockerCount,
+            warningCount = draft.warningCount,
+            safeRowCount = 0,
+            manualRequiredRowCount = rows.size,
+            reviewRequiredRowCount = 0,
+            manualReviewRequired = true,
+            hasUnavailableEvidence = true,
+            correctionDraft = draft,
+            matchResultOcrPreview = preview,
         )
     }
 

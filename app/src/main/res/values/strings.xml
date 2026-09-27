@@ -529,6 +529,8 @@
     <string name="match_review_delete_local_cleanup_error">The match was deleted remotely, but local cleanup is incomplete. Try again.</string>
     <string name="match_review_delete_generic_error">Unable to delete match. Please try again.</string>
     <string name="match_review_adjust_team_points_action">Adjust Team Points</string>
+    <string name="match_review_bonus_penalty_action">Bonus / Penalty</string>
+    <string name="match_review_add_team_action">Add Team</string>
     <string name="match_review_adjust_team_points_title">Adjust Team Points</string>
     <string name="match_review_adjust_team_points_team_label">Team</string>
     <string name="match_review_adjust_team_points_no_teams">No teams available</string>

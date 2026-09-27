@@ -111,6 +111,7 @@ sealed interface MatchOcrReviewUiState {
         val evidenceSource: MatchOcrReviewEvidenceSource = MatchOcrReviewEvidenceSource.LIVE,
         val calculatedEvidenceOrigin: MatchCalculatedEvidenceOrigin =
             MatchCalculatedEvidenceOrigin.AUTOMATIC,
+        val manuallyRevealedPositions: Set<Int> = emptySet(),
     ) : MatchOcrReviewUiState
 
     data class Empty(
@@ -346,6 +347,25 @@ internal fun MatchResultOcrPreviewUiState.Ready.visiblePositionCropsByRole(): Ma
         .toSet()
     val visiblePositions = positionsWithRealAnchor union positionsWithRealOcrContent
     crops.filter { crop -> crop.position in visiblePositions }
+}
+
+internal fun MatchOcrReviewUiState.Ready.nextManualResultPositionOrNull(): Int? {
+    val visibleOcrPositions = (matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+        ?.visiblePositionCropsByRole()
+        ?.values
+        ?.flatten()
+        ?.map(MatchResultPositionCrop::position)
+        .orEmpty()
+    val explicitlyDeletedPositions = correctionDraft
+        ?.rows
+        ?.filter(MatchOcrReviewRowCorrectionDraft::isExcluded)
+        ?.map { row -> row.rowIndex + 1 }
+        .orEmpty()
+    val nextPosition = (
+        visibleOcrPositions + manuallyRevealedPositions + explicitlyDeletedPositions
+    ).maxOrNull()?.plus(1) ?: 1
+
+    return nextPosition.takeIf { it in 1..12 }
 }
 
 private fun MatchResultOcrPreviewRowUiState.hasRealOcrContent(): Boolean =
