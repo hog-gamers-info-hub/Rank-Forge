@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -39,12 +40,44 @@ class ResultCanvasRenderer {
 
     fun render(
         canvas: Canvas,
+        model: MatchResultExportModel,
+        displayDate: LocalDate?,
+    ): ResultCanvasRenderResult = render(
+        canvas = canvas,
+        tournamentName = model.tournamentName,
+        stageName = model.stageName,
+        subtitle = if (displayDate == null) {
+            "Current match - Match ${model.matchNumber}"
+        } else {
+            "Current match - Match ${model.matchNumber} -- ${displayDate.format(DATE_FORMATTER)}"
+        },
+        rows = model.rows,
+    )
+
+    fun render(
+        canvas: Canvas,
         model: TournamentResultExportModel,
     ): ResultCanvasRenderResult = render(
         canvas = canvas,
         tournamentName = model.tournamentName,
         stageName = model.stageName,
         subtitle = "Overall standings -- ${model.tournamentDate.format(DATE_FORMATTER)}",
+        rows = model.rows,
+    )
+
+    fun render(
+        canvas: Canvas,
+        model: TournamentResultExportModel,
+        displayDate: LocalDate?,
+    ): ResultCanvasRenderResult = render(
+        canvas = canvas,
+        tournamentName = model.tournamentName,
+        stageName = model.stageName,
+        subtitle = if (displayDate == null) {
+            "Overall standings"
+        } else {
+            "Overall standings -- ${displayDate.format(DATE_FORMATTER)}"
+        },
         rows = model.rows,
     )
 

@@ -318,9 +318,12 @@ class DownloadResultViewModel @Inject constructor(
                 _pointTableDetails.value = details?.toUiState() ?: PointTableDetailsUiState()
                 if (
                     selectedTournamentId == tournamentId &&
-                    selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                    (
+                        selectedDesign == DownloadResultDesignType.IMAGE ||
+                            selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                        )
                 ) {
-                    select(tournamentId, selectedResult, DownloadResultDesignType.FREE_DESIGN)
+                    select(tournamentId, selectedResult, selectedDesign)
                 }
             }
         }
@@ -357,9 +360,12 @@ class DownloadResultViewModel @Inject constructor(
             )
             if (
                 selectedTournamentId == tournamentId &&
-                selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                (
+                    selectedDesign == DownloadResultDesignType.IMAGE ||
+                        selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                    )
             ) {
-                select(tournamentId, selectedResult, DownloadResultDesignType.FREE_DESIGN)
+                select(tournamentId, selectedResult, selectedDesign)
             }
         }
     }
@@ -467,9 +473,9 @@ class DownloadResultViewModel @Inject constructor(
                 } else {
                     when (design) {
                         DownloadResultDesignType.IMAGE ->
-                            resultDownloadCoordinator.execute(
+                            resultDownloadCoordinator.executeImage(
                                 request = request,
-                                format = ResultExportFileFormat.PNG,
+                                displayDate = pointTableDetails.value.date,
                                 onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
                             )
                         DownloadResultDesignType.FREE_DESIGN ->
@@ -594,13 +600,19 @@ class DownloadResultViewModel @Inject constructor(
                 is ResultDownloadRequest.CurrentMatch ->
                     when (val result = builder.buildMatch(request.input)) {
                         is MatchResultExportModelBuildResult.Success ->
-                            (renderer.render(result.model) as? ResultPngRenderResult.Success)?.pngBytes
+                            (renderer.render(
+                                result.model,
+                                pointTableDetails.value.date,
+                            ) as? ResultPngRenderResult.Success)?.pngBytes
                         is MatchResultExportModelBuildResult.Failure -> null
                     }
                 is ResultDownloadRequest.WholeTournament ->
                     when (val result = builder.buildTournament(request.input)) {
                         is TournamentResultExportModelBuildResult.Success ->
-                            (renderer.render(result.model) as? ResultPngRenderResult.Success)?.pngBytes
+                            (renderer.render(
+                                result.model,
+                                pointTableDetails.value.date,
+                            ) as? ResultPngRenderResult.Success)?.pngBytes
                         is TournamentResultExportModelBuildResult.Failure -> null
                     }
             }
@@ -988,7 +1000,8 @@ fun DownloadResultScreen(
                             showDeleteControl = selectedDesign == DownloadResultDesignType.MY_DESIGN &&
                                 hasSavedCustomDesign,
                             onDeleteClick = { showDeleteConfirmation = true },
-                            showSettingsControl = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
+                            showSettingsControl = selectedDesign == DownloadResultDesignType.IMAGE ||
+                                selectedDesign == DownloadResultDesignType.FREE_DESIGN,
                             onSettingsClick = openPointTableDetails,
                         )
                     DownloadResultPreviewState.ImportYourDesign ->

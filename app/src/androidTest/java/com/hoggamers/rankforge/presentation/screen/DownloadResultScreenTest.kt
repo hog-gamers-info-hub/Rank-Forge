@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -17,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.io.ByteArrayOutputStream
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -116,6 +118,46 @@ class DownloadResultScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(DownloadResultSelection.Match("match-1"), importedSelection)
         }
+    }
+
+    @Test
+    fun pointTableSettingsIsAvailableForImageAndFreeDesignButNotMyDesign() {
+        val savedDetails = PointTableDetailsUiState(
+            organizationName = "Saved Org",
+            date = LocalDate.of(2026, 9, 28),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialDesign = DownloadResultDesignType.IMAGE,
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    pointTableDetails = savedDetails,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Free design settings")
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithText("Point Table Details").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Saved Org").assertIsDisplayed()
+        composeTestRule.onNodeWithText("28 Sep 2026").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel").performClick()
+
+        composeTestRule.onNodeWithText("Free Design").performClick()
+        composeTestRule.onNodeWithContentDescription("Free design settings")
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onNodeWithText("Point Table Details").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Saved Org").assertIsDisplayed()
+        composeTestRule.onNodeWithText("28 Sep 2026").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel").performClick()
+
+        composeTestRule.onNodeWithText("My Design").performClick()
+        composeTestRule.onAllNodesWithContentDescription("Free design settings")
+            .assertCountEquals(0)
     }
 
     @Test

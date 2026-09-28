@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
 import java.io.ByteArrayOutputStream
+import java.time.LocalDate
 
 sealed interface ResultPngRenderResult {
     data class Success(
@@ -22,8 +23,22 @@ class ResultPngRenderer(
     fun render(model: MatchResultExportModel): ResultPngRenderResult =
         renderBitmap { canvas -> canvasRenderer.render(canvas, model) }
 
+    fun render(
+        model: MatchResultExportModel,
+        displayDate: LocalDate?,
+    ): ResultPngRenderResult = renderBitmap { canvas ->
+        canvasRenderer.render(canvas, model, displayDate)
+    }
+
     fun render(model: TournamentResultExportModel): ResultPngRenderResult =
         renderBitmap { canvas -> canvasRenderer.render(canvas, model) }
+
+    fun render(
+        model: TournamentResultExportModel,
+        displayDate: LocalDate?,
+    ): ResultPngRenderResult = renderBitmap { canvas ->
+        canvasRenderer.render(canvas, model, displayDate)
+    }
 
     private fun renderBitmap(
         draw: (Canvas) -> ResultCanvasRenderResult,

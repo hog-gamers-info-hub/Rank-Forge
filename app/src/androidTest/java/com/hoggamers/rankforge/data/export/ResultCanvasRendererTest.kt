@@ -53,6 +53,65 @@ class ResultCanvasRendererTest {
     }
 
     @Test
+    fun explicitDisplayDateReplacesTournamentAndMatchDatesForBothScopes() {
+        val displayDate = LocalDate.of(2026, 9, 28)
+        val matchCanvas = RecordingCanvas()
+        val tournamentCanvas = RecordingCanvas()
+        try {
+            assertEquals(
+                ResultCanvasRenderResult.Success,
+                renderer.render(matchCanvas, matchModel(), displayDate),
+            )
+            assertEquals(
+                "Current match - Match 4 -- 28 Sep 2026",
+                matchCanvas.texts[2].text,
+            )
+            assertFalse(matchCanvas.texts.any { it.text.contains("03 Sep 2026") })
+            assertFalse(matchCanvas.texts.any { it.text.contains("31 Aug 2026") })
+
+            assertEquals(
+                ResultCanvasRenderResult.Success,
+                renderer.render(tournamentCanvas, tournamentModel(), displayDate),
+            )
+            assertEquals(
+                "Overall standings -- 28 Sep 2026",
+                tournamentCanvas.texts[2].text,
+            )
+            assertFalse(tournamentCanvas.texts.any { it.text.contains("03 Sep 2026") })
+        } finally {
+            matchCanvas.recycle()
+            tournamentCanvas.recycle()
+        }
+    }
+
+    @Test
+    fun nullDisplayDateOmitsTournamentAndMatchDatesAndTrailingSeparators() {
+        val matchCanvas = RecordingCanvas()
+        val tournamentCanvas = RecordingCanvas()
+        try {
+            assertEquals(
+                ResultCanvasRenderResult.Success,
+                renderer.render(matchCanvas, matchModel(), null),
+            )
+            assertEquals("Current match - Match 4", matchCanvas.texts[2].text)
+            assertFalse(matchCanvas.texts.any { it.text.contains("--") })
+            assertFalse(matchCanvas.texts.any { it.text.contains("03 Sep 2026") })
+            assertFalse(matchCanvas.texts.any { it.text.contains("31 Aug 2026") })
+
+            assertEquals(
+                ResultCanvasRenderResult.Success,
+                renderer.render(tournamentCanvas, tournamentModel(), null),
+            )
+            assertEquals("Overall standings", tournamentCanvas.texts[2].text)
+            assertFalse(tournamentCanvas.texts.any { it.text.contains("--") })
+            assertFalse(tournamentCanvas.texts.any { it.text.contains("03 Sep 2026") })
+        } finally {
+            matchCanvas.recycle()
+            tournamentCanvas.recycle()
+        }
+    }
+
+    @Test
     fun blankStageRemovesTheStageLineForBothScopes() {
         listOf(
             renderer to { canvas: RecordingCanvas -> renderer.render(canvas, matchModel(stageName = "  ")) },
