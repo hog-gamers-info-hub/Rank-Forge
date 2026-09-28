@@ -1,11 +1,13 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,45 @@ class TournamentDetailsDeletionScreenTest {
 
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test
+    fun tournamentHeroShowsNameStageAndGameModeWithoutTournamentDate() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = detailsState(stageName = "Semifinal G9"),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Semifinal G9").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_details_game_mode_presentation),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("24 Jul 2026").assertCountEquals(0)
+    }
+
+    @Test
+    fun blankStageNameDoesNotCreateAnEmptyHeroLine() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = detailsState(stageName = "   "),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_details_game_mode_presentation),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Semifinal G9").assertCountEquals(0)
+    }
 
     @Test
     fun deleteTournamentActionOpensConfirmationWithNameAndCancelKeepsDetails() {
@@ -126,13 +167,15 @@ class TournamentDetailsDeletionScreenTest {
         composeTestRule.onNodeWithText(context.getString(R.string.tournament_delete_remote_error)).assertIsDisplayed()
     }
 
-    private fun detailsState() = TournamentDetailsUiState(
+    private fun detailsState(
+        stageName: String = "Organizer",
+    ) = TournamentDetailsUiState(
         isLoading = false,
         tournament = TournamentDetailsItemUiState(
             id = "stable-id",
             name = "Summer Cup",
             date = LocalDate.of(2026, 7, 24),
-            stageName = "Organizer",
+            stageName = stageName,
             organizerContactNumber = "000",
             status = TournamentStatus.CONFIRMED,
             slots = emptyList(),
