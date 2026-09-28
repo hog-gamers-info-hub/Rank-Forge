@@ -90,7 +90,6 @@ class SaveMatchKillsUseCaseTest {
             Tournament(
                 id = "tournament-id",
                 name = "Summer Cup",
-                date = LocalDate.of(2026, 7, 24),
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,

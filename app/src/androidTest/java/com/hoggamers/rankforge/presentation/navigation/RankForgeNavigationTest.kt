@@ -762,7 +762,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
         composeTestRule.onNodeWithText(context.getString(R.string.open_tournament_creation)).performClick()
         viewModels.creationViewModel.onTournamentNameChanged("Summer Cup")
-        viewModels.creationViewModel.onTournamentDateChanged(LocalDate.of(2026, 7, 24))
         viewModels.creationViewModel.onStageNameChanged("Alex")
         viewModels.creationViewModel.onOrganizerContactNumberChanged("123")
         viewModels.creationViewModel.submit()
@@ -2739,7 +2738,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
             Tournament(
                 id = tournamentId,
                 name = "Setup Cup",
-                date = LocalDate.of(2026, 7, 24),
                 stageName = "Alex",
                 organizerContactNumber = "123",
                 status = TournamentStatus.DRAFT,
@@ -2764,7 +2762,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     private fun confirmedTournament() = Tournament(
         id = "confirmed-id",
         name = "Confirmed Cup",
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Alex",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
@@ -2826,7 +2823,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
                     override suspend fun logout(): AuthOperationResult = error("unused")
                 },
-                clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             ),
             clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
             checkTournamentQuota = CheckTournamentQuotaUseCase(
@@ -2848,7 +2844,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
     private fun createTournamentFromViewModel(viewModel: TournamentCreationViewModel) {
         viewModel.onTournamentNameChanged("Summer Cup")
-        viewModel.onTournamentDateChanged(LocalDate.of(2026, 7, 24))
         viewModel.onStageNameChanged("Alex")
         viewModel.onOrganizerContactNumberChanged("123")
         viewModel.submit()

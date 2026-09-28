@@ -154,7 +154,6 @@ class ResultPdfRendererTest {
         MatchResultExportModel(
             tournamentName = tournamentName,
             stageName = stageName,
-            tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
@@ -170,7 +169,6 @@ class ResultPdfRendererTest {
         TournamentResultExportModel(
             tournamentName = tournamentName,
             stageName = stageName,
-            tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
             rows = rows(longTeamName, rowCount),
         )

@@ -164,7 +164,6 @@ class ResolveDraftConflictUseCaseTest {
                 Tournament(
                     TOURNAMENT_ID,
                     "Conflict Cup",
-                    LocalDate.of(2026, 8, 1),
                     "Organizer",
                     "123",
                     TournamentStatus.DRAFT,

@@ -168,7 +168,6 @@ class UploadTournamentUseCaseTest {
                 Tournament(
                     id = TOURNAMENT_ID,
                     name = "Summer Cup",
-                    date = LocalDate.of(2026, 7, 24),
                     stageName = "Organizer",
                     organizerContactNumber = "123",
                     status = TournamentStatus.DRAFT,

@@ -6,9 +6,11 @@ import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.nio.charset.StandardCharsets
-import java.time.LocalDate
 import java.util.UUID
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,13 +25,21 @@ class TournamentCloudUploadMapperTest {
         val payloads = (result as TournamentCloudUploadMappingResult.Success).payloads
         assertEquals(TENANT_ID, payloads.tournament.id)
         assertEquals(OWNER_ID, payloads.tournament.ownerId)
-        assertEquals("2026-07-24", payloads.tournament.tournamentDate)
         assertEquals("PointIQ", payloads.tournament.organizationName)
         assertEquals("Organizer", payloads.tournament.stageName)
         assertEquals("draft", payloads.tournament.status)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), payloads.teamSlots.map { it.slotNumber })
         assertEquals("Alpha", payloads.teamSlots.first { it.slotNumber == 1 }.teamName)
         assertTrue(payloads.teamSlots.all { it.status == "draft" })
+    }
+
+    @Test
+    fun serializedTournamentPayloadDoesNotContainTournamentDate() {
+        val result = TournamentCloudUploadMapper.map(snapshot(), OWNER_ID) as TournamentCloudUploadMappingResult.Success
+
+        val json = Json.encodeToString(result.payloads.tournament)
+
+        assertFalse(json.contains("tournament_date"))
     }
 
     @Test
@@ -86,7 +96,6 @@ class TournamentCloudUploadMapperTest {
         tournament = Tournament(
             id = TENANT_ID,
             name = "Summer Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,

@@ -65,7 +65,6 @@ data class TournamentDetailsUiState(
 data class TournamentDetailsItemUiState(
     val id: String,
     val name: String,
-    val date: LocalDate,
     val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus,
@@ -122,7 +121,6 @@ fun Tournament.toDetailsItemUiState(
     return TournamentDetailsItemUiState(
         id = id,
         name = name,
-        date = date,
         stageName = stageName,
         organizerContactNumber = organizerContactNumber,
         status = status,

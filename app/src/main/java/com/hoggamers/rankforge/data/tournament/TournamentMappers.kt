@@ -35,7 +35,6 @@ internal fun Tournament.toEntity(
 ): TournamentEntity = TournamentEntity(
     id = id,
     name = name,
-    date = date.toString(),
     stageName = stageName,
     organizerContactNumber = organizerContactNumber,
     status = status.name,
@@ -48,7 +47,6 @@ internal fun Tournament.toEntity(
 internal fun TournamentEntity.toDomain(): Tournament = Tournament(
     id = id,
     name = name,
-    date = LocalDate.parse(date),
     stageName = stageName,
     organizerContactNumber = organizerContactNumber,
     status = TournamentStatus.valueOf(status),
@@ -60,7 +58,6 @@ internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = Tournam
     tournament = Tournament(
         id = id,
         name = name,
-        date = LocalDate.parse(date),
         stageName = stageName,
         organizerContactNumber = organizerContactNumber,
         status = TournamentStatus.valueOf(status),

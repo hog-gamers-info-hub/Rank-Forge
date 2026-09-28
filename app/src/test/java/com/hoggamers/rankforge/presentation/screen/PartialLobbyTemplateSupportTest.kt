@@ -309,7 +309,7 @@ class PartialLobbyTemplateSupportTest {
         private val sourceMatchId: String,
         private val targetMatchId: String,
     ) : TournamentRepository {
-        private val tournament = Tournament(tournamentId, "partial", LocalDate.of(2026, 1, 1), "org", "contact", TournamentStatus.DRAFT, "owner")
+        private val tournament = Tournament(tournamentId, "partial", "org", "contact", TournamentStatus.DRAFT, "owner")
         private val matches = listOf(
             Match(sourceMatchId, tournamentId, 1, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),
             Match(targetMatchId, tournamentId, 2, LocalDate.of(2026, 1, 1), "map", MatchStatus.DRAFT),

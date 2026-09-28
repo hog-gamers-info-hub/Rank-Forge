@@ -29,14 +29,7 @@ class ResultCanvasRenderer {
     fun render(
         canvas: Canvas,
         model: MatchResultExportModel,
-    ): ResultCanvasRenderResult = render(
-        canvas = canvas,
-        tournamentName = model.tournamentName,
-        stageName = model.stageName,
-        subtitle = "Current match - Match ${model.matchNumber} -- " +
-            model.tournamentDate.format(DATE_FORMATTER),
-        rows = model.rows,
-    )
+    ): ResultCanvasRenderResult = render(canvas, model, null)
 
     fun render(
         canvas: Canvas,
@@ -57,13 +50,7 @@ class ResultCanvasRenderer {
     fun render(
         canvas: Canvas,
         model: TournamentResultExportModel,
-    ): ResultCanvasRenderResult = render(
-        canvas = canvas,
-        tournamentName = model.tournamentName,
-        stageName = model.stageName,
-        subtitle = "Overall standings -- ${model.tournamentDate.format(DATE_FORMATTER)}",
-        rows = model.rows,
-    )
+    ): ResultCanvasRenderResult = render(canvas, model, null)
 
     fun render(
         canvas: Canvas,

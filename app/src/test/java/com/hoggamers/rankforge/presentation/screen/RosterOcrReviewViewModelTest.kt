@@ -971,7 +971,6 @@ class RosterOcrReviewViewModelTest {
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Synthetic tournament",
-        date = LocalDate.of(2026, 1, 1),
         stageName = "Synthetic organizer",
         organizerContactNumber = "synthetic-contact",
         status = TournamentStatus.DRAFT,

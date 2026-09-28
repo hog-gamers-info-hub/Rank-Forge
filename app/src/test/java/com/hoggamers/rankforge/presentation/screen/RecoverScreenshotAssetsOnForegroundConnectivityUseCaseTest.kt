@@ -235,7 +235,6 @@ class RecoverScreenshotAssetsOnForegroundConnectivityUseCaseTest {
     private fun tournament() = Tournament(
         id = "tournament-1",
         name = "Tournament",
-        date = LocalDate.of(2026, 8, 14),
         stageName = "Organizer",
         organizerContactNumber = "contact",
         status = TournamentStatus.DRAFT,

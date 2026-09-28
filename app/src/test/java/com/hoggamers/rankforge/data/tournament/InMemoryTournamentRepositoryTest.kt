@@ -24,7 +24,6 @@ class InMemoryTournamentRepositoryTest {
         val tournament = Tournament(
             id = "stable-id",
             name = "Spring Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
@@ -41,7 +40,6 @@ class InMemoryTournamentRepositoryTest {
         val tournament = Tournament(
             id = "stable-id",
             name = "Spring Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
@@ -59,7 +57,6 @@ class InMemoryTournamentRepositoryTest {
         val tournament = Tournament(
             id = "stable-id",
             name = "Spring Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
@@ -387,7 +384,6 @@ class InMemoryTournamentRepositoryTest {
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Spring Cup",
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

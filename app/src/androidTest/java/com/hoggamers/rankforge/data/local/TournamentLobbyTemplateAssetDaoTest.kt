@@ -53,7 +53,6 @@ class TournamentLobbyTemplateAssetDaoTest {
     private fun tournament(id: String, owner: String?) = TournamentEntity(
         id = id,
         name = id,
-        date = "2026-01-01",
         stageName = "organizer",
         organizerContactNumber = "contact",
         status = "DRAFT",

@@ -452,7 +452,6 @@ class OwnerScopedTournamentSetupMutationUseCasesTest {
         fun tournament(ownerUserId: String?, status: TournamentStatus = TournamentStatus.DRAFT) = Tournament(
             id = TOURNAMENT_ID,
             name = "Tournament",
-            date = LocalDate.of(2026, 8, 23),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = status,

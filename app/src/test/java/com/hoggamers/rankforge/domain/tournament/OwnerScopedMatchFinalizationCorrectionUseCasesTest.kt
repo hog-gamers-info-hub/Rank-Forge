@@ -97,8 +97,8 @@ class OwnerScopedMatchFinalizationCorrectionUseCasesTest {
     private fun evidence() = PreservedMatchOcrEvidence(TOURNAMENT_ID, MATCH_ID, null, 1L, "test", emptyList(), emptyList())
 
     private class RecordingRepository(private val owner: String?, status: MatchStatus) : TournamentRepository {
-        private val tournament = Tournament(TOURNAMENT_ID, "Cup", LocalDate.of(2026, 1, 1), "Org", "1", TournamentStatus.CONFIRMED, owner)
-        private val match = Match(MATCH_ID, TOURNAMENT_ID, 1, tournament.date, "Map", status, participantResults = if (status == MatchStatus.FINALIZED) (1..12).map { MatchParticipantResult(it, MatchParticipationStatus.PARTICIPATED, it, 0) } else emptyList())
+        private val tournament = Tournament(TOURNAMENT_ID, "Cup", "Org", "1", TournamentStatus.CONFIRMED, owner)
+        private val match = Match(MATCH_ID, TOURNAMENT_ID, 1, LocalDate.of(2026, 1, 1), "Map", status, participantResults = if (status == MatchStatus.FINALIZED) (1..12).map { MatchParticipantResult(it, MatchParticipationStatus.PARTICIPATED, it, 0) } else emptyList())
         var finalizeCalls = 0; var ocrFinalizeCalls = 0; var submitCalls = 0; var confirmCalls = 0; var evidence: PreservedMatchOcrEvidence? = null
         override suspend fun create(tournament: Tournament) = Unit
         override fun observeAll() = flowOf(listOf(tournament))

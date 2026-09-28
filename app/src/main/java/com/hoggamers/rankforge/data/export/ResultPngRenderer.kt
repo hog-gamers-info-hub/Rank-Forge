@@ -21,7 +21,7 @@ class ResultPngRenderer(
     private val canvasRenderer: ResultCanvasRenderer = ResultCanvasRenderer(),
 ) {
     fun render(model: MatchResultExportModel): ResultPngRenderResult =
-        renderBitmap { canvas -> canvasRenderer.render(canvas, model) }
+        render(model, null)
 
     fun render(
         model: MatchResultExportModel,
@@ -31,7 +31,7 @@ class ResultPngRenderer(
     }
 
     fun render(model: TournamentResultExportModel): ResultPngRenderResult =
-        renderBitmap { canvas -> canvasRenderer.render(canvas, model) }
+        render(model, null)
 
     fun render(
         model: TournamentResultExportModel,

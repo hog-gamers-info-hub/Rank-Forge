@@ -718,7 +718,6 @@ class RoomTournamentRepositoryTest {
                     tournament(
                         id,
                         TournamentStatus.DRAFT,
-                        date = LocalDate.of(2026, 7, 24).minusDays(index.toLong()),
                     ),
                 )
             }
@@ -2789,12 +2788,10 @@ class RoomTournamentRepositoryTest {
     private fun tournament(
         id: String,
         status: TournamentStatus,
-        date: LocalDate = LocalDate.of(2026, 7, 24),
         ownerUserId: String? = null,
     ) = Tournament(
         id = id,
         name = "Summer Cup",
-        date = date,
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = status,
@@ -2878,7 +2875,6 @@ class RoomTournamentRepositoryTest {
             Tournament(
                 id = tournamentId,
                 name = "Summer Cup",
-                date = LocalDate.of(2026, 7, 24),
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,

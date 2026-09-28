@@ -240,7 +240,6 @@ private class DeletionTournamentRepository : TournamentRepository {
     private val tournament = Tournament(
         id = "tournament-1",
         name = "Summer Cup",
-        date = LocalDate.of(2026, 8, 21),
         stageName = "Organizer",
         organizerContactNumber = "000",
         status = TournamentStatus.CONFIRMED,

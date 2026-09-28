@@ -55,7 +55,6 @@ class SupabaseTournamentRosterCloudReplacementRepositoryTest {
         tournament = Tournament(
             TOURNAMENT_ID,
             "Roster Cup",
-            LocalDate.of(2026, 8, 3),
             "Organizer",
             "123",
             TournamentStatus.CONFIRMED,

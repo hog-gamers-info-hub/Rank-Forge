@@ -126,7 +126,6 @@ class OwnerScopedTournamentReadUseCasesTest {
     private fun tournament(id: String, ownerUserId: String?) = Tournament(
         id = id,
         name = "Tournament $id",
-        date = LocalDate.of(2026, 8, 23),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

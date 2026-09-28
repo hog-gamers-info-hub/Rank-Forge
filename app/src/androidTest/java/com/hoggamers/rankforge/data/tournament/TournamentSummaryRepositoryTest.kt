@@ -280,7 +280,6 @@ class TournamentSummaryRepositoryTest {
     ) = Tournament(
         id = id,
         name = "Summary Cup",
-        date = LocalDate.of(2026, 8, 22),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = status,

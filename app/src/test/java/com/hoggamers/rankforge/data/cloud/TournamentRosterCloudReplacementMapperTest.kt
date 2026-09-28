@@ -58,7 +58,6 @@ class TournamentRosterCloudReplacementMapperTest {
         tournament = Tournament(
             id = TOURNAMENT_ID,
             name = "Roster Cup",
-            date = LocalDate.of(2026, 8, 3),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.CONFIRMED,

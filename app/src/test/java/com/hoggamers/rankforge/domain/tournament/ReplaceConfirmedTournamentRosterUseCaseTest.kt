@@ -115,7 +115,6 @@ class ReplaceConfirmedTournamentRosterUseCaseTest {
             Tournament(
                 id = tournamentId,
                 name = "Tournament",
-                date = LocalDate.of(2026, 1, 1),
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,

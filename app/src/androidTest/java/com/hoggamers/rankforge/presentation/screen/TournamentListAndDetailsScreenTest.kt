@@ -521,7 +521,6 @@ class TournamentListAndDetailsScreenTest {
                             com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary(
                                 id = cloudTournamentId,
                                 name = "Cloud Cup",
-                                date = "2026-07-24",
                                 stageName = "Organizer",
                                 status = "draft",
                             ),
@@ -933,7 +932,6 @@ class TournamentListAndDetailsScreenTest {
     ) = TournamentListItemUiState(
         id = id,
         name = name,
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Alex",
         status = TournamentStatus.DRAFT,
     )
@@ -950,7 +948,6 @@ class TournamentListAndDetailsScreenTest {
     ) = TournamentDetailsItemUiState(
         id = "stable-id",
         name = "Summer Cup",
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Alex",
         organizerContactNumber = "123",
         status = status,

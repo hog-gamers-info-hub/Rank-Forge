@@ -497,7 +497,6 @@ class DeleteUseCasesTest {
         tournament = Tournament(
             id = "tournament-1",
             name = "Test Cup",
-            date = LocalDate.of(2026, 8, 21),
             stageName = "Test Organizer",
             organizerContactNumber = "000",
             status = TournamentStatus.DRAFT,

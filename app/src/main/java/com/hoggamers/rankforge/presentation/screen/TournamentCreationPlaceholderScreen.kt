@@ -2,11 +2,9 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,15 +26,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDefaults
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -45,8 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -69,7 +61,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -85,13 +76,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-private val tournamentDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 private const val SHOW_ORGANIZER_CONTACT_NUMBER = false
 
 private val PointIqCreateBackground = Color(0xFF031225)
@@ -105,14 +90,9 @@ private val PointIqCreateCtaTopBlue = Color(0xFF159CF8)
 private val PointIqCreateCtaMiddleBlue = Color(0xFF1688F7)
 private val PointIqCreateCtaDeepBlue = Color(0xFF1675F0)
 private val PointIqCreateCtaBorder = Color(0xFF4AAFF7)
-private val PointIqCreateDatePickerSurface = Color(0xFF071B3E)
-private val PointIqCreateDatePickerBorder = Color(0xFF176AF7)
 private val PointIqCreateFieldHorizontalInset = 24.dp
 
 const val TOURNAMENT_CREATION_SCREEN_TEST_TAG = "tournament_creation_screen"
-const val TOURNAMENT_DATE_FIELD_TEST_TAG = "tournament_date_field"
-const val TOURNAMENT_DATE_TRAILING_ACTION_TEST_TAG = "tournament_date_trailing_action"
-const val TOURNAMENT_DATE_CONFIRM_ACTION_TEST_TAG = "tournament_date_confirm_action"
 const val TOURNAMENT_GAME_DROPDOWN_TEST_TAG = "tournament_game_dropdown"
 const val TOURNAMENT_GAME_OPTION_FREE_FIRE_MAX_TEST_TAG = "tournament_game_option_free_fire_max"
 const val TOURNAMENT_MODE_DROPDOWN_TEST_TAG = "tournament_mode_dropdown"
@@ -147,7 +127,6 @@ fun TournamentCreationRoute(
     TournamentCreationScreen(
         uiState = uiState,
         onTournamentNameChanged = viewModel::onTournamentNameChanged,
-        onTournamentDateChanged = viewModel::onTournamentDateChanged,
         onStageNameChanged = viewModel::onStageNameChanged,
         onOrganisationNameChanged = viewModel::onOrganisationNameChanged,
         onOrganizerContactNumberChanged = viewModel::onOrganizerContactNumberChanged,
@@ -157,12 +136,10 @@ fun TournamentCreationRoute(
         onDiscardChanges = viewModel::discardChanges,
     )
 }
-
 @Composable
 fun TournamentCreationScreen(
     uiState: TournamentCreationUiState,
     onTournamentNameChanged: (String) -> Unit,
-    onTournamentDateChanged: (LocalDate) -> Unit,
     onStageNameChanged: (String) -> Unit,
     onOrganisationNameChanged: (String) -> Unit = {},
     onOrganizerContactNumberChanged: (String) -> Unit,
@@ -171,7 +148,6 @@ fun TournamentCreationScreen(
     onKeepEditing: () -> Unit,
     onDiscardChanges: () -> Unit,
 ) {
-    var showDatePicker by remember { mutableStateOf(false) }
     val freeFireMax = stringResource(R.string.tournament_game_free_fire_max)
     val solo = stringResource(R.string.tournament_mode_solo)
     val duo = stringResource(R.string.tournament_mode_duo)
@@ -179,9 +155,7 @@ fun TournamentCreationScreen(
     var selectedGame by rememberSaveable { mutableStateOf(freeFireMax) }
     var selectedMode by rememberSaveable { mutableStateOf(squad) }
     val scrollState = rememberScrollState()
-    val tournamentDateLabel = stringResource(R.string.tournament_date_label)
     val backDescription = stringResource(R.string.back_action)
-    val openDatePicker = { showDatePicker = true }
     val view = LocalView.current
     val window = (view.context as? Activity)?.window
 
@@ -337,14 +311,6 @@ fun TournamentCreationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            PointIqTournamentDateField(
-                value = uiState.tournamentDate?.format(tournamentDateFormatter).orEmpty(),
-                error = uiState.validationErrors[TournamentField.DATE],
-                onOpenDatePicker = openDatePicker,
-                fieldDescription = tournamentDateLabel,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
             PointIqTournamentField(
                 value = uiState.stageName,
                 label = stringResource(R.string.stage_name_label),
@@ -431,71 +397,6 @@ fun TournamentCreationScreen(
         }
     }
 
-    if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = (uiState.tournamentDate ?: LocalDate.now()).toUtcMillis(),
-        )
-        val datePickerColors = DatePickerDefaults.colors(
-            containerColor = PointIqCreateDatePickerSurface,
-            titleContentColor = PointIqCreateHeader,
-            headlineContentColor = PointIqCreateHeader,
-            weekdayContentColor = PointIqCreateSubtitle,
-            subheadContentColor = PointIqCreateSubtitle,
-            navigationContentColor = PointIqCreateSubtitle,
-            yearContentColor = PointIqCreateHeader,
-            disabledYearContentColor = PointIqCreateFieldInactive,
-            currentYearContentColor = PointIqCreateCyan,
-            selectedYearContentColor = PointIqCreateHeader,
-            disabledSelectedYearContentColor = PointIqCreateFieldInactive,
-            selectedYearContainerColor = PointIqCreateDatePickerBorder,
-            disabledSelectedYearContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.4f),
-            dayContentColor = PointIqCreateHeader,
-            disabledDayContentColor = PointIqCreateFieldInactive,
-            selectedDayContentColor = PointIqCreateHeader,
-            disabledSelectedDayContentColor = PointIqCreateFieldInactive,
-            selectedDayContainerColor = PointIqCreateDatePickerBorder,
-            disabledSelectedDayContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.4f),
-            todayContentColor = PointIqCreateCyan,
-            todayDateBorderColor = PointIqCreateCyan,
-            dayInSelectionRangeContainerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.2f),
-            dayInSelectionRangeContentColor = PointIqCreateHeader,
-            dividerColor = PointIqCreateDatePickerBorder.copy(alpha = 0.35f),
-        )
-        val datePickerShape = RoundedCornerShape(12.dp)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { selectedDateMillis ->
-                            onTournamentDateChanged(selectedDateMillis.toLocalDate())
-                        }
-                        showDatePicker = false
-                    },
-                    modifier = Modifier.testTag(TOURNAMENT_DATE_CONFIRM_ACTION_TEST_TAG),
-                ) {
-                    Text(
-                        text = stringResource(R.string.select_date_action),
-                        color = PointIqCreateCyan,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            },
-            modifier = Modifier.border(
-                BorderStroke(1.dp, PointIqCreateDatePickerBorder),
-                datePickerShape,
-            ),
-            shape = datePickerShape,
-            tonalElevation = 0.dp,
-            colors = datePickerColors,
-        ) {
-            DatePicker(
-                state = datePickerState,
-                colors = datePickerColors,
-            )
-        }
-    }
-
     if (uiState.showDiscardDialog) {
         PointIqConfirmationDialog(
             onDismissRequest = onKeepEditing,
@@ -509,7 +410,6 @@ fun TournamentCreationScreen(
         )
     }
 }
-
 @Composable
 private fun PointIqCreateBackgroundDecoration(
     modifier: Modifier = Modifier,
@@ -695,50 +595,7 @@ private fun PointIqTournamentField(
 @Composable
 private fun validationErrorMessage(error: TournamentValidationError): String = when (error) {
     TournamentValidationError.REQUIRED -> stringResource(R.string.required_field_error)
-    TournamentValidationError.PAST_DATE -> stringResource(R.string.past_date_error)
     TournamentValidationError.UNSUPPORTED_STATUS -> stringResource(R.string.unsupported_status_error)
-}
-
-@Composable
-private fun PointIqTournamentDateField(
-    value: String,
-    error: TournamentValidationError?,
-    onOpenDatePicker: () -> Unit,
-    fieldDescription: String,
-) {
-    val dateLabel = stringResource(R.string.tournament_date_label)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(TOURNAMENT_DATE_TRAILING_ACTION_TEST_TAG)
-            .clickable(
-                role = Role.Button,
-                onClick = onOpenDatePicker,
-            )
-            .semantics {
-                contentDescription = fieldDescription
-            },
-    ) {
-        PointIqTournamentField(
-            value = value,
-            onValueChange = {},
-            label = dateLabel,
-            error = error,
-            leadingIcon = { tint ->
-                Icon(
-                    imageVector = Icons.Filled.DateRange,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            readOnly = true,
-            enabled = false,
-            isFocusedOverride = false,
-            modifier = Modifier.testTag(TOURNAMENT_DATE_FIELD_TEST_TAG),
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -888,10 +745,3 @@ private fun PointIqCreateTournamentButton(
         }
     }
 }
-
-private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-
-private fun Long.toLocalDate(): LocalDate = Instant
-    .ofEpochMilli(this)
-    .atZone(ZoneOffset.UTC)
-    .toLocalDate()

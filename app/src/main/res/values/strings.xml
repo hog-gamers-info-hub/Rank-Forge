@@ -96,7 +96,6 @@
     <string name="tournament_mode_solo">Solo</string>
     <string name="tournament_mode_duo">Duo</string>
     <string name="tournament_mode_squad">Squad</string>
-    <string name="tournament_date_label">Tournament Date</string>
     <string name="stage_name_label">Stage Name</string>
     <string name="organisation_name_label">Organisation Name</string>
     <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>
@@ -104,7 +103,6 @@
     <string name="create_tournament_action">Create tournament</string>
     <string name="tournament_creation_submitting">Creating tournament…</string>
     <string name="required_field_error">This field is required.</string>
-    <string name="past_date_error">Choose today or a future date.</string>
     <string name="unsupported_status_error">This tournament status is not supported.</string>
     <string name="tournament_creation_error">Tournament could not be created. Try again.</string>
     <string name="tournament_creation_limit_reached_error">Tournament limit reached. You can create up to 5 tournaments per account. Delete an existing tournament to create another.</string>
@@ -150,7 +148,6 @@
     <string name="tournament_not_found_title">Tournament not found</string>
     <string name="tournament_not_found_message">This tournament is no longer available in the current app session.</string>
     <string name="back_to_tournament_list_action">Back to tournament list</string>
-    <string name="tournament_date_value">Date: %1$s</string>
     <string name="stage_name_value">Stage: %1$s</string>
     <string name="organizer_contact_number_value">Contact: %1$s</string>
     <string name="tournament_status_value">Status: %1$s</string>

@@ -69,7 +69,6 @@ class MatchLobbyScreenshotIntakeViewModelTest {
             Tournament(
                 id = tournamentId,
                 name = "Lobby Cup",
-                date = LocalDate.of(2026, 8, 13),
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,

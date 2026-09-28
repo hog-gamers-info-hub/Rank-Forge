@@ -21,7 +21,7 @@ class RosterScreenshotMetadataDaoTest {
             .build()
         try {
             database.tournamentDao().upsert(
-                TournamentEntity("tournament-1", "Cup", "2026-07-30", "Org", "123", "CONFIRMED"),
+                TournamentEntity("tournament-1", "Cup", "Org", "123", "CONFIRMED"),
             )
             val dao = database.rosterScreenshotMetadataDao()
             val first = metadata(index = 1)
@@ -54,7 +54,7 @@ class RosterScreenshotMetadataDaoTest {
             .build()
         try {
             database.tournamentDao().upsert(
-                TournamentEntity("tournament-1", "Cup", "2026-07-30", "Org", "123", "CONFIRMED"),
+                TournamentEntity("tournament-1", "Cup", "Org", "123", "CONFIRMED"),
             )
             val repository = RoomRosterScreenshotMetadataRepository(
                 database.rosterScreenshotMetadataDao(),
@@ -85,7 +85,7 @@ class RosterScreenshotMetadataDaoTest {
             .build()
         try {
             database.tournamentDao().upsert(
-                TournamentEntity("tournament-1", "Cup", "2026-07-30", "Org", "123", "CONFIRMED"),
+                TournamentEntity("tournament-1", "Cup", "Org", "123", "CONFIRMED"),
             )
             val dao = database.rosterScreenshotMetadataDao()
             dao.upsert(metadata(index = 1))
@@ -207,7 +207,6 @@ class RosterScreenshotMetadataDaoTest {
     private fun tournament(id: String, ownerUserId: String?) = TournamentEntity(
         id = id,
         name = "Cup",
-        date = "2026-07-30",
         stageName = "Org",
         organizerContactNumber = "123",
         status = "CONFIRMED",

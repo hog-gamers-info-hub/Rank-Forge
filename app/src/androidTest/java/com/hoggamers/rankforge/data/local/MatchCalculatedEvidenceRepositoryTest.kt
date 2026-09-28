@@ -34,7 +34,6 @@ class MatchCalculatedEvidenceRepositoryTest {
             TournamentEntity(
                 id = TOURNAMENT_ID,
                 name = "Evidence Cup",
-                date = "2026-09-02",
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = "CONFIRMED",
