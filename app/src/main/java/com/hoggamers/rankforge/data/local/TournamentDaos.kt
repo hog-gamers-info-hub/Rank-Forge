@@ -273,6 +273,18 @@ interface MatchDao {
     @Query("SELECT * FROM matches WHERE id = :matchId")
     fun observeById(matchId: String): Flow<MatchEntity?>
 
+    @Transaction
+    @Query("SELECT * FROM matches WHERE tournament_id = :tournamentId ORDER BY match_number, id")
+    fun observeResultAggregatesByTournamentId(tournamentId: String): Flow<List<MatchResultAggregate>>
+
+    @Transaction
+    @Query("SELECT * FROM matches WHERE id = :matchId")
+    fun observeResultAggregateById(matchId: String): Flow<MatchResultAggregate?>
+
+    @Transaction
+    @Query("SELECT * FROM matches WHERE id = :matchId")
+    suspend fun readResultAggregateById(matchId: String): MatchResultAggregate?
+
     @Query(
         """
         SELECT matches.* FROM matches
@@ -281,6 +293,32 @@ interface MatchDao {
         """,
     )
     fun observeByIdAndOwner(matchId: String, ownerUserId: String): Flow<MatchEntity?>
+
+    @Transaction
+    @Query(
+        """
+        SELECT matches.* FROM matches
+        INNER JOIN tournaments ON tournaments.id = matches.tournament_id
+        WHERE matches.id = :matchId AND tournaments.owner_user_id = :ownerUserId
+        """,
+    )
+    fun observeResultAggregateByIdAndOwner(
+        matchId: String,
+        ownerUserId: String,
+    ): Flow<MatchResultAggregate?>
+
+    @Transaction
+    @Query(
+        """
+        SELECT matches.* FROM matches
+        INNER JOIN tournaments ON tournaments.id = matches.tournament_id
+        WHERE matches.id = :matchId AND tournaments.owner_user_id = :ownerUserId
+        """,
+    )
+    suspend fun readResultAggregateByIdAndOwner(
+        matchId: String,
+        ownerUserId: String,
+    ): MatchResultAggregate?
 
     @Query(
         """

@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.MatchKillEntity
 import com.hoggamers.rankforge.data.local.MatchParticipantResultEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
+import com.hoggamers.rankforge.data.local.MatchResultAggregate
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.data.local.TournamentEntity
@@ -128,22 +129,119 @@ internal fun MatchEntity.toDomain(
     placements = placements,
     kills = kills,
     correctionHistory = correctionHistory,
-    participantResults = participantResults.ifEmpty {
-        if (MatchStatus.valueOf(status) == MatchStatus.FINALIZED) {
-            val killsBySlot = kills.associateBy { it.teamSlotNumber }
-            placements.map { placement ->
-                MatchParticipantResult(
-                    teamSlotNumber = placement.teamSlotNumber,
-                    participationStatus = MatchParticipationStatus.PARTICIPATED,
-                    placement = placement.position,
-                    kills = killsBySlot.getValue(placement.teamSlotNumber).kills,
-                )
+    participantResults = participantResults,
+)
+
+internal sealed interface MatchResultAggregateMapping {
+    data class Complete(val match: Match) : MatchResultAggregateMapping
+
+    data object Incomplete : MatchResultAggregateMapping
+
+    data object Invalid : MatchResultAggregateMapping
+}
+
+internal fun MatchResultAggregate.toDomainResult(json: Json): MatchResultAggregateMapping {
+    val status = runCatching { MatchStatus.valueOf(match.status) }
+        .getOrElse { return MatchResultAggregateMapping.Invalid }
+    val mapped = runCatching {
+        val placements = placements.map { it.toDomain() }
+        val kills = kills.map { it.toDomain() }
+        val participantResults = participantResults.map { it.toDomain() }
+        val correctionHistory = corrections.map { it.toDomain(json) }
+        val finalizedParticipantResults = if (status == MatchStatus.FINALIZED) {
+            when (validateFinalizedAggregate(placements, kills, participantResults)) {
+                FinalizedAggregateValidation.Incomplete -> {
+                    return MatchResultAggregateMapping.Incomplete
+                }
+                FinalizedAggregateValidation.Invalid -> {
+                    return MatchResultAggregateMapping.Invalid
+                }
+                FinalizedAggregateValidation.Complete -> {
+                    participantResults
+                }
             }
         } else {
-            emptyList()
+            participantResults
         }
-    },
-)
+        match.toDomain(
+            placements = placements,
+            kills = kills,
+            correctionHistory = correctionHistory,
+            participantResults = finalizedParticipantResults,
+        )
+    }.getOrElse { return MatchResultAggregateMapping.Invalid }
+    return MatchResultAggregateMapping.Complete(mapped)
+}
+
+internal suspend fun MatchResultAggregate.toMatchWithConfirmation(
+    json: Json,
+    reread: suspend () -> MatchResultAggregate?,
+): Match? = when (val first = toDomainResult(json)) {
+    is MatchResultAggregateMapping.Complete -> first.match
+    MatchResultAggregateMapping.Invalid -> null
+    MatchResultAggregateMapping.Incomplete -> when (val second = reread()?.toDomainResult(json)) {
+        is MatchResultAggregateMapping.Complete -> second.match
+        MatchResultAggregateMapping.Incomplete,
+        MatchResultAggregateMapping.Invalid,
+        null,
+        -> null
+    }
+}
+
+private enum class FinalizedAggregateValidation {
+    Complete,
+    Incomplete,
+    Invalid,
+}
+
+private fun validateFinalizedAggregate(
+    placements: List<MatchPlacement>,
+    kills: List<MatchKill>,
+    participantResults: List<MatchParticipantResult>,
+): FinalizedAggregateValidation {
+    if (placements.isEmpty() || kills.isEmpty()) return FinalizedAggregateValidation.Incomplete
+
+    val placementsBySlot = placements.associateBy { it.teamSlotNumber }
+    val killsBySlot = kills.associateBy { it.teamSlotNumber }
+    if (placementsBySlot.size != placements.size || killsBySlot.size != kills.size) {
+        return FinalizedAggregateValidation.Invalid
+    }
+
+    if (participantResults.isEmpty()) return FinalizedAggregateValidation.Incomplete
+
+    val participated = participantResults.filter {
+        it.participationStatus == MatchParticipationStatus.PARTICIPATED
+    }
+    val participatedSlots = participated.map { it.teamSlotNumber }.toSet()
+    if (participated.isEmpty()) return FinalizedAggregateValidation.Invalid
+
+    if (participated.any { result ->
+            val placement = placementsBySlot[result.teamSlotNumber]
+            val kill = killsBySlot[result.teamSlotNumber]
+            placement == null || kill == null
+        }
+    ) {
+        return FinalizedAggregateValidation.Incomplete
+    }
+    if (placementsBySlot.keys != participatedSlots || killsBySlot.keys != participatedSlots) {
+        return FinalizedAggregateValidation.Incomplete
+    }
+    if (participated.any { result ->
+            placementsBySlot[result.teamSlotNumber]?.position != result.placement ||
+                killsBySlot[result.teamSlotNumber]?.kills != result.kills
+        }
+    ) {
+        return FinalizedAggregateValidation.Incomplete
+    }
+    if (participantResults.any {
+            it.participationStatus == MatchParticipationStatus.NO_SHOW &&
+                (it.placement != null || it.kills != 0)
+        }
+    ) {
+        return FinalizedAggregateValidation.Invalid
+    }
+    return FinalizedAggregateValidation.Complete
+}
 
 internal fun MatchPlacement.toEntity(matchId: String): MatchPlacementEntity = MatchPlacementEntity(
     matchId = matchId,
