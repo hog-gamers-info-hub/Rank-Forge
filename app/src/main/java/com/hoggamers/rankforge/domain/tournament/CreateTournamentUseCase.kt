@@ -14,6 +14,7 @@ data class CreateTournamentInput(
     val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus = TournamentStatus.DRAFT,
+    val organizationName: String = "",
 )
 
 enum class TournamentField {
@@ -87,6 +88,7 @@ class CreateTournamentUseCase(
             organizerContactNumber = input.organizerContactNumber.trim(),
             status = TournamentStatus.DRAFT,
             ownerUserId = ownerUserId,
+            organizationName = input.organizationName.trim().takeIf { it.isNotEmpty() },
         )
         repository.create(tournament)
         return CreateTournamentResult.Created(tournament)

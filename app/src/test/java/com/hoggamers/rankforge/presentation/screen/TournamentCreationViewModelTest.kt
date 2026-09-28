@@ -82,13 +82,27 @@ class TournamentCreationViewModelTest {
         viewModel.onTournamentNameChanged("Summer Cup")
         viewModel.onTournamentDateChanged(today)
         viewModel.onStageNameChanged("Alex")
+        viewModel.onOrganisationNameChanged("PointIQ")
         viewModel.onOrganizerContactNumberChanged("123")
 
         assertTrue(viewModel.uiState.value.isDirty)
         assertEquals("Summer Cup", viewModel.uiState.value.tournamentName)
         assertEquals(today, viewModel.uiState.value.tournamentDate)
         assertEquals("Alex", viewModel.uiState.value.stageName)
+        assertEquals("PointIQ", viewModel.uiState.value.organisationName)
         assertEquals("123", viewModel.uiState.value.organizerContactNumber)
+    }
+
+    @Test
+    fun organisationNameIsCarriedIntoCreatedTournament() = runTest {
+        viewModel.onTournamentNameChanged("Summer Cup")
+        viewModel.onTournamentDateChanged(today)
+        viewModel.onOrganisationNameChanged("  PointIQ  ")
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("PointIQ", repository.records.single().organizationName)
     }
 
     @Test

@@ -121,6 +121,7 @@ class CreateTournamentUseCaseTest {
             validInput().copy(
                 stageName = "   ",
                 organizerContactNumber = "   ",
+                organizationName = "\t  ",
             ),
         )
 
@@ -128,6 +129,7 @@ class CreateTournamentUseCaseTest {
         val created = result.createdTournament()
         assertEquals("", created.stageName)
         assertEquals("", created.organizerContactNumber)
+        assertEquals(null, created.organizationName)
     }
 
     @Test
@@ -136,12 +138,14 @@ class CreateTournamentUseCaseTest {
             validInput().copy(
                 stageName = "  HOG Gamers  ",
                 organizerContactNumber = "  9876543210  ",
+                organizationName = "  PointIQ  ",
             ),
         )
 
         val created = result.createdTournament()
         assertEquals("HOG Gamers", created.stageName)
         assertEquals("9876543210", created.organizerContactNumber)
+        assertEquals("PointIQ", created.organizationName)
     }
 
     @Test

@@ -24,6 +24,8 @@ class TournamentCloudUploadMapperTest {
         assertEquals(TENANT_ID, payloads.tournament.id)
         assertEquals(OWNER_ID, payloads.tournament.ownerId)
         assertEquals("2026-07-24", payloads.tournament.tournamentDate)
+        assertEquals("PointIQ", payloads.tournament.organizationName)
+        assertEquals("Organizer", payloads.tournament.stageName)
         assertEquals("draft", payloads.tournament.status)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), payloads.teamSlots.map { it.slotNumber })
         assertEquals("Alpha", payloads.teamSlots.first { it.slotNumber == 1 }.teamName)
@@ -88,6 +90,7 @@ class TournamentCloudUploadMapperTest {
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
+            organizationName = "PointIQ",
         ),
         slots = listOf(
             TeamSlot.create(TENANT_ID, 1, "Alpha"),

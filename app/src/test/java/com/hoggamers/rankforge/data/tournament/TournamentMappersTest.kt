@@ -25,8 +25,11 @@ class TournamentMappersTest {
         val entity = tournament.toEntity(creationOrder = 1L)
 
         assertEquals("user-a", entity.ownerUserId)
+        assertEquals("PointIQ", entity.organizationName)
         assertEquals("user-a", entity.toDomain().ownerUserId)
+        assertEquals("PointIQ", entity.toDomain().organizationName)
         assertNull(entity.copy(ownerUserId = null).toDomain().ownerUserId)
+        assertNull(entity.copy(organizationName = null).toDomain().organizationName)
     }
 
     @Test
@@ -45,6 +48,7 @@ class TournamentMappersTest {
         ).toDomain()
 
         assertEquals("user-a", summary.tournament.ownerUserId)
+        assertNull(summary.tournament.organizationName)
     }
 
     @Test
@@ -140,6 +144,7 @@ class TournamentMappersTest {
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = ownerUserId,
+        organizationName = "PointIQ",
     )
 
     private fun completeAggregate(
