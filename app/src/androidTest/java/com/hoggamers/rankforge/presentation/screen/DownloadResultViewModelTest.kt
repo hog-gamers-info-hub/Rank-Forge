@@ -18,6 +18,7 @@ import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpFreeDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
+import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
@@ -93,6 +94,136 @@ class DownloadResultViewModelTest {
 
         assertTrue(clearedPreview is DownloadResultPreviewState.ResultImage)
         assertTrue(viewModel.pointTableDetails.value.date == null)
+    }
+
+    @Test
+    fun pointTableDateOverridesImagePreviewAndApplyRefreshesIt() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match("match-id"),
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        val nullDatePreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { it is DownloadResultPreviewState.ResultImage }
+        } as DownloadResultPreviewState.ResultImage
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(date = LocalDate.of(2026, 9, 28)),
+        )
+
+        val datedPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first {
+                it is DownloadResultPreviewState.ResultImage &&
+                    !it.pngBytes.contentEquals(nullDatePreview.pngBytes)
+            }
+        }
+        assertTrue(datedPreview is DownloadResultPreviewState.ResultImage)
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(),
+        )
+
+        val clearedPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first {
+                it is DownloadResultPreviewState.ResultImage &&
+                    !it.pngBytes.contentEquals((datedPreview as DownloadResultPreviewState.ResultImage).pngBytes)
+            }
+        }
+        assertTrue(clearedPreview is DownloadResultPreviewState.ResultImage)
+        assertTrue(viewModel.pointTableDetails.value.date == null)
+    }
+
+    @Test
+    fun restoredPointTableDateReachesFinalImageDownload() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        repository.savePointTableDetails(
+            PointTableDetails(
+                tournamentId = "tournament-id",
+                displayDate = LocalDate.of(2026, 9, 28),
+            ),
+        )
+        val receivedDisplayDate = CompletableDeferred<LocalDate?>()
+        val coordinator = object : ResultDownloadCoordinator {
+            override suspend fun execute(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                format: com.hoggamers.rankforge.data.export.ResultExportFileFormat,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Failure(
+                ResultDownloadFailure.GENERATION_FAILED,
+            )
+
+            override suspend fun executeImage(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                displayDate: LocalDate?,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult {
+                receivedDisplayDate.complete(displayDate)
+                return ResultDownloadExecutionResult.Failure(
+                    ResultDownloadFailure.GENERATION_FAILED,
+                )
+            }
+        }
+        val viewModel = createViewModel(
+            resultCoordinator = coordinator,
+            pointTableDetailsRepository = repository,
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.date == LocalDate.of(2026, 9, 28) }
+        }
+
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match("match-id"),
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        assertEquals(
+            LocalDate.of(2026, 9, 28),
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedDisplayDate.await() },
+        )
+    }
+
+    @Test
+    fun nullPointTableDateRemainsNullForFinalImageDownload() = runBlocking {
+        val receivedDisplayDate = CompletableDeferred<LocalDate?>()
+        val coordinator = object : ResultDownloadCoordinator {
+            override suspend fun execute(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                format: com.hoggamers.rankforge.data.export.ResultExportFileFormat,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Failure(
+                ResultDownloadFailure.GENERATION_FAILED,
+            )
+
+            override suspend fun executeImage(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                displayDate: LocalDate?,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult {
+                receivedDisplayDate.complete(displayDate)
+                return ResultDownloadExecutionResult.Failure(
+                    ResultDownloadFailure.GENERATION_FAILED,
+                )
+            }
+        }
+        val viewModel = createViewModel(resultCoordinator = coordinator)
+        viewModel.load("tournament-id")
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        assertTrue(
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedDisplayDate.await() } == null,
+        )
     }
 
     @Test
@@ -289,6 +420,7 @@ class DownloadResultViewModelTest {
             NoOpFreeDesignResultDownloadCoordinator,
         pointTableDetailsRepository: PointTableDetailsRepository =
             FakePointTableDetailsRepository(),
+        resultCoordinator: ResultDownloadCoordinator = NoOpResultDownloadCoordinator,
     ): DownloadResultViewModel {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return DownloadResultViewModel(
@@ -310,7 +442,7 @@ class DownloadResultViewModelTest {
             ),
             customDesignBitmapComposer = CustomDesignBitmapComposer(),
             freeDesignBitmapComposer = FreeDesignBitmapComposer(context.assets),
-            resultDownloadCoordinator = NoOpResultDownloadCoordinator,
+            resultDownloadCoordinator = resultCoordinator,
             freeDesignResultDownloadCoordinator = freeDesignCoordinator,
             customDesignResultDownloadCoordinator = NoOpCustomDesignResultDownloadCoordinator,
             resultDocumentWriter = NoOpResultDocumentWriter,

@@ -55,6 +55,20 @@ class ResultPngRendererTest {
     }
 
     @Test
+    fun optionalDisplayDateChangesPngWithoutChangingDimensions() {
+        val explicitDateBytes = pngSuccess(
+            renderer.render(matchModel(), LocalDate.of(2026, 9, 28)),
+        )
+        val nullDateBytes = pngSuccess(renderer.render(matchModel(), null))
+
+        assertTrue(explicitDateBytes.isNotEmpty())
+        assertTrue(nullDateBytes.isNotEmpty())
+        assertTrue(!explicitDateBytes.contentEquals(nullDateBytes))
+        assertDecodedDimensions(explicitDateBytes)
+        assertDecodedDimensions(nullDateBytes)
+    }
+
+    @Test
     fun variableMatchRowCountsRenderAtExactDimensions() {
         listOf(8, 10, 12).forEach { rowCount ->
             val result = renderer.render(matchModel(rowCount = rowCount))

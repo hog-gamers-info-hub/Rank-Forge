@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportInput
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModelBuildResult
 import java.io.IOException
+import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +61,16 @@ interface ResultDownloadCoordinator {
         format: ResultExportFileFormat,
         onSaving: suspend () -> Unit = {},
     ): ResultDownloadExecutionResult
+
+    suspend fun executeImage(
+        request: ResultDownloadRequest,
+        displayDate: LocalDate?,
+        onSaving: suspend () -> Unit = {},
+    ): ResultDownloadExecutionResult = execute(
+        request = request,
+        format = ResultExportFileFormat.PNG,
+        onSaving = onSaving,
+    )
 }
 
 object NoOpResultDownloadCoordinator : ResultDownloadCoordinator {
@@ -83,10 +94,36 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         request: ResultDownloadRequest,
         format: ResultExportFileFormat,
         onSaving: suspend () -> Unit,
+    ): ResultDownloadExecutionResult = executeInternal(
+        request = request,
+        format = format,
+        onSaving = onSaving,
+        displayDate = null,
+        useDisplayDate = false,
+    )
+
+    override suspend fun executeImage(
+        request: ResultDownloadRequest,
+        displayDate: LocalDate?,
+        onSaving: suspend () -> Unit,
+    ): ResultDownloadExecutionResult = executeInternal(
+        request = request,
+        format = ResultExportFileFormat.PNG,
+        onSaving = onSaving,
+        displayDate = displayDate,
+        useDisplayDate = true,
+    )
+
+    private suspend fun executeInternal(
+        request: ResultDownloadRequest,
+        format: ResultExportFileFormat,
+        onSaving: suspend () -> Unit,
+        displayDate: LocalDate?,
+        useDisplayDate: Boolean,
     ): ResultDownloadExecutionResult {
         val rendered = try {
             withContext(Dispatchers.Default) {
-                render(request, format)
+                render(request, format, displayDate, useDisplayDate)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -127,6 +164,8 @@ class DefaultResultDownloadCoordinator @Inject constructor(
     private fun render(
         request: ResultDownloadRequest,
         format: ResultExportFileFormat,
+        displayDate: LocalDate? = null,
+        useDisplayDate: Boolean = false,
     ): RenderedResult? = when (request) {
         is ResultDownloadRequest.CurrentMatch -> {
             when (val buildResult = modelBuilder.buildMatch(request.input)) {
@@ -136,7 +175,10 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                         ResultExportFileFormat.PDF ->
                             (pdfRenderer.render(model) as? ResultPdfRenderResult.Success)?.bytes
                         ResultExportFileFormat.PNG ->
-                            (pngRenderer.render(model) as? ResultPngRenderResult.Success)?.pngBytes
+                            (pngRenderer.render(
+                                model,
+                                if (useDisplayDate) displayDate else model.tournamentDate,
+                            ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {
                         RenderedResult(
@@ -156,7 +198,10 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                         ResultExportFileFormat.PDF ->
                             (pdfRenderer.render(model) as? ResultPdfRenderResult.Success)?.bytes
                         ResultExportFileFormat.PNG ->
-                            (pngRenderer.render(model) as? ResultPngRenderResult.Success)?.pngBytes
+                            (pngRenderer.render(
+                                model,
+                                if (useDisplayDate) displayDate else model.tournamentDate,
+                            ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {
                         RenderedResult(
