@@ -96,7 +96,7 @@
     <string name="tournament_mode_solo">Solo</string>
     <string name="tournament_mode_duo">Duo</string>
     <string name="tournament_mode_squad">Squad</string>
-    <string name="stage_name_label">Stage Name</string>
+    <string name="stage_name_label">Stage/Round</string>
     <string name="organisation_name_label">Organisation Name</string>
     <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>
     <string name="select_date_action">Select date</string>
