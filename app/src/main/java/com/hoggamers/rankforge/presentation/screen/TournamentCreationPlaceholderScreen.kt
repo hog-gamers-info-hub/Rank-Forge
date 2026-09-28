@@ -263,6 +263,22 @@ fun TournamentCreationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            PointIqTournamentField(
+                value = uiState.stageName,
+                label = stringResource(R.string.stage_name_label),
+                error = uiState.validationErrors[TournamentField.STAGE_NAME],
+                onValueChange = onStageNameChanged,
+                leadingIcon = { tint ->
+                    Icon(
+                        painter = painterResource(R.drawable.ic_tournament_stage),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
             PointIqTournamentSelectionField(
                 value = selectedGame,
                 label = stringResource(R.string.tournament_game_label),
@@ -309,20 +325,6 @@ fun TournamentCreationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            PointIqTournamentField(
-                value = uiState.stageName,
-                label = stringResource(R.string.stage_name_label),
-                error = uiState.validationErrors[TournamentField.STAGE_NAME],
-                onValueChange = onStageNameChanged,
-                leadingIcon = { tint ->
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(24.dp),
-                    )
-                },
-            )
             if (SHOW_ORGANIZER_CONTACT_NUMBER) {
                 Spacer(modifier = Modifier.height(16.dp))
                 PointIqTournamentField(
