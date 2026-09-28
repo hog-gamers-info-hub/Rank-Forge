@@ -31,15 +31,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -118,6 +127,11 @@ import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.pointIqHomeBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.ByteArrayOutputStream
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -150,6 +164,17 @@ private val DownloadResultSectionTitleColor = Color(0xFFF6F8FF)
 private val DownloadResultPreviewSurface = Color(0xFF071B3E)
 private val DownloadResultPreviewSkeletonBase = Color(0xFF082440)
 private val DownloadResultPreviewSkeletonHighlight = Color(0xFF124A78)
+private val PointTableDetailsDialogSurface = Color(0xFF071B3E)
+private val PointTableDetailsDialogBorder = Color(0xFF176AF7)
+private val PointTableDetailsDialogTitle = Color(0xFFF6F8FF)
+private val PointTableDetailsDialogBody = Color(0xFF91AFE0)
+private val PointTableDetailsDialogAction = Color(0xFF17C9F2)
+private val PointTableDetailsDialogSecondaryAction = Color(0xFF91AFE0)
+private val PointTableDetailsDialogFieldInactive = Color(0xFF7D9DCE)
+private val PointTableDetailsDateFormatter = DateTimeFormatter.ofPattern(
+    "dd MMM yyyy",
+    Locale.ENGLISH,
+)
 
 data class DownloadResultMatchOption(
     val matchId: String,
@@ -170,6 +195,11 @@ data class DownloadResultUiState(
                 displayName = template.displayName,
             )
         },
+)
+
+data class PointTableDetailsUiState(
+    val organizationName: String = "",
+    val date: LocalDate? = null,
 )
 
 sealed interface DownloadResultSelection {
@@ -623,6 +653,7 @@ fun DownloadResultRoute(
     initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
     onBack: () -> Unit,
     onOpenCustomDesignSetup: (String, ResultDownloadScope, String) -> Unit = { _, _, _ -> },
+    onFreeDesignSettingsClick: () -> Unit = {},
     viewModel: DownloadResultViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
@@ -707,6 +738,7 @@ fun DownloadResultRoute(
                 }
             }
         },
+        onFreeDesignSettingsClick = onFreeDesignSettingsClick,
         onDeleteSavedCustomDesign = viewModel::deleteSavedCustomDesign,
         onDownload = { selection, design ->
             viewModel.requestDownload(tournamentId, selection, design)
@@ -734,6 +766,7 @@ fun DownloadResultScreen(
     onResultSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onDesignSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onFreeDesignTemplateSelected: (String) -> Unit = {},
+    onFreeDesignSettingsClick: () -> Unit = {},
     onImportYourDesign: (DownloadResultSelection) -> Unit = {},
     onDeleteSavedCustomDesign: () -> Unit = {},
     onDownload: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
@@ -746,7 +779,16 @@ fun DownloadResultScreen(
         mutableStateOf(selectedFreeDesignTemplateId)
     }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showPointTableDetailsDialog by remember { mutableStateOf(false) }
+    var appliedPointTableDetails by remember { mutableStateOf(PointTableDetailsUiState()) }
+    var pointTableDetailsDraft by remember { mutableStateOf(PointTableDetailsUiState()) }
     val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
+
+    val openPointTableDetails = {
+        pointTableDetailsDraft = appliedPointTableDetails
+        showPointTableDetailsDialog = true
+        onFreeDesignSettingsClick()
+    }
 
     LaunchedEffect(initialResult, initialDesign) {
         onResultSelected(initialResult, initialDesign)
@@ -882,6 +924,8 @@ fun DownloadResultScreen(
                             showDeleteControl = selectedDesign == DownloadResultDesignType.MY_DESIGN &&
                                 hasSavedCustomDesign,
                             onDeleteClick = { showDeleteConfirmation = true },
+                            showSettingsControl = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
+                            onSettingsClick = openPointTableDetails,
                         )
                     DownloadResultPreviewState.ImportYourDesign ->
                         Button(
@@ -980,7 +1024,228 @@ fun DownloadResultScreen(
             },
         )
     }
+
+    if (showPointTableDetailsDialog) {
+        PointTableDetailsDialog(
+            value = pointTableDetailsDraft,
+            onOrganizationNameChange = { organizationName ->
+                pointTableDetailsDraft = pointTableDetailsDraft.copy(
+                    organizationName = organizationName,
+                )
+            },
+            onDateChange = { date ->
+                pointTableDetailsDraft = pointTableDetailsDraft.copy(date = date)
+            },
+            onDismissRequest = { showPointTableDetailsDialog = false },
+            onApply = {
+                appliedPointTableDetails = pointTableDetailsDraft
+                showPointTableDetailsDialog = false
+            },
+        )
+    }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PointTableDetailsDialog(
+    value: PointTableDetailsUiState,
+    onOrganizationNameChange: (String) -> Unit,
+    onDateChange: (LocalDate?) -> Unit,
+    onDismissRequest: () -> Unit,
+    onApply: () -> Unit,
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        val dialogShape = RoundedCornerShape(12.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    border = BorderStroke(1.dp, PointTableDetailsDialogBorder),
+                    shape = dialogShape,
+                ),
+            shape = dialogShape,
+            color = PointTableDetailsDialogSurface,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+            ) {
+                Text(
+                    text = "Point Table Details",
+                    color = PointTableDetailsDialogTitle,
+                    fontSize = 20.sp,
+                    lineHeight = 25.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                PointIqUnderlineTextField(
+                    value = value.organizationName,
+                    placeholder = stringResource(R.string.organisation_name_label),
+                    fieldDescription = stringResource(R.string.organisation_name_label),
+                    onValueChange = onOrganizationNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            role = Role.Button,
+                            onClick = { showDatePicker = true },
+                        ),
+                ) {
+                    PointIqUnderlineTextField(
+                        value = value.date?.format(PointTableDetailsDateFormatter).orEmpty(),
+                        placeholder = "Date",
+                        fieldDescription = "Date",
+                        onValueChange = {},
+                        modifier = Modifier.fillMaxWidth(),
+                        readOnly = true,
+                        enabled = false,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onDismissRequest,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 8.dp,
+                            vertical = 0.dp,
+                        ),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = PointTableDetailsDialogSecondaryAction,
+                        ),
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    TextButton(
+                        onClick = onApply,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 8.dp,
+                            vertical = 0.dp,
+                        ),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = PointTableDetailsDialogAction,
+                        ),
+                    ) {
+                        Text(
+                            text = "Apply",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = value.date?.toPointTableUtcMillis(),
+        )
+        val datePickerColors = DatePickerDefaults.colors(
+            containerColor = PointTableDetailsDialogSurface,
+            titleContentColor = PointTableDetailsDialogTitle,
+            headlineContentColor = PointTableDetailsDialogTitle,
+            weekdayContentColor = PointTableDetailsDialogBody,
+            subheadContentColor = PointTableDetailsDialogBody,
+            navigationContentColor = PointTableDetailsDialogBody,
+            yearContentColor = PointTableDetailsDialogTitle,
+            disabledYearContentColor = PointTableDetailsDialogFieldInactive,
+            currentYearContentColor = PointTableDetailsDialogAction,
+            selectedYearContentColor = PointTableDetailsDialogTitle,
+            disabledSelectedYearContentColor = PointTableDetailsDialogFieldInactive,
+            selectedYearContainerColor = PointTableDetailsDialogBorder,
+            disabledSelectedYearContainerColor = PointTableDetailsDialogBorder.copy(alpha = 0.4f),
+            dayContentColor = PointTableDetailsDialogTitle,
+            disabledDayContentColor = PointTableDetailsDialogFieldInactive,
+            selectedDayContentColor = PointTableDetailsDialogTitle,
+            disabledSelectedDayContentColor = PointTableDetailsDialogFieldInactive,
+            selectedDayContainerColor = PointTableDetailsDialogBorder,
+            disabledSelectedDayContainerColor = PointTableDetailsDialogBorder.copy(alpha = 0.4f),
+            todayContentColor = PointTableDetailsDialogAction,
+            todayDateBorderColor = PointTableDetailsDialogAction,
+            dayInSelectionRangeContainerColor = PointTableDetailsDialogBorder.copy(alpha = 0.2f),
+            dayInSelectionRangeContentColor = PointTableDetailsDialogTitle,
+            dividerColor = PointTableDetailsDialogBorder.copy(alpha = 0.35f),
+        )
+        val datePickerShape = RoundedCornerShape(12.dp)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { selectedDateMillis ->
+                            onDateChange(selectedDateMillis.toPointTableLocalDate())
+                        }
+                        showDatePicker = false
+                    },
+                ) {
+                    Text(
+                        text = "Select date",
+                        color = PointTableDetailsDialogAction,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (value.date != null) {
+                        TextButton(
+                            onClick = {
+                                onDateChange(null)
+                                showDatePicker = false
+                            },
+                        ) {
+                            Text(
+                                text = "Clear",
+                                color = PointTableDetailsDialogSecondaryAction,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text(
+                            text = "Cancel",
+                            color = PointTableDetailsDialogSecondaryAction,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            },
+            modifier = Modifier.border(
+                BorderStroke(1.dp, PointTableDetailsDialogBorder),
+                datePickerShape,
+            ),
+            shape = datePickerShape,
+            tonalElevation = 0.dp,
+            colors = datePickerColors,
+        ) {
+            DatePicker(
+                state = datePickerState,
+                colors = datePickerColors,
+            )
+        }
+    }
+}
+
+private fun LocalDate.toPointTableUtcMillis(): Long =
+    atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+private fun Long.toPointTableLocalDate(): LocalDate =
+    Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 @Composable
 private fun DownloadResultBitmapPreview(
@@ -988,6 +1253,8 @@ private fun DownloadResultBitmapPreview(
     modifier: Modifier,
     showDeleteControl: Boolean = false,
     onDeleteClick: () -> Unit = {},
+    showSettingsControl: Boolean = false,
+    onSettingsClick: () -> Unit = {},
 ) {
     val bitmap by produceState<Bitmap?>(initialValue = null, pngBytes) {
         value = withContext(Dispatchers.IO) {
@@ -1000,7 +1267,7 @@ private fun DownloadResultBitmapPreview(
                 if (!previewBitmap.isRecycled) previewBitmap.recycle()
             }
         }
-    if (showDeleteControl) {
+    if (showDeleteControl || showSettingsControl) {
         Box(
             modifier = modifier,
             contentAlignment = Alignment.Center,
@@ -1024,29 +1291,57 @@ private fun DownloadResultBitmapPreview(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                 )
-                val deleteShape = RoundedCornerShape(6.dp)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .zIndex(1f)
-                        .size(30.dp)
-                        .clip(deleteShape)
-                        .background(DownloadResultUnselectedChipBackground)
-                        .border(
-                            width = 1.dp,
-                            color = DownloadResultUnselectedChipText.copy(alpha = 0.65f),
-                            shape = deleteShape,
+                if (showDeleteControl) {
+                    val deleteShape = RoundedCornerShape(6.dp)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .zIndex(1f)
+                            .size(30.dp)
+                            .clip(deleteShape)
+                            .background(DownloadResultUnselectedChipBackground)
+                            .border(
+                                width = 1.dp,
+                                color = DownloadResultUnselectedChipText.copy(alpha = 0.65f),
+                                shape = deleteShape,
+                            )
+                            .clickable(onClick = onDeleteClick),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "Delete saved custom design",
+                            tint = Color(0xFFFF6B6B),
+                            modifier = Modifier.size(17.dp),
                         )
-                        .clickable(onClick = onDeleteClick),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Delete saved custom design",
-                        tint = Color(0xFFFF6B6B),
-                        modifier = Modifier.size(17.dp),
-                    )
+                    }
+                }
+                if (showSettingsControl) {
+                    val settingsShape = RoundedCornerShape(6.dp)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .zIndex(1f)
+                            .size(30.dp)
+                            .clip(settingsShape)
+                            .background(DownloadResultUnselectedChipBackground)
+                            .border(
+                                width = 1.dp,
+                                color = DownloadResultUnselectedChipText.copy(alpha = 0.65f),
+                                shape = settingsShape,
+                            )
+                            .clickable(onClick = onSettingsClick),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Free design settings",
+                            tint = Color(0xFFF2F2F2),
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
                 }
             }
         }

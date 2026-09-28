@@ -581,6 +581,8 @@ internal fun PointIqUnderlineTextField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     leadingContent: (@Composable (Color) -> Unit)? = null,
+    readOnly: Boolean = false,
+    enabled: Boolean = true,
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val textStyle = TextStyle(
@@ -598,6 +600,8 @@ internal fun PointIqUnderlineTextField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
+        readOnly = readOnly,
+        enabled = enabled,
         textStyle = textStyle,
         cursorBrush = SolidColor(PointIqTeamsFieldCyan),
         modifier = modifier
