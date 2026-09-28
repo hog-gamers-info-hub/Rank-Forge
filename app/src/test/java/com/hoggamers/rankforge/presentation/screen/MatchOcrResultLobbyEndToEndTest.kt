@@ -414,7 +414,6 @@ class MatchOcrResultLobbyEndToEndTest {
             Tournament(
                 id = TOURNAMENT_ID,
                 name = "Slice 5 Cup",
-                date = LocalDate.of(2026, 8, 20),
                 stageName = "Verification",
                 organizerContactNumber = "123",
                 status = TournamentStatus.CONFIRMED,

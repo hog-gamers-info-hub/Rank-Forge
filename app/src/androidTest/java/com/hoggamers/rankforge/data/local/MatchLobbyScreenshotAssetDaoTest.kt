@@ -271,7 +271,6 @@ class MatchLobbyScreenshotAssetDaoTest {
             TournamentEntity(
                 id = "tournament-1",
                 name = "Cup",
-                date = "2026-08-07",
                 stageName = "Org",
                 organizerContactNumber = "123",
                 status = "CONFIRMED",
@@ -281,7 +280,6 @@ class MatchLobbyScreenshotAssetDaoTest {
             TournamentEntity(
                 id = "tournament-2",
                 name = "Other Cup",
-                date = "2026-08-08",
                 stageName = "Org",
                 organizerContactNumber = "123",
                 status = "CONFIRMED",

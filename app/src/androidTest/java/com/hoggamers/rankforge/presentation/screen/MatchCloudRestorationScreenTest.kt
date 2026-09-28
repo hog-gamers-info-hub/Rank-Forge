@@ -42,6 +42,6 @@ class MatchCloudRestorationScreenTest {
         composeTestRule.onNodeWithTag(MATCH_CLOUD_RESTORE_STATUS_TEST_TAG).performScrollTo()
             .assertTextEquals("Match restore failed and could not be saved locally.")
     }
-    private fun details() = TournamentDetailsUiState(false, tournament = TournamentDetailsItemUiState(TOURNAMENT_ID, "Cup", LocalDate.of(2026, 7, 24), "Alex", "123", TournamentStatus.CONFIRMED, TeamSlot.SLOT_NUMBERS.map { TeamSlotUiState(it, "") }))
+    private fun details() = TournamentDetailsUiState(false, tournament = TournamentDetailsItemUiState(TOURNAMENT_ID, "Cup", "Alex", "123", TournamentStatus.CONFIRMED, TeamSlot.SLOT_NUMBERS.map { TeamSlotUiState(it, "") }))
     private companion object { const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111" }
 }

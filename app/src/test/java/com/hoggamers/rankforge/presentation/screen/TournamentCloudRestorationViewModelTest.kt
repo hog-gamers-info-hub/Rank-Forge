@@ -165,7 +165,6 @@ class TournamentCloudRestorationViewModelTest {
             TournamentCloudRestorationSummary(
                 id = TOURNAMENT_ID,
                 name = "Summer Cup",
-                date = "2026-07-24",
                 stageName = "Organizer",
                 status = "draft",
             ),

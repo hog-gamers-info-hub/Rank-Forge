@@ -174,7 +174,6 @@ class TournamentDetailsDeletionScreenTest {
         tournament = TournamentDetailsItemUiState(
             id = "stable-id",
             name = "Summer Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = stageName,
             organizerContactNumber = "000",
             status = TournamentStatus.CONFIRMED,

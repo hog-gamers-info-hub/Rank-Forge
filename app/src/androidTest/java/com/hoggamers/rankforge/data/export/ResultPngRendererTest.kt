@@ -191,7 +191,6 @@ class ResultPngRendererTest {
         MatchResultExportModel(
             tournamentName = tournamentName,
             stageName = stageName,
-            tournamentDate = LocalDate.of(2026, 9, 3),
             matchNumber = 3,
             matchDate = LocalDate.of(2026, 7, 31),
             mapName = "Bermuda",
@@ -207,7 +206,6 @@ class ResultPngRendererTest {
         TournamentResultExportModel(
             tournamentName = tournamentName,
             stageName = stageName,
-            tournamentDate = LocalDate.of(2026, 9, 3),
             finalizedMatchCount = 2,
             rows = rows(longTeamName, rowCount),
         )

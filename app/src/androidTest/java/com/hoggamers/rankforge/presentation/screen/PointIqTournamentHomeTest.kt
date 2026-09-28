@@ -39,7 +39,6 @@ class PointIqTournamentHomeTest {
                     tournament = TournamentListItemUiState(
                         id = "summary-id",
                         name = "Summer Cup",
-                        date = LocalDate.of(2026, 8, 27),
                         stageName = "Organizer",
                         status = TournamentStatus.DRAFT,
                         totalTeams = 2,
@@ -101,7 +100,6 @@ class PointIqTournamentHomeTest {
             TournamentListItemUiState(
                 id = "tournament-$number",
                 name = "Tournament $number",
-                date = LocalDate.of(2026, 8, number),
                 stageName = "Organizer",
                 status = TournamentStatus.DRAFT,
                 totalTeams = 12,

@@ -206,7 +206,6 @@ private class RecreationFixture private constructor(
     val tournament = Tournament(
         id = "recreation-tournament",
         name = "Recreation Cup",
-        date = LocalDate.of(2026, 8, 15),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
@@ -215,7 +214,7 @@ private class RecreationFixture private constructor(
         id = "recreation-match",
         tournamentId = tournament.id,
         matchNumber = 1,
-        date = tournament.date,
+        date = LocalDate.of(2026, 7, 24),
         mapName = "Bermuda",
         status = MatchStatus.DRAFT,
     )

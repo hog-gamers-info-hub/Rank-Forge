@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(20, cursor.getInt(0))
+                assertEquals(25, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -317,6 +317,112 @@ class RankForgeDatabaseMigrationTest {
             assertTrue(hasTournamentId)
             assertTrue(hasOrganizationName)
             assertTrue(hasDisplayDate)
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion24RemovesTournamentDateWithoutDroppingChildren() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 24).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, date, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis, owner_user_id, organization_name) " +
+                    "VALUES ('migration-24', 'Migration Cup', '2026-08-24', 'Stage One', '123', " +
+                    "'CONFIRMED', 9, 1800000000000, 'user-a', 'PointIQ')",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('migration-24', 1, 'Team One')",
+            )
+            database.execSQL(
+                "INSERT INTO roster_players " +
+                    "(tournament_id, slot_number, roster_position, display_name) " +
+                    "VALUES ('migration-24', 1, 1, 'Player One')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('migration-match-24', 'migration-24', 1, '2026-09-02', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO point_table_details " +
+                    "(tournament_id, organization_name, display_date) " +
+                    "VALUES ('migration-24', 'PointIQ', '2026-09-28')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            25,
+            true,
+            RankForgeDatabase.MIGRATION_24_25,
+        )
+
+        migrated.query("PRAGMA table_info(tournaments)").use { cursor ->
+            val columns = buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+                }
+            }
+            assertEquals(
+                listOf(
+                    "id",
+                    "name",
+                    "organizer_name",
+                    "organizer_contact_number",
+                    "status",
+                    "creation_order",
+                    "last_updated_epoch_millis",
+                    "owner_user_id",
+                    "organization_name",
+                ),
+                columns,
+            )
+        }
+        migrated.query(
+            "SELECT name, organizer_name, organization_name, owner_user_id, status, " +
+                "creation_order, last_updated_epoch_millis FROM tournaments " +
+                "WHERE id = 'migration-24'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Migration Cup", cursor.getString(0))
+            assertEquals("Stage One", cursor.getString(1))
+            assertEquals("PointIQ", cursor.getString(2))
+            assertEquals("user-a", cursor.getString(3))
+            assertEquals("CONFIRMED", cursor.getString(4))
+            assertEquals(9, cursor.getInt(5))
+            assertEquals(1_800_000_000_000L, cursor.getLong(6))
+        }
+        assertTrue(migrated.hasIndex("index_tournaments_owner_user_id"))
+        migrated.query(
+            "SELECT team_name FROM team_slots WHERE tournament_id = 'migration-24'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Team One", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT display_name FROM roster_players WHERE tournament_id = 'migration-24'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Player One", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT date FROM matches WHERE id = 'migration-match-24'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("2026-09-02", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT organization_name, display_date FROM point_table_details " +
+                "WHERE tournament_id = 'migration-24'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("PointIQ", cursor.getString(0))
+            assertEquals("2026-09-28", cursor.getString(1))
+        }
+        migrated.query("PRAGMA foreign_key_check").use { cursor ->
+            assertTrue(!cursor.moveToFirst())
         }
         migrated.close()
     }
@@ -1407,7 +1513,6 @@ class RankForgeDatabaseMigrationTest {
                 val tournament = TournamentEntity(
                     id = "tournament-1",
                     name = "Summer Cup",
-                    date = LocalDate.of(2026, 7, 26).toString(),
                     stageName = "Organizer",
                     organizerContactNumber = "1234567890",
                     status = "DRAFT",
@@ -1537,7 +1642,6 @@ class RankForgeDatabaseMigrationTest {
                 TournamentEntity(
                     id = "tournament-1",
                     name = "Summer Cup",
-                    date = LocalDate.of(2026, 7, 26).toString(),
                     stageName = "Organizer",
                     organizerContactNumber = "1234567890",
                     status = "CONFIRMED",
@@ -1624,7 +1728,6 @@ class RankForgeDatabaseMigrationTest {
             TournamentEntity(
                 id = "tournament-ocr",
                 name = "OCR Cup",
-                date = LocalDate.of(2026, 7, 31).toString(),
                 stageName = "Organizer",
                 organizerContactNumber = "1234567890",
                 status = "CONFIRMED",
@@ -1691,7 +1794,6 @@ class RankForgeDatabaseMigrationTest {
         DomainTournament(
             id = "tournament-ocr",
             name = "OCR Cup",
-            date = LocalDate.of(2026, 7, 31),
             stageName = "Organizer",
             organizerContactNumber = "1234567890",
             status = TournamentStatus.CONFIRMED,

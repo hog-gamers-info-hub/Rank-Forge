@@ -52,7 +52,6 @@ class SupabaseTournamentQuotaRepositoryTest {
                             id = "00000000-0000-0000-0000-${index.toString().padStart(12, '0')}",
                             ownerId = "owner",
                             name = "Tournament $index",
-                            tournamentDate = "2026-07-24",
                             stageName = "Organizer",
                             organizerContact = "",
                             status = "draft",

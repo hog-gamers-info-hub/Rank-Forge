@@ -593,7 +593,6 @@ class SavedLobbyTemplateUseCasesTest {
         private val tournament = Tournament(
             id = tournamentId,
             name = "template",
-            date = LocalDate.of(2026, 1, 1),
             stageName = "organizer",
             organizerContactNumber = "contact",
             status = TournamentStatus.DRAFT,

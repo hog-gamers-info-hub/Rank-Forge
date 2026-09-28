@@ -28,7 +28,6 @@ class ResultExportModelBuilderTest {
     fun finalizedMatchBuildsWithApprovedMetadata() {
         val result = builder.buildMatch(
             validMatchInput(
-                tournament = validTournament().copy(date = LocalDate.of(2026, 9, 3)),
                 match = validMatch().copy(date = LocalDate.of(2026, 8, 31)),
             ),
         )
@@ -36,7 +35,6 @@ class ResultExportModelBuilderTest {
         val model = matchSuccess(result)
         assertEquals("Synthetic Cup", model.tournamentName)
         assertEquals("Organizer", model.stageName)
-        assertEquals(LocalDate.of(2026, 9, 3), model.tournamentDate)
         assertEquals(3, model.matchNumber)
         assertEquals(LocalDate.of(2026, 8, 31), model.matchDate)
         assertEquals("Bermuda", model.mapName)
@@ -136,7 +134,6 @@ class ResultExportModelBuilderTest {
 
         assertEquals("Synthetic Cup", model.tournamentName)
         assertEquals("Organizer", model.stageName)
-        assertEquals(LocalDate.of(2026, 7, 31), model.tournamentDate)
         assertEquals(2, model.finalizedMatchCount)
         assertEquals(12, model.rows.size)
     }
@@ -285,7 +282,6 @@ class ResultExportModelBuilderTest {
         Tournament(
             id = TOURNAMENT_ID,
             name = "Synthetic Cup",
-            date = LocalDate.of(2026, 7, 31),
             stageName = "Organizer",
             organizerContactNumber = "1234567890",
             status = TournamentStatus.CONFIRMED,

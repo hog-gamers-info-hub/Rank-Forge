@@ -107,7 +107,6 @@ class ProtectedMatchCorrectionRepositoryTest {
         tournament = Tournament(
             id = TOURNAMENT_ID.toString(),
             name = "Summer Cup",
-            date = LocalDate.of(2026, 7, 24),
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.CONFIRMED,

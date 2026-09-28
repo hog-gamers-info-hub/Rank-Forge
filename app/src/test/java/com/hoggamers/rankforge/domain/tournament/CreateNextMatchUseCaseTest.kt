@@ -1,7 +1,9 @@
 package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
+import java.time.Clock
 import java.time.LocalDate
+import java.time.ZoneOffset
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -16,7 +18,14 @@ class CreateNextMatchUseCaseTest {
     @Before
     fun setUp() {
         repository = InMemoryTournamentRepository()
-        useCase = CreateNextMatchUseCase(repository, SignedInTournamentTestAuthRepository())
+        useCase = CreateNextMatchUseCase(
+            repository,
+            SignedInTournamentTestAuthRepository(),
+            Clock.fixed(
+                LocalDate.of(2026, 7, 24).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                ZoneOffset.UTC,
+            ),
+        )
     }
 
     @Test
@@ -111,7 +120,6 @@ class CreateNextMatchUseCaseTest {
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Summer Cup",
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

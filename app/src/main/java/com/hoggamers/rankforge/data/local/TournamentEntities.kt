@@ -24,7 +24,6 @@ data class SyncRevisionEntity(
 data class TournamentEntity(
     @PrimaryKey val id: String,
     val name: String,
-    val date: String,
     @ColumnInfo(name = "organizer_name") val stageName: String,
     @ColumnInfo(name = "organizer_contact_number") val organizerContactNumber: String,
     val status: String,
@@ -37,7 +36,6 @@ data class TournamentEntity(
 data class TournamentSummaryProjection(
     val id: String,
     val name: String,
-    val date: String,
     @ColumnInfo(name = "organizer_name") val stageName: String,
     @ColumnInfo(name = "organizer_contact_number") val organizerContactNumber: String,
     val status: String,

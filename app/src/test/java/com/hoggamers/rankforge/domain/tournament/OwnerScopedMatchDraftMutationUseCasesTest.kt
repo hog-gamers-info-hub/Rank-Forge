@@ -302,7 +302,6 @@ class OwnerScopedMatchDraftMutationUseCasesTest {
         fun tournament(id: String = TOURNAMENT_A) = Tournament(
             id,
             "Tournament",
-            DATE,
             "Organizer",
             "123",
             TournamentStatus.DRAFT,

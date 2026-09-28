@@ -215,7 +215,6 @@ class ResultCanvasRendererTest {
     ) = MatchResultExportModel(
         tournamentName = tournamentName,
         stageName = stageName,
-        tournamentDate = LocalDate.of(2026, 9, 3),
         matchNumber = 4,
         matchDate = LocalDate.of(2026, 8, 31),
         mapName = "Bermuda",
@@ -227,7 +226,6 @@ class ResultCanvasRendererTest {
     ) = TournamentResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = stageName,
-        tournamentDate = LocalDate.of(2026, 9, 3),
         finalizedMatchCount = 2,
         rows = rows(),
     )

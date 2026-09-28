@@ -1,7 +1,6 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
-import java.time.LocalDate
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -16,7 +15,6 @@ class TournamentCloudRestorationMapperTest {
         val snapshot = (result as TournamentCloudRestorationMappingResult.Success).value
         assertEquals(TOURNAMENT_ID, snapshot.tournament.id)
         assertEquals(OWNER_ID, snapshot.tournament.ownerUserId)
-        assertEquals(LocalDate.of(2026, 7, 24), snapshot.tournament.date)
         assertEquals("PointIQ", snapshot.tournament.organizationName)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), snapshot.slots.map { it.slotNumber })
         assertEquals("Alpha", snapshot.slots.first().teamName)
@@ -36,7 +34,6 @@ class TournamentCloudRestorationMapperTest {
                     com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary(
                         id = TOURNAMENT_ID,
                         name = "Summer Cup",
-                        date = "2026-07-24",
                         stageName = "Organizer",
                         status = "draft",
                     ),
@@ -110,7 +107,6 @@ class TournamentCloudRestorationMapperTest {
             id = TOURNAMENT_ID,
             ownerId = OWNER_ID,
             name = "Summer Cup",
-            tournamentDate = "2026-07-24",
             stageName = "Organizer",
             organizerContact = "123",
             status = "draft",

@@ -21,7 +21,7 @@ class ScreenshotMetadataDaoTest {
             .build()
         try {
             database.tournamentDao().upsert(
-                TournamentEntity("tournament-1", "Cup", "2026-07-29", "Org", "123", "CONFIRMED"),
+                TournamentEntity("tournament-1", "Cup", "Org", "123", "CONFIRMED"),
             )
             database.matchDao().upsert(
                 MatchEntity("match-1", "tournament-1", 1, "2026-07-29", "Bermuda", "DRAFT"),
@@ -81,7 +81,7 @@ class ScreenshotMetadataDaoTest {
             .build()
         try {
             database.tournamentDao().upsert(
-                TournamentEntity("tournament-1", "Cup", "2026-07-29", "Org", "123", "CONFIRMED"),
+                TournamentEntity("tournament-1", "Cup", "Org", "123", "CONFIRMED"),
             )
             database.matchDao().upsert(
                 MatchEntity("match-1", "tournament-1", 1, "2026-07-29", "Bermuda", "DRAFT"),

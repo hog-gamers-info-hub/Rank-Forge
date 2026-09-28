@@ -7,7 +7,6 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnaps
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.sync.CloudRevision
-import java.time.LocalDate
 import java.util.UUID
 
 data class TournamentCloudRestorationPayloads(
@@ -27,14 +26,12 @@ object TournamentCloudRestorationMapper {
         payloads: List<TournamentUploadPayload>,
     ): TournamentCloudRestorationMappingResult<List<TournamentCloudRestorationSummary>> {
         val summaries = payloads.map { payload ->
-            val parsedDate = payload.tournamentDate.toLocalDateOrNull() ?: return TournamentCloudRestorationMappingResult.Invalid
             if (payload.id.toUuidOrNull() == null || payload.ownerId.isBlank()) {
                 return TournamentCloudRestorationMappingResult.Invalid
             }
             TournamentCloudRestorationSummary(
                 id = payload.id,
                 name = payload.name,
-                date = parsedDate.toString(),
                 stageName = payload.stageName,
                 status = payload.status,
             )
@@ -46,8 +43,6 @@ object TournamentCloudRestorationMapper {
         payloads: TournamentCloudRestorationPayloads,
     ): TournamentCloudRestorationMappingResult<TournamentCloudRestorationSnapshot> {
         val tournamentUuid = payloads.tournament.id.toUuidOrNull()
-            ?: return TournamentCloudRestorationMappingResult.Invalid
-        val date = payloads.tournament.tournamentDate.toLocalDateOrNull()
             ?: return TournamentCloudRestorationMappingResult.Invalid
         val status = payloads.tournament.status.toLocalStatusOrNull()
             ?: return TournamentCloudRestorationMappingResult.Invalid
@@ -122,7 +117,6 @@ object TournamentCloudRestorationMapper {
                 tournament = Tournament(
                     id = payloads.tournament.id,
                     name = payloads.tournament.name,
-                    date = date,
                     stageName = payloads.tournament.stageName,
                     organizerContactNumber = payloads.tournament.organizerContact,
                     status = status,
@@ -137,8 +131,6 @@ object TournamentCloudRestorationMapper {
     }
 
     private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
-
-    private fun String.toLocalDateOrNull(): LocalDate? = runCatching { LocalDate.parse(this) }.getOrNull()
 
     private fun String.toLocalStatusOrNull(): TournamentStatus? = when (lowercase()) {
         "draft" -> TournamentStatus.DRAFT

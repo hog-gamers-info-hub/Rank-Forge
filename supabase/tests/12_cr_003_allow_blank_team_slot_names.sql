@@ -102,7 +102,6 @@ select is((
             'id', 'a0000000-0000-0000-0000-000000000004'::uuid,
             'owner_id', 'b0000000-0000-0000-0000-000000000001'::uuid,
             'name', 'RPC Blank Slots',
-            'tournament_date', '2026-07-24',
             'organizer_name', 'Organizer',
             'organizer_contact', '123',
             'status', 'draft'
@@ -135,7 +134,6 @@ select is((
             'id', 'a0000000-0000-0000-0000-000000000004'::uuid,
             'owner_id', 'b0000000-0000-0000-0000-000000000001'::uuid,
             'name', 'RPC Blank Slots',
-            'tournament_date', '2026-07-24',
             'organizer_name', 'Organizer',
             'organizer_contact', '123',
             'status', 'draft'

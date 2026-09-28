@@ -125,7 +125,6 @@ class CustomDesignResultRowsResolverTest {
     private fun validTournament() = Tournament(
         id = TOURNAMENT_ID,
         name = "Synthetic Cup",
-        date = LocalDate.of(2026, 7, 31),
         stageName = "Organizer",
         organizerContactNumber = "1234567890",
         status = TournamentStatus.CONFIRMED,

@@ -57,7 +57,6 @@ class TournamentCloudUploadExecutorTest {
             id = "11111111-1111-1111-1111-111111111111",
             ownerId = "22222222-2222-2222-2222-222222222222",
             name = "Summer Cup",
-            tournamentDate = "2026-07-24",
             stageName = "Organizer",
             organizerContact = "123",
             status = "draft",

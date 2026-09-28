@@ -1,6 +1,5 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import java.time.LocalDate
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
@@ -15,7 +14,6 @@ data class TournamentListUiState(
 data class TournamentListItemUiState(
     val id: String,
     val name: String,
-    val date: LocalDate,
     val stageName: String,
     val status: TournamentStatus,
     val totalTeams: Int = 0,
@@ -26,7 +24,6 @@ data class TournamentListItemUiState(
 fun Tournament.toListItemUiState(): TournamentListItemUiState = TournamentListItemUiState(
     id = id,
     name = name,
-    date = date,
     stageName = stageName,
     status = status,
     totalTeams = 0,
@@ -37,7 +34,6 @@ fun Tournament.toListItemUiState(): TournamentListItemUiState = TournamentListIt
 fun TournamentSummary.toListItemUiState(): TournamentListItemUiState = TournamentListItemUiState(
     id = tournament.id,
     name = tournament.name,
-    date = tournament.date,
     stageName = tournament.stageName,
     status = tournament.status,
     totalTeams = totalTeams,

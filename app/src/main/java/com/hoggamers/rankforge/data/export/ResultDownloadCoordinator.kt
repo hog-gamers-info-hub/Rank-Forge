@@ -99,7 +99,6 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         format = format,
         onSaving = onSaving,
         displayDate = null,
-        useDisplayDate = false,
     )
 
     override suspend fun executeImage(
@@ -111,7 +110,6 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         format = ResultExportFileFormat.PNG,
         onSaving = onSaving,
         displayDate = displayDate,
-        useDisplayDate = true,
     )
 
     private suspend fun executeInternal(
@@ -119,11 +117,10 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         format: ResultExportFileFormat,
         onSaving: suspend () -> Unit,
         displayDate: LocalDate?,
-        useDisplayDate: Boolean,
     ): ResultDownloadExecutionResult {
         val rendered = try {
             withContext(Dispatchers.Default) {
-                render(request, format, displayDate, useDisplayDate)
+                render(request, format, displayDate)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -165,7 +162,6 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         request: ResultDownloadRequest,
         format: ResultExportFileFormat,
         displayDate: LocalDate? = null,
-        useDisplayDate: Boolean = false,
     ): RenderedResult? = when (request) {
         is ResultDownloadRequest.CurrentMatch -> {
             when (val buildResult = modelBuilder.buildMatch(request.input)) {
@@ -177,7 +173,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                         ResultExportFileFormat.PNG ->
                             (pngRenderer.render(
                                 model,
-                                if (useDisplayDate) displayDate else model.tournamentDate,
+                                displayDate,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {
@@ -200,7 +196,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                         ResultExportFileFormat.PNG ->
                             (pngRenderer.render(
                                 model,
-                                if (useDisplayDate) displayDate else model.tournamentDate,
+                                displayDate,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {

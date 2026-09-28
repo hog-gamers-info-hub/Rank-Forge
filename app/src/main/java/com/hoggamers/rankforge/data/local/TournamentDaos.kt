@@ -137,7 +137,6 @@ interface TournamentDao {
         SELECT
             tournaments.id,
             tournaments.name,
-            tournaments.date,
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,
@@ -164,7 +163,6 @@ interface TournamentDao {
         SELECT
             tournaments.id,
             tournaments.name,
-            tournaments.date,
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,

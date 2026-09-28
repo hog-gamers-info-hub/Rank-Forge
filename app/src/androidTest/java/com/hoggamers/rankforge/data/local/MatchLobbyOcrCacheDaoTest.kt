@@ -23,7 +23,7 @@ class MatchLobbyOcrCacheDaoTest {
             .allowMainThreadQueries()
             .build()
         database.tournamentDao().upsert(
-            TournamentEntity("tournament-1", "Cache Cup", "2026-08-16", "Organizer", "123", "DRAFT"),
+            TournamentEntity("tournament-1", "Cache Cup", "Organizer", "123", "DRAFT"),
         )
         database.matchDao().upsert(
             MatchEntity("match-1", "tournament-1", 1, "2026-08-16", "Bermuda", "DRAFT"),

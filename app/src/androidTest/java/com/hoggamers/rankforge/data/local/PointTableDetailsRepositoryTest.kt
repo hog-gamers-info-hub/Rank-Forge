@@ -79,7 +79,6 @@ class PointTableDetailsRepositoryTest {
     private fun tournament(id: String) = TournamentEntity(
         id = id,
         name = "Tournament",
-        date = "2026-09-28",
         stageName = "Stage",
         organizerContactNumber = "123",
         status = "CONFIRMED",

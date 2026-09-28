@@ -80,14 +80,12 @@ class TournamentCreationViewModelTest {
     @Test
     fun fieldUpdatesChangeStateAndMarkFormDirty() {
         viewModel.onTournamentNameChanged("Summer Cup")
-        viewModel.onTournamentDateChanged(today)
         viewModel.onStageNameChanged("Alex")
         viewModel.onOrganisationNameChanged("PointIQ")
         viewModel.onOrganizerContactNumberChanged("123")
 
         assertTrue(viewModel.uiState.value.isDirty)
         assertEquals("Summer Cup", viewModel.uiState.value.tournamentName)
-        assertEquals(today, viewModel.uiState.value.tournamentDate)
         assertEquals("Alex", viewModel.uiState.value.stageName)
         assertEquals("PointIQ", viewModel.uiState.value.organisationName)
         assertEquals("123", viewModel.uiState.value.organizerContactNumber)
@@ -96,7 +94,6 @@ class TournamentCreationViewModelTest {
     @Test
     fun organisationNameIsCarriedIntoCreatedTournament() = runTest {
         viewModel.onTournamentNameChanged("Summer Cup")
-        viewModel.onTournamentDateChanged(today)
         viewModel.onOrganisationNameChanged("  PointIQ  ")
 
         viewModel.submit()
@@ -113,7 +110,6 @@ class TournamentCreationViewModelTest {
 
         assertFalse(viewModel.uiState.value.isSubmitting)
         assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.NAME))
-        assertTrue(viewModel.uiState.value.validationErrors.containsKey(TournamentField.DATE))
         assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.STAGE_NAME))
         assertFalse(viewModel.uiState.value.validationErrors.containsKey(TournamentField.ORGANIZER_CONTACT_NUMBER))
         assertTrue(repository.records.isEmpty())
@@ -209,7 +205,6 @@ class TournamentCreationViewModelTest {
         repository.records += Tournament(
             id = existingTournamentId,
             name = "Existing",
-            date = today,
             stageName = "Existing organizer",
             organizerContactNumber = "",
             status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.DRAFT,
@@ -263,7 +258,6 @@ class TournamentCreationViewModelTest {
     @Test
     fun validRequiredFieldsSubmitWithBlankOptionalFields() = runTest {
         viewModel.onTournamentNameChanged("Summer Cup")
-        viewModel.onTournamentDateChanged(today)
 
         viewModel.submit()
         advanceUntilIdle()
@@ -435,7 +429,6 @@ class TournamentCreationViewModelTest {
 
     private fun fillValidForm() {
         viewModel.onTournamentNameChanged("Summer Cup")
-        viewModel.onTournamentDateChanged(today)
         viewModel.onStageNameChanged("Alex")
         viewModel.onOrganizerContactNumberChanged("123")
     }
@@ -443,7 +436,6 @@ class TournamentCreationViewModelTest {
     private fun createUseCase(repository: TournamentRepository) = CreateTournamentUseCase(
         repository = repository,
         authRepository = authRepository,
-        clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
     )
 
     private fun viewModel() = TournamentCreationViewModel(

@@ -285,7 +285,6 @@ class FreeDesignBitmapComposerTest {
     private fun matchModel() = com.hoggamers.rankforge.domain.export.MatchResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = "HOG Gamers",
-        tournamentDate = LocalDate.of(2026, 9, 3),
         matchNumber = 4,
         matchDate = LocalDate.of(2026, 8, 31),
         mapName = "Bermuda",
@@ -297,7 +296,6 @@ class FreeDesignBitmapComposerTest {
     ) = TournamentResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = "HOG Gamers",
-        tournamentDate = LocalDate.of(2026, 9, 3),
         finalizedMatchCount = 2,
         rows = rows,
     )

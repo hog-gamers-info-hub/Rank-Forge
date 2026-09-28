@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import java.time.Clock
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
@@ -23,8 +25,18 @@ enum class CreateNextMatchFailure {
 class CreateNextMatchUseCase(
     private val repository: TournamentRepository,
     private val authRepository: AuthRepository,
+    private val clock: Clock,
 ) {
-    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+    constructor(repository: TournamentRepository) : this(
+        repository,
+        SetupMutationUnauthenticatedAuthRepository,
+        Clock.systemDefaultZone(),
+    )
+
+    constructor(
+        repository: TournamentRepository,
+        authRepository: AuthRepository,
+    ) : this(repository, authRepository, Clock.systemDefaultZone())
 
     suspend operator fun invoke(tournamentId: String): CreateNextMatchResult {
         val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
@@ -51,7 +63,7 @@ class CreateNextMatchUseCase(
             id = UUID.randomUUID().toString(),
             tournamentId = tournamentId,
             matchNumber = nextMatchNumber,
-            date = tournament.date,
+            date = LocalDate.now(clock),
             mapName = "",
             status = MatchStatus.DRAFT,
         )

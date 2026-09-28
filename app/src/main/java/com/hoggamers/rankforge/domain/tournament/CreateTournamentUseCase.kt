@@ -2,15 +2,12 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
-import java.time.Clock
-import java.time.LocalDate
 import java.util.concurrent.CancellationException
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
 data class CreateTournamentInput(
     val name: String,
-    val date: LocalDate?,
     val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus = TournamentStatus.DRAFT,
@@ -19,7 +16,6 @@ data class CreateTournamentInput(
 
 enum class TournamentField {
     NAME,
-    DATE,
     STAGE_NAME,
     ORGANIZER_CONTACT_NUMBER,
     STATUS,
@@ -27,21 +23,14 @@ enum class TournamentField {
 
 enum class TournamentValidationError {
     REQUIRED,
-    PAST_DATE,
     UNSUPPORTED_STATUS,
 }
 
 fun validateCreateTournamentInput(
     input: CreateTournamentInput,
-    clock: Clock,
 ): Map<TournamentField, TournamentValidationError> = buildMap {
     if (input.name.isBlank()) {
         put(TournamentField.NAME, TournamentValidationError.REQUIRED)
-    }
-    if (input.date == null) {
-        put(TournamentField.DATE, TournamentValidationError.REQUIRED)
-    } else if (input.date.isBefore(LocalDate.now(clock))) {
-        put(TournamentField.DATE, TournamentValidationError.PAST_DATE)
     }
     if (input.status != TournamentStatus.DRAFT) {
         put(TournamentField.STATUS, TournamentValidationError.UNSUPPORTED_STATUS)
@@ -61,10 +50,9 @@ sealed interface CreateTournamentResult {
 class CreateTournamentUseCase(
     private val repository: TournamentRepository,
     private val authRepository: AuthRepository,
-    private val clock: Clock,
 ) {
     suspend operator fun invoke(input: CreateTournamentInput): CreateTournamentResult {
-        val errors = validateCreateTournamentInput(input, clock)
+        val errors = validateCreateTournamentInput(input)
         if (errors.isNotEmpty()) {
             return CreateTournamentResult.Invalid(errors)
         }
@@ -83,7 +71,6 @@ class CreateTournamentUseCase(
         val tournament = Tournament(
             id = UUID.randomUUID().toString(),
             name = input.name.trim(),
-            date = input.date!!,
             stageName = input.stageName.trim(),
             organizerContactNumber = input.organizerContactNumber.trim(),
             status = TournamentStatus.DRAFT,

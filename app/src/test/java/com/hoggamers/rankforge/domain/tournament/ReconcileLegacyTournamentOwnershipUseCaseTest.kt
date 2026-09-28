@@ -198,7 +198,6 @@ class ReconcileLegacyTournamentOwnershipUseCaseTest {
     private fun legacyTournament(id: String, owner: String? = null) = Tournament(
         id = id,
         name = "Tournament $id",
-        date = LocalDate.of(2026, 1, 1),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

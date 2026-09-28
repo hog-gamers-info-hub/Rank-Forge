@@ -145,7 +145,6 @@ class ResultExportFileNameTest {
         MatchResultExportModel(
             tournamentName = tournamentName,
             stageName = "Organizer",
-            tournamentDate = LocalDate.of(2026, 8, 20),
             matchNumber = matchNumber,
             matchDate = LocalDate.of(2026, 8, 20),
             mapName = "Bermuda",
@@ -158,7 +157,6 @@ class ResultExportFileNameTest {
         TournamentResultExportModel(
             tournamentName = tournamentName,
             stageName = "Organizer",
-            tournamentDate = LocalDate.of(2026, 8, 20),
             finalizedMatchCount = 2,
             rows = rows(),
         )

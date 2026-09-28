@@ -14,7 +14,6 @@ class ResultExportModelBuilder(
                 model = MatchResultExportModel(
                     tournamentName = input.tournament.name,
                     stageName = input.tournament.stageName,
-                    tournamentDate = input.tournament.date,
                     matchNumber = input.match.matchNumber,
                     matchDate = input.match.date,
                     mapName = input.match.mapName,
@@ -35,7 +34,6 @@ class ResultExportModelBuilder(
                     model = TournamentResultExportModel(
                         tournamentName = input.tournament.name,
                         stageName = input.tournament.stageName,
-                        tournamentDate = input.tournament.date,
                         finalizedMatchCount = result.rows.first().exportedMatchCount,
                         rows = result.rows.map { row -> row.toResultExportRow() },
                     ),

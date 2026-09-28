@@ -6,10 +6,6 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
-import java.time.Clock
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -22,7 +18,6 @@ import org.junit.Before
 import org.junit.Test
 
 class CreateTournamentUseCaseTest {
-    private val today = LocalDate.of(2026, 7, 24)
     private lateinit var repository: RecordingTournamentRepository
     private lateinit var authRepository: FakeAuthRepository
     private lateinit var useCase: CreateTournamentUseCase
@@ -34,7 +29,6 @@ class CreateTournamentUseCaseTest {
         useCase = CreateTournamentUseCase(
             repository = repository,
             authRepository = authRepository,
-            clock = Clock.fixed(today.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC),
         )
     }
 
@@ -72,31 +66,6 @@ class CreateTournamentUseCaseTest {
         val result = useCase(validInput().copy(name = "   "))
 
         assertInvalid(result, TournamentField.NAME)
-    }
-
-    @Test
-    fun missingDateFailsWithoutCreating() = runTest {
-        val result = useCase(validInput().copy(date = null))
-
-        assertInvalid(result, TournamentField.DATE)
-    }
-
-    @Test
-    fun pastDateFailsWithoutCreating() = runTest {
-        val result = useCase(validInput().copy(date = today.minusDays(1)))
-
-        assertInvalid(result, TournamentField.DATE)
-        assertEquals(TournamentValidationError.PAST_DATE, (result as CreateTournamentResult.Invalid).errors[TournamentField.DATE])
-    }
-
-    @Test
-    fun todayDateSucceeds() = runTest {
-        assertTrue(useCase(validInput().copy(date = today)) is CreateTournamentResult.Created)
-    }
-
-    @Test
-    fun futureDateSucceeds() = runTest {
-        assertTrue(useCase(validInput().copy(date = today.plusDays(1))) is CreateTournamentResult.Created)
     }
 
     @Test
@@ -165,7 +134,6 @@ class CreateTournamentUseCaseTest {
 
     private fun validInput() = CreateTournamentInput(
         name = "Summer Cup",
-        date = today,
         stageName = "Alex",
         organizerContactNumber = "1234567890",
     )

@@ -205,6 +205,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_21_22,
         RankForgeDatabase.MIGRATION_22_23,
         RankForgeDatabase.MIGRATION_23_24,
+        RankForgeDatabase.MIGRATION_24_25,
     ).build()
 
     @Provides
@@ -295,8 +296,7 @@ object TournamentDataProvidersModule {
     fun provideCreateTournamentUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-        clock: Clock,
-    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, authRepository, clock)
+    ): CreateTournamentUseCase = CreateTournamentUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -403,7 +403,8 @@ object TournamentDataProvidersModule {
     fun provideCreateNextMatchUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository)
+        clock: Clock,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository, clock)
 
     @Provides
     @Singleton

@@ -887,7 +887,6 @@ class AuthViewModelTest {
             com.hoggamers.rankforge.domain.tournament.Tournament(
                 id = "local-id",
                 name = "Local Cup",
-                date = LocalDate.of(2026, 7, 24),
                 stageName = "Organizer",
                 organizerContactNumber = "123",
                 status = com.hoggamers.rankforge.domain.tournament.TournamentStatus.DRAFT,
@@ -1296,7 +1295,6 @@ class AuthViewModelTest {
                     Tournament(
                         id = "legacy-tournament",
                         name = "Legacy",
-                        date = LocalDate.of(2026, 1, 1),
                         stageName = "Organizer",
                         organizerContactNumber = "123",
                         status = TournamentStatus.DRAFT,

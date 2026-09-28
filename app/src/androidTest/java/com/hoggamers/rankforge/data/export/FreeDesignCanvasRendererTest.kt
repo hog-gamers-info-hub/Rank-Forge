@@ -411,7 +411,6 @@ class FreeDesignCanvasRendererTest {
     private fun matchModel() = MatchResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = "HOG Gamers",
-        tournamentDate = LocalDate.of(2026, 9, 3),
         matchNumber = 4,
         matchDate = LocalDate.of(2026, 8, 31),
         mapName = "Bermuda",
@@ -425,7 +424,6 @@ class FreeDesignCanvasRendererTest {
     ) = TournamentResultExportModel(
         tournamentName = tournamentName,
         stageName = stageName,
-        tournamentDate = LocalDate.of(2026, 9, 3),
         finalizedMatchCount = 2,
         rows = rows,
     )

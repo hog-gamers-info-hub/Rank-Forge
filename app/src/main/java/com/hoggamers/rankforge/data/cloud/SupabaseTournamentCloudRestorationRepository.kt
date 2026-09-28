@@ -49,7 +49,6 @@ private fun TournamentCloudRestorePayload.toUploadPayload() = TournamentUploadPa
     id = id,
     ownerId = ownerId,
     name = name,
-    tournamentDate = tournamentDate,
     stageName = stageName,
     organizerContact = organizerContact,
     status = status,

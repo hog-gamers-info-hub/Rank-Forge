@@ -674,7 +674,6 @@ class RoomTournamentRepositoryLocalDeletionTest {
     private fun tournament(id: String) = Tournament(
         id = id,
         name = "Test Tournament",
-        date = LocalDate.of(2026, 8, 21),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

@@ -37,7 +37,6 @@ class TournamentMappersTest {
         val summary = TournamentSummaryProjection(
             id = "tournament-1",
             name = "Summer Cup",
-            date = "2026-08-23",
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = "DRAFT",
@@ -139,7 +138,6 @@ class TournamentMappersTest {
     private fun tournament(ownerUserId: String?): Tournament = Tournament(
         id = "tournament-1",
         name = "Summer Cup",
-        date = LocalDate.of(2026, 8, 23),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,

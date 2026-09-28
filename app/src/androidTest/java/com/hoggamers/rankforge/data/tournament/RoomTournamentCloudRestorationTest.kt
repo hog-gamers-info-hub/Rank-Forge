@@ -274,7 +274,6 @@ class RoomTournamentCloudRestorationTest {
     private fun tournament(id: String, name: String, status: TournamentStatus) = Tournament(
         id = id,
         name = name,
-        date = LocalDate.of(2026, 7, 24),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = status,

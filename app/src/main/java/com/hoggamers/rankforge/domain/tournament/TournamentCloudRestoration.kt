@@ -7,7 +7,6 @@ import com.hoggamers.rankforge.domain.sync.RevisionConflict
 data class TournamentCloudRestorationSummary(
     val id: String,
     val name: String,
-    val date: String,
     val stageName: String,
     val status: String,
 )

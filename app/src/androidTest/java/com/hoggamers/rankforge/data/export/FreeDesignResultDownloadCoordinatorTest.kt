@@ -485,7 +485,6 @@ class FreeDesignResultDownloadCoordinatorTest {
     private fun tournament() = Tournament(
         id = "tournament-id",
         name = "Tournament",
-        date = LocalDate.of(2026, 9, 5),
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = TournamentStatus.CONFIRMED,
