@@ -51,7 +51,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -576,32 +575,23 @@ private fun PointIqTournamentHero(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(6.dp))
+            val stageName = tournament.stageName.trim()
+            if (stageName.isNotEmpty()) {
+                Text(
+                    text = stageName,
+                    color = PointIqDetailsHeader.copy(alpha = 0.82f),
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(5.dp))
+            }
             Text(
                 text = stringResource(R.string.tournament_details_game_mode_presentation),
                 color = PointIqDetailsSubtitle,
-                fontSize = 17.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                lineHeight = 21.sp,
             )
-            Spacer(modifier = Modifier.height(5.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.DateRange,
-                    contentDescription = stringResource(R.string.tournament_date_label),
-                    tint = PointIqDetailsSubtitle,
-                    modifier = Modifier.size(19.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(
-                        R.string.tournament_details_hero_date,
-                        tournament.date.format(detailsDateFormatter),
-                    ),
-                    color = PointIqDetailsSubtitle,
-                    fontSize = 16.sp,
-                    lineHeight = 21.sp,
-                )
-            }
         }
     }
 }
