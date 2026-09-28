@@ -17,7 +17,6 @@ data class TournamentUploadPayload(
     @SerialName("organizer_contact") val organizerContact: String,
     val status: String,
     val revision: Int? = null,
-    @SerialName("organization_name") val organizationName: String? = null,
 )
 
 @Serializable
@@ -103,7 +102,6 @@ object TournamentCloudUploadMapper {
                     stageName = snapshot.tournament.stageName,
                     organizerContact = snapshot.tournament.organizerContactNumber,
                     status = "draft",
-                    organizationName = snapshot.tournament.organizationName,
                 ),
                 teamSlots = slotPayloads,
                 players = playerPayloads,

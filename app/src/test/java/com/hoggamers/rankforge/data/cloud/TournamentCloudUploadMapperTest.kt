@@ -25,7 +25,6 @@ class TournamentCloudUploadMapperTest {
         val payloads = (result as TournamentCloudUploadMappingResult.Success).payloads
         assertEquals(TENANT_ID, payloads.tournament.id)
         assertEquals(OWNER_ID, payloads.tournament.ownerId)
-        assertEquals("PointIQ", payloads.tournament.organizationName)
         assertEquals("Organizer", payloads.tournament.stageName)
         assertEquals("draft", payloads.tournament.status)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), payloads.teamSlots.map { it.slotNumber })
@@ -34,12 +33,13 @@ class TournamentCloudUploadMapperTest {
     }
 
     @Test
-    fun serializedTournamentPayloadDoesNotContainTournamentDate() {
+    fun serializedTournamentPayloadDoesNotContainRemovedTournamentFields() {
         val result = TournamentCloudUploadMapper.map(snapshot(), OWNER_ID) as TournamentCloudUploadMappingResult.Success
 
         val json = Json.encodeToString(result.payloads.tournament)
 
         assertFalse(json.contains("tournament_date"))
+        assertFalse(json.contains("organization_name"))
     }
 
     @Test
@@ -99,7 +99,6 @@ class TournamentCloudUploadMapperTest {
             stageName = "Organizer",
             organizerContactNumber = "123",
             status = TournamentStatus.DRAFT,
-            organizationName = "PointIQ",
         ),
         slots = listOf(
             TeamSlot.create(TENANT_ID, 1, "Alpha"),

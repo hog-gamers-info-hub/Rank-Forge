@@ -7,5 +7,4 @@ data class Tournament(
     val organizerContactNumber: String,
     val status: TournamentStatus,
     val ownerUserId: String? = null,
-    val organizationName: String? = null,
 )
