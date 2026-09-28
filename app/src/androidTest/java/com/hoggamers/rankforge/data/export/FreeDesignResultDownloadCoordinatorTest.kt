@@ -25,13 +25,113 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FreeDesignResultDownloadCoordinatorTest {
     @Test
+    fun explicitDisplayDateReachesCurrentMatchComposer() {
+        var receivedDisplayDate: LocalDate? = null
+        val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val coordinator = coordinator(
+            composeMatch = { _, _, displayDate ->
+                receivedDisplayDate = displayDate
+                FreeDesignBitmapComposeResult.Success(bitmap)
+            },
+            saveFile = { _, displayName, _ ->
+                ResultFileSaveResult.Success(Uri.EMPTY, displayName)
+            },
+        )
+
+        runBlocking {
+            coordinator.execute(
+                request = currentMatchRequest(),
+                displayDate = LocalDate.of(2026, 9, 28),
+            )
+        }
+
+        assertEquals(LocalDate.of(2026, 9, 28), receivedDisplayDate)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
+    fun explicitDisplayDateReachesWholeTournamentComposer() {
+        var receivedDisplayDate: LocalDate? = null
+        val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val coordinator = coordinator(
+            composeTournament = { _, _, displayDate ->
+                receivedDisplayDate = displayDate
+                FreeDesignBitmapComposeResult.Success(bitmap)
+            },
+            saveFile = { _, displayName, _ ->
+                ResultFileSaveResult.Success(Uri.EMPTY, displayName)
+            },
+        )
+
+        runBlocking {
+            coordinator.execute(
+                request = wholeTournamentRequest(),
+                displayDate = LocalDate.of(2026, 9, 28),
+            )
+        }
+
+        assertEquals(LocalDate.of(2026, 9, 28), receivedDisplayDate)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
+    fun nullDisplayDateRemainsNullForCurrentMatchComposer() {
+        var receivedDisplayDate: LocalDate? = null
+        val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val coordinator = coordinator(
+            composeMatch = { _, _, displayDate ->
+                receivedDisplayDate = displayDate
+                FreeDesignBitmapComposeResult.Success(bitmap)
+            },
+            saveFile = { _, displayName, _ ->
+                ResultFileSaveResult.Success(Uri.EMPTY, displayName)
+            },
+        )
+
+        runBlocking {
+            coordinator.execute(
+                request = currentMatchRequest(),
+                displayDate = null,
+            )
+        }
+
+        assertTrue(receivedDisplayDate == null)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
+    fun nullDisplayDateRemainsNullForWholeTournamentComposer() {
+        var receivedDisplayDate: LocalDate? = null
+        val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val coordinator = coordinator(
+            composeTournament = { _, _, displayDate ->
+                receivedDisplayDate = displayDate
+                FreeDesignBitmapComposeResult.Success(bitmap)
+            },
+            saveFile = { _, displayName, _ ->
+                ResultFileSaveResult.Success(Uri.EMPTY, displayName)
+            },
+        )
+
+        runBlocking {
+            coordinator.execute(
+                request = wholeTournamentRequest(),
+                displayDate = null,
+            )
+        }
+
+        assertTrue(receivedDisplayDate == null)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
     fun currentMatchBuildsAndSavesFreeDesignPngWithMatchFilename() {
         var receivedRows = 0
         var receivedTemplateId: String? = null
         var savingCalls = 0
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeMatch = { model, template ->
+            composeMatch = { model, template, _ ->
                 receivedRows = model.rows.size
                 receivedTemplateId = template.id
                 FreeDesignBitmapComposeResult.Success(bitmap)
@@ -78,7 +178,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var receivedTemplateId: String? = null
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeTournament = { model, template ->
+            composeTournament = { model, template, _ ->
                 receivedRows = model.rows.size
                 receivedTemplateId = template.id
                 FreeDesignBitmapComposeResult.Success(bitmap)
@@ -115,7 +215,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var saves = 0
         var savingCalls = 0
         val coordinator = coordinator(
-            composeMatch = { _, _ ->
+            composeMatch = { _, _, _ ->
                 FreeDesignBitmapComposeResult.Failure(FreeDesignBitmapComposeFailure.RENDER_FAILED)
             },
             saveFile = { _, _, _ ->
@@ -182,7 +282,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var receivedTemplateId: String? = null
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeMatch = { _, template ->
+            composeMatch = { _, template, _ ->
                 receivedTemplateId = template.id
                 FreeDesignBitmapComposeResult.Success(bitmap)
             },
@@ -207,7 +307,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var receivedTemplate: FreeDesignTemplate? = null
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeMatch = { _, template ->
+            composeMatch = { _, template, _ ->
                 receivedTemplate = template
                 FreeDesignBitmapComposeResult.Success(bitmap)
             },
@@ -241,7 +341,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var receivedTemplate: FreeDesignTemplate? = null
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeTournament = { _, template ->
+            composeTournament = { _, template, _ ->
                 receivedTemplate = template
                 FreeDesignBitmapComposeResult.Success(bitmap)
             },
@@ -275,7 +375,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var composed = false
         var saves = 0
         val coordinator = coordinator(
-            composeMatch = { _, _ ->
+            composeMatch = { _, _, _ ->
                 composed = true
                 FreeDesignBitmapComposeResult.Failure(FreeDesignBitmapComposeFailure.RENDER_FAILED)
             },
@@ -305,7 +405,7 @@ class FreeDesignResultDownloadCoordinatorTest {
         var savingCalls = 0
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeMatch = { _, _ -> FreeDesignBitmapComposeResult.Success(bitmap) },
+            composeMatch = { _, _, _ -> FreeDesignBitmapComposeResult.Success(bitmap) },
             saveFile = { _, _, _ ->
                 ResultFileSaveResult.Failure(ResultFileSaveFailure.WRITE_FAILED)
             },
@@ -330,7 +430,7 @@ class FreeDesignResultDownloadCoordinatorTest {
     fun saveCancellationIsPropagated() {
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
-            composeMatch = { _, _ -> FreeDesignBitmapComposeResult.Success(bitmap) },
+            composeMatch = { _, _, _ -> FreeDesignBitmapComposeResult.Success(bitmap) },
             saveFile = { _, _, _ -> throw CancellationException("cancelled") },
         )
 
@@ -346,10 +446,10 @@ class FreeDesignResultDownloadCoordinatorTest {
     }
 
     private fun coordinator(
-        composeMatch: (com.hoggamers.rankforge.domain.export.MatchResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult = { _, _ ->
+        composeMatch: (com.hoggamers.rankforge.domain.export.MatchResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult = { _, _, _ ->
             FreeDesignBitmapComposeResult.Failure(FreeDesignBitmapComposeFailure.RENDER_FAILED)
         },
-        composeTournament: (com.hoggamers.rankforge.domain.export.TournamentResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult = { _, _ ->
+        composeTournament: (com.hoggamers.rankforge.domain.export.TournamentResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult = { _, _, _ ->
             FreeDesignBitmapComposeResult.Failure(FreeDesignBitmapComposeFailure.RENDER_FAILED)
         },
         templateProvider: (String) -> FreeDesignTemplate? = {

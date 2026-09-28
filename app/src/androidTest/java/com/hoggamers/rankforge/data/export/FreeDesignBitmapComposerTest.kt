@@ -41,13 +41,33 @@ class FreeDesignBitmapComposerTest {
     private val composer = FreeDesignBitmapComposer(context.assets)
 
     @Test
-    fun bundledAssetComposesToExpectedDistinctBitmap() {
-        val result = composer.compose(tournamentModel(), template)
+    fun nullDisplayDateComposesToExpectedDistinctBitmap() {
+        val result = composer.compose(
+            tournamentModel(),
+            template,
+            displayDate = null,
+        )
         val composed = (result as FreeDesignBitmapComposeResult.Success).bitmap
         try {
             assertEquals(1254, composed.width)
             assertEquals(1254, composed.height)
             assertEquals(Bitmap.Config.ARGB_8888, composed.config)
+        } finally {
+            composed.recycle()
+        }
+    }
+
+    @Test
+    fun explicitDisplayDateComposesAtTheSameTemplateDimensions() {
+        val result = composer.compose(
+            tournamentModel(),
+            template,
+            LocalDate.of(2026, 9, 28),
+        )
+        val composed = (result as FreeDesignBitmapComposeResult.Success).bitmap
+        try {
+            assertEquals(1254, composed.width)
+            assertEquals(1254, composed.height)
         } finally {
             composed.recycle()
         }

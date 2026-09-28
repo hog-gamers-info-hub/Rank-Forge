@@ -275,6 +275,53 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion23CreatesPointTableDetailsWithoutRewritingTournamentData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 23).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, date, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis, owner_user_id, organization_name) VALUES " +
+                    "('legacy-point-table', 'Legacy Cup', '2026-08-24', 'Stage One', '123', " +
+                    "'DRAFT', 7, 1800000000000, 'user-a', 'Legacy Org')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            24,
+            true,
+            RankForgeDatabase.MIGRATION_23_24,
+        )
+
+        migrated.query(
+            "SELECT id, name, organization_name FROM tournaments WHERE id = 'legacy-point-table'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("legacy-point-table", cursor.getString(0))
+            assertEquals("Legacy Cup", cursor.getString(1))
+            assertEquals("Legacy Org", cursor.getString(2))
+        }
+        migrated.query(
+            "PRAGMA table_info(point_table_details)",
+        ).use { cursor ->
+            var hasTournamentId = false
+            var hasOrganizationName = false
+            var hasDisplayDate = false
+            while (cursor.moveToNext()) {
+                when (cursor.getString(cursor.getColumnIndexOrThrow("name"))) {
+                    "tournament_id" -> hasTournamentId = true
+                    "organization_name" -> hasOrganizationName = true
+                    "display_date" -> hasDisplayDate = true
+                }
+            }
+            assertTrue(hasTournamentId)
+            assertTrue(hasOrganizationName)
+            assertTrue(hasDisplayDate)
+        }
+        migrated.close()
+    }
+
+    @Test
     fun migrationFromVersion18QuarantinesLegacyQueueRowsWithoutDroppingMetadata() {
         migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 18).use { database ->
             database.execSQL(

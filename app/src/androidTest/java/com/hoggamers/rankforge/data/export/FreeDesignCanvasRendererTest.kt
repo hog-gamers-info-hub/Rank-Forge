@@ -31,7 +31,12 @@ class FreeDesignCanvasRendererTest {
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(canvas, tournamentModel(), template),
+                renderer.render(
+                    canvas,
+                    tournamentModel(),
+                    template,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                ),
             )
             assertTrue(canvas.texts.any { it.text == "Champions Cup 2026" })
             assertTrue(canvas.texts.any { it.text == "HOG Gamers" })
@@ -45,15 +50,59 @@ class FreeDesignCanvasRendererTest {
     }
 
     @Test
-    fun validMatchModelUsesMatchHeadingAndTournamentDate() {
+    fun nullDisplayDateUsesMatchHeadingWithoutTournamentOrMatchDate() {
         val canvas = RecordingCanvas()
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
                 renderer.render(canvas, matchModel(), template),
             )
-            assertTrue(canvas.texts.any { it.text == "Match 4 - 03 Sep 2026" })
+            assertTrue(canvas.texts.any { it.text == "Match 4" })
+            assertFalse(canvas.texts.any { it.text == "Match 4 -" })
+            assertFalse(canvas.texts.any { it.text == "03 Sep 2026" })
             assertFalse(canvas.texts.any { it.text == "31 Aug 2026" })
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun explicitDisplayDateReplacesTournamentDateForOverallAndMatch() {
+        val displayDate = LocalDate.of(2026, 9, 28)
+        val overallCanvas = RecordingCanvas()
+        val matchCanvas = RecordingCanvas()
+        try {
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(overallCanvas, tournamentModel(), template, displayDate),
+            )
+            assertTrue(overallCanvas.texts.any { it.text == "Overall Standings - 28 Sep 2026" })
+            assertFalse(overallCanvas.texts.any { it.text == "Overall Standings - 03 Sep 2026" })
+
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(matchCanvas, matchModel(), template, displayDate),
+            )
+            assertTrue(matchCanvas.texts.any { it.text == "Match 4 - 28 Sep 2026" })
+            assertFalse(matchCanvas.texts.any { it.text == "Match 4 - 03 Sep 2026" })
+            assertFalse(matchCanvas.texts.any { it.text == "31 Aug 2026" })
+        } finally {
+            overallCanvas.recycle()
+            matchCanvas.recycle()
+        }
+    }
+
+    @Test
+    fun nullDisplayDateOmitsOverallDateAndTrailingSeparator() {
+        val canvas = RecordingCanvas()
+        try {
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(canvas, tournamentModel(), template, displayDate = null),
+            )
+            assertTrue(canvas.texts.any { it.text == "Overall Standings" })
+            assertFalse(canvas.texts.any { it.text == "Overall Standings -" })
+            assertFalse(canvas.texts.any { it.text == "03 Sep 2026" })
         } finally {
             canvas.recycle()
         }
@@ -65,7 +114,12 @@ class FreeDesignCanvasRendererTest {
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(canvas, tournamentModel(stageName = "  "), template),
+                renderer.render(
+                    canvas,
+                    tournamentModel(stageName = "  "),
+                    template,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                ),
             )
             assertFalse(canvas.texts.any { it.text == "HOG Gamers" })
             assertTrue(canvas.texts.any { it.text == "Overall Standings - 03 Sep 2026" })
@@ -162,7 +216,12 @@ class FreeDesignCanvasRendererTest {
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(canvas, tournamentModel(), template),
+                renderer.render(
+                    canvas,
+                    tournamentModel(),
+                    template,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                ),
             )
             FreeDesignHeaderField.entries.forEach { field ->
                 val text = when (field) {
@@ -248,7 +307,12 @@ class FreeDesignCanvasRendererTest {
         try {
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(overallCanvas, tournamentModel(), template2),
+                renderer.render(
+                    overallCanvas,
+                    tournamentModel(),
+                    template2,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                ),
             )
             assertEquals(
                 template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY,
@@ -268,7 +332,12 @@ class FreeDesignCanvasRendererTest {
 
             assertEquals(
                 FreeDesignCanvasRenderResult.Success,
-                renderer.render(matchCanvas, matchModel(), template2),
+                renderer.render(
+                    matchCanvas,
+                    matchModel(),
+                    template2,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                ),
             )
             assertEquals(
                 template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY,

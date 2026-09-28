@@ -21,6 +21,8 @@ import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.local.PointTableDetails
+import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -36,15 +38,188 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadResultViewModelTest {
+    @Test
+    fun pointTableDateOverridesFreeDesignPreviewAndApplyRefreshesIt() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+
+        val fallbackPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { it is DownloadResultPreviewState.ResultImage }
+        } as DownloadResultPreviewState.ResultImage
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(date = LocalDate.of(2026, 9, 28)),
+        )
+
+        val overriddenPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first {
+                it is DownloadResultPreviewState.ResultImage &&
+                    !it.pngBytes.contentEquals(fallbackPreview.pngBytes)
+            }
+        }
+
+        assertTrue(overriddenPreview is DownloadResultPreviewState.ResultImage)
+        assertEquals(LocalDate.of(2026, 9, 28), viewModel.pointTableDetails.value.date)
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(),
+        )
+
+        val clearedPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first {
+                it is DownloadResultPreviewState.ResultImage &&
+                    !it.pngBytes.contentEquals((overriddenPreview as DownloadResultPreviewState.ResultImage).pngBytes)
+            }
+        }
+
+        assertTrue(clearedPreview is DownloadResultPreviewState.ResultImage)
+        assertTrue(viewModel.pointTableDetails.value.date == null)
+    }
+
+    @Test
+    fun restoredPointTableDateReachesFinalFreeDesignDownload() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        repository.savePointTableDetails(
+            PointTableDetails(
+                tournamentId = "tournament-id",
+                displayDate = LocalDate.of(2026, 9, 28),
+            ),
+        )
+        val receivedDisplayDate = CompletableDeferred<LocalDate?>()
+        val coordinator = object : FreeDesignResultDownloadCoordinator {
+            override suspend fun execute(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                templateId: String,
+                onSaving: suspend () -> Unit,
+                displayDate: LocalDate?,
+            ): ResultDownloadExecutionResult {
+                receivedDisplayDate.complete(displayDate)
+                return ResultDownloadExecutionResult.Failure(
+                    ResultDownloadFailure.GENERATION_FAILED,
+                )
+            }
+        }
+        val viewModel = createViewModel(
+            freeDesignCoordinator = coordinator,
+            pointTableDetailsRepository = repository,
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.date == LocalDate.of(2026, 9, 28) }
+        }
+        viewModel.selectFreeDesignTemplate(
+            tournamentId = "tournament-id",
+            templateId = FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID,
+        )
+        assertEquals(LocalDate.of(2026, 9, 28), viewModel.pointTableDetails.value.date)
+
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+
+        assertEquals(
+            LocalDate.of(2026, 9, 28),
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedDisplayDate.await() },
+        )
+    }
+
+    @Test
+    fun nullPointTableDateRemainsNullThroughTemplateSwitchAndFinalDownload() = runBlocking {
+        val receivedDisplayDate = CompletableDeferred<LocalDate?>()
+        val coordinator = object : FreeDesignResultDownloadCoordinator {
+            override suspend fun execute(
+                request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
+                templateId: String,
+                onSaving: suspend () -> Unit,
+                displayDate: LocalDate?,
+            ): ResultDownloadExecutionResult {
+                receivedDisplayDate.complete(displayDate)
+                return ResultDownloadExecutionResult.Failure(
+                    ResultDownloadFailure.GENERATION_FAILED,
+                )
+            }
+        }
+        val viewModel = createViewModel(freeDesignCoordinator = coordinator)
+        viewModel.load("tournament-id")
+        viewModel.selectFreeDesignTemplate(
+            tournamentId = "tournament-id",
+            templateId = FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID,
+        )
+
+        assertTrue(viewModel.pointTableDetails.value.date == null)
+
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+
+        assertTrue(
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedDisplayDate.await() } == null,
+        )
+    }
+
+    @Test
+    fun pointTableDetailsApplyIsTrimmedAndRestoredForTheSameTournament() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        viewModel.load("tournament-id")
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(
+                organizationName = "  HOG Gamers  ",
+                date = LocalDate.of(2026, 9, 28),
+            ),
+        )
+
+        assertEquals(
+            PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationName = "HOG Gamers",
+                displayDate = LocalDate.of(2026, 9, 28),
+            ),
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+                repository.saved.first { it?.organizationName == "HOG Gamers" }
+            },
+        )
+
+        val reloadedViewModel = createViewModel(pointTableDetailsRepository = repository)
+        reloadedViewModel.load("tournament-id")
+        assertEquals(
+            PointTableDetailsUiState(
+                organizationName = "HOG Gamers",
+                date = LocalDate.of(2026, 9, 28),
+            ),
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+                reloadedViewModel.pointTableDetails.first {
+                    it.organizationName == "HOG Gamers"
+                }
+            },
+        )
+    }
+
     @Test
     fun templateSelectionDefaultsToGoldAndRejectsUnknownIds() {
         val viewModel = createViewModel()
@@ -53,7 +228,7 @@ class DownloadResultViewModelTest {
             viewModel.selectedFreeDesignTemplateId.value,
         )
         assertEquals(
-            listOf("Gold", "Blue Neon"),
+            FreeDesignTemplateRegistry.all.map { it.displayName },
             viewModel.uiState.value.freeDesignOptions.map { it.displayName },
         )
 
@@ -84,6 +259,7 @@ class DownloadResultViewModelTest {
                 request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
                 templateId: String,
                 onSaving: suspend () -> Unit,
+                displayDate: LocalDate?,
             ): ResultDownloadExecutionResult {
                 receivedTemplateId.complete(templateId)
                 return ResultDownloadExecutionResult.Failure(
@@ -111,6 +287,8 @@ class DownloadResultViewModelTest {
     private fun createViewModel(
         freeDesignCoordinator: FreeDesignResultDownloadCoordinator =
             NoOpFreeDesignResultDownloadCoordinator,
+        pointTableDetailsRepository: PointTableDetailsRepository =
+            FakePointTableDetailsRepository(),
     ): DownloadResultViewModel {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return DownloadResultViewModel(
@@ -136,7 +314,19 @@ class DownloadResultViewModelTest {
             freeDesignResultDownloadCoordinator = freeDesignCoordinator,
             customDesignResultDownloadCoordinator = NoOpCustomDesignResultDownloadCoordinator,
             resultDocumentWriter = NoOpResultDocumentWriter,
+            pointTableDetailsRepository = pointTableDetailsRepository,
         )
+    }
+
+    private class FakePointTableDetailsRepository : PointTableDetailsRepository {
+        val saved = kotlinx.coroutines.flow.MutableStateFlow<PointTableDetails?>(null)
+
+        override suspend fun getPointTableDetails(tournamentId: String): PointTableDetails? =
+            saved.value?.takeIf { it.tournamentId == tournamentId }
+
+        override suspend fun savePointTableDetails(details: PointTableDetails) {
+            saved.value = details
+        }
     }
 
     private fun tournament() = Tournament(

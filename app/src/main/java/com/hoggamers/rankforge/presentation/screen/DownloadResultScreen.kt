@@ -112,6 +112,8 @@ import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.data.export.ResultPngRenderResult
 import com.hoggamers.rankforge.data.export.ResultPngRenderer
 import com.hoggamers.rankforge.data.export.ResultDownloadRequest
+import com.hoggamers.rankforge.data.local.PointTableDetails
+import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchResultExportModelBuildResult
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
@@ -202,6 +204,11 @@ data class PointTableDetailsUiState(
     val date: LocalDate? = null,
 )
 
+private fun PointTableDetails.toUiState(): PointTableDetailsUiState = PointTableDetailsUiState(
+    organizationName = organizationName,
+    date = displayDate,
+)
+
 sealed interface DownloadResultSelection {
     val exportScope: ResultDownloadScope
 
@@ -265,6 +272,7 @@ class DownloadResultViewModel @Inject constructor(
     private val freeDesignResultDownloadCoordinator: FreeDesignResultDownloadCoordinator,
     private val customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator,
     private val resultDocumentWriter: ResultDocumentWriter,
+    private val pointTableDetailsRepository: PointTableDetailsRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadResultUiState())
     val uiState: StateFlow<DownloadResultUiState> = _uiState.asStateFlow()
@@ -283,6 +291,8 @@ class DownloadResultViewModel @Inject constructor(
 
     private val _downloadState = MutableStateFlow<DownloadResultDownloadState>(DownloadResultDownloadState.Idle)
     val downloadState: StateFlow<DownloadResultDownloadState> = _downloadState.asStateFlow()
+    private val _pointTableDetails = MutableStateFlow(PointTableDetailsUiState())
+    val pointTableDetails: StateFlow<PointTableDetailsUiState> = _pointTableDetails.asStateFlow()
     private val shareEventsChannel = Channel<ResultShareRequest>(Channel.BUFFERED)
     val shareEvents: Flow<ResultShareRequest> = shareEventsChannel.receiveAsFlow()
 
@@ -294,11 +304,26 @@ class DownloadResultViewModel @Inject constructor(
     private var previewJob: kotlinx.coroutines.Job? = null
     private var downloadJob: kotlinx.coroutines.Job? = null
     private var deleteJob: kotlinx.coroutines.Job? = null
+    private var pointTableDetailsLoadJob: kotlinx.coroutines.Job? = null
     private var pendingDocument: PendingDocument? = null
 
     fun load(tournamentId: String) {
         if (loadedTournamentId == tournamentId) return
         loadedTournamentId = tournamentId
+        _pointTableDetails.value = PointTableDetailsUiState()
+        pointTableDetailsLoadJob?.cancel()
+        pointTableDetailsLoadJob = viewModelScope.launch {
+            val details = pointTableDetailsRepository.getPointTableDetails(tournamentId)
+            if (loadedTournamentId == tournamentId) {
+                _pointTableDetails.value = details?.toUiState() ?: PointTableDetailsUiState()
+                if (
+                    selectedTournamentId == tournamentId &&
+                    selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                ) {
+                    select(tournamentId, selectedResult, DownloadResultDesignType.FREE_DESIGN)
+                }
+            }
+        }
         viewModelScope.launch {
             observeMatches(tournamentId).collect { matches ->
                 _uiState.value = DownloadResultUiState(
@@ -311,6 +336,30 @@ class DownloadResultViewModel @Inject constructor(
                             )
                         },
                 )
+            }
+        }
+    }
+
+    fun savePointTableDetails(
+        tournamentId: String,
+        details: PointTableDetailsUiState,
+    ) {
+        if (loadedTournamentId != tournamentId) return
+        val normalized = details.copy(organizationName = details.organizationName.trim())
+        _pointTableDetails.value = normalized
+        viewModelScope.launch {
+            pointTableDetailsRepository.savePointTableDetails(
+                PointTableDetails(
+                    tournamentId = tournamentId,
+                    organizationName = normalized.organizationName,
+                    displayDate = normalized.date,
+                ),
+            )
+            if (
+                selectedTournamentId == tournamentId &&
+                selectedDesign == DownloadResultDesignType.FREE_DESIGN
+            ) {
+                select(tournamentId, selectedResult, DownloadResultDesignType.FREE_DESIGN)
             }
         }
     }
@@ -428,6 +477,7 @@ class DownloadResultViewModel @Inject constructor(
                                 request = request,
                                 templateId = selectedFreeDesignTemplateId.value,
                                 onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
+                                displayDate = pointTableDetails.value.date,
                             )
                         DownloadResultDesignType.MY_DESIGN ->
                             customDesignId?.let { id ->
@@ -566,13 +616,21 @@ class DownloadResultViewModel @Inject constructor(
                 is ResultDownloadRequest.CurrentMatch ->
                     when (val result = builder.buildMatch(request.input)) {
                         is MatchResultExportModelBuildResult.Success ->
-                            (freeDesignBitmapComposer.compose(result.model, template) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                            (freeDesignBitmapComposer.compose(
+                                result.model,
+                                template,
+                                pointTableDetails.value.date,
+                            ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
                         is MatchResultExportModelBuildResult.Failure -> null
                     }
                 is ResultDownloadRequest.WholeTournament ->
                     when (val result = builder.buildTournament(request.input)) {
                         is TournamentResultExportModelBuildResult.Success ->
-                            (freeDesignBitmapComposer.compose(result.model, template) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                            (freeDesignBitmapComposer.compose(
+                                result.model,
+                                template,
+                                pointTableDetails.value.date,
+                            ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
                         is TournamentResultExportModelBuildResult.Failure -> null
                     }
             } ?: return@withContext null
@@ -662,6 +720,7 @@ fun DownloadResultRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val previewState by viewModel.previewState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+    val pointTableDetails by viewModel.pointTableDetails.collectAsStateWithLifecycle()
     val hasSavedCustomDesign by viewModel.hasSavedCustomDesign.collectAsStateWithLifecycle()
     val selectedFreeDesignTemplateId by viewModel.selectedFreeDesignTemplateId.collectAsStateWithLifecycle()
     ResultShareEventEffect(shareEvents = viewModel.shareEvents)
@@ -715,6 +774,7 @@ fun DownloadResultRoute(
         selectedFreeDesignTemplateId = selectedFreeDesignTemplateId,
         previewState = previewState,
         downloadState = downloadState,
+        pointTableDetails = pointTableDetails,
         hasSavedCustomDesign = hasSavedCustomDesign,
         onResultSelected = { selection, design ->
             viewModel.select(tournamentId, selection, design)
@@ -739,6 +799,9 @@ fun DownloadResultRoute(
             }
         },
         onFreeDesignSettingsClick = onFreeDesignSettingsClick,
+        onPointTableDetailsApply = { details ->
+            viewModel.savePointTableDetails(tournamentId, details)
+        },
         onDeleteSavedCustomDesign = viewModel::deleteSavedCustomDesign,
         onDownload = { selection, design ->
             viewModel.requestDownload(tournamentId, selection, design)
@@ -763,10 +826,12 @@ fun DownloadResultScreen(
     previewState: DownloadResultPreviewState = DownloadResultPreviewState.Idle,
     downloadState: DownloadResultDownloadState = DownloadResultDownloadState.Idle,
     hasSavedCustomDesign: Boolean = false,
+    pointTableDetails: PointTableDetailsUiState = PointTableDetailsUiState(),
     onResultSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onDesignSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onFreeDesignTemplateSelected: (String) -> Unit = {},
     onFreeDesignSettingsClick: () -> Unit = {},
+    onPointTableDetailsApply: (PointTableDetailsUiState) -> Unit = {},
     onImportYourDesign: (DownloadResultSelection) -> Unit = {},
     onDeleteSavedCustomDesign: () -> Unit = {},
     onDownload: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
@@ -780,12 +845,11 @@ fun DownloadResultScreen(
     }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showPointTableDetailsDialog by remember { mutableStateOf(false) }
-    var appliedPointTableDetails by remember { mutableStateOf(PointTableDetailsUiState()) }
     var pointTableDetailsDraft by remember { mutableStateOf(PointTableDetailsUiState()) }
     val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
 
     val openPointTableDetails = {
-        pointTableDetailsDraft = appliedPointTableDetails
+        pointTableDetailsDraft = pointTableDetails
         showPointTableDetailsDialog = true
         onFreeDesignSettingsClick()
     }
@@ -1038,7 +1102,11 @@ fun DownloadResultScreen(
             },
             onDismissRequest = { showPointTableDetailsDialog = false },
             onApply = {
-                appliedPointTableDetails = pointTableDetailsDraft
+                onPointTableDetailsApply(
+                    pointTableDetailsDraft.copy(
+                        organizationName = pointTableDetailsDraft.organizationName.trim(),
+                    ),
+                )
                 showPointTableDetailsDialog = false
             },
         )

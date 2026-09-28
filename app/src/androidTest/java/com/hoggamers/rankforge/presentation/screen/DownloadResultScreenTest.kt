@@ -8,9 +8,11 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -113,6 +115,58 @@ class DownloadResultScreenTest {
         composeTestRule.onNodeWithText("Import Your Design").performClick()
         composeTestRule.runOnIdle {
             assertEquals(DownloadResultSelection.Match("match-1"), importedSelection)
+        }
+    }
+
+    @Test
+    fun cancellingPointTableDetailsDiscardsDraftEdits() {
+        var applyCalls = 0
+        val appliedDetails = PointTableDetailsUiState(organizationName = "Saved Org")
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialDesign = DownloadResultDesignType.FREE_DESIGN,
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    pointTableDetails = appliedDetails,
+                    onPointTableDetailsApply = { applyCalls++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Free design settings").performClick()
+        composeTestRule.onNodeWithText("Saved Org").performTextInput(" changed")
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.onNodeWithContentDescription("Free design settings").performClick()
+
+        composeTestRule.onNodeWithText("Saved Org").assertIsDisplayed()
+        composeTestRule.runOnIdle { assertEquals(0, applyCalls) }
+    }
+
+    @Test
+    fun applyingPointTableDetailsTrimsOrganisationName() {
+        var appliedDetails: PointTableDetailsUiState? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialDesign = DownloadResultDesignType.FREE_DESIGN,
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    onPointTableDetailsApply = { appliedDetails = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Free design settings").performClick()
+        composeTestRule.onNodeWithContentDescription("Organisation Name")
+            .performTextInput("  HOG Gamers  ")
+        composeTestRule.onNodeWithText("Apply").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals("HOG Gamers", appliedDetails?.organizationName)
+            assertEquals(null, appliedDetails?.date)
         }
     }
 
