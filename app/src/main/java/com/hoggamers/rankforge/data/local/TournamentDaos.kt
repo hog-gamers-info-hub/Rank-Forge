@@ -140,7 +140,6 @@ interface TournamentDao {
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,
-            tournaments.organization_name,
             (
                 SELECT COUNT(*) FROM team_slots
                 WHERE team_slots.tournament_id = tournaments.id
@@ -166,7 +165,6 @@ interface TournamentDao {
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,
-            tournaments.organization_name,
             (
                 SELECT COUNT(*) FROM team_slots
                 WHERE team_slots.tournament_id = tournaments.id

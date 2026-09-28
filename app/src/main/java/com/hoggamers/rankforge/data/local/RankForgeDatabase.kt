@@ -54,7 +54,7 @@ interface RankForgeStateDao {
         AccountDeletionMarkerEntity::class,
         PointTableDetailsEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -789,6 +789,58 @@ abstract class RankForgeDatabase : RoomDatabase() {
                         `last_updated_epoch_millis`,
                         `owner_user_id`,
                         `organization_name`
+                    FROM `tournaments_old`
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `tournaments_old`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournaments_owner_user_id` " +
+                        "ON `tournaments` (`owner_user_id`)",
+                )
+                db.execSQL("PRAGMA legacy_alter_table = OFF")
+            }
+        }
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("PRAGMA legacy_alter_table = ON")
+                db.execSQL("ALTER TABLE `tournaments` RENAME TO `tournaments_old`")
+                db.execSQL(
+                    """
+                    CREATE TABLE `tournaments` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `organizer_name` TEXT NOT NULL,
+                        `organizer_contact_number` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `creation_order` INTEGER NOT NULL DEFAULT 0,
+                        `last_updated_epoch_millis` INTEGER,
+                        `owner_user_id` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `tournaments` (
+                        `id`,
+                        `name`,
+                        `organizer_name`,
+                        `organizer_contact_number`,
+                        `status`,
+                        `creation_order`,
+                        `last_updated_epoch_millis`,
+                        `owner_user_id`
+                    )
+                    SELECT
+                        `id`,
+                        `name`,
+                        `organizer_name`,
+                        `organizer_contact_number`,
+                        `status`,
+                        `creation_order`,
+                        `last_updated_epoch_millis`,
+                        `owner_user_id`
                     FROM `tournaments_old`
                     """.trimIndent(),
                 )

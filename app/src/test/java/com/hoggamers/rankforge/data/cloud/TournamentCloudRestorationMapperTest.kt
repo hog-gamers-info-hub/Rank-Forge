@@ -15,7 +15,6 @@ class TournamentCloudRestorationMapperTest {
         val snapshot = (result as TournamentCloudRestorationMappingResult.Success).value
         assertEquals(TOURNAMENT_ID, snapshot.tournament.id)
         assertEquals(OWNER_ID, snapshot.tournament.ownerUserId)
-        assertEquals("PointIQ", snapshot.tournament.organizationName)
         assertEquals(TeamSlot.SLOT_NUMBERS.toList(), snapshot.slots.map { it.slotNumber })
         assertEquals("Alpha", snapshot.slots.first().teamName)
         assertEquals("Player One", snapshot.players.single().displayName)
@@ -73,15 +72,6 @@ class TournamentCloudRestorationMapperTest {
     }
 
     @Test
-    fun legacyNullOrganizationNameRestoresSafely() {
-        val result = TournamentCloudRestorationMapper.mapSnapshot(
-            payloads().copy(tournament = payloads().tournament.copy(organizationName = null)),
-        ) as TournamentCloudRestorationMappingResult.Success
-
-        assertEquals(null, result.value.tournament.organizationName)
-    }
-
-    @Test
     fun restoresRosterPositionsFromDeterministicPlayerIds() {
         val base = payloads()
         val slotId = TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), 1)
@@ -111,7 +101,6 @@ class TournamentCloudRestorationMapperTest {
             organizerContact = "123",
             status = "draft",
             revision = 1,
-            organizationName = "PointIQ",
         ),
         teamSlots = listOf(
             TeamSlotUploadPayload(

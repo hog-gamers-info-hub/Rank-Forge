@@ -21,7 +21,6 @@ sealed interface TournamentCreationNavigation {
 data class TournamentCreationUiState(
     val tournamentName: String = "",
     val stageName: String = "",
-    val organisationName: String = "",
     val organizerContactNumber: String = "",
     val validationErrors: Map<TournamentField, TournamentValidationError> = emptyMap(),
     val isSubmitting: Boolean = false,
@@ -32,6 +31,5 @@ data class TournamentCreationUiState(
     val isDirty: Boolean
         get() = tournamentName.isNotEmpty() ||
             stageName.isNotEmpty() ||
-            organisationName.isNotEmpty() ||
             organizerContactNumber.isNotEmpty()
 }
