@@ -23,6 +23,7 @@ data class TournamentCreationUiState(
     val tournamentName: String = "",
     val tournamentDate: LocalDate? = null,
     val stageName: String = "",
+    val organisationName: String = "",
     val organizerContactNumber: String = "",
     val validationErrors: Map<TournamentField, TournamentValidationError> = emptyMap(),
     val isSubmitting: Boolean = false,
@@ -34,5 +35,6 @@ data class TournamentCreationUiState(
         get() = tournamentName.isNotEmpty() ||
             tournamentDate != null ||
             stageName.isNotEmpty() ||
+            organisationName.isNotEmpty() ||
             organizerContactNumber.isNotEmpty()
 }

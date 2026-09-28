@@ -98,6 +98,7 @@
     <string name="tournament_mode_squad">Squad</string>
     <string name="tournament_date_label">Tournament Date</string>
     <string name="stage_name_label">Stage Name</string>
+    <string name="organisation_name_label">Organisation Name</string>
     <string name="organizer_contact_number_label">Organizer Contact Number (Optional)</string>
     <string name="select_date_action">Select date</string>
     <string name="create_tournament_action">Create tournament</string>

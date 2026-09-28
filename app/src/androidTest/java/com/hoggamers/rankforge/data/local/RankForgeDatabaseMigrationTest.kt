@@ -242,6 +242,39 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersion22AddsNullableOrganizationNameWithoutRewritingTournamentData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 22).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, date, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis, owner_user_id) VALUES " +
+                    "('legacy-organization', 'Legacy Cup', '2026-08-24', 'Stage One', '123', " +
+                    "'DRAFT', 7, 1800000000000, 'user-a')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            23,
+            true,
+            RankForgeDatabase.MIGRATION_22_23,
+        )
+
+        migrated.query(
+            "SELECT id, name, organizer_name, organization_name, owner_user_id " +
+                "FROM tournaments WHERE id = 'legacy-organization'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("legacy-organization", cursor.getString(0))
+            assertEquals("Legacy Cup", cursor.getString(1))
+            assertEquals("Stage One", cursor.getString(2))
+            assertNull(cursor.getString(3))
+            assertEquals("user-a", cursor.getString(4))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun migrationFromVersion18QuarantinesLegacyQueueRowsWithoutDroppingMetadata() {
         migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 18).use { database ->
             database.execSQL(
