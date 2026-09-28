@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
 import java.io.IOException
+import java.time.LocalDate
 
 enum class FreeDesignBitmapComposeFailure {
     ASSET_NOT_FOUND,
@@ -31,15 +32,17 @@ class FreeDesignBitmapComposer(
     fun compose(
         model: MatchResultExportModel,
         template: FreeDesignTemplate,
+        displayDate: LocalDate? = null,
     ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
-        renderer.render(canvas, model, template)
+        renderer.render(canvas, model, template, displayDate)
     }
 
     fun compose(
         model: TournamentResultExportModel,
         template: FreeDesignTemplate,
+        displayDate: LocalDate? = null,
     ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
-        renderer.render(canvas, model, template)
+        renderer.render(canvas, model, template, displayDate)
     }
 
     private fun compose(

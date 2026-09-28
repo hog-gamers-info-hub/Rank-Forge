@@ -14,6 +14,9 @@ import com.hoggamers.rankforge.data.local.MatchOcrEvidenceDao
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceDao
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceRepository
 import com.hoggamers.rankforge.data.local.RoomMatchCalculatedEvidenceRepository
+import com.hoggamers.rankforge.data.local.PointTableDetailsDao
+import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
+import com.hoggamers.rankforge.data.local.RoomPointTableDetailsRepository
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheDao
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheDao
@@ -87,6 +90,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindMatchCalculatedEvidenceRepository(
         repository: RoomMatchCalculatedEvidenceRepository,
     ): MatchCalculatedEvidenceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPointTableDetailsRepository(
+        repository: RoomPointTableDetailsRepository,
+    ): PointTableDetailsRepository
 
     @Binds
     @Singleton
@@ -195,6 +204,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_20_21,
         RankForgeDatabase.MIGRATION_21_22,
         RankForgeDatabase.MIGRATION_22_23,
+        RankForgeDatabase.MIGRATION_23_24,
     ).build()
 
     @Provides
@@ -269,6 +279,12 @@ object TournamentDataProvidersModule {
     fun provideMatchCalculatedEvidenceDao(
         database: RankForgeDatabase,
     ): MatchCalculatedEvidenceDao = database.matchCalculatedEvidenceDao()
+
+    @Provides
+    @Singleton
+    fun providePointTableDetailsDao(
+        database: RankForgeDatabase,
+    ): PointTableDetailsDao = database.pointTableDetailsDao()
 
     @Provides
     @Singleton

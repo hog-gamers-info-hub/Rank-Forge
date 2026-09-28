@@ -11,12 +11,14 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 interface FreeDesignResultDownloadCoordinator {
     suspend fun execute(
         request: ResultDownloadRequest,
         templateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
         onSaving: suspend () -> Unit = {},
+        displayDate: LocalDate? = null,
     ): ResultDownloadExecutionResult
 }
 
@@ -25,6 +27,7 @@ object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordin
         request: ResultDownloadRequest,
         templateId: String,
         onSaving: suspend () -> Unit,
+        displayDate: LocalDate?,
     ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Failure(
         ResultDownloadFailure.GENERATION_FAILED,
     )
@@ -32,8 +35,8 @@ object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordin
 
 class DefaultFreeDesignResultDownloadCoordinator internal constructor(
     private val modelBuilder: ResultExportModelBuilder,
-    private val composeMatch: (MatchResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult,
-    private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate) -> FreeDesignBitmapComposeResult,
+    private val composeMatch: (MatchResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult,
+    private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult,
     private val templateProvider: (String) -> FreeDesignTemplate?,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
 ) : FreeDesignResultDownloadCoordinator {
@@ -43,8 +46,12 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         resultFileSaver: ResultFileSaver,
     ) : this(
         modelBuilder = ResultExportModelBuilder(),
-        composeMatch = bitmapComposer::compose,
-        composeTournament = bitmapComposer::compose,
+        composeMatch = { model, template, displayDate ->
+            bitmapComposer.compose(model, template, displayDate)
+        },
+        composeTournament = { model, template, displayDate ->
+            bitmapComposer.compose(model, template, displayDate)
+        },
         templateProvider = { templateId ->
             FreeDesignTemplateRegistry.findById(templateId)
         },
@@ -55,10 +62,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         request: ResultDownloadRequest,
         templateId: String,
         onSaving: suspend () -> Unit,
+        displayDate: LocalDate?,
     ): ResultDownloadExecutionResult {
         val generated = try {
             withContext(Dispatchers.Default) {
-                generate(request, templateId)
+                generate(request, templateId, displayDate)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -97,6 +105,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
     private fun generate(
         request: ResultDownloadRequest,
         templateId: String,
+        displayDate: LocalDate?,
     ): GeneratedFreeDesignResult? {
         val template = templateProvider(templateId) ?: return null
         return when (request) {
@@ -104,7 +113,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                 when (val buildResult = modelBuilder.buildMatch(request.input)) {
                     is MatchResultExportModelBuildResult.Success -> {
                         val model = buildResult.model
-                        composeMatch(model, template).encodedOrNull()?.let { bytes ->
+                        composeMatch(
+                            model,
+                            template,
+                            displayDate,
+                        ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,
                                 displayName = ResultExportFileName.forMatch(
@@ -120,7 +133,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                 when (val buildResult = modelBuilder.buildTournament(request.input)) {
                     is TournamentResultExportModelBuildResult.Success -> {
                         val model = buildResult.model
-                        composeTournament(model, template).encodedOrNull()?.let { bytes ->
+                        composeTournament(
+                            model,
+                            template,
+                            displayDate,
+                        ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,
                                 displayName = ResultExportFileName.forTournament(

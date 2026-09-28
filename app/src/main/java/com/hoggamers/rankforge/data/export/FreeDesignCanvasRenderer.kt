@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -60,13 +61,14 @@ class FreeDesignCanvasRenderer(
         canvas: Canvas,
         model: MatchResultExportModel,
         template: FreeDesignTemplate,
+        displayDate: LocalDate? = null,
     ): FreeDesignCanvasRenderResult = render(
         canvas = canvas,
         template = template,
         tournamentName = model.tournamentName,
         stageName = model.stageName,
         resultHeading = "Match ${model.matchNumber}",
-        date = model.tournamentDate.format(DATE_FORMATTER),
+        date = displayDate,
         rows = model.rows,
     )
 
@@ -74,13 +76,14 @@ class FreeDesignCanvasRenderer(
         canvas: Canvas,
         model: TournamentResultExportModel,
         template: FreeDesignTemplate,
+        displayDate: LocalDate? = null,
     ): FreeDesignCanvasRenderResult = render(
         canvas = canvas,
         template = template,
         tournamentName = model.tournamentName,
         stageName = model.stageName,
         resultHeading = "Overall Standings",
-        date = model.tournamentDate.format(DATE_FORMATTER),
+        date = displayDate,
         rows = model.rows,
     )
 
@@ -90,7 +93,7 @@ class FreeDesignCanvasRenderer(
         tournamentName: String,
         stageName: String,
         resultHeading: String,
-        date: String,
+        date: LocalDate?,
         rows: List<ResultExportRow>,
     ): FreeDesignCanvasRenderResult {
         validateTemplate(template)?.let { return FreeDesignCanvasRenderResult.Failure(it) }
@@ -138,7 +141,7 @@ class FreeDesignCanvasRenderer(
         tournamentName: String,
         stageName: String,
         resultHeading: String,
-        date: String,
+        date: LocalDate?,
     ) {
         drawHeaderText(
             canvas,
@@ -155,7 +158,11 @@ class FreeDesignCanvasRenderer(
         drawHeaderText(
             canvas,
             template.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING),
-            "$resultHeading - $date",
+            if (date == null) {
+                resultHeading
+            } else {
+                "$resultHeading - ${date.format(DATE_FORMATTER)}"
+            },
         )
     }
 

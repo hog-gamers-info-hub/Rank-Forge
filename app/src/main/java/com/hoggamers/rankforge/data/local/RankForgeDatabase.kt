@@ -52,8 +52,9 @@ interface RankForgeStateDao {
         MatchOcrCorrectionSnapshotEntity::class,
         MatchCalculatedEvidenceEntity::class,
         AccountDeletionMarkerEntity::class,
+        PointTableDetailsEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -80,6 +81,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchOcrEvidenceDao(): MatchOcrEvidenceDao
     abstract fun matchCalculatedEvidenceDao(): MatchCalculatedEvidenceDao
     abstract fun accountDeletionMarkerDao(): AccountDeletionMarkerDao
+    abstract fun pointTableDetailsDao(): PointTableDetailsDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -724,6 +726,22 @@ abstract class RankForgeDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `tournaments` ADD COLUMN `organization_name` TEXT",
+                )
+            }
+        }
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `point_table_details` (
+                        `tournament_id` TEXT NOT NULL,
+                        `organization_name` TEXT NOT NULL,
+                        `display_date` TEXT,
+                        PRIMARY KEY(`tournament_id`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
                 )
             }
         }
