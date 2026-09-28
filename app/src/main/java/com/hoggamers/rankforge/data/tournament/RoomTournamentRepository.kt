@@ -74,9 +74,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -205,22 +205,12 @@ class RoomTournamentRepository @Inject constructor(
                         }
                         .toMap()
                     val normalizedMatches = normalizedMatchEntities.map { match ->
-                        match.toDomain(
-                            placements = database.matchPlacementDao().observeByMatchId(match.id)
-                                .first()
-                                .map { it.toDomain() },
-                            kills = database.matchKillDao().observeByMatchId(match.id)
-                                .first()
-                                .map { it.toDomain() },
-                            participantResults = database.matchParticipantResultDao()
-                                .observeByMatchId(match.id)
-                                .first()
-                                .map { it.toDomain() },
-                            correctionHistory = database.matchCorrectionDao().observeByMatchId(match.id)
-                                .first()
-                                .map { it.toDomain(json) },
-                        )
+                        database.matchDao().readResultAggregateById(match.id)
+                            ?.toMatchWithConfirmation(json) {
+                                database.matchDao().readResultAggregateById(match.id)
+                            }
                     }
+                    val normalizedMatchList = normalizedMatches.toCompleteMatchListOrNull()
                     val normalizedDraftValues = normalizedMatchEntities.flatMap { match ->
                         val key = DraftKey(match.tournamentId, match.id)
                         database.matchDraftValueDao().observeByMatchId(match.id)
@@ -234,7 +224,7 @@ class RoomTournamentRepository @Inject constructor(
                         tournaments = normalizedTournaments,
                         slots = normalizedSlots,
                         rosters = normalizedRosters,
-                        matches = normalizedMatches.groupBy { it.tournamentId },
+                        matches = normalizedMatchList?.groupBy { it.tournamentId } ?: restored.matches,
                         draftValues = normalizedDraftValues,
                     )
                     if (synchronized != restored) {
@@ -1519,27 +1509,13 @@ class RoomTournamentRepository @Inject constructor(
     override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> = flow {
         ready.await()
         emitAll(
-            combine(
-                database.matchDao().observeByTournamentId(tournamentId),
-                database.matchPlacementDao().observeByTournamentId(tournamentId),
-                database.matchKillDao().observeByTournamentId(tournamentId),
-                database.matchParticipantResultDao().observeByTournamentId(tournamentId),
-                database.matchCorrectionDao().observeByTournamentId(tournamentId),
-            ) { matches, placements, kills, participantResults, corrections ->
-                val placementsByMatch = placements.groupBy { it.matchId }
-                val killsByMatch = kills.groupBy { it.matchId }
-                val participantResultsByMatch = participantResults.groupBy { it.matchId }
-                val correctionsByMatch = corrections.groupBy { it.matchId }
-                matches.map { match ->
-                    match.toDomain(
-                        placements = placementsByMatch[match.id].orEmpty().map { it.toDomain() },
-                        kills = killsByMatch[match.id].orEmpty().map { it.toDomain() },
-                        participantResults = participantResultsByMatch[match.id].orEmpty()
-                            .map { it.toDomain() },
-                        correctionHistory = correctionsByMatch[match.id].orEmpty().map { it.toDomain(json) },
-                    )
-                }
-            },
+            database.matchDao().observeResultAggregatesByTournamentId(tournamentId).map { aggregates ->
+                aggregates.map { aggregate ->
+                    aggregate.toMatchWithConfirmation(json) {
+                        database.matchDao().readResultAggregateById(aggregate.match.id)
+                    }
+                }.toCompleteMatchListOrNull()
+            }.filterNotNull(),
         )
     }
 
@@ -1557,19 +1533,10 @@ class RoomTournamentRepository @Inject constructor(
     override fun observeMatchById(matchId: String): Flow<Match?> = flow {
         ready.await()
         emitAll(
-            combine(
-                database.matchDao().observeById(matchId),
-                database.matchPlacementDao().observeByMatchId(matchId),
-                database.matchKillDao().observeByMatchId(matchId),
-                database.matchParticipantResultDao().observeByMatchId(matchId),
-                database.matchCorrectionDao().observeByMatchId(matchId),
-            ) { match, placements, kills, participantResults, corrections ->
-                match?.toDomain(
-                    placements = placements.map { it.toDomain() },
-                    kills = kills.map { it.toDomain() },
-                    participantResults = participantResults.map { it.toDomain() },
-                    correctionHistory = corrections.map { it.toDomain(json) },
-                )
+            database.matchDao().observeResultAggregateById(matchId).map { aggregate ->
+                aggregate?.toMatchWithConfirmation(json) {
+                    database.matchDao().readResultAggregateById(matchId)
+                }
             },
         )
     }
@@ -1580,19 +1547,10 @@ class RoomTournamentRepository @Inject constructor(
     ): Flow<Match?> = flow {
         ready.await()
         emitAll(
-            combine(
-                database.matchDao().observeByIdAndOwner(matchId, ownerUserId),
-                database.matchPlacementDao().observeByMatchId(matchId),
-                database.matchKillDao().observeByMatchId(matchId),
-                database.matchParticipantResultDao().observeByMatchId(matchId),
-                database.matchCorrectionDao().observeByMatchId(matchId),
-            ) { match, placements, kills, participantResults, corrections ->
-                match?.toDomain(
-                    placements = placements.map { it.toDomain() },
-                    kills = kills.map { it.toDomain() },
-                    participantResults = participantResults.map { it.toDomain() },
-                    correctionHistory = corrections.map { it.toDomain(json) },
-                )
+            database.matchDao().observeResultAggregateByIdAndOwner(matchId, ownerUserId).map { aggregate ->
+                aggregate?.toMatchWithConfirmation(json) {
+                    database.matchDao().readResultAggregateByIdAndOwner(matchId, ownerUserId)
+                }
             },
         )
     }
@@ -2821,6 +2779,15 @@ class RoomTournamentRepository @Inject constructor(
     ): Map<String, List<Match>> = mapValues { (key, matches) ->
         if (key == tournamentId) matches.map { if (it.id == matchId) transform(it) else it } else matches
     }
+}
+
+internal fun List<Match?>.toCompleteMatchListOrNull(): List<Match>? {
+    val complete = ArrayList<Match>(size)
+    for (match in this) {
+        if (match == null) return null
+        complete += match
+    }
+    return complete
 }
 
 private fun buildLegacyParticipantResults(
