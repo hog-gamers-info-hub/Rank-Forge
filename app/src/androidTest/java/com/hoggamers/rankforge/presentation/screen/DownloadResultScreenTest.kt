@@ -145,7 +145,8 @@ class DownloadResultScreenTest {
         composeTestRule.onNodeWithText("Point Table Details").assertIsDisplayed()
         composeTestRule.onNodeWithText("Saved Org").assertIsDisplayed()
         composeTestRule.onNodeWithText("28 Sep 2026").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Add Logo").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Upload logo").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Add Logo").assertCountEquals(0)
         composeTestRule.onNodeWithText("Cancel").performClick()
 
         composeTestRule.onNodeWithText("Free Design").performClick()

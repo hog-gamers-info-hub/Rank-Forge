@@ -4,8 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,8 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -67,7 +76,30 @@ data class PointTableLogoPlacementGeometry(
     val widthRatio: Float,
 )
 
+data class PointTableLogoBounds(
+    val leftPx: Float,
+    val topPx: Float,
+    val rightPx: Float,
+    val bottomPx: Float,
+) {
+    val widthPx: Float get() = rightPx - leftPx
+    val heightPx: Float get() = bottomPx - topPx
+}
+
+data class PointTableLogoResizeHandle(
+    val centerXPx: Float,
+    val centerYPx: Float,
+    val radiusPx: Float,
+)
+
 private const val MIN_LOGO_WIDTH_RATIO = 0.03f
+private val LOGO_SELECTION_COLOR = Color(0xFFDDE2EB)
+private val LOGO_RESIZE_ARROW_COLOR = Color(0xFF263238)
+private const val RESIZE_HANDLE_DIAMETER_DP = 24f
+private const val RESIZE_HANDLE_OUTWARD_OFFSET_DP = 2f
+private const val RESIZE_ARROW_LENGTH_DP = 12f
+private const val RESIZE_ARROW_STROKE_DP = 1.5f
+private const val RESIZE_ARROW_HEAD_DP = 3f
 
 fun defaultPointTableLogoPlacement(
     designAspectRatio: Float,
@@ -107,6 +139,96 @@ private fun clampCenter(center: Float, halfSize: Float): Float {
     if (!center.isFinite()) return 0.5f
     if (halfSize >= 0.5f) return 0.5f
     return center.coerceIn(halfSize, 1f - halfSize)
+}
+
+fun pointTableLogoBounds(
+    placement: PointTableLogoPlacementGeometry,
+    containerWidthPx: Float,
+    containerHeightPx: Float,
+    logoAspectRatio: Float,
+): PointTableLogoBounds {
+    val logoWidthPx = placement.widthRatio * containerWidthPx
+    val logoHeightPx = logoWidthPx / logoAspectRatio
+    return PointTableLogoBounds(
+        leftPx = placement.centerXRatio * containerWidthPx - logoWidthPx / 2f,
+        topPx = placement.centerYRatio * containerHeightPx - logoHeightPx / 2f,
+        rightPx = placement.centerXRatio * containerWidthPx + logoWidthPx / 2f,
+        bottomPx = placement.centerYRatio * containerHeightPx + logoHeightPx / 2f,
+    )
+}
+
+fun pointTableLogoResizeHandle(
+    logoBounds: PointTableLogoBounds,
+    handleDiameterPx: Float,
+    outwardOffsetPx: Float = 0f,
+): PointTableLogoResizeHandle {
+    val radiusPx = handleDiameterPx / 2f
+    return PointTableLogoResizeHandle(
+        centerXPx = logoBounds.rightPx + outwardOffsetPx,
+        centerYPx = logoBounds.bottomPx + outwardOffsetPx,
+        radiusPx = radiusPx,
+    )
+}
+
+fun isPointTableLogoResizeHandleHit(
+    pointerX: Float,
+    pointerY: Float,
+    handle: PointTableLogoResizeHandle,
+): Boolean {
+    val deltaX = pointerX - handle.centerXPx
+    val deltaY = pointerY - handle.centerYPx
+    return deltaX * deltaX + deltaY * deltaY <= handle.radiusPx * handle.radiusPx
+}
+
+fun resizePointTableLogoFromHandleDrag(
+    placement: PointTableLogoPlacementGeometry,
+    dragX: Float,
+    dragY: Float,
+    containerWidthPx: Float,
+    designAspectRatio: Float,
+    logoAspectRatio: Float,
+): PointTableLogoPlacementGeometry {
+    if (!containerWidthPx.isFinite() || containerWidthPx <= 0f ||
+        !logoAspectRatio.isFinite() || logoAspectRatio <= 0f
+    ) {
+        return placement
+    }
+    val heightPerWidth = 1f / logoAspectRatio
+    val widthDeltaPx = 2f * (dragX + dragY * heightPerWidth) /
+        (1f + heightPerWidth * heightPerWidth)
+    return clampPointTableLogoPlacement(
+        placement = placement.copy(
+            widthRatio = placement.widthRatio + widthDeltaPx / containerWidthPx,
+        ),
+        designAspectRatio = designAspectRatio,
+        logoAspectRatio = logoAspectRatio,
+    )
+}
+
+fun transformPointTableLogoPlacement(
+    placement: PointTableLogoPlacementGeometry,
+    panX: Float,
+    panY: Float,
+    zoom: Float,
+    containerWidthPx: Float,
+    containerHeightPx: Float,
+    designAspectRatio: Float,
+    logoAspectRatio: Float,
+): PointTableLogoPlacementGeometry {
+    if (!containerWidthPx.isFinite() || containerWidthPx <= 0f ||
+        !containerHeightPx.isFinite() || containerHeightPx <= 0f
+    ) {
+        return placement
+    }
+    return clampPointTableLogoPlacement(
+        placement = placement.copy(
+            centerXRatio = placement.centerXRatio + panX / containerWidthPx,
+            centerYRatio = placement.centerYRatio + panY / containerHeightPx,
+            widthRatio = placement.widthRatio * zoom,
+        ),
+        designAspectRatio = designAspectRatio,
+        logoAspectRatio = logoAspectRatio,
+    )
 }
 
 @Composable
@@ -239,14 +361,17 @@ fun PointTableLogoPlacementEditor(
                                     .pointerInput(containerSize, logoAspectRatio, designAspectRatio) {
                                         detectTransformGestures { _, pan, zoom, _ ->
                                             if (containerSize.width <= 0 || containerSize.height <= 0) return@detectTransformGestures
-                                            placement = clampPointTableLogoPlacement(
+                                            placement = transformPointTableLogoPlacement(
                                                 placement = placement.copy(
-                                                    centerXRatio = placement.centerXRatio +
-                                                        pan.x / containerSize.width.toFloat(),
-                                                    centerYRatio = placement.centerYRatio +
-                                                        pan.y / containerSize.height.toFloat(),
-                                                    widthRatio = placement.widthRatio * zoom,
+                                                    centerXRatio = placement.centerXRatio,
+                                                    centerYRatio = placement.centerYRatio,
+                                                    widthRatio = placement.widthRatio,
                                                 ),
+                                                panX = pan.x,
+                                                panY = pan.y,
+                                                zoom = zoom,
+                                                containerWidthPx = containerSize.width.toFloat(),
+                                                containerHeightPx = containerSize.height.toFloat(),
                                                 designAspectRatio = designAspectRatio,
                                                 logoAspectRatio = logoAspectRatio,
                                             )
@@ -260,8 +385,14 @@ fun PointTableLogoPlacementEditor(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 if (containerSize.width > 0 && containerSize.height > 0) {
-                                    val logoWidthPx = placement.widthRatio * containerSize.width
-                                    val logoHeightPx = logoWidthPx / logoAspectRatio
+                                    val logoBounds = pointTableLogoBounds(
+                                        placement = placement,
+                                        containerWidthPx = containerSize.width.toFloat(),
+                                        containerHeightPx = containerSize.height.toFloat(),
+                                        logoAspectRatio = logoAspectRatio,
+                                    )
+                                    val logoWidthPx = logoBounds.widthPx
+                                    val logoHeightPx = logoBounds.heightPx
                                     val logoWidthDp = with(density) { logoWidthPx.toDp() }
                                     val logoHeightDp = with(density) { logoHeightPx.toDp() }
                                     Image(
@@ -272,17 +403,139 @@ fun PointTableLogoPlacementEditor(
                                             .size(logoWidthDp, logoHeightDp)
                                             .offset {
                                                 IntOffset(
-                                                    (
-                                                        placement.centerXRatio * containerSize.width -
-                                                            logoWidthPx / 2f
-                                                        ).roundToInt(),
-                                                    (
-                                                        placement.centerYRatio * containerSize.height -
-                                                            logoHeightPx / 2f
-                                                        ).roundToInt(),
+                                                    logoBounds.leftPx.roundToInt(),
+                                                    logoBounds.topPx.roundToInt(),
                                                 )
                                             },
                                     )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(logoWidthDp, logoHeightDp)
+                                            .offset {
+                                                IntOffset(
+                                                    logoBounds.leftPx.roundToInt(),
+                                                    logoBounds.topPx.roundToInt(),
+                                                )
+                                            }
+                                            .border(1.dp, LOGO_SELECTION_COLOR),
+                                    )
+                                    val handleDiameterDp = RESIZE_HANDLE_DIAMETER_DP.dp
+                                    val handleOutwardOffsetDp = RESIZE_HANDLE_OUTWARD_OFFSET_DP.dp
+                                    val handle = pointTableLogoResizeHandle(
+                                        logoBounds = logoBounds,
+                                        handleDiameterPx = with(density) { handleDiameterDp.toPx() },
+                                        outwardOffsetPx = with(density) { handleOutwardOffsetDp.toPx() },
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(handleDiameterDp)
+                                            .offset {
+                                                IntOffset(
+                                                    (handle.centerXPx - handle.radiusPx).roundToInt(),
+                                                    (handle.centerYPx - handle.radiusPx).roundToInt(),
+                                                )
+                                            }
+                                            .pointerInput(containerSize, logoAspectRatio, designAspectRatio) {
+                                                awaitEachGesture {
+                                                    val down = awaitFirstDown(
+                                                        requireUnconsumed = false,
+                                                        pass = PointerEventPass.Initial,
+                                                    )
+                                                    val localHandle = PointTableLogoResizeHandle(
+                                                        centerXPx = size.width / 2f,
+                                                        centerYPx = size.height / 2f,
+                                                        radiusPx = minOf(size.width, size.height) / 2f,
+                                                    )
+                                                    if (!isPointTableLogoResizeHandleHit(
+                                                            pointerX = down.position.x,
+                                                            pointerY = down.position.y,
+                                                            handle = localHandle,
+                                                        )
+                                                    ) {
+                                                        return@awaitEachGesture
+                                                    }
+                                                    down.consume()
+                                                    val pointerId = down.id
+                                                    while (true) {
+                                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                        val change = event.changes.firstOrNull { it.id == pointerId }
+                                                            ?: break
+                                                        if (!change.pressed) {
+                                                            change.consume()
+                                                            break
+                                                        }
+                                                        val dragAmount = change.positionChange()
+                                                        change.consume()
+                                                        if (dragAmount != Offset.Zero) {
+                                                            placement = resizePointTableLogoFromHandleDrag(
+                                                                placement = placement,
+                                                                dragX = dragAmount.x,
+                                                                dragY = dragAmount.y,
+                                                                containerWidthPx = containerSize.width.toFloat(),
+                                                                designAspectRatio = designAspectRatio,
+                                                                logoAspectRatio = logoAspectRatio,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.White, CircleShape),
+                                        )
+                                        Canvas(modifier = Modifier.size(24.dp)) {
+                                            val arrowLengthPx = RESIZE_ARROW_LENGTH_DP.dp.toPx()
+                                            val strokeWidthPx = RESIZE_ARROW_STROKE_DP.dp.toPx()
+                                            val arrowHeadPx = RESIZE_ARROW_HEAD_DP.dp.toPx()
+                                            val centerPx = size.width / 2f
+                                            val start = Offset(
+                                                centerPx - arrowLengthPx / 2f,
+                                                centerPx - arrowLengthPx / 2f,
+                                            )
+                                            val end = Offset(
+                                                centerPx + arrowLengthPx / 2f,
+                                                centerPx + arrowLengthPx / 2f,
+                                            )
+                                            drawLine(
+                                                color = LOGO_RESIZE_ARROW_COLOR,
+                                                start = start,
+                                                end = end,
+                                                strokeWidth = strokeWidthPx,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = LOGO_RESIZE_ARROW_COLOR,
+                                                start = start,
+                                                end = Offset(start.x + arrowHeadPx, start.y),
+                                                strokeWidth = strokeWidthPx,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = LOGO_RESIZE_ARROW_COLOR,
+                                                start = start,
+                                                end = Offset(start.x, start.y + arrowHeadPx),
+                                                strokeWidth = strokeWidthPx,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = LOGO_RESIZE_ARROW_COLOR,
+                                                start = end,
+                                                end = Offset(end.x - arrowHeadPx, end.y),
+                                                strokeWidth = strokeWidthPx,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = LOGO_RESIZE_ARROW_COLOR,
+                                                start = end,
+                                                end = Offset(end.x, end.y - arrowHeadPx),
+                                                strokeWidth = strokeWidthPx,
+                                                cap = StrokeCap.Round,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
