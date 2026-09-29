@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.export
 
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -83,10 +84,22 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(1254, template1.sourceHeight)
         assertEquals(1.1f, template1.resultTextStyle.textSizeMultiplier, 0f)
         assertEquals(16f, template1.resultTextStyle.teamNameStartPaddingPx, 0f)
+        assertEquals(627f, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(40f, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(30f, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals(1000f, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.maxWidthPx, 0f)
+        assertEquals(16f, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.minimumTextSizePx, 0f)
+        assertEquals(FreeDesignTextAlignment.CENTER, template1.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
         assertEquals(72.8f, template1.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
-        assertEquals(46f, template1.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
+        assertEquals(42f, template1.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(120f, template1.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
-        assertEquals(185f, template1.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(170f, template1.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(80f, template1.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(255f, template1.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(1090f, template1.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template1.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
+        assertEquals(80f, template1.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(255f, template1.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -128,9 +141,26 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F4F7FF" },
             template2.resultColumnTextColors.asMap(),
         )
+        assertEquals(627f, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(20f, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(28f, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals(1000f, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.maxWidthPx, 0f)
+        assertEquals(16f, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.minimumTextSizePx, 0f)
+        assertEquals(FreeDesignTextAlignment.CENTER, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertEquals("#91AFE0", template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(100f, template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(76f, template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
-        assertEquals(47f, template2.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
+        assertEquals("#F4F7FF", template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.color)
+        assertEquals(150f, template2.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(42f, template2.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
+        assertEquals("#F4F7FF", template2.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.color)
         assertEquals(24f, template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
+        assertEquals(95f, template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(225f, template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
+        assertEquals(95f, template2.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(225f, template2.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -173,16 +203,24 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F4F4F4" },
             template3.resultColumnTextColors.asMap(),
         )
+        assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(55f, template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#CDBA86", template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.RESULT_HEADING, template3.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
         assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
         assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerX, 0f)
-        assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
-        assertEquals(536f, template3.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
-        assertEquals(130f, template3.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(45f, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(45f, template3.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(145f, template3.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(68f, template3.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
-        assertEquals(205f, template3.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(190f, template3.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
         assertEquals(40f, template3.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
-        assertEquals(270f, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(330f, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template3.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
+        assertEquals(330f, template3.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -225,16 +263,26 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#111111" },
             template4.resultColumnTextColors.asMap(),
         )
+        assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(40f, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#E7B06A", template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertTrue(template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.bold)
+        assertEquals(0.08f, template4.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.letterSpacing, 0f)
         assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
         assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerX, 0f)
-        assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
-        assertEquals(627f, template4.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
-        assertEquals(108f, template4.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(75f, template4.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(75f, template4.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(115f, template4.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(72f, template4.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
-        assertEquals(165f, template4.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(160f, template4.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
         assertEquals(42f, template4.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(218f, template4.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template4.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template4.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
+        assertEquals(218f, template4.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -277,26 +325,36 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F2F0FF" },
             template5.resultColumnTextColors.asMap(),
         )
-        FreeDesignHeaderField.entries.forEach { field ->
-            assertEquals(627f, template5.headerAnchors.getValue(field).centerX, 0f)
-            assertEquals("#F2F0FF", template5.headerAnchors.getValue(field).style.color)
-        }
-        assertEquals(95f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(627f, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(35f, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#C9B8F5", template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertTrue(template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.bold)
+        assertEquals(0.08f, template5.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.letterSpacing, 0f)
+        assertEquals(627f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
+        assertEquals(627f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerX, 0f)
+        assertEquals(75f, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(75f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(105f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(72f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
         assertEquals(1050f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
         assertEquals(32f, template5.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(160f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(150f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
         assertEquals(42f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(980f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.maxWidthPx, 0f)
         assertEquals(22f, template5.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.minimumTextSizePx, 0f)
         assertEquals(218f, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
         assertEquals(980f, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
         assertEquals(16f, template5.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
         assertEquals(218f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
         assertEquals(18f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
+        assertEquals(218f, template5.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -339,11 +397,25 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#111111" },
             template6.resultColumnTextColors.asMap(),
         )
-        FreeDesignHeaderField.entries.forEach { field ->
+        assertEquals(687f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(35f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#D7A7A7", template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertTrue(template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.bold)
+        assertEquals(0.08f, template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.letterSpacing, 0f)
+        listOf(
+            FreeDesignHeaderField.TOURNAMENT_NAME,
+            FreeDesignHeaderField.STAGE_NAME,
+        ).forEach { field ->
             assertEquals(687f, template6.headerAnchors.getValue(field).centerX, 0f)
             assertEquals("#F4F4F4", template6.headerAnchors.getValue(field).style.color)
         }
-        assertEquals(90f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        FreeDesignHeaderField.REQUIRED_FIELDS.forEach { field ->
+            assertEquals("#F4F4F4", template6.headerAnchors.getValue(field).style.color)
+        }
+        assertEquals(110f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(72f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
         assertEquals(1150f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
         assertEquals(32f, template6.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
@@ -351,11 +423,14 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(42f, template6.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(1100f, template6.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.maxWidthPx, 0f)
         assertEquals(22f, template6.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(215f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(60f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(255f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
         assertEquals(1050f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
         assertEquals(16f, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
-        assertEquals(215f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template6.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
+        assertEquals(60f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(255f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
         assertEquals(18f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template6.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
@@ -401,15 +476,23 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#E8EDF2" },
             template7.resultColumnTextColors.asMap(),
         )
-        FreeDesignHeaderField.entries.forEach { field ->
-            assertEquals(561f, template7.headerAnchors.getValue(field).centerX, 0f)
-            assertEquals("#E8EDF2", template7.headerAnchors.getValue(field).style.color)
-        }
-        assertEquals(125f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(561f, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(55f, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#B8C5CF", template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertTrue(template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.bold)
+        assertEquals(0.08f, template7.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.letterSpacing, 0f)
+        assertEquals(561f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
+        assertEquals(561f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerX, 0f)
+        assertEquals(40f, template7.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(40f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(135f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(68f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
         assertEquals(940f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
         assertEquals(32f, template7.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(195f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(180f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
         assertEquals(40f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(900f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.maxWidthPx, 0f)
         assertEquals(22f, template7.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.minimumTextSizePx, 0f)
@@ -417,10 +500,12 @@ class FreeDesignTemplateRegistryTest {
         assertEquals(22f, template7.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
         assertEquals(860f, template7.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
         assertEquals(16f, template7.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template7.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
         assertEquals(258f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
         assertEquals(18f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
+        assertEquals(258f, template7.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
     }
 
     @Test
@@ -463,26 +548,35 @@ class FreeDesignTemplateRegistryTest {
             CustomDesignAnchorField.REQUIRED_FIELDS.associateWith { "#F3F3F3" },
             template8.resultColumnTextColors.asMap(),
         )
-        FreeDesignHeaderField.entries.forEach { field ->
-            assertEquals(627f, template8.headerAnchors.getValue(field).centerX, 0f)
-            assertEquals("#F3F3F3", template8.headerAnchors.getValue(field).style.color)
-        }
-        assertEquals(115f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
+        assertEquals(627f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX, 0f)
+        assertEquals(40f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY, 0f)
+        assertEquals(26f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.textSize, 0f)
+        assertEquals("#D58A8A", template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.color)
+        assertEquals(FreeDesignTextAlignment.CENTER, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.alignment)
+        assertEquals(FreeDesignTypographyRole.SECONDARY, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.typographyRole)
+        assertTrue(template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.bold)
+        assertEquals(0.08f, template8.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).style.letterSpacing, 0f)
+        assertEquals(627f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerX, 0f)
+        assertEquals(627f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerX, 0f)
+        assertEquals(50f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerX, 0f)
+        assertEquals(50f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerX, 0f)
+        assertEquals(125f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY, 0f)
         assertEquals(70f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.textSize, 0f)
         assertEquals(1040f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.maxWidthPx, 0f)
         assertEquals(32f, template8.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(180f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
+        assertEquals(170f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY, 0f)
         assertEquals(40f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.textSize, 0f)
         assertEquals(980f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.maxWidthPx, 0f)
         assertEquals(22f, template8.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).style.minimumTextSizePx, 0f)
-        assertEquals(238f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
+        assertEquals(250f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY, 0f)
         assertEquals(22f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.textSize, 0f)
         assertEquals(960f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.maxWidthPx, 0f)
         assertEquals(16f, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.minimumTextSizePx, 0f)
-        assertEquals(238f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
         assertEquals(18f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.textSize, 0f)
         assertEquals(700f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.maxWidthPx, 0f)
         assertEquals(12f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).style.minimumTextSizePx, 0f)
+        assertEquals(250f, template8.headerAnchors.getValue(FreeDesignHeaderField.DATE).centerY, 0f)
+        assertEquals(FreeDesignTextAlignment.START, template8.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).style.alignment)
     }
 
     @Test
@@ -508,7 +602,12 @@ class FreeDesignTemplateRegistryTest {
     @Test
     fun headerAnchorsContainAllFieldsAndRemainWithinSourceBounds() {
         FreeDesignTemplateRegistry.all.forEach { template ->
-            assertEquals(FreeDesignHeaderField.entries.toSet(), template.headerAnchors.keys)
+            assertTrue(template.headerAnchors.keys.containsAll(FreeDesignHeaderField.REQUIRED_FIELDS))
+            assertTrue(
+                (template.headerAnchors.keys - FreeDesignHeaderField.REQUIRED_FIELDS).all {
+                    it == FreeDesignHeaderField.ORGANIZATION_NAME
+                },
+            )
             template.headerAnchors.values.forEach { anchor ->
                 assertTrue(anchor.centerX in 0f..template.sourceWidth.toFloat())
                 assertTrue(anchor.centerY in 0f..template.sourceHeight.toFloat())
@@ -516,4 +615,5 @@ class FreeDesignTemplateRegistryTest {
             }
         }
     }
+
 }

@@ -484,6 +484,7 @@ class DownloadResultViewModel @Inject constructor(
                                 templateId = selectedFreeDesignTemplateId.value,
                                 onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
                                 displayDate = pointTableDetails.value.date,
+                                organizationName = pointTableDetails.value.organizationName.trim(),
                             )
                         DownloadResultDesignType.MY_DESIGN ->
                             customDesignId?.let { id ->
@@ -632,6 +633,7 @@ class DownloadResultViewModel @Inject constructor(
                                 result.model,
                                 template,
                                 pointTableDetails.value.date,
+                                pointTableDetails.value.organizationName.trim(),
                             ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
                         is MatchResultExportModelBuildResult.Failure -> null
                     }
@@ -642,6 +644,7 @@ class DownloadResultViewModel @Inject constructor(
                                 result.model,
                                 template,
                                 pointTableDetails.value.date,
+                                pointTableDetails.value.organizationName.trim(),
                             ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
                         is TournamentResultExportModelBuildResult.Failure -> null
                     }

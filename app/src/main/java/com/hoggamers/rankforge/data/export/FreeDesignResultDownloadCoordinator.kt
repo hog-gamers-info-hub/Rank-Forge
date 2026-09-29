@@ -19,6 +19,7 @@ interface FreeDesignResultDownloadCoordinator {
         templateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
         onSaving: suspend () -> Unit = {},
         displayDate: LocalDate? = null,
+        organizationName: String = "",
     ): ResultDownloadExecutionResult
 }
 
@@ -28,6 +29,7 @@ object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordin
         templateId: String,
         onSaving: suspend () -> Unit,
         displayDate: LocalDate?,
+        organizationName: String,
     ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Failure(
         ResultDownloadFailure.GENERATION_FAILED,
     )
@@ -35,8 +37,8 @@ object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordin
 
 class DefaultFreeDesignResultDownloadCoordinator internal constructor(
     private val modelBuilder: ResultExportModelBuilder,
-    private val composeMatch: (MatchResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult,
-    private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate, LocalDate?) -> FreeDesignBitmapComposeResult,
+    private val composeMatch: (MatchResultExportModel, FreeDesignTemplate, LocalDate?, String) -> FreeDesignBitmapComposeResult,
+    private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate, LocalDate?, String) -> FreeDesignBitmapComposeResult,
     private val templateProvider: (String) -> FreeDesignTemplate?,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
 ) : FreeDesignResultDownloadCoordinator {
@@ -46,11 +48,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         resultFileSaver: ResultFileSaver,
     ) : this(
         modelBuilder = ResultExportModelBuilder(),
-        composeMatch = { model, template, displayDate ->
-            bitmapComposer.compose(model, template, displayDate)
+        composeMatch = { model, template, displayDate, organizationName ->
+            bitmapComposer.compose(model, template, displayDate, organizationName)
         },
-        composeTournament = { model, template, displayDate ->
-            bitmapComposer.compose(model, template, displayDate)
+        composeTournament = { model, template, displayDate, organizationName ->
+            bitmapComposer.compose(model, template, displayDate, organizationName)
         },
         templateProvider = { templateId ->
             FreeDesignTemplateRegistry.findById(templateId)
@@ -63,10 +65,11 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         templateId: String,
         onSaving: suspend () -> Unit,
         displayDate: LocalDate?,
+        organizationName: String,
     ): ResultDownloadExecutionResult {
         val generated = try {
             withContext(Dispatchers.Default) {
-                generate(request, templateId, displayDate)
+                generate(request, templateId, displayDate, organizationName)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -106,6 +109,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         request: ResultDownloadRequest,
         templateId: String,
         displayDate: LocalDate?,
+        organizationName: String,
     ): GeneratedFreeDesignResult? {
         val template = templateProvider(templateId) ?: return null
         return when (request) {
@@ -117,6 +121,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                             model,
                             template,
                             displayDate,
+                            organizationName,
                         ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,
@@ -137,6 +142,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                             model,
                             template,
                             displayDate,
+                            organizationName,
                         ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,

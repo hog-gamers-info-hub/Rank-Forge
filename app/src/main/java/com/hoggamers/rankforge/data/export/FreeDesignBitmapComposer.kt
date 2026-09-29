@@ -33,16 +33,18 @@ class FreeDesignBitmapComposer(
         model: MatchResultExportModel,
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
+        organizationName: String = "",
     ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
-        renderer.render(canvas, model, template, displayDate)
+        renderer.render(canvas, model, template, displayDate, organizationName)
     }
 
     fun compose(
         model: TournamentResultExportModel,
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
+        organizationName: String = "",
     ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
-        renderer.render(canvas, model, template, displayDate)
+        renderer.render(canvas, model, template, displayDate, organizationName)
     }
 
     private fun compose(

@@ -23,6 +23,9 @@ class FreeDesignCanvasRendererTest {
     private val template2 = requireNotNull(
         FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID),
     )
+    private val template6 = requireNotNull(
+        FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+    )
     private val renderer = FreeDesignCanvasRenderer()
 
     @Test
@@ -44,6 +47,118 @@ class FreeDesignCanvasRendererTest {
             assertEquals(3 + 5, canvas.texts.size)
             assertTrue(canvas.texts.any { it.text == "Team 1" && it.startX == 190f })
             assertEquals(392f, canvas.texts.first { it.text == "Team 1" }.centerY, 1f)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun goldOrganizationNameRendersTrimmedAlongsideOverallHeading() {
+        val canvas = RecordingCanvas()
+        try {
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(
+                    canvas,
+                    tournamentModel(),
+                    template,
+                    displayDate = LocalDate.of(2026, 9, 3),
+                    organizationName = "  HOG Esports  ",
+                ),
+            )
+
+            assertTrue(canvas.texts.any { it.text == "HOG Esports" })
+            assertTrue(canvas.texts.any { it.text == "Champions Cup 2026" })
+            assertTrue(canvas.texts.any { it.text == "HOG Gamers" })
+            assertTrue(canvas.texts.any { it.text == "Overall Standings - 03 Sep 2026" })
+            assertEquals(
+                template.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX,
+                canvas.texts.first { it.text == "HOG Esports" }.centerX,
+                1f,
+            )
+            assertEquals(
+                template.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY,
+                canvas.texts.first { it.text == "HOG Esports" }.centerY,
+                1f,
+            )
+            assertEquals(
+                template.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY,
+                canvas.texts.first { it.text == "Champions Cup 2026" }.centerY,
+                1f,
+            )
+            assertEquals(
+                template.headerAnchors.getValue(FreeDesignHeaderField.STAGE_NAME).centerY,
+                canvas.texts.first { it.text == "HOG Gamers" }.centerY,
+                1f,
+            )
+            assertEquals(
+                80f,
+                canvas.texts.first { it.text == "Overall Standings - 03 Sep 2026" }.startX,
+                1f,
+            )
+            assertEquals(
+                template.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY,
+                canvas.texts.first { it.text == "Overall Standings - 03 Sep 2026" }.centerY,
+                1f,
+            )
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun blankOrganizationNameIsSkipped() {
+        val canvas = RecordingCanvas()
+        try {
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(
+                    canvas,
+                    tournamentModel(),
+                    template,
+                    organizationName = "  ",
+                ),
+            )
+            assertFalse(canvas.texts.any { it.text == "HOG Esports" })
+            assertEquals(3 + 5, canvas.texts.size)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun crimsonEdgeOrganizationNameRendersAndUsesV6HeadingRegion() {
+        val canvas = RecordingCanvas()
+        try {
+            assertEquals(
+                FreeDesignCanvasRenderResult.Success,
+                renderer.render(
+                    canvas,
+                    tournamentModel(),
+                    template6,
+                    organizationName = "HOG Esports",
+                ),
+            )
+            assertTrue(canvas.texts.any { it.text == "HOG Esports" })
+            assertEquals(
+                template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX,
+                canvas.texts.first { it.text == "HOG Esports" }.centerX,
+                1f,
+            )
+            assertEquals(
+                template6.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY,
+                canvas.texts.first { it.text == "HOG Esports" }.centerY,
+                1f,
+            )
+            assertEquals(
+                60f,
+                canvas.texts.first { it.text == "Overall Standings" }.startX,
+                1f,
+            )
+            assertEquals(
+                4 + 5,
+                canvas.texts.size,
+            )
         } finally {
             canvas.recycle()
         }
@@ -84,6 +199,11 @@ class FreeDesignCanvasRendererTest {
                 renderer.render(matchCanvas, matchModel(), template, displayDate),
             )
             assertTrue(matchCanvas.texts.any { it.text == "Match 4 - 28 Sep 2026" })
+            assertEquals(
+                80f,
+                matchCanvas.texts.first { it.text == "Match 4 - 28 Sep 2026" }.startX,
+                1f,
+            )
             assertFalse(matchCanvas.texts.any { it.text == "Match 4 - 03 Sep 2026" })
             assertFalse(matchCanvas.texts.any { it.text == "31 Aug 2026" })
         } finally {
@@ -223,25 +343,27 @@ class FreeDesignCanvasRendererTest {
                     displayDate = LocalDate.of(2026, 9, 3),
                 ),
             )
-            FreeDesignHeaderField.entries.forEach { field ->
+            FreeDesignHeaderField.REQUIRED_FIELDS.forEach { field ->
                 val text = when (field) {
+                    FreeDesignHeaderField.ORGANIZATION_NAME -> error("organization name is optional")
                     FreeDesignHeaderField.TOURNAMENT_NAME -> "Champions Cup 2026"
                     FreeDesignHeaderField.STAGE_NAME -> "HOG Gamers"
                     FreeDesignHeaderField.RESULT_HEADING -> "Overall Standings - 03 Sep 2026"
                     FreeDesignHeaderField.DATE -> "Overall Standings - 03 Sep 2026"
                 }
                 val drawn = canvas.texts.first { it.text == text }
-                assertEquals(
-                    template.headerAnchors.getValue(
-                        if (field == FreeDesignHeaderField.DATE) {
-                            FreeDesignHeaderField.RESULT_HEADING
-                        } else {
-                            field
-                        },
-                    ).centerX,
-                    drawn.centerX,
-                    1f,
+                val anchor = template.headerAnchors.getValue(
+                    if (field == FreeDesignHeaderField.DATE) {
+                        FreeDesignHeaderField.RESULT_HEADING
+                    } else {
+                        field
+                    },
                 )
+                when (anchor.style.alignment) {
+                    FreeDesignTextAlignment.CENTER -> assertEquals(anchor.centerX, drawn.centerX, 1f)
+                    FreeDesignTextAlignment.START -> assertEquals(anchor.centerX, drawn.startX, 1f)
+                    FreeDesignTextAlignment.END -> assertEquals(anchor.centerX, drawn.startX + drawn.width, 1f)
+                }
             }
         } finally {
             canvas.recycle()
@@ -312,7 +434,23 @@ class FreeDesignCanvasRendererTest {
                     tournamentModel(),
                     template2,
                     displayDate = LocalDate.of(2026, 9, 3),
+                    organizationName = "  HOG Esports  ",
                 ),
+            )
+            assertEquals(
+                template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerX,
+                overallCanvas.texts.first { it.text == "HOG Esports" }.centerX,
+                1f,
+            )
+            assertEquals(
+                template2.headerAnchors.getValue(FreeDesignHeaderField.ORGANIZATION_NAME).centerY,
+                overallCanvas.texts.first { it.text == "HOG Esports" }.centerY,
+                1f,
+            )
+            assertEquals(
+                95f,
+                overallCanvas.texts.first { it.text == "Overall Standings - 03 Sep 2026" }.startX,
+                1f,
             )
             assertEquals(
                 template2.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME).centerY,
@@ -342,6 +480,11 @@ class FreeDesignCanvasRendererTest {
             assertEquals(
                 template2.headerAnchors.getValue(FreeDesignHeaderField.RESULT_HEADING).centerY,
                 matchCanvas.texts.first { it.text == "Match 4 - 03 Sep 2026" }.centerY,
+                1f,
+            )
+            assertEquals(
+                95f,
+                matchCanvas.texts.first { it.text == "Match 4 - 03 Sep 2026" }.startX,
                 1f,
             )
         } finally {

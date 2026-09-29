@@ -5,10 +5,20 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextCol
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 
 enum class FreeDesignHeaderField {
+    ORGANIZATION_NAME,
     TOURNAMENT_NAME,
     STAGE_NAME,
     RESULT_HEADING,
-    DATE,
+    DATE;
+
+    companion object {
+        val REQUIRED_FIELDS: Set<FreeDesignHeaderField> = setOf(
+            TOURNAMENT_NAME,
+            STAGE_NAME,
+            RESULT_HEADING,
+            DATE,
+        )
+    }
 }
 
 enum class FreeDesignTypographyRole {
@@ -31,6 +41,8 @@ data class FreeDesignHeaderTextStyle(
     val typographyRole: FreeDesignTypographyRole,
     val maxWidthPx: Float,
     val minimumTextSizePx: Float,
+    val bold: Boolean = false,
+    val letterSpacing: Float = 0f,
 )
 
 data class FreeDesignHeaderAnchor(

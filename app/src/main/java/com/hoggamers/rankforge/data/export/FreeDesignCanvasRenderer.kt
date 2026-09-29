@@ -62,6 +62,7 @@ class FreeDesignCanvasRenderer(
         model: MatchResultExportModel,
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
+        organizationName: String = "",
     ): FreeDesignCanvasRenderResult = render(
         canvas = canvas,
         template = template,
@@ -69,6 +70,7 @@ class FreeDesignCanvasRenderer(
         stageName = model.stageName,
         resultHeading = "Match ${model.matchNumber}",
         date = displayDate,
+        organizationName = organizationName,
         rows = model.rows,
     )
 
@@ -77,6 +79,7 @@ class FreeDesignCanvasRenderer(
         model: TournamentResultExportModel,
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
+        organizationName: String = "",
     ): FreeDesignCanvasRenderResult = render(
         canvas = canvas,
         template = template,
@@ -84,6 +87,7 @@ class FreeDesignCanvasRenderer(
         stageName = model.stageName,
         resultHeading = "Overall Standings",
         date = displayDate,
+        organizationName = organizationName,
         rows = model.rows,
     )
 
@@ -94,6 +98,7 @@ class FreeDesignCanvasRenderer(
         stageName: String,
         resultHeading: String,
         date: LocalDate?,
+        organizationName: String,
         rows: List<ResultExportRow>,
     ): FreeDesignCanvasRenderResult {
         validateTemplate(template)?.let { return FreeDesignCanvasRenderResult.Failure(it) }
@@ -120,6 +125,7 @@ class FreeDesignCanvasRenderer(
                         stageName = stageName.trim(),
                         resultHeading = resultHeading,
                         date = date,
+                        organizationName = organizationName.trim(),
                     )
                     FreeDesignCanvasRenderResult.Success
                 }
@@ -142,7 +148,13 @@ class FreeDesignCanvasRenderer(
         stageName: String,
         resultHeading: String,
         date: LocalDate?,
+        organizationName: String,
     ) {
+        if (organizationName.isNotEmpty()) {
+            template.headerAnchors[FreeDesignHeaderField.ORGANIZATION_NAME]?.let { anchor ->
+                drawHeaderText(canvas, anchor, organizationName)
+            }
+        }
         drawHeaderText(
             canvas,
             template.headerAnchors.getValue(FreeDesignHeaderField.TOURNAMENT_NAME),
@@ -175,7 +187,8 @@ class FreeDesignCanvasRenderer(
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor(style.color)
             textSize = style.textSize
-            typeface = typefaceFor(style.typographyRole)
+            typeface = typefaceFor(style.typographyRole, style.bold)
+            letterSpacing = style.letterSpacing
         }
         val fittedText = fitText(text, paint, style.maxWidthPx, style.minimumTextSizePx)
         val startX = when (style.alignment) {
@@ -253,7 +266,7 @@ class FreeDesignCanvasRenderer(
             return FreeDesignCanvasRenderFailure.INVALID_RESULT_TEXT_STYLE
         }
 
-        if (template.headerAnchors.keys != FreeDesignHeaderField.entries.toSet()) {
+        if (!template.headerAnchors.keys.containsAll(FreeDesignHeaderField.REQUIRED_FIELDS)) {
             return FreeDesignCanvasRenderFailure.INVALID_HEADER_ANCHOR
         }
         if (template.headerAnchors.values.any { anchor ->
@@ -269,6 +282,7 @@ class FreeDesignCanvasRenderer(
                     !style.minimumTextSizePx.isFinite() ||
                     style.minimumTextSizePx <= 0f ||
                     style.minimumTextSizePx > style.textSize ||
+                    !style.letterSpacing.isFinite() ||
                     runCatching { Color.parseColor(style.color) }.isFailure
             }
         ) {
@@ -277,11 +291,11 @@ class FreeDesignCanvasRenderer(
         return null
     }
 
-    private fun typefaceFor(role: FreeDesignTypographyRole): Typeface = when (role) {
+    private fun typefaceFor(role: FreeDesignTypographyRole, bold: Boolean): Typeface = when (role) {
         FreeDesignTypographyRole.TITLE -> Typeface.create("sans-serif-condensed", Typeface.BOLD)
-        FreeDesignTypographyRole.SECONDARY -> Typeface.create("sans-serif", Typeface.NORMAL)
+        FreeDesignTypographyRole.SECONDARY -> Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
         FreeDesignTypographyRole.RESULT_HEADING -> Typeface.create("sans-serif", Typeface.BOLD)
-        FreeDesignTypographyRole.DATE -> Typeface.create("sans-serif", Typeface.NORMAL)
+        FreeDesignTypographyRole.DATE -> Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
     }
 
     private companion object {
