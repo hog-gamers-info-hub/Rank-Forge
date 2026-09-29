@@ -84,6 +84,46 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun missingLEliminationAnchorsUseExistingPrefixSemantics() {
+        listOf(
+            "Eliminations",
+            "Elimination",
+            "Eliminatio",
+            "Eliminati",
+            "Eliminat",
+            "Eiminations",
+            "Eimination",
+            "Eiminatio",
+            "Eiminati",
+            "Eiminat",
+        ).forEach { text ->
+            assertTrue("Expected anchor for $text", MatchResultEliminationAnchorText.find(text) != null)
+        }
+
+        listOf(
+            "3 Eiminations" to 3,
+            "3Eiminations" to 3,
+            "O Eiminati" to 0,
+            "0Eiminati" to 0,
+            "12Eiminations" to 12,
+            "3Eiminat" to 3,
+        ).forEach { (text, expectedKill) ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue("Expected marker for $text", parsed.markerMatched)
+            assertEquals(expectedKill, parsed.kill)
+        }
+
+        listOf("Eiminations", "Eiminati", "eiminations").forEach { text ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue("Expected marker for $text", parsed.markerMatched)
+            assertNull(parsed.kill)
+        }
+
+        assertTrue(MatchResultEliminationAnchorText.find("PLAYEReiminationsX") == null)
+        assertTrue(!MatchResultPositionSemanticTextParser.parse("PLAYEReiminationsX").markerMatched)
+    }
+
+    @Test
     fun truncatedEliminationParserRequiresStrongPrefix() {
         listOf("Eliminat", "Eliminator", "EliminatPLAYER", "ABCEliminat", "PLAYER").forEach { text ->
             val parsed = MatchResultPositionSemanticTextParser.parse(text)
@@ -602,6 +642,21 @@ class MatchResultPositionOcrFieldMapperTest {
         assertTrue(!boundary.boundaryAccepted)
         assertEquals(MatchResultPlayerBoundaryReason.WEAK_NO_PREFIX, boundary.reason)
         assertEquals(MatchResultEliminationPrefixType.EMPTY_PREFIX, boundary.anchorPrefixType)
+    }
+
+    @Test
+    fun markerOnlyMiddleAnchorsPreserveTrustedPositionLocalGeometry() {
+        listOf("Eliminations", "Eiminati").forEach { marker ->
+            val result = mapper.map(
+                rightInput(position = 7, middle = marker, right = "RightPlayer"),
+            )
+
+            assertEquals(
+                RawOcrBoundingBox(205, 10, 350, 30),
+                result.eliminationAnchorBounds[1],
+            )
+            assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+        }
     }
 
     @Test
