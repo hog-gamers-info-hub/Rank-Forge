@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(26, cursor.getInt(0))
+                assertEquals(27, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -115,6 +115,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'match_calculated_evidence'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'point_table_logo_placements'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -424,6 +430,77 @@ class RankForgeDatabaseMigrationTest {
         migrated.query("PRAGMA foreign_key_check").use { cursor ->
             assertTrue(!cursor.moveToFirst())
         }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion26AddsLogoPathAndPlacementsWithoutDroppingPointTableChildren() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 26).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, " +
+                    "creation_order, last_updated_epoch_millis, owner_user_id) VALUES " +
+                    "('migration-26', 'Migration Cup', 'Stage One', '123', 'CONFIRMED', " +
+                    "9, 1800000000000, 'user-a')",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('migration-26', 1, 'Team One')",
+            )
+            database.execSQL(
+                "INSERT INTO roster_players " +
+                    "(tournament_id, slot_number, roster_position, display_name) " +
+                    "VALUES ('migration-26', 1, 1, 'Player One')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('migration-match-26', 'migration-26', 1, '2026-09-02', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO point_table_details " +
+                    "(tournament_id, organization_name, display_date) " +
+                    "VALUES ('migration-26', 'PointIQ', '2026-09-28')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            27,
+            true,
+            RankForgeDatabase.MIGRATION_26_27,
+        )
+
+        migrated.query(
+            "SELECT name, organizer_name, owner_user_id FROM tournaments WHERE id = 'migration-26'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Migration Cup", cursor.getString(0))
+            assertEquals("Stage One", cursor.getString(1))
+            assertEquals("user-a", cursor.getString(2))
+        }
+        migrated.query(
+            "SELECT organization_name, display_date, organization_logo_path " +
+                "FROM point_table_details WHERE tournament_id = 'migration-26'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("PointIQ", cursor.getString(0))
+            assertEquals("2026-09-28", cursor.getString(1))
+            assertTrue(cursor.isNull(2))
+        }
+        migrated.query("SELECT date FROM matches WHERE id = 'migration-match-26'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("2026-09-02", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT display_name FROM roster_players " +
+                "WHERE tournament_id = 'migration-26' AND slot_number = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Player One", cursor.getString(0))
+        }
+        assertTrue(migrated.hasTable("point_table_logo_placements"))
+        assertTrue(migrated.hasIndex("index_point_table_logo_placements_tournament_id"))
         migrated.close()
     }
 
